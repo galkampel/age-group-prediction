@@ -1,0 +1,9 @@
+# Test-only quality thresholds. These values do not control data generation.
+# Runtime validation loads them separately from generation configuration until
+# validation classes are removed in Step 11 of the compact migration.
+[validation]
+mean_children_min = 0.40
+mean_children_max = 0.61
+zero_share_min = 0.60
+zero_share_max = 0.75
+recovery_abs_tolerance = 0.20
