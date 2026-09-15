@@ -1,0 +1,155 @@
+{
+  "comparison_policy": {
+    "exact": [
+      "config",
+      "final_dataframe",
+      "quality_checks",
+      "summaries"
+    ],
+    "excluded": [
+      "private_latent_effects",
+      "rendered_plot_pixels"
+    ],
+    "semantic_only": [
+      "plot_inventory"
+    ]
+  },
+  "config": {
+    "content_sha256": "e8602db9daf38a14abd5efb41a2f7aec5250c3877d4d047df64a7f3b2b378745",
+    "overrides": {
+      "buildings_per_neighborhood_rate": 9.0,
+      "n_neighborhoods": 150
+    },
+    "path": "configs/simulation.toml",
+    "seed": 42
+  },
+  "final_dataframe": {
+    "columns": [
+      "building_id",
+      "neighborhood_id",
+      "ses",
+      "avg_household_size",
+      "median_age",
+      "n_daycares_500m",
+      "school_status",
+      "3_rooms",
+      "4_rooms",
+      "5_rooms",
+      "6_rooms",
+      "n_apartments",
+      "n_kindergarten",
+      "n_elementary",
+      "n_highschool",
+      "n_children_total"
+    ],
+    "dtypes": {
+      "3_rooms": "int64",
+      "4_rooms": "int64",
+      "5_rooms": "int64",
+      "6_rooms": "int64",
+      "avg_household_size": "float64",
+      "building_id": "string",
+      "median_age": "float64",
+      "n_apartments": "int64",
+      "n_children_total": "int64",
+      "n_daycares_500m": "int64",
+      "n_elementary": "int64",
+      "n_highschool": "int64",
+      "n_kindergarten": "int64",
+      "neighborhood_id": "string",
+      "school_status": "string",
+      "ses": "float64"
+    },
+    "sha256": "07a1414e8f71effcb3b71df3049b200a9fd201907fd8aa3c8b16ee4d5ff24379",
+    "shape": [
+      1529,
+      16
+    ],
+    "unique_neighborhoods": 150
+  },
+  "plot_inventory": [
+    "target_probability_histograms",
+    "target_empirical_cdfs",
+    "numeric_feature_histograms",
+    "school_status_frequency",
+    "pearson_correlation_heatmap",
+    "spearman_correlation_heatmap"
+  ],
+  "quality_checks": {
+    "building_id_unique": true,
+    "cohorts_sum_equals_total": true,
+    "context_repeats_within_neighborhood": true,
+    "n_apartments_positive": true,
+    "neighborhood_id_not_null": true,
+    "no_missing_values": true,
+    "rooms_sum_equals_n_apartments": true,
+    "targets_integer_dtype": true,
+    "targets_non_negative": true
+  },
+  "summaries": {
+    "buildings_per_neighborhood": {
+      "10%": 6.0,
+      "25%": 8.0,
+      "50%": 10.0,
+      "75%": 12.0,
+      "90%": 14.0,
+      "count": 150.0,
+      "max": 18.0,
+      "mean": 10.193333333333333,
+      "min": 4.0,
+      "std": 2.9576352486373474
+    },
+    "cohort_share_describe_sha256": "c118fac6dcecb7352c8f05514323c89304fabebb35313a11a1cc663ffa9c7267",
+    "feature_target_correlations_sha256": "38fbe4e3a36ee80a431d5cccd07fa75a6426a0eaa3d2949ac344461b6e7d1242",
+    "targets": [
+      {
+        "count": 1529,
+        "max": 47.0,
+        "mean": 9.412034009156311,
+        "q25": 5.0,
+        "q50": 8.0,
+        "q75": 12.0,
+        "std": 6.507970273240087,
+        "target": "n_kindergarten",
+        "variance_to_mean": 4.499949430290383,
+        "zero_share": 0.009810333551340745
+      },
+      {
+        "count": 1529,
+        "max": 40.0,
+        "mean": 8.00523217789405,
+        "q25": 4.0,
+        "q50": 7.0,
+        "q75": 11.0,
+        "std": 5.534870311066481,
+        "target": "n_elementary",
+        "variance_to_mean": 3.8268458277726443,
+        "zero_share": 0.013734466971877043
+      },
+      {
+        "count": 1529,
+        "max": 42.0,
+        "mean": 6.735775016350556,
+        "q25": 3.0,
+        "q50": 5.0,
+        "q75": 9.0,
+        "std": 5.408402730561592,
+        "target": "n_highschool",
+        "variance_to_mean": 4.342606459530204,
+        "zero_share": 0.031393067364290386
+      },
+      {
+        "count": 1529,
+        "max": 118.0,
+        "mean": 24.153041203400914,
+        "q25": 14.0,
+        "q50": 21.0,
+        "q75": 30.0,
+        "std": 15.082499748512415,
+        "target": "n_children_total",
+        "variance_to_mean": 9.418350126105283,
+        "zero_share": 0.0
+      }
+    ]
+  }
+}

@@ -1,0 +1,100 @@
+[simulation]
+seed = 42  # Reproducible full run; change this to draw another population.
+n_neighborhoods = 60  # Enough groups to represent contextual variation.
+
+[features]
+# Shared centering/scaling used by both apartment outcome models.
+household_size_reference = 2.6  # Reference neighborhood household size.
+household_size_scale = 0.5  # A one-unit feature change means 0.5 people.
+median_age_reference = 37.0  # Reference neighborhood median age in years.
+median_age_scale = 10.0  # A one-unit feature change means 10 years.
+room_reference = 4.0  # Reference apartment size for centered room effects.
+
+[neighborhood]
+ses_mean = 0.0  # SES is centered at the population average.
+ses_sd = 1.0  # SES units represent standard-deviation differences.
+ses_min = -2.5
+ses_max = 2.5
+median_age_mean = 37.0  # Typical family-age neighborhood baseline.
+median_age_sd = 5.0
+median_age_min = 25.0
+median_age_max = 52.0
+household_size_baseline = 2.6
+household_size_age_slope = -0.02  # Older areas tend to have smaller households.
+household_size_noise_sd = 0.25
+household_size_min = 1.8
+household_size_max = 4.2
+daycare_log_intercept = 1.0  # Baseline Poisson log-rate: exp(1) ~= 2.7.
+daycare_ses_coef = 0.15  # Higher-SES areas have mildly more daycares.
+daycare_age_coef = -0.03  # Older areas have mildly fewer daycares.
+
+[neighborhood.school_status_probs]
+existing = 0.55
+planned = 0.20
+none = 0.25
+
+[building]
+buildings_per_neighborhood_min = 1
+buildings_per_neighborhood_rate = 3.0  # Additional Poisson mean above minimum.
+apartments_per_building_mean = 40  # Typical generated building size.
+apartments_per_building_sd = 12  # Building-size heterogeneity.
+apartments_per_building_min = 12
+apartments_per_building_max = 80
+buildings_per_neighborhood = []  # Optional one-value-per-neighborhood override.
+apartments_per_building = []  # Optional one-value-per-building override.
+
+[building.room_mix]
+supported_rooms = [3, 4, 5, 6]
+household_size_tilt = 0.35  # Larger-household areas favor larger apartments.
+ses_tilt = 0.20  # Higher-SES areas mildly favor larger apartments.
+room_distance_divisor = 2.0  # Controls decay away from preferred room size.
+dirichlet_concentration = 30.0  # Higher values reduce building-to-building mix variation.
+
+[building.room_mix.base_shares]
+# Prior apartment shares before neighborhood tilts and Dirichlet variation.
+"3" = 0.30
+"4" = 0.38
+"5" = 0.22
+"6" = 0.10
+
+[apartment]
+# Apartment generation currently has no adjustable parameters. The explicit
+# section keeps the component boundary visible and ready for future settings.
+
+[total_children]
+# NB2 log-mean model for total children per apartment.
+intercept = -1.30  # Reference 3-room apartment log expected count.
+ses_quadratic_coef = 0.05
+household_size_coef = 0.30  # Larger local households imply more children.
+daycare_saturation_coef = 0.12  # Positive but diminishing daycare association.
+existing_school_coef = 0.10
+planned_school_coef = 0.04
+median_age_coef = -0.06  # Older areas imply fewer children, all else equal.
+rooms_household_interaction_coef = 0.10
+daycare_saturation_scale = 3.0  # Facilities needed to reach 63% saturation.
+building_effect_sd = 0.25  # Unobserved building-level log-mean variation.
+neighborhood_effect_sd = 0.20  # Unobserved neighborhood log-mean variation.
+nb_dispersion_phi = 3.0  # Variance is mu + mu^2 / phi.
+
+[total_children.room_log_mean_effects]
+# Multipliers relative to 3 rooms are exp(coefficient).
+"4" = 0.45
+"5" = 0.80
+"6" = 0.95
+
+[cohort]
+# Lifecycle index: positive values shift children toward older cohorts.
+room_coef = 0.30  # Larger apartments shift composition toward older cohorts.
+daycare_coef = -0.20  # Daycare availability shifts toward younger cohorts.
+median_age_coef = 0.25  # Older areas shift composition toward older cohorts.
+household_size_coef = 0.15
+room_age_positive_interaction_coef = 0.12
+building_effect_sd = 0.20  # Unobserved building lifecycle variation.
+kindergarten_lifecycle_slope = -1.0  # Kindergarten weight falls with lifecycle.
+highschool_lifecycle_slope = 1.1  # High-school weight rises with lifecycle.
+
+[cohort.reference_shares]
+# These are exact cohort probabilities when the lifecycle index theta is zero.
+kindergarten = 0.40
+elementary = 0.35
+highschool = 0.25
