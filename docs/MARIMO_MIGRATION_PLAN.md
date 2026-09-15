@@ -1,9 +1,8 @@
 # Marimo Research Workflow Migration Plan
 
-> **Status: Steps 1-8 complete.** This plan migrated the research workflow from Jupyter
+> **Status: Steps 1-10 complete.** This plan migrated the research workflow from Jupyter
 > to marimo without changing simulator behavior. `research.ipynb` and `ipykernel`
-> have been removed. Steps 9-10 (the deferred modeling notebook) begin only after
-> the modeling implementation gate is approved.
+> have been removed. The EDA and modeling notebooks are both implemented.
 
 The statistical simulator contract remains governed by
 [SIMPLIFIED_MODEL_PLAN.md](SIMPLIFIED_MODEL_PLAN.md). The compact package
@@ -11,7 +10,7 @@ boundary remains governed by
 [COMPACT_SIMULATOR_MIGRATION_PLAN.md](COMPACT_SIMULATOR_MIGRATION_PLAN.md).
 The required EDA and modeling work remains governed by
 [EDA_AND_PREDICTIVE_MODELING_PLAN.md](EDA_AND_PREDICTIVE_MODELING_PLAN.md) and
-[MODEL_FITTING_EVALUATION_AND_FEATURE_IMPORTANCE_PLAN.md](MODEL_FITTING_EVALUATION_AND_FEATURE_IMPORTANCE_PLAN.md).
+[MODELING_REBUILD_PLAN.md](MODELING_REBUILD_PLAN.md).
 
 ## 1. Goal And Decisions
 
@@ -44,12 +43,12 @@ Use these decisions throughout the migration:
 age-group-prediction/
     notebooks/
         01_eda.py
-        02_model_fitting.py        # created only after the EDA gate
+      02_model_fitting.py        # thin modeling and experiment client
     src/
         student_simulator/         # installed compact simulator package
         age_group_prediction/      # add later for reusable modeling code
     configs/
-        stage1.toml
+        simulation.toml
         validation.toml
     tests/
         unit/
@@ -58,7 +57,7 @@ age-group-prediction/
     docs/
         MARIMO_MIGRATION_PLAN.md
         EDA_AND_PREDICTIVE_MODELING_PLAN.md
-        MODEL_FITTING_EVALUATION_AND_FEATURE_IMPORTANCE_PLAN.md
+      MODELING_REBUILD_PLAN.md
 ```
 
 Do not create `src/age_group_prediction/` merely to hold one helper. Introduce
@@ -238,7 +237,7 @@ cell only invalidates its real downstream dependents.
 
 **Completion record (2026-08-22):** Refactored `notebooks/01_eda.py` into an
 autorunnable marimo dependency graph. The notebook now uses the installed
-`student_simulator` package, resolves `configs/stage1.toml` from
+`student_simulator` package, resolves `configs/simulation.toml` from
 `mo.notebook_dir()`, keeps immutable EDA overrides in their own cell, and
 uses underscore-prefixed cell-local intermediates. Jupyter-era `sys.path`,
 module-cache, `IPython.display`, `Path.cwd()`, and `plt.show()` patterns were
@@ -268,7 +267,7 @@ file; that was an environment repair rather than a repository path workaround.
 **Review model: GPT-5.6 Terra**
 
 1. Reproduce the immutable `150`-neighborhood and `9.0` building-rate EDA
-   overrides without editing `configs/stage1.toml`.
+   overrides without editing `configs/simulation.toml`.
 2. Record seed, config path/content/hash, row count, neighborhood count, and
    buildings-per-neighborhood distribution.
 3. Reproduce the structural audit, leakage register, target and feature
@@ -393,8 +392,8 @@ baseline contract.
 
 Begin only after Step 6's EDA handoff is approved.
 
-1. Create `notebooks/02_model_fitting.py` around the seven gates in
-   `MODEL_FITTING_EVALUATION_AND_FEATURE_IMPORTANCE_PLAN.md`.
+1. Create `notebooks/02_model_fitting.py` around the accepted gates in
+   `MODELING_REBUILD_PLAN.md`.
 2. Add `src/age_group_prediction/` when the first reusable preprocessing or
    model contract is ready, not before.
 3. Put deterministic split generation, leakage-safe preprocessing, metrics,
@@ -419,19 +418,17 @@ Use the routing below for the deferred implementation gates:
 
 | Modeling work | Primary model | Review model |
 |---|---|---|
-| Splits, preprocessing, HGB baseline | GPT-5.6 Sol or Sonnet | Codex |
+| Splits, preprocessing, LightGBM direct-cohort model | GPT-5.6 Sol or Sonnet | Codex |
 | Model B independent NB2 total and child-level categorical probability fits | GPT-5.6 Sol | GPT-5.6 Terra |
 | Evaluation, calibration, and permutation importance | GPT-5.6 Sol | GPT-5.6 Terra or Opus |
-| Model C conditional NB2 and Dirichlet-multinomial NumPyro inference | GPT-5.6 Terra | Opus |
+| Bayesian NB2 + Dirichlet-Multinomial Pyro inference | GPT-5.6 Terra | Opus |
 | MLflow integration and artifact logging | Sonnet or GPT-5.5 | Codex |
 | Repository-wide implementation review | Codex | GPT-5.6 Opus |
 
-Add dependency groups only at their corresponding gate:
-
-- `modeling`: LightGBM and the chosen statsmodels policy;
-- `bayesian`: NumPyro, JAX, and compatible runtime packages;
-- `tracking`: MLflow;
-- `explainability`: optional SHAP.
+The completed implementation keeps LightGBM, Pyro, Torch, scikit-learn, and
+the numerical stack as core dependencies. MLflow remains optional in the
+`tracking` group, statsmodels remains in `validation`, and marimo tooling is in
+`notebook`.
 
 **Gate:** Each dependency group installs and validates independently. Bayesian,
 tracking, or explainability failures must not break simulator or EDA usage.
@@ -462,10 +459,9 @@ only one agent or person should write it at a time.
 | Migration and EDA | `notebook` | `marimo`, `nbformat`, `ruff` | Yes |
 | Existing tests | `test` | `pytest` | Yes for validation |
 | Existing recovery | `validation` | `statsmodels` | Yes for recovery gate |
-| Frequentist modeling | `modeling` | `lightgbm`, statsmodels policy | Deferred |
-| Bayesian modeling | `bayesian` | `numpyro`, `jax` | Deferred |
-| Experiment tracking | `tracking` | `mlflow` | Deferred |
-| Supplemental explanations | `explainability` | `shap` | Optional and deferred |
+| Frequentist modeling | core | `lightgbm`, `scikit-learn`, `scipy` | Yes |
+| Bayesian modeling | core | `pyro-ppl`, `torch` | Yes |
+| Experiment tracking | `tracking` | `mlflow` | Optional |
 
 Do not install `marimo[recommended]` by default. The project already has
 pandas, matplotlib, seaborn, and scikit-learn, and it does not currently need

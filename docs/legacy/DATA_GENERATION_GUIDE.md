@@ -4,7 +4,7 @@
 > original assumptions and derivations and may conflict with the current
 > simplified model. Use the [documentation index](../README.md),
 > [current model specification](../SIMPLIFIED_MODEL_PLAN.md), and
-> [current implementation plan](../SIMPLIFIED_MODEL_IMPLEMENTATION_PLAN.md)
+> current implementation plan (archived: `SIMPLIFIED_MODEL_IMPLEMENTATION_PLAN.md`)
 > for active work.
 
 A step-by-step build guide for the synthetic dataset. Read Sections 0–2 before writing any code; the rest is executable in order.

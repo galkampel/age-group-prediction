@@ -1,6 +1,6 @@
 # Building-Level EDA And Predictive Modeling Plan
 
-> **Status: EDA Steps 1-6 implemented; modeling handoff design recorded in Step 7.** Formal model fitting and selection, held-out evaluation, feature importance, Bayesian inference, and MLflow are deferred until the modeling notebook begins. This document does not change simulator behavior.
+> **Status: EDA Steps 1-6 and the Step 7 modeling handoff are complete.** The resulting modeling, selection, guarded held-out evaluation, feature importance, Bayesian inference, and MLflow workflow is implemented in `notebooks/02_model_fitting.py` and `src/age_group_prediction/`. This document remains the EDA scope and handoff record; it does not change simulator behavior.
 
 The compact simulator contract remains governed by [SIMPLIFIED_MODEL_PLAN.md](SIMPLIFIED_MODEL_PLAN.md).
 The notebook format, conversion sequence, dependency changes, and per-step
@@ -19,7 +19,7 @@ modules in this phase.
 
 ## 2. EDA Population And Reproducibility
 
-Generate one expanded synthetic population by updating only the existing configuration values in `configs/stage1.toml`:
+Generate one expanded synthetic population by updating only the existing configuration values in `configs/simulation.toml`:
 
 ```toml
 [simulation]
@@ -164,7 +164,10 @@ The EDA tree model may use a Poisson objective to estimate a flexible conditiona
 
 ## 6. Next Plan
 
-After the EDA completion checks pass, implement the deferred modeling, evaluation, feature-importance, Bayesian, and MLflow stages described in [MODEL_FITTING_EVALUATION_AND_FEATURE_IMPORTANCE_PLAN.md](MODEL_FITTING_EVALUATION_AND_FEATURE_IMPORTANCE_PLAN.md). The deployment-matched split strategy is defined there.
+After the EDA completion checks pass, implement the deferred modeling,
+evaluation, feature-importance, Bayesian, and MLflow stages described in
+[MODELING_REBUILD_PLAN.md](MODELING_REBUILD_PLAN.md). The deployment-matched
+split strategy is defined there.
 
 ## 7. Agent Model Guide
 

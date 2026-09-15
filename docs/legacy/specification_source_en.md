@@ -7,7 +7,7 @@ subtitle: "How to build the synthetic data-generating process — transformation
 > original rationale and assumptions and may conflict with the current
 > simplified model. Use the [documentation index](../README.md),
 > [current model specification](../SIMPLIFIED_MODEL_PLAN.md), and
-> [current implementation plan](../SIMPLIFIED_MODEL_IMPLEMENTATION_PLAN.md)
+> current implementation plan (archived: `SIMPLIFIED_MODEL_IMPLEMENTATION_PLAN.md`)
 > for active work.
 
 # 1. Purpose and scope
