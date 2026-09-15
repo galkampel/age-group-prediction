@@ -58,24 +58,28 @@ does not import `tracking`.
 
 | Module | Responsibility | Main public API | Depends on | Read more |
 |---|---|---|---|---|
-| `modeling_config.py` | Typed, immutable schema, column constants, feature specs, and all model/evaluation/tuning configs with invariant checks | `ModelingSchema`, `DEFAULT_MODELING_SCHEMA`, `FeatureSpec`, `CategoricalFeatureSpec`, `OuterSplitConfig`, `FoldConfig`, `PredictionConfig`, `PredictionValidationConfig`, `EvaluationConfig`, `OptunaTuningConfig`, `DirectCohortConfig`, `IndependentTotalProbabilityConfig`, `BayesianConditionalConfig`, `NUTSProfileConfig`, `DEFAULT_*_FEATURE_SPEC`, column constants | — | Guide §2, §5 |
+| `modeling_config.py` | Typed, immutable schema, column constants, feature specs, and all model/evaluation/tuning configs with invariant checks | `ModelingSchema`, `DEFAULT_MODELING_SCHEMA`, `FeatureSpec`, `CategoricalFeatureSpec`, `OuterSplitConfig`, `FoldConfig`, `RandomnessConfig`, `DEFAULT_OUTER_SPLIT_CONFIG`, `DEFAULT_FOLD_CONFIG`, `PredictionConfig`, `PredictionValidationConfig`, `EvaluationConfig`, `OptunaTuningConfig`, `DirectCohortConfig`, `IndependentTotalProbabilityConfig`, `BayesianConditionalConfig`, `NUTSProfileConfig`, `DEFAULT_*_FEATURE_SPEC`, column constants | — | Guide §2, §5 |
 | `experiment_config.py` | Load `configs/modeling.toml` into one `ExperimentConfig` (unknown keys refused) | `load_experiment_config`, `ExperimentConfig` | `modeling_config` | Guide intro |
-| `dataset_builder.py` | Build and validate the canonical modeling table, including room shares | `build_modeling_table` | `modeling_config` | Guide §2 |
-| `data_splitting.py` | Known-neighborhood outer split, write-once manifest, replay, training-only folds | `split_known_neighborhood_buildings`, `SplitManifest`, `DataSplit`, `persist_split_manifest`, `load_split_manifest`, `replay_split_manifest`, `make_validation_folds`, `FoldPlan`, `ValidationFold` | `hashing`, `modeling_config` | Guide §3-4 |
-| `hashing.py` | Stable content hashes for tables and column schemas | `table_hash`, `column_schema_hash` | — | Guide §14 |
-| `feature_engineering.py` | Fold-fitted scaling, splines, schema-driven one-hot encoding, exposure offset, and state export | `FittedFeatureTransformer` | `modeling_config`, `state_bundle` | Guide §5 |
-| `results.py` | Validated, model-independent prediction and evaluation contracts | `PredictionResult`, `EvaluationResult`, `ParametricDistributionSpec` | `modeling_config` | Guide §6 |
-| `metrics.py` | Metric protocol and classes: point, likelihood, composition, reconciliation, interval, and PIT metrics; capability checks | `Metric`, `MetricResult`, `MeanAbsoluteError`, `RootMeanSquaredError`, `MeanBias`, `R2`, `MeanPoissonDeviance`, `ParametricPredictiveNegativeLogLikelihood`, `PointwisePredictiveNegativeLogLikelihood`, `JointPredictiveNegativeLogLikelihood`, `CompositionLogLoss`, `CompositionBrierScore`, `ReconciliationError`, `IntervalCoverage`, `WeightedIntervalScore`, `RandomizedPIT`, `default_metric_set`, `available_prediction_capabilities` | `distributions`, `results`, `modeling_config` | Guide §7; plan §9 |
-| `evaluation.py` | Evaluate fixed predictions and neighborhood-cluster bootstrap intervals; never fits models | `evaluate_predictions`, `neighborhood_cluster_bootstrap`, `BootstrapEvaluationResult` | `metrics`, `resampling`, `results`, `modeling_config` | Guide §7 |
-| `distributions.py` | NB2 parameter mappings, pointwise log mass, draws, multinomial and Dirichlet-multinomial prefix log masses | `nb2_scipy_parameters`, `nb2_torch_parameters`, `pointwise_log_probability`, `draw_outcomes`, `dirichlet_multinomial_prefix_log_masses`, `multinomial_prefix_log_masses` | — | [Bayesian guide](BAYESIAN_CONDITIONAL_MODEL.md#pointwise-posterior-log-probabilities) |
+| `dataset_builder.py` | Build and validate the canonical modeling table, including room shares | `build_modeling_table` | `modeling_config` | [Data and splitting](DATA_AND_SPLITTING.md#2-the-modeling-table); guide §2 |
+| `data_splitting.py` | Known-neighborhood outer split, write-once manifest, replay, training-only folds | `split_known_neighborhood_buildings`, `SplitManifest`, `DataSplit`, `persist_split_manifest`, `load_split_manifest`, `replay_split_manifest`, `make_validation_folds`, `FoldPlan`, `ValidationFold`, `SeedSource` | `hashing`, `modeling_config` | [Data and splitting](DATA_AND_SPLITTING.md); guide §3-4 |
+| `hashing.py` | Stable content hashes for tables and column schemas | `table_hash`, `column_schema_hash` | — | [Data and splitting §4](DATA_AND_SPLITTING.md#4-splitmanifest); guide §14 |
+| `feature_engineering.py` | Fold-fitted scaling, splines, schema-driven one-hot encoding, exposure offset, and state export | `FittedFeatureTransformer` | `modeling_config`, `state_bundle` | [Feature engineering](FEATURE_ENGINEERING.md); guide §5 |
+| `results.py` | Validated, model-independent prediction and evaluation contracts | `PredictionResult`, `EvaluationResult`, `ParametricDistributionSpec` | `modeling_config` | [Evaluation and metrics §1](EVALUATION_AND_METRICS.md#1-the-prediction-contract); guide §6 |
+| `metrics.py` | Metric protocol and classes: point, likelihood, composition, reconciliation, interval, and PIT metrics; capability checks | `Metric`, `MetricResult`, `MeanAbsoluteError`, `RootMeanSquaredError`, `MeanBias`, `R2`, `MeanPoissonDeviance`, `ParametricPredictiveNegativeLogLikelihood`, `PointwisePredictiveNegativeLogLikelihood`, `JointPredictiveNegativeLogLikelihood`, `CompositionLogLoss`, `CompositionBrierScore`, `ReconciliationError`, `IntervalCoverage`, `MeanIntervalWidth`, `WeightedIntervalScore`, `PredictiveNegativeLogLikelihood` and `RandomizedPIT` (abstract bases), `ParametricRandomizedPIT`, `DrawsRandomizedPIT`, `default_metric_set`, `available_prediction_capabilities` | `distributions`, `results`, `modeling_config` | [Evaluation and metrics](EVALUATION_AND_METRICS.md); guide §7; plan §9 |
+| `evaluation.py` | Evaluate fixed predictions and neighborhood-cluster bootstrap intervals; never fits models | `evaluate_predictions`, `neighborhood_cluster_bootstrap`, `BootstrapEvaluationResult`, `MissingCapabilityPolicy` | `metrics`, `resampling`, `results`, `modeling_config` | [Evaluation and metrics §6-7](EVALUATION_AND_METRICS.md#7-neighborhood-cluster-bootstrap); guide §7 |
+| `distributions.py` | NB2 parameter mappings, pointwise log mass (log density for Normal), draws, multinomial and Dirichlet-multinomial prefix log masses | `nb2_scipy_parameters`, `nb2_torch_parameters`, `pointwise_log_probability`, `draw_outcomes`, `dirichlet_multinomial_prefix_log_masses`, `multinomial_prefix_log_masses` | — | [Bayesian guide](BAYESIAN_CONDITIONAL_MODEL.md#pointwise-posterior-log-probabilities) |
 | `predictive.py` | Central prediction intervals from predictive draws, shared by all models | `central_prediction_intervals` | — | — |
-| `resampling.py` | Neighborhood-cluster row-index resampling for bootstraps | `NeighborhoodClusterResampler` | — | Guide §7 |
+| `resampling.py` | Neighborhood-cluster row-index resampling for bootstraps | `NeighborhoodClusterResampler` | — | [Evaluation and metrics §7](EVALUATION_AND_METRICS.md#7-neighborhood-cluster-bootstrap) |
 | `tuning.py` | Deterministic Optuna studies over completed trials | `run_optuna_study`, `TuningResult`, `TrialRecord` | `modeling_config` | — |
 | `state_bundle.py` | JSON state-bundle format and checks shared by all models | `STATE_BUNDLE_FORMAT`, `check_bundle_header`, `verify_training_frame`, `restore_config`, `restore_feature_spec`, `dependency_versions` | `hashing`, `modeling_config` | Guide §13; README "Saving And Reloading" |
 
 ## `age_group_prediction.models` — Model Families
 
-Specification: plan §6-8 in [MODELING_REBUILD_PLAN.md](MODELING_REBUILD_PLAN.md);
+Model descriptions: [DIRECT_COHORT_MODEL.md](DIRECT_COHORT_MODEL.md),
+[INDEPENDENT_TOTAL_PROBABILITY_MODEL.md](INDEPENDENT_TOTAL_PROBABILITY_MODEL.md),
+[BAYESIAN_CONDITIONAL_MODEL_OVERVIEW.md](BAYESIAN_CONDITIONAL_MODEL_OVERVIEW.md),
+and the full [BAYESIAN_CONDITIONAL_MODEL.md](BAYESIAN_CONDITIONAL_MODEL.md);
+specification: plan §6-8 in [MODELING_REBUILD_PLAN.md](MODELING_REBUILD_PLAN.md);
 overview: guide §6. `models/__init__.py` imports the LightGBM model before the
 torch model to avoid a native-runtime crash when reloading boosters.
 
@@ -89,7 +93,7 @@ torch model to avoid a native-runtime crash when reloading boosters.
 | `grouped_multinomial.py` | Internal: weighted grouped multinomial rows (no child expansion), fit, logits, state | — | `modeling_config` |
 | `probability_calibration.py` | Internal: composition loss kernels and temperature calibration | — | `metrics`, `modeling_config` |
 | `fold_scoring.py` | Internal: held-out fold losses used during Model B tuning | — | `count_regression`, `grouped_multinomial`, `probability_calibration`, `feature_engineering`, `distributions` |
-| `bayesian_conditional.py` | **Bayesian model.** Hierarchical NB2 total plus Dirichlet-multinomial composition: lifecycle, diagnostic policy, exactly reconciled posterior prediction | `BayesianConditionalModel` | `base`, `bayesian_components`, `bayesian_inference`, `distributions`, `predictive` |
+| `bayesian_conditional.py` | **Model C (Bayesian).** Hierarchical NB2 total plus Dirichlet-multinomial composition: lifecycle, diagnostic policy, exactly reconciled posterior prediction | `BayesianConditionalModel` | `base`, `bayesian_components`, `bayesian_inference`, `distributions`, `predictive` |
 | `bayesian_components.py` | Pyro total and composition model definitions; prior-predictive simulation | `PriorPredictiveSummary` | `modeling_config` |
 | `bayesian_inference.py` | Sequential NUTS execution, sampler instrumentation, convergence diagnostics | `evaluate_stage_diagnostics` | `modeling_config` |
 
@@ -98,7 +102,10 @@ Bayesian deep dive: [BAYESIAN_CONDITIONAL_MODEL.md](BAYESIAN_CONDITIONAL_MODEL.m
 ## `age_group_prediction.experiment` — Cross-Validation And Selection
 
 MLflow-free workflow from fixed folds to the one-time final evaluation. Guide
-§8-12.
+§8-12. Component documents:
+[cross-validation and selection](CROSS_VALIDATION_AND_SELECTION.md),
+[final evaluation](FINAL_EVALUATION.md), and, for `partitions.py`,
+[data and splitting](DATA_AND_SPLITTING.md#7-partition-checks-before-modeling).
 
 | Module | Responsibility | Main public API | Depends on |
 |---|---|---|---|
@@ -109,7 +116,7 @@ MLflow-free workflow from fixed folds to the one-time final evaluation. Guide
 | `policies.py` | Approach-specific selection policies | `direct_cohort_selection_policy`, `sequential_joint_selection_policy` | `contracts`, `metrics` |
 | `partitions.py` | Validate that folds contain only outer-training rows; alignment and coverage checks | `validate_experiment_partitions` | `data_splitting`, `contracts`, `results` |
 | `runner.py` | Fit, predict, and evaluate every candidate on fixed folds; select; freeze | `run_cross_model_validation` | `partitions`, `evidence`, `selection`, `aggregation`, `importance`, `artifacts`, `seeds`, `models.base` |
-| `evidence.py` | Fold, selection, freeze, provenance, and CV result records; one-way freeze transitions | `CrossValidationExperimentResult`, `SelectionFreeze`, `FrozenApproachSelection`, `FoldRunEvidence`, `ExperimentProvenance` | `artifacts`, `contracts`, `final_selection`, `evaluation`, `hashing`, `state_bundle` |
+| `evidence.py` | Fold, selection, freeze, provenance, and CV result records; one-way freeze transitions | `CrossValidationExperimentResult`, `SelectionFreeze`, `FrozenApproachSelection`, `FoldRunEvidence`, `ExperimentProvenance` | `artifacts`, `contracts`, `final_selection` (type hints only), `evaluation`, `hashing`, `state_bundle` |
 | `selection.py` | Internal: within-approach selection and likelihood-comparability checks | — | `contracts`, `evidence` |
 | `aggregation.py` | Internal: fold-metric aggregation, bootstrap evidence, importance summaries | — | `modeling_config` |
 | `importance.py` | Internal: validation-only repeated permutation importance | — | `contracts`, `evidence`, `partitions`, `seeds` |
@@ -119,13 +126,19 @@ MLflow-free workflow from fixed folds to the one-time final evaluation. Guide
 | `final_evaluation.py` | Full-training refit and one-time lockbox evaluation building blocks; pretest-freeze verification and attempt fingerprint | `refit_frozen_approach_winners`, `evaluate_frozen_models_on_lockbox`, `verify_pretest_freeze`, `final_attempt_fingerprint`, `FinalEvaluationResult` | `evidence`, `final_selection`, `partitions`, `artifacts`, `seeds`, `data_splitting`, `models.base` |
 
 Operational callers should not call `final_evaluation` functions directly; use
-the guarded `tracking.run_final_evaluation`.
+the guarded `tracking.run_final_evaluation`. `capture_fold_artifact`,
+`verify_pretest_freeze`, and `final_attempt_fingerprint` are public in their
+modules but not re-exported from `age_group_prediction.experiment`; import them
+from the module path.
 
 ## `age_group_prediction.tracking` — Optional MLflow Adapter
 
 Requires `uv sync --group tracking`. Guide:
 [MLFLOW_EXPERIMENTS_GUIDE.md](MLFLOW_EXPERIMENTS_GUIDE.md). The package
-docstring describes the run layout in detail.
+docstring describes the run layout in detail. The final path is described in
+[FINAL_EVALUATION.md](FINAL_EVALUATION.md). `AgeGroupPyfuncModel` and
+`prediction_to_frame` are imported from
+`age_group_prediction.tracking.pyfunc_model`, not the package root.
 
 | Module | Responsibility | Main public API | Depends on |
 |---|---|---|---|

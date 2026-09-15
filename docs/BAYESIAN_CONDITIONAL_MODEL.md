@@ -1,4 +1,15 @@
-# Bayesian Conditional Model
+# Bayesian Conditional Model (Model C)
+
+For a shorter summary without Pyro syntax, tensor shapes, and implementation
+details, read
+[BAYESIAN_CONDITIONAL_MODEL_OVERVIEW.md](BAYESIAN_CONDITIONAL_MODEL_OVERVIEW.md).
+This page is the full technical guide.
+
+Companion model descriptions:
+[DIRECT_COHORT_MODEL.md](DIRECT_COHORT_MODEL.md) (Model A) and
+[INDEPENDENT_TOTAL_PROBABILITY_MODEL.md](INDEPENDENT_TOTAL_PROBABILITY_MODEL.md)
+(Model B). Operational sections for this model start at
+[Selection And Comparison](#selection-and-comparison).
 
 ## Purpose
 
@@ -444,6 +455,25 @@ probabilities with shape `(S, N, K)`. Public predictive payloads use
 
 ## Execution Flow
 
+### Hyperparameters and tuning
+
+Unlike Models A and B, this model runs **no Optuna hyperparameter search**.
+The quantities that play that role are fixed, reviewed configuration:
+- priors: `[bayesian_priors]`;
+- NUTS settings (`[bayesian_reduced_profile]`, `[bayesian_full_profile]`):
+  chains, warmup, samples, target acceptance, and maximum tree depth;
+- diagnostic thresholds: `[bayesian_*_diagnostics]`;
+- prior-predictive checks and numerical stabilization:
+  `[bayesian_prior_predictive]`, `[bayesian_stabilization]`.
+
+NUTS adapts its step size and mass matrix during warmup, but that is sampler
+adaptation, not model selection. Feature forms are not searched either:
+cross-validation requires this model to reuse the independent model's selected
+total and probability feature specs. Cross-validation uses the reduced profile;
+the final refit is forced to the full profile. Persistent diagnostic failures
+call for changing priors, profiles, or parameterization in the configuration,
+which creates a new candidate rather than a tuned variant.
+
 ### Fitting
 
 1. The base model fits the total feature transformer and produces the exposure
@@ -845,6 +875,126 @@ convolution, while Normal direct-cohort runs are point/interval diagnostic
 comparators. Cross-approach tables retain common point and composition metrics
 alongside the explicit likelihood interpretation.
 
+## Selection And Comparison
+
+### Candidate, profiles, and feature forms
+
+| Stage | Candidate | Profile | Diagnostic action |
+|---|---|---|---|
+| Cross-validation | `bayesian-reduced` (`build_canonical_candidate_registry`) | `[bayesian_conditional] active_profile` (`reduced`: 2 chains, 150 warmup, 150 samples) | `warn` |
+| Final full-training refit | same candidate, final-refit factory | forced to `full` (4 chains, 1000 warmup, 1000 samples) | `error` |
+
+The final refit refuses a Bayesian model that did not actually run the full
+profile with thresholds at least as strict as the full defaults. In
+cross-validation, the selected Bayesian candidate must declare the same total
+and probability feature specs as the selected Model B candidate, or the
+selection freeze is refused.
+
+### Within-approach selection
+
+`sequential_joint_selection_policy("BayesianConditionalModel")` ranks Bayesian
+candidates by:
+
+1. `joint_predictive_nll` (posterior-integrated total plus composition log
+   mass, `sequential_joint` scope);
+2. composition log loss;
+3. total RMSE.
+
+By default, `run_cross_model_validation` (`require_convergence=True`) also
+excludes candidates whose recorded diagnostic policy failed; pass
+`require_convergence=False` to rank unconverged candidates anyway.
+
+### Cross-family comparison
+
+`select_cross_family_winner` compares the Bayesian winner with the Model B
+winner by `joint_predictive_nll`, which is comparable because both report
+`sequential_joint` log masses that include the multinomial coefficient. The
+better conditional model is then compared with Model A's winner by composition
+log loss, mean cohort RMSE, and mean cohort MAE. Model A's `marginal` scores
+are never ranked against this model's joint score. In the canonical run the
+Bayesian conditional model was selected, with Models A and B logged as
+predeclared comparators.
+
+Details: [CROSS_VALIDATION_AND_SELECTION.md](CROSS_VALIDATION_AND_SELECTION.md)
+for the selection rules and freezes, and
+[FINAL_EVALUATION.md](FINAL_EVALUATION.md#4-refitting-the-frozen-winners) for
+the full-profile refit guard and the one-time lockbox evaluation.
+
+## Persistence And Serving
+
+`to_state_bundle()` stores, as plain JSON:
+
+- the base bundle header, total feature-transformer state, and training
+  hashes;
+- `probability_feature_spec` and the full `BayesianConditionalConfig`
+  (priors, both profiles, both diagnostic policies, active profile);
+- the probability feature-transformer state;
+- posterior samples for the named sites prediction reads, for both stages;
+- the neighborhood lookup as a list of `[neighborhood_id, index]` pairs, so
+  numeric IDs survive JSON;
+- per-stage diagnostics and the prior-predictive summary.
+
+Reloading never re-runs NUTS. Unlike Models A and B, **predictive draws and
+intervals do not need the training frame**: they come from the stored
+posterior samples. The bundle does contain posterior summaries and the
+neighborhood IDs seen in training, so store it with the same care as the data.
+A full-profile bundle holds 4,000 posterior samples per site and is much larger
+than a reduced-profile one.
+
+Prediction details that matter when serving:
+
+- **Point means** average the total mean over posterior samples, average the
+  composition probabilities over samples, and multiply them, so cohort means
+  reconcile exactly with the total mean.
+- **Unseen neighborhoods** get a fresh effect $u \sim \mathcal N(0, \sigma_u)$
+  per posterior sample and row, so their point predictions depend on the
+  random generator (the model's default seed when none is passed). The count is
+  recorded as `last_prediction_unseen_neighborhood_count`.
+- **Draws** pair independently sampled total and composition posterior indices;
+  intervals use at least 500 internal draws, and every draw is checked for
+  exact reconciliation.
+- **MLflow pyfunc** serving returns deterministic point predictions only; see
+  [MLFLOW_EXPERIMENTS_GUIDE.md](MLFLOW_EXPERIMENTS_GUIDE.md#9-load-a-final-model).
+
+## Configuration
+
+All sections live in [`configs/modeling.toml`](../configs/modeling.toml) and
+must be present. Values below are the shipped defaults.
+
+| Section | Keys (defaults) | Role |
+|---|---|---|
+| `[bayesian_conditional]` | `active_profile = "reduced"` | Selects the NUTS profile and its diagnostic policy |
+| `[bayesian_priors]` | `total_intercept_loc = -2.0`, `total_intercept_scale = 1.0`, `total_coefficient_scale = 0.5`, `dispersion_log_loc = 0.0`, `dispersion_log_scale = 1.0`, `neighborhood_scale = 0.5`, `composition_intercept_scale = 1.0`, `composition_coefficient_scale = 0.5`, `kappa_log_loc = 2.0`, `kappa_log_scale = 1.0` | Priors for both stages |
+| `[bayesian_reduced_profile]` | `chains = 2`, `warmup_steps = 150`, `posterior_samples = 150`, `target_acceptance = 0.9`, `max_tree_depth = 10`, `full_mass = false`, `jit_compile = false` | Cross-validation sampling |
+| `[bayesian_full_profile]` | `chains = 4`, `warmup_steps = 1000`, `posterior_samples = 1000`, same sampler settings | Final refit sampling |
+| `[bayesian_reduced_diagnostics]` | `action = "warn"`, `maximum_rhat = 1.05`, `minimum_effective_sample_size = 50.0`, `maximum_divergences = 0`, mean acceptance in `[0.6, 0.98]`, `maximum_tree_depth_saturation = 0.05` | Convergence policy for the reduced profile |
+| `[bayesian_full_diagnostics]` | `action = "error"`, `minimum_effective_sample_size = 100.0`, other thresholds as above | Convergence policy for the full profile |
+| `[bayesian_prior_predictive]` | `draws = 200`, `action = "warn"`, `maximum_children_per_apartment = 10.0`, `minimum_expected_share_ratio = 0.25`, `maximum_expected_share_ratio = 2.0`, `maximum_expected_dominant_share = 0.85`, `minimum_concentration_quantile = 1.0` | Prior plausibility checks run before inference |
+| `[bayesian_stabilization]` | `clip_total_log_mean = false`, `total_log_mean_bounds = [-20, 20]`, `clip_composition_logits = false`, `composition_logit_bounds = [-20, 20]` | Optional, recorded numerical clipping at prediction |
+
+Profiles require at least two chains, so R-hat is always defined. Feature
+forms and the random seed are not configured here (see [Purpose](#purpose)).
+
+## Metadata
+
+`model.metadata` reports:
+
+- `likelihood` and `parameterization`;
+- `pointwise_log_probability_scope`: keys, `sequential_joint` scope,
+  log-mean-exp posterior integration, cohort order, and the multinomial
+  coefficient flag;
+- `hyperparameters` (the full configuration) and `priors`;
+- `dependency_versions` (torch, pyro) and `uncertainty_method`;
+- `diagnostics`: per stage, R-hat, ESS, divergences, acceptance, tree depth,
+  the active profile, `policy_passed`, `policy_failures`, and thresholds;
+- `prior_predictive`, `known_neighborhood_count`,
+  `last_prediction_unseen_neighborhood_count`, and
+  `probability_preprocessing`.
+
+MLflow logs the stage diagnostics as `diag/{stage}/max_rhat`,
+`diag/{stage}/min_ess_clamped`, `diag/{stage}/ess_valid`, and
+`diag/{stage}/policy_passed`.
+
 ## Related Files
 
 - [`src/age_group_prediction/models/bayesian_conditional.py`](../src/age_group_prediction/models/bayesian_conditional.py): public estimator lifecycle, tensor preparation, posterior prediction, and metadata.
@@ -855,5 +1005,7 @@ alongside the explicit likelihood interpretation.
 - [`configs/modeling.toml`](../configs/modeling.toml): runtime defaults.
 - [`tests/unit/test_bayesian_conditional.py`](../tests/unit/test_bayesian_conditional.py): focused Bayesian NB2 + Dirichlet-Multinomial contracts.
 - [`tests/unit/test_distributions.py`](../tests/unit/test_distributions.py): analytic NB2 checks and SciPy oracles for the composition log masses.
+- [`tests/unit/test_model_state_bundles.py`](../tests/unit/test_model_state_bundles.py): state-bundle reload, header refusal, and exact reproduction for all three models.
 - [`tests/validation/test_bayesian_recovery.py`](../tests/validation/test_bayesian_recovery.py): the only unmocked NUTS tests, marked `slow`: end-to-end invariants and parameter recovery.
 - [`MODELING_REBUILD_PLAN.md`](MODELING_REBUILD_PLAN.md): Gate 5 specification and acceptance criteria.
+- [`EVALUATION_AND_METRICS.md`](EVALUATION_AND_METRICS.md), [`CROSS_VALIDATION_AND_SELECTION.md`](CROSS_VALIDATION_AND_SELECTION.md), and [`FINAL_EVALUATION.md`](FINAL_EVALUATION.md): scoring, selection, and the final evaluation this model participates in.

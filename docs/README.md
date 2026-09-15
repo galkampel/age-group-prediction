@@ -13,8 +13,17 @@ This index defines document authority for the compact component simulator.
 | [Modeling rebuild and experiment tracking plan](MODELING_REBUILD_PLAN.md) | Implementation and acceptance record for shared model contracts, three model families, evaluation, strict test isolation, MLflow, and Gate 9 cleanup |
 | [Modeling guide](MODELING_GUIDE.md) | User guide to the simulator-to-model pipeline, public APIs, configuration, evidence, and invariants |
 | [MLflow experiments guide](MLFLOW_EXPERIMENTS_GUIDE.md) | User guide to scratch tracking, run layout, metrics, search, final-run semantics, and model loading |
+| [Direct cohort model](DIRECT_COHORT_MODEL.md) | Model A: per-cohort LightGBM families, tuning, marginal scoring, bootstrap uncertainty, persistence |
+| [Independent total and probability model](INDEPENDENT_TOTAL_PROBABILITY_MODEL.md) | Model B: NB2/Poisson total with exposure offset, grouped multinomial composition, temperature calibration, joint scoring, bootstrap uncertainty |
+| [Feature engineering](FEATURE_ENGINEERING.md) | Feature specs, validation rules, fitted transformations, output columns, per-model use, and candidate forms |
+| [Data and splitting](DATA_AND_SPLITTING.md) | Modeling table and schema, known-neighborhood outer split, write-once split manifest and replay, training-only folds, partition checks, the canonical lockbox |
+| [Evaluation and metrics](EVALUATION_AND_METRICS.md) | Prediction contract, metric protocol and capabilities, metric formulas, canonical metric sets, likelihood comparability, neighborhood-cluster bootstrap |
+| [Cross-validation and selection](CROSS_VALIDATION_AND_SELECTION.md) | Candidate registry, cross-validation runner, fold artifacts and reload checks, permutation importance, within-approach selection, selection freeze, cross-family rule, seeds and provenance |
+| [Known code issues (TODO)](TODO.md) | Open correctness, robustness, comment, and test-gap items found while documenting the components |
+| [Final evaluation](FINAL_EVALUATION.md) | Pretest-freeze verification, guarded full-training refit, attempt fingerprint, one-time lockbox evaluation, tracked-run guards, final evidence, pyfunc serving contract |
 | [Module reference](MODULE_REFERENCE.md) | One entry per source module: responsibility, main public API, internal dependencies, and where to read more |
-| [Bayesian NB2 + Dirichlet-Multinomial guide](BAYESIAN_CONDITIONAL_MODEL.md) | Technical explanation of the model's statistics, Pyro syntax, tensor shapes, estimator/component/inference ownership, prediction, diagnostics, and runtime workarounds |
+| [Bayesian conditional model overview](BAYESIAN_CONDITIONAL_MODEL_OVERVIEW.md) | Model C in brief: statistical model, fitting and diagnostics, prediction, selection, persistence, configuration |
+| [Bayesian NB2 + Dirichlet-Multinomial guide](BAYESIAN_CONDITIONAL_MODEL.md) | Model C: selection and comparison, persistence, configuration, metadata, and a technical explanation of the model's statistics, Pyro syntax, tensor shapes, estimator/component/inference ownership, prediction, diagnostics, and runtime workarounds |
 | [Gate validation findings](GATE_VALIDATION_FINDINGS.md) | Authoritative record of the independent validation pass: per-gate verdicts, findings, withdrawn findings, and remediation |
 | [Gate 9 independent validation report](GATE_9_INDEPENDENT_VALIDATION_REPORT.md) | Post-completion audit verdict, findings, remediation, command ledger, and protected-evidence comparison |
 

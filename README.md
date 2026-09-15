@@ -21,6 +21,35 @@ building-level DataFrame:
   public APIs, configuration, evidence, and invariants.
 - [MLflow experiments guide](docs/MLFLOW_EXPERIMENTS_GUIDE.md) covers scratch
   setup, run layout, searching, final-run semantics, and model loading.
+- [Feature engineering](docs/FEATURE_ENGINEERING.md) explains feature specs,
+  fitted transformations, and how each model uses them.
+- Model descriptions:
+  - [Direct cohort model (Model A)](docs/DIRECT_COHORT_MODEL.md): one tuned
+    LightGBM regressor per cohort.
+  - [Independent total and probability model (Model B)](docs/INDEPENDENT_TOTAL_PROBABILITY_MODEL.md):
+    NB2 total with an exposure offset plus calibrated grouped multinomial
+    composition.
+  - [Bayesian NB2 + Dirichlet-multinomial model (Model C)](docs/BAYESIAN_CONDITIONAL_MODEL_OVERVIEW.md):
+    hierarchical Pyro model with exactly reconciled posterior draws; the
+    [full technical guide](docs/BAYESIAN_CONDITIONAL_MODEL.md) covers Pyro
+    syntax, tensor shapes, and numerical details.
+- [Hyperparameter tuning](docs/MODELING_GUIDE.md#hyperparameter-tuning)
+  explains how Model A and Model B tune with seeded Optuna studies nested
+  inside each training fold, what is tuned, and where the evidence is logged
+  (the Bayesian model uses fixed priors and NUTS profiles instead).
+- Component documents describe each pipeline stage's API, guarantees,
+  refusals, and configuration:
+  - [Data and splitting](docs/DATA_AND_SPLITTING.md): modeling table,
+    known-neighborhood split, write-once manifest and replay, folds, lockbox.
+  - [Evaluation and metrics](docs/EVALUATION_AND_METRICS.md): prediction
+    contract, metric formulas, likelihood comparability, cluster bootstrap.
+  - [Cross-validation and selection](docs/CROSS_VALIDATION_AND_SELECTION.md):
+    candidate registry, runner, reload checks, selection freezes,
+    cross-family rule.
+  - [Final evaluation](docs/FINAL_EVALUATION.md): guarded refit, attempt
+    fingerprint, one-time lockbox evaluation, pyfunc serving.
+- [Known code issues (TODO)](docs/TODO.md) lists open fixes found while
+  documenting the components.
 - [Module reference](docs/MODULE_REFERENCE.md) lists every source module with
   its responsibility, public API, and dependencies.
 - [Documentation index](docs/README.md) distinguishes current documents from
@@ -43,6 +72,49 @@ details = simulator.last_result
 assert details is not None
 ```
 
+## Modeling Pipeline
+
+The modeling workflow runs in this order. Each step links to the document that
+explains that component; the [modeling guide](docs/MODELING_GUIDE.md) walks
+through all of them end to end.
+
+1. **Simulate the population.** `student_simulator` returns one row per
+   building with features and cohort targets
+   ([simplified model specification](docs/SIMPLIFIED_MODEL_PLAN.md)).
+2. **Build the modeling table.** `build_modeling_table` selects the canonical
+   columns, derives room shares, and validates IDs, features, and targets
+   ([data and splitting, Section 2](docs/DATA_AND_SPLITTING.md#2-the-modeling-table)).
+3. **Split once and persist the lockbox.** A known-neighborhood outer split
+   holds out buildings within neighborhoods; its manifest is written once and
+   every later access replays it
+   ([data and splitting, Sections 3–5 and 8](docs/DATA_AND_SPLITTING.md#3-outer-split-algorithm)).
+4. **Make training-only folds.** Buildings rotate through validation folds
+   within their neighborhoods, so selection never reads the holdout
+   ([data and splitting, Sections 6–7](docs/DATA_AND_SPLITTING.md#6-training-only-validation-folds)).
+5. **Declare and fit features.** Feature specs are fitted on each fit
+   partition only ([feature engineering](docs/FEATURE_ENGINEERING.md)).
+6. **Fit the three model families.**
+   [Direct cohort (Model A)](docs/DIRECT_COHORT_MODEL.md),
+   [independent total and probability (Model B)](docs/INDEPENDENT_TOTAL_PROBABILITY_MODEL.md),
+   and [Bayesian conditional (Model C)](docs/BAYESIAN_CONDITIONAL_MODEL_OVERVIEW.md);
+   Models A and B tune hyperparameters inside each fit
+   ([hyperparameter tuning](docs/MODELING_GUIDE.md#hyperparameter-tuning)).
+7. **Score fixed predictions.** Metrics consume the shared prediction
+   contract, likelihoods are ranked only where comparable, and uncertainty
+   comes from a neighborhood-cluster bootstrap
+   ([evaluation and metrics](docs/EVALUATION_AND_METRICS.md)).
+8. **Cross-validate and select.** Every registered candidate is fitted on
+   every fold, fold state bundles are reload-checked, one winner is frozen per
+   approach, and a fixed cross-family rule produces the pretest freeze
+   ([cross-validation and selection](docs/CROSS_VALIDATION_AND_SELECTION.md)).
+9. **Refit and evaluate once.** The frozen winners are refitted on all
+   training data, scored once on the lockbox under guarded MLflow runs, and
+   logged as pyfunc models ([final evaluation](docs/FINAL_EVALUATION.md)).
+10. **Track and reload.** MLflow records the comparison and final runs, and
+    every model persists as a JSON state bundle
+    ([MLflow experiments guide](docs/MLFLOW_EXPERIMENTS_GUIDE.md);
+    [saving and reloading](#saving-and-reloading-fitted-models)).
+
 ## Research Workflow
 
 The research source is a pair of version-controlled marimo notebooks:
@@ -50,7 +122,8 @@ The research source is a pair of version-controlled marimo notebooks:
 - `notebooks/01_eda.py` implements the complete EDA checklist and findings
 	handoff;
 - `notebooks/02_model_fitting.py` runs the accepted cross-validation,
-  selection, and guarded final-evaluation workflow.
+  selection, and guarded final-evaluation workflow (steps 2–9 of the
+  [modeling pipeline](#modeling-pipeline)).
 
 The Jupyter-to-marimo cutover is complete. `research.ipynb` has been removed;
 marimo `.py` notebooks are the sole research source.
@@ -108,7 +181,8 @@ marimo `.py` notebooks are the sole research source.
 6. **Do not use the final-evaluation checkbox or button.** The canonical
    one-time lockbox evaluation has already run. The duplicate guard only sees
    runs in the current MLflow store, so in a scratch store it cannot detect the
-   canonical run and would evaluate the holdout again.
+   canonical run and would evaluate the holdout again. See
+   [final evaluation, Section 11](docs/FINAL_EVALUATION.md#11-pitfalls).
 
 `uv run --env-file .env notebooks/02_model_fitting.py` runs the notebook as a
 script: setup only, with both buttons unclicked. marimo's runtime
@@ -176,7 +250,8 @@ unique unseen neighborhood, and the count of affected rows is recorded in
 model metadata. This is a documented, metadata-visible fallback path whose
 claims are already limited to known neighborhoods; see [the Bayesian
 conditional model guide](docs/BAYESIAN_CONDITIONAL_MODEL.md#implementation-cautions)
-for details.
+for details. A shorter description is in the
+[Model C overview](docs/BAYESIAN_CONDITIONAL_MODEL_OVERVIEW.md).
 
 ## Saving And Reloading Fitted Models
 
@@ -185,6 +260,10 @@ Every model (`DirectCohortModel`, `IndependentTotalProbabilityModel`,
 preprocessing, and fitted parameters as plain JSON values. It contains no
 pickles and no training rows. The training frame is identified only by its
 hashes. The layout is documented in `src/age_group_prediction/state_bundle.py`.
+What each model's bundle stores is described in its persistence section:
+[Model A](docs/DIRECT_COHORT_MODEL.md#6-persistence-and-serving),
+[Model B](docs/INDEPENDENT_TOTAL_PROBABILITY_MODEL.md#8-persistence-and-serving),
+[Model C](docs/BAYESIAN_CONDITIONAL_MODEL_OVERVIEW.md#6-persistence-and-serving).
 
 ```python
 import json
@@ -269,7 +348,8 @@ without the training frame and reproduces the model's predictions exactly.
 Tracking refuses a result without this evidence. It is off by default because
 every bundle is held in memory. Tracking also refuses a candidate whose
 configured `family` disagrees with the family its fitted model reports, so a
-run is never tagged with a family it did not fit.
+run is never tagged with a family it did not fit. The reload check is described
+in [cross-validation and selection, Section 4](docs/CROSS_VALIDATION_AND_SELECTION.md#4-fold-artifacts-and-reload-checks).
 
 Browse runs with `mlflow ui --backend-store-uri sqlite:///mlflow.db`.
 
@@ -312,8 +392,10 @@ remaining pieces: choosing across approaches, refitting the winners on all
 of the training data, evaluating them once on a held-out test partition, and
 logging that as a second, linked MLflow run. The ordered workflow and its
 public contracts are documented in the
-[modeling guide](docs/MODELING_GUIDE.md); operational tracking details are in
-the [MLflow experiments guide](docs/MLFLOW_EXPERIMENTS_GUIDE.md).
+[modeling guide](docs/MODELING_GUIDE.md), with component details in
+[cross-validation and selection](docs/CROSS_VALIDATION_AND_SELECTION.md) and
+[final evaluation](docs/FINAL_EVALUATION.md); operational tracking details are
+in the [MLflow experiments guide](docs/MLFLOW_EXPERIMENTS_GUIDE.md).
 
 **Split manifest persistence.** The one-time outer test/train split is
 computed once and persisted as JSON at `artifacts/lockbox/split_manifest.json`
@@ -324,7 +406,8 @@ the write is refused, so a later run can never silently relabel which
 buildings are held out. Formatting differences in the file itself are not
 compared. `load_split_manifest(path)` reads it
 back, and every later access replays it through `replay_split_manifest(...)`,
-never by re-splitting.
+never by re-splitting. See
+[data and splitting, Section 5](docs/DATA_AND_SPLITTING.md#5-persistence-and-replay).
 
 **Cross-family selection.** `experiment.select_cross_family_winner(cv_result)`
 reads only the three frozen winners and their aggregate cross-validation
@@ -336,7 +419,8 @@ cohort MAE, then candidate ID. The resulting `CrossFamilySelection` is
 attached to the Gate 6 freeze with
 `freeze.with_cross_family_selection(selection)` *before* any holdout row is
 read, producing a "pretest freeze" that a later test result can only extend,
-never revise.
+never revise. See
+[cross-validation and selection, Section 9](docs/CROSS_VALIDATION_AND_SELECTION.md#9-cross-family-selection-and-the-pretest-freeze).
 
 **CV-to-final run linkage.** The final action never reopens the completed
 Gate 6/7 comparison run. `tracking.run_final_evaluation(...)` is the single
@@ -374,7 +458,8 @@ seed to equal the CV provenance seed.
 The check cannot see other experiments or tracking stores, so pointing
 `MLFLOW_EXPERIMENT_NAME` elsewhere is outside this guarantee. Each final parent
 is tagged `cross_family_decision_hash` and `final_attempt_fingerprint`, and a
-retry is also tagged `retry_of_run_ids`.
+retry is also tagged `retry_of_run_ids`. See
+[final evaluation, Sections 5 and 7](docs/FINAL_EVALUATION.md#5-the-final-attempt-fingerprint).
 
 The parent opens `test_lock_status=locked`,
 logs the pretest freeze, and only then flips to `test_lock_status=opened`, so
@@ -393,7 +478,8 @@ it holds test evidence. Each child, then the parent, is marked
 `load_context` reads the refit's JSON state bundle artifact, validates the
 bundle header, and dispatches to the matching model class's
 `from_state_bundle(...)`, without the training frame. `predict` accepts a
-target-free DataFrame (building ID, features, exposure, neighborhood) and
+DataFrame of building ID, features, exposure, and neighborhood (targets are
+expected to be absent, although the pyfunc does not itself refuse them) and
 returns one row per building with:
 
 - `building_id`
@@ -417,7 +503,8 @@ model. With torch's OpenMP runtime loaded first, LightGBM segfaults restoring
 a booster in a new process. The canonical `direct-poisson` model was logged
 before that fix, so its bundled code needs `import lightgbm` before
 `mlflow.pyfunc.load_model(...)` in a fresh process. Each model's tagged
-`final_model_uri` is on its child run.
+`final_model_uri` is on its child run. See
+[final evaluation, Section 9](docs/FINAL_EVALUATION.md#9-pyfunc-serving-contract).
 
 **Notebook controls.** `notebooks/02_model_fitting.py` is a thin marimo
 client: its modeling steps call only `age_group_prediction` package APIs,
