@@ -16,7 +16,7 @@ pytest.importorskip("statsmodels")
 def test_oracle_nb2_recovers_fixed_effects() -> None:
     """Verify oracle recovery with generated offsets from the generator."""
     config = load_simulation_config(
-        Path(__file__).resolve().parents[2] / "configs" / "stage1.toml"
+        Path(__file__).resolve().parents[2] / "configs" / "simulation.toml"
     )
     validation = load_validation_config(
         Path(__file__).resolve().parents[2] / "configs" / "validation.toml"

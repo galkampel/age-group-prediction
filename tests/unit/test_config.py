@@ -13,7 +13,7 @@ from student_simulator.config import (
 
 
 def _config_path() -> Path:
-    return Path(__file__).resolve().parents[2] / "configs" / "stage1.toml"
+    return Path(__file__).resolve().parents[2] / "configs" / "simulation.toml"
 
 
 def test_load_simulation_config_returns_typed_settings() -> None:

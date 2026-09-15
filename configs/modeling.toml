@@ -1,0 +1,153 @@
+[outer_split]
+test_fraction = 0.2
+building_id_column = "building_id"
+neighborhood_id_column = "neighborhood_id"
+strategy_version = "known-neighborhood-v1"
+
+[folds]
+# No validation fraction: folds rotate each neighborhood's buildings across
+# n_folds, so the validation share is 1 / n_folds by construction.
+n_folds = 5
+building_id_column = "building_id"
+neighborhood_id_column = "neighborhood_id"
+
+[randomness]
+# Consumed by run_cross_model_validation when it is passed an ExperimentConfig:
+# an explicit master_seed argument wins, then this value. The models' own
+# default_rng_seed still falls back to modeling_config.DEFAULT_SEED (also 42)
+# when a caller constructs a model directly without a generator.
+default_seed = 42
+
+[prediction]
+n_predictive_draws = 0
+interval_levels = []
+include_pointwise_log_probabilities = false
+
+[prediction_validation]
+probability_sum_tolerance = 1e-12
+reported_error_tolerance = 1e-12
+reconciliation_tolerance = 1e-9
+zero_total_probability_policy = "uniform"
+
+[evaluation]
+bootstrap_replicates = 200
+confidence_level = 0.95
+neighborhood_id_column = "neighborhood_id"
+interval_method = "percentile"
+max_failed_fraction = 0.5
+poisson_minimum_mean = 1e-8
+pit_histogram_bins = 10
+
+[tuning]
+n_trials = 30
+n_jobs = 1
+enable_pruning = false
+
+[direct_cohort]
+family = "poisson"
+bootstrap_replicates = 200
+lightgbm_n_jobs = 1
+minimum_mean = 1e-8
+minimum_scale = 1e-8
+
+[direct_cohort_search_space]
+num_leaves = [7, 63]
+max_depth = [3, 8]
+min_child_samples = [5, 40]
+learning_rate = [0.01, 0.2]
+n_estimators = [50, 400]
+reg_alpha = [1e-8, 10.0]
+reg_lambda = [1e-8, 10.0]
+min_split_gain = [0.0, 1.0]
+subsample = [0.7, 1.0]
+colsample_bytree = [0.7, 1.0]
+nb2_dispersion = [1e-4, 5.0]
+
+[independent_total_probability]
+total_family = "nb2"
+optimizer_max_iterations = 500
+optimizer_tolerance = 1e-8
+dispersion_bounds = [1e-4, 5.0]
+minimum_mean = 1e-8
+calibration_temperature_bounds = [0.25, 4.0]
+# Significance level of the one-degree-of-freedom likelihood-ratio test that
+# gates temperature retention. Replaces the former
+# `calibration_improvement_tolerance`, which retained noise as evidence
+# because T = 1 is interior to `calibration_temperature_bounds`.
+calibration_significance_level = 0.05
+bootstrap_replicates = 200
+bootstrap_max_failed_fraction = 0.25
+
+[independent_total_probability_search_space]
+total_l2_penalty = [0.0, 1.0]
+probability_c = [0.01, 100.0]
+
+[bayesian_conditional]
+# Feature forms are not configured here: pass Model B's frozen total spec to
+# fit(feature_spec=...) and its probability spec to the model constructor.
+active_profile = "reduced"
+
+[bayesian_priors]
+total_intercept_loc = -2.0
+total_intercept_scale = 1.0
+total_coefficient_scale = 0.5
+dispersion_log_loc = 0.0
+dispersion_log_scale = 1.0
+neighborhood_scale = 0.5
+composition_intercept_scale = 1.0
+composition_coefficient_scale = 0.5
+kappa_log_loc = 2.0
+kappa_log_scale = 1.0
+
+[bayesian_reduced_profile]
+chains = 2
+warmup_steps = 150
+posterior_samples = 150
+target_acceptance = 0.9
+max_tree_depth = 10
+full_mass = false
+jit_compile = false
+disable_progress_bar = true
+
+[bayesian_full_profile]
+chains = 4
+warmup_steps = 1000
+posterior_samples = 1000
+target_acceptance = 0.9
+max_tree_depth = 10
+full_mass = false
+jit_compile = false
+disable_progress_bar = true
+
+[bayesian_reduced_diagnostics]
+action = "warn"
+maximum_rhat = 1.05
+minimum_effective_sample_size = 50.0
+maximum_divergences = 0
+minimum_mean_accept_prob = 0.6
+maximum_mean_accept_prob = 0.98
+maximum_tree_depth_saturation = 0.05
+
+[bayesian_full_diagnostics]
+action = "error"
+maximum_rhat = 1.05
+minimum_effective_sample_size = 100.0
+maximum_divergences = 0
+minimum_mean_accept_prob = 0.6
+maximum_mean_accept_prob = 0.98
+maximum_tree_depth_saturation = 0.05
+
+[bayesian_prior_predictive]
+draws = 200
+action = "warn"
+maximum_children_per_apartment = 10.0
+minimum_expected_share_ratio = 0.25
+maximum_expected_share_ratio = 2.0
+maximum_expected_dominant_share = 0.85
+minimum_concentration_quantile = 1.0
+
+[bayesian_stabilization]
+clip_total_log_mean = false
+total_log_mean_bounds = [-20.0, 20.0]
+clip_composition_logits = false
+composition_logit_bounds = [-20.0, 20.0]

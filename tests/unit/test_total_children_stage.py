@@ -16,7 +16,7 @@ from tests.unit.helpers import make_total_children_simulator
 
 
 def _config_path() -> Path:
-    return Path(__file__).resolve().parents[2] / "configs" / "stage1.toml"
+    return Path(__file__).resolve().parents[2] / "configs" / "simulation.toml"
 
 
 def _state_for_log_mu_checks(

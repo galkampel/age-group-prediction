@@ -16,7 +16,7 @@ from student_simulator import (
 )
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
-CONFIG_PATH = PROJECT_ROOT / "configs" / "stage1.toml"
+CONFIG_PATH = PROJECT_ROOT / "configs" / "simulation.toml"
 BASELINE_PATH = (
     Path(__file__).with_name("fixtures") / "eda_jupyter_baseline.json"
 )

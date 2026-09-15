@@ -12,7 +12,7 @@ from tests.unit.helpers import make_neighborhood_simulator, with_overrides
 
 
 def _config_path() -> Path:
-    return Path(__file__).resolve().parents[2] / "configs" / "stage1.toml"
+    return Path(__file__).resolve().parents[2] / "configs" / "simulation.toml"
 
 
 def _config(seed: int = 42, n_neighborhoods: int = 7):

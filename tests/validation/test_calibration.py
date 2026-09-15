@@ -14,7 +14,7 @@ from tests.validation.helpers import run_calibration_checks
 def test_canonical_calibration_ranges_pass() -> None:
     """Verify configured statistical ranges on the canonical full-size seed."""
     config_path = (
-        Path(__file__).resolve().parents[2] / "configs" / "stage1.toml"
+        Path(__file__).resolve().parents[2] / "configs" / "simulation.toml"
     )
     config = load_simulation_config(config_path)
     validation = load_validation_config(config_path.with_name("validation.toml"))

@@ -16,7 +16,7 @@ from tests.unit.helpers import make_cohort_simulator, with_overrides
 
 
 def _config_path() -> Path:
-    return Path(__file__).resolve().parents[2] / "configs" / "stage1.toml"
+    return Path(__file__).resolve().parents[2] / "configs" / "simulation.toml"
 
 
 def _sim(seed: int = 42) -> StudentPopulationSimulator:

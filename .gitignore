@@ -217,6 +217,20 @@ __marimo__/
 # Streamlit
 .streamlit/secrets.toml
 
+# MLflow local tracking store (see README "Experiment Tracking")
+mlflow.db
+mlruns/
+mlartifacts/
+
+# Gate 8 persisted lockbox split manifest (experiment data, not package config)
+artifacts/lockbox/
+
+# Local archive of completed session handoffs and superseded plans
+docs/archive/
+
+# Local scratch MLflow store configured by .env.example
+.mlflow-local/
+
 
 # macOS
 *.DS_Store

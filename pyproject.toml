@@ -9,13 +9,17 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
+    "lightgbm>=4.6,<5",
     "matplotlib>=3.11.1",
     "numpy>=2.5.1",
+    "optuna>=4.5,<5",
     "pandas>=3.0.5",
     "pydantic>=2.11.7",
+    "pyro-ppl>=1.9.1,<2",
     "scikit-learn>=1.9.0",
     "scipy>=1.18.0",
     "seaborn>=0.13.2",
+    "torch>=2.8,<3",
 ]
 
 [dependency-groups]
@@ -27,12 +31,15 @@ notebook = [
 test = [
     "pytest>=9.1.1",
 ]
+tracking = [
+    "mlflow>=3.16,<4",
+]
 validation = [
     "statsmodels>=0.14.5",
 ]
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/student_simulator"]
+packages = ["src/student_simulator", "src/age_group_prediction"]
 
 [tool.pytest.ini_options]
 pythonpath = [
@@ -40,5 +47,5 @@ pythonpath = [
 ]
 markers = [
     "calibration: canonical seed-sensitive calibration checks",
-    "slow: slower coefficient-recovery checks",
+    "slow: slower coefficient-recovery, real-model, tracking, and notebook checks",
 ]

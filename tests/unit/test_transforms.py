@@ -70,7 +70,7 @@ def test_nb2_sampling_matches_mean_and_variance() -> None:
     rng = np.random.default_rng(123)
     mu_values = np.array([0.5, 1.2, 2.5, 5.0])
     phi_values = np.array([2.0, 3.0, 5.0])
-    config_path = Path(__file__).resolve().parents[2] / "configs" / "stage1.toml"
+    config_path = Path(__file__).resolve().parents[2] / "configs" / "simulation.toml"
 
     n = 200_000
     for mu in mu_values:

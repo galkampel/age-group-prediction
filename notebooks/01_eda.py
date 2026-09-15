@@ -29,8 +29,9 @@ def _(mo):
     6. Compare supported empirical interaction trajectories and room composition,
        then consolidate the observed evidence in the final findings register.
 
-    Formal model fitting and selection, held-out evaluation, feature importance,
-    Bayesian inference, and MLflow are intentionally deferred.
+    The accepted findings from this notebook feed the modeling, selection,
+    guarded held-out evaluation, and MLflow workflow in
+    `notebooks/02_model_fitting.py`.
     """)
     return
 
@@ -85,7 +86,7 @@ def _(mo):
 @app.cell
 def _(load_simulation_config, mo):
     project_root = mo.notebook_dir().parent
-    config_path = project_root / "configs" / "stage1.toml"
+    config_path = project_root / "configs" / "simulation.toml"
     base_eda_config = load_simulation_config(config_path)
     # Override the number of neighborhoods and buildings per neighborhood for EDA purposes
     eda_config = base_eda_config.model_copy(
@@ -2490,6 +2491,11 @@ def _(eda_config, mo, pd):
             ),
         ]
     )
+    return
+
+
+@app.cell
+def _():
     return
 
 

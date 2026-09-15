@@ -20,7 +20,7 @@
       "buildings_per_neighborhood_rate": 9.0,
       "n_neighborhoods": 150
     },
-    "path": "configs/stage1.toml",
+    "path": "configs/simulation.toml",
     "seed": 42
   },
   "final_dataframe": {
