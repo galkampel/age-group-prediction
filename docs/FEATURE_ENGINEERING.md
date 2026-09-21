@@ -263,5 +263,7 @@ Covered by `tests/unit/test_fitted_features.py`:
 
 - [MODELING_GUIDE.md](MODELING_GUIDE.md) Section 5 for the workflow context.
 - [MODULE_REFERENCE.md](MODULE_REFERENCE.md) for module ownership.
+- [FEATURE_TRANSFORMATIONS.md](FEATURE_TRANSFORMATIONS.md) for the rationale
+  behind each transformation and proposed interpretability changes.
 - [BAYESIAN_CONDITIONAL_MODEL.md](BAYESIAN_CONDITIONAL_MODEL.md) for how the
   Bayesian stages use the two design matrices.
