@@ -49,7 +49,7 @@ def test_named_defaults_define_distinct_component_policies() -> None:
         not in DEFAULT_TOTAL_FEATURE_SPEC.numeric_features
     )
 
-    assert DEFAULT_PROBABILITY_FEATURE_SPEC.component == "age_probability"
+    assert DEFAULT_PROBABILITY_FEATURE_SPEC.component == "composition"
     assert DEFAULT_PROBABILITY_FEATURE_SPEC.exposure_column is None
     assert (
         DEFAULT_MODELING_SCHEMA.exposure_column
@@ -417,7 +417,7 @@ def test_missing_category_value_is_reported_as_missing(
     modeling_df: pd.DataFrame,
 ) -> None:
     spec = FeatureSpec(
-        component="age_probability",
+        component="composition",
         numeric_features=("ses",),
         categorical_features=("school_status",),
     )

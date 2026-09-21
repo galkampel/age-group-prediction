@@ -10,7 +10,7 @@ import pandas as pd
 
 DEFAULT_SEED = 42
 
-FeatureComponent = Literal["tree", "total_count", "age_probability"]
+FeatureComponent = Literal["tree", "total_count", "composition"]
 SesForm = Literal["linear", "quadratic", "spline"]
 DaycareForm = Literal["linear", "log1p"]
 FeatureInteraction = Literal[
@@ -27,7 +27,7 @@ IndependentTotalFamily = Literal["poisson", "nb2"]
 BayesianInferenceProfile = Literal["reduced", "full"]
 BayesianDiagnosticAction = Literal["warn", "error"]
 
-_VALID_COMPONENTS = {"tree", "total_count", "age_probability"}
+_VALID_COMPONENTS = {"tree", "total_count", "composition"}
 _VALID_SES_FORMS = {"linear", "quadratic", "spline"}
 _VALID_DAYCARE_FORMS = {"linear", "log1p"}
 _VALID_INTERACTIONS = {
@@ -640,7 +640,7 @@ class FeatureSpec:
                 "Spline SES cannot be combined with the linear "
                 "ses_x_household_size interaction"
             )
-        if self.component == "age_probability" and (
+        if self.component == "composition" and (
             "room_share_x_household_size" in self.interactions
         ):
             raise ValueError(
@@ -903,7 +903,7 @@ DEFAULT_TOTAL_FEATURE_SPEC = FeatureSpec(
     exposure_column=DEFAULT_MODELING_SCHEMA.exposure_column,
 )
 DEFAULT_PROBABILITY_FEATURE_SPEC = FeatureSpec(
-    component="age_probability",
+    component="composition",
     numeric_features=_NON_EXPOSURE_NUMERIC_FEATURES,
     categorical_features=DEFAULT_MODELING_SCHEMA.categorical_features,
     scale_numeric=True,

@@ -54,11 +54,11 @@ def modeling_df() -> pd.DataFrame:
 # one unknown-category policy the candidates never vary.
 _DECLARED_SPECS = [
     (candidate.name, candidate.spec)
-    for component in ("tree", "total_count", "age_probability")
+    for component in ("tree", "total_count", "composition")
     for candidate in enumerate_feature_specs(component, include_daycare_saturation=True)
 ] + [
     (
-        "age_probability__treat_unknown_as_reference",
+        "composition__treat_unknown_as_reference",
         replace(DEFAULT_PROBABILITY_FEATURE_SPEC, unknown_category_policy="treat_as_reference"),
     )
 ]

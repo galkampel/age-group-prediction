@@ -267,7 +267,7 @@ def test_fixed_specs_are_tuned_independently_with_optuna(
 
     assert selection["fold_count"] == 2
     assert selection["total_feature_spec"]["component"] == "total_count"
-    assert selection["probability_feature_spec"]["component"] == "age_probability"
+    assert selection["probability_feature_spec"]["component"] == "composition"
     assert len(selection["total_tuning"]["trials"]) == 2
     assert len(selection["probability_tuning"]["trials"]) == 2
     assert set(selection["total_tuning"]["best_params"]) == {"total_l2_penalty"}

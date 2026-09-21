@@ -94,8 +94,8 @@ class BayesianConditionalModel(BaseAgeGroupModel):
             default_prediction_config=default_prediction_config,
             prediction_validation_config=prediction_validation_config,
         )
-        if probability_feature_spec.component != "age_probability":
-            raise ValueError("probability_feature_spec must target age_probability")
+        if probability_feature_spec.component != "composition":
+            raise ValueError("probability_feature_spec must target composition")
         probability_feature_spec.validate_for_schema(schema)
         self.probability_feature_spec = probability_feature_spec
         self.bayesian_config = bayesian_config

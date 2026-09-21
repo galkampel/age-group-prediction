@@ -174,7 +174,7 @@ fit_features = transformer.fit_transform(fit_df)
 validation_features = transformer.transform(validation_df)
 ```
 
-Feature specs control component (`tree`, `total_count`, or `age_probability`),
+Feature specs control component (`tree`, `total_count`, or `composition`),
 numeric and categorical columns, SES and daycare forms, interactions, scaling,
 exposure, unknown-category policy, and spline knots. The experiment helpers
 `FeatureSpecCandidate` and `enumerate_feature_specs` are available from

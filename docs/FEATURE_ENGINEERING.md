@@ -47,7 +47,7 @@ representation. It holds no data.
 
 | Field | Values (default) | Meaning |
 |---|---|---|
-| `component` | `tree`, `total_count`, `age_probability` | Which model part this spec feeds; drives validation |
+| `component` | `tree`, `total_count`, `composition` | Which model part this spec feeds; drives validation |
 | `numeric_features` | tuple of schema numeric columns | Base numeric main effects |
 | `categorical_features` | tuple of schema categorical columns | One-hot encoded against the schema reference |
 | `ses_form` | `linear` (default), `quadratic`, `spline` | SES representation |
@@ -69,7 +69,7 @@ Construction (`FeatureSpec.__post_init__`) refuses:
 - a spline with fewer than 3 knots;
 - spline SES together with `ses_x_household_size` (the spline replaces the
   linear SES column the interaction would need);
-- `room_share_x_household_size` on `age_probability`, and
+- `room_share_x_household_size` on `composition`, and
   `room_share_x_median_age` on `total_count`;
 - an exposure on any component other than `total_count`, or an exposure that
   is also listed as an ordinary numeric feature.
@@ -90,7 +90,7 @@ Construction (`FeatureSpec.__post_init__`) refuses:
 |---|---|---|---|---|
 | `DEFAULT_TREE_FEATURE_SPEC` | `tree` | all 8 numeric columns, including `n_apartments` as an ordinary feature | No | None |
 | `DEFAULT_TOTAL_FEATURE_SPEC` | `total_count` | the 7 non-exposure numeric columns | Yes | `n_apartments` (log offset) |
-| `DEFAULT_PROBABILITY_FEATURE_SPEC` | `age_probability` | the 7 non-exposure numeric columns | Yes | None |
+| `DEFAULT_PROBABILITY_FEATURE_SPEC` | `composition` | the 7 non-exposure numeric columns | Yes | None |
 
 All three include `school_status`, use linear SES and daycare forms, and have
 no interactions.
@@ -207,7 +207,7 @@ ranks anything.
 |---|---|
 | `tree` | `tree__ses_linear`, `tree__ses_quadratic`, `tree__ses_spline`, and optionally `tree__daycare_log1p` |
 | `total_count` | `total_count__ses_linear`, `__ses_quadratic`, `__ses_spline`, `__ses_x_household_size`, `__daycare_x_median_age`, `__room_share_x_household_size`, and optionally `__daycare_log1p` |
-| `age_probability` | `age_probability__ses_linear`, `__ses_quadratic`, `__ses_spline`, `__ses_x_household_size`, `__daycare_x_median_age`, `__room_share_x_median_age`, and optionally `__daycare_log1p` |
+| `composition` | `composition__ses_linear`, `__ses_quadratic`, `__ses_spline`, `__ses_x_household_size`, `__daycare_x_median_age`, `__room_share_x_median_age`, and optionally `__daycare_log1p` |
 
 Each interaction candidate adds exactly one interaction to the linear-SES base,
 so any improvement is attributable. The daycare saturation form is opt-in

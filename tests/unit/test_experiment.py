@@ -570,7 +570,7 @@ def test_bayesian_selection_must_use_frozen_independent_feature_specs() -> None:
         )
     )
 
-    with pytest.raises(ValueError, match="frozen age_probability feature spec"):
+    with pytest.raises(ValueError, match="frozen composition feature spec"):
         run_cross_model_validation(
             split.train_df,
             split_manifest=split.manifest,
@@ -1387,13 +1387,13 @@ def test_candidate_factory_respects_component_specific_interactions() -> None:
     """Room-composition terms are declared per component and must not cross."""
     total = {candidate.name for candidate in enumerate_feature_specs("total_count")}
     probability = {
-        candidate.name for candidate in enumerate_feature_specs("age_probability")
+        candidate.name for candidate in enumerate_feature_specs("composition")
     }
 
     assert "total_count__room_share_x_household_size" in total
     assert "total_count__room_share_x_median_age" not in total
-    assert "age_probability__room_share_x_median_age" in probability
-    assert "age_probability__room_share_x_household_size" not in probability
+    assert "composition__room_share_x_median_age" in probability
+    assert "composition__room_share_x_household_size" not in probability
     # Trees represent interactions and transforms themselves.
     assert len(enumerate_feature_specs("tree")) == 3
 
@@ -1404,7 +1404,7 @@ def test_candidate_factory_emits_only_valid_specifications() -> None:
     The spline SES form cannot carry the linear SES interaction, so an
     enumeration that paired them would raise here rather than at fit time.
     """
-    for component in ("tree", "total_count", "age_probability"):
+    for component in ("tree", "total_count", "composition"):
         for candidate in enumerate_feature_specs(
             component, include_daycare_saturation=True
         ):
@@ -1418,7 +1418,7 @@ def test_candidate_factory_rejects_unknown_components_and_interactions() -> None
         enumerate_feature_specs("not_a_component")
     with pytest.raises(ValueError, match="not declared for component"):
         enumerate_feature_specs(
-            "age_probability", interactions=("room_share_x_household_size",)
+            "composition", interactions=("room_share_x_household_size",)
         )
 
 
