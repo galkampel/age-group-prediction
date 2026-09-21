@@ -36,7 +36,7 @@ _SES_FORMS: tuple[SesForm, ...] = ("linear", "quadratic", "spline")
 _COMPONENT_BASES = {
     "tree": DEFAULT_TREE_FEATURE_SPEC,
     "total_count": DEFAULT_TOTAL_FEATURE_SPEC,
-    "age_probability": DEFAULT_PROBABILITY_FEATURE_SPEC,
+    "composition": DEFAULT_PROBABILITY_FEATURE_SPEC,
 }
 
 # Room-composition interactions are component-specific by construction: the
@@ -50,7 +50,7 @@ _INTERACTIONS_BY_COMPONENT: dict[str, tuple[FeatureInteraction, ...]] = {
         "daycare_x_median_age",
         "room_share_x_household_size",
     ),
-    "age_probability": (
+    "composition": (
         "ses_x_household_size",
         "daycare_x_median_age",
         "room_share_x_median_age",

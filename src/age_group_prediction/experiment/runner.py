@@ -395,7 +395,7 @@ def _validate_candidate_registry(
         expected_components = (
             {"tree"}
             if candidate.approach == "DirectCohortModel"
-            else {"total_count", "age_probability"}
+            else {"total_count", "composition"}
         )
         if components != expected_components:
             raise ValueError(

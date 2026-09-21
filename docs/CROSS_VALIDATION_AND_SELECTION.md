@@ -65,7 +65,7 @@ the candidate IDs), `candidate_set_name` (`CANDIDATE_SET_NAME =
 | Candidate | Approach | Fit feature spec | Configuration |
 |---|---|---|---|
 | `direct-poisson` | `DirectCohortModel` | `tree__ses_linear` | `family` from `[direct_cohort]` |
-| `independent-nb2` | `IndependentTotalProbabilityModel` | `total_count__ses_linear` (+ `age_probability__ses_linear`) | `total_family` from `[independent_total_probability]` |
+| `independent-nb2` | `IndependentTotalProbabilityModel` | `total_count__ses_linear` (+ `composition__ses_linear`) | `total_family` from `[independent_total_probability]` |
 | `bayesian-reduced` | `BayesianConditionalModel` | same specs as `independent-nb2` | `profile` = configured `active_profile` |
 
 Both conditional candidates force `include_pointwise_log_probabilities=True`.
@@ -99,7 +99,7 @@ seed, raises `ValueError`. `evaluation_config` falls back to
 Before fitting, the runner requires the eligible candidates' approaches and
 the policies' approaches to equal `required_approaches` exactly, requires each
 approach's component set (`tree` for Model A; `total_count` and
-`age_probability` for Models B and C), validates component specs against the schema and
+`composition` for Models B and C), validates component specs against the schema and
 importance specs against their components, and checks that each criterion
 references declared metrics whose direction matches the criterion.
 
@@ -223,7 +223,7 @@ likelihood-comparability check refuses mixing discrete and continuous
 families under a distributional criterion
 ([EVALUATION_AND_METRICS.md](EVALUATION_AND_METRICS.md#5-likelihood-comparability)).
 After ranking, the **Bayesian feature-freeze check** requires the selected
-Bayesian candidate's `total_count` and `age_probability` specs to equal the
+Bayesian candidate's `total_count` and `composition` specs to equal the
 selected Model B candidate's specs, or raises `ValueError`.
 
 `FrozenApproachSelection(approach, selected_candidate_id,

@@ -198,7 +198,7 @@ def test_provenance_ties_the_result_to_its_data_split_specs_and_settings() -> No
     }
     assert set(provenance.feature_spec_fingerprints["bayesian-reduced"]) == {
         "total_count",
-        "age_probability",
+        "composition",
     }
     assert _feature_spec_fingerprint(DEFAULT_TREE_FEATURE_SPEC) != (
         _feature_spec_fingerprint(DEFAULT_TOTAL_FEATURE_SPEC)

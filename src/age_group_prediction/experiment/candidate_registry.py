@@ -42,7 +42,7 @@ __all__ = [
 # readable and immune to a reordering of `enumerate_feature_specs`.
 _TREE_SPEC_NAME = "tree__ses_linear"
 _TOTAL_SPEC_NAME = "total_count__ses_linear"
-_PROBABILITY_SPEC_NAME = "age_probability__ses_linear"
+_PROBABILITY_SPEC_NAME = "composition__ses_linear"
 
 CANDIDATE_SET_NAME = "gate8-canonical-v1"
 
@@ -131,7 +131,7 @@ def build_canonical_candidate_registry(config: ExperimentConfig) -> CandidateReg
 
     tree_spec = _named_spec("tree", _TREE_SPEC_NAME)
     total_spec = _named_spec("total_count", _TOTAL_SPEC_NAME)
-    probability_spec = _named_spec("age_probability", _PROBABILITY_SPEC_NAME)
+    probability_spec = _named_spec("composition", _PROBABILITY_SPEC_NAME)
 
     marginal_metrics = default_metric_set(
         cohort_targets,

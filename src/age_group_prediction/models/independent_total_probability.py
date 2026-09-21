@@ -21,7 +21,7 @@ from ..distributions import (
     multinomial_prefix_log_masses,
     pointwise_log_probability,
 )
-from ..feature_engineering import FittedFeatureTransformer
+from ..fitted_features import FittedFeatureTransformer
 from ..modeling_config import (
     DEFAULT_INDEPENDENT_TOTAL_PROBABILITY_CONFIG,
     DEFAULT_MODELING_SCHEMA,
@@ -84,8 +84,8 @@ class IndependentTotalProbabilityModel(BaseAgeGroupModel):
             default_prediction_config=default_prediction_config,
             prediction_validation_config=prediction_validation_config,
         )
-        if probability_feature_spec.component != "age_probability":
-            raise ValueError("probability_feature_spec must target age_probability")
+        if probability_feature_spec.component != "composition":
+            raise ValueError("probability_feature_spec must target composition")
         probability_feature_spec.validate_for_schema(schema)
         self.probability_feature_spec = probability_feature_spec
         self.independent_config = independent_config
@@ -135,7 +135,7 @@ class IndependentTotalProbabilityModel(BaseAgeGroupModel):
             spec=feature_spec, component="total_count", rng=rng
         )
         self._probability_tuning_result = self._tune_component(
-            spec=self.probability_feature_spec, component="age_probability", rng=rng
+            spec=self.probability_feature_spec, component="composition", rng=rng
         )
         self._selected_total_l2 = float(
             self._total_tuning_result.best_params["total_l2_penalty"]
@@ -180,7 +180,7 @@ class IndependentTotalProbabilityModel(BaseAgeGroupModel):
             regularization = trial.suggest_float(
                 parameter_name,
                 *bounds,
-                log=component == "age_probability",
+                log=component == "composition",
             )
             scores: list[float] = []
             for fold in self._selection_folds:

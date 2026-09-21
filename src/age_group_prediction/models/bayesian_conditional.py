@@ -18,7 +18,7 @@ from ..distributions import (
     dirichlet_multinomial_prefix_log_masses,
     pointwise_log_probability,
 )
-from ..feature_engineering import FittedFeatureTransformer
+from ..fitted_features import FittedFeatureTransformer
 from ..modeling_config import (
     DEFAULT_BAYESIAN_CONDITIONAL_CONFIG,
     DEFAULT_MODELING_SCHEMA,
@@ -94,8 +94,8 @@ class BayesianConditionalModel(BaseAgeGroupModel):
             default_prediction_config=default_prediction_config,
             prediction_validation_config=prediction_validation_config,
         )
-        if probability_feature_spec.component != "age_probability":
-            raise ValueError("probability_feature_spec must target age_probability")
+        if probability_feature_spec.component != "composition":
+            raise ValueError("probability_feature_spec must target composition")
         probability_feature_spec.validate_for_schema(schema)
         self.probability_feature_spec = probability_feature_spec
         self.bayesian_config = bayesian_config

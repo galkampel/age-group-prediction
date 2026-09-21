@@ -36,7 +36,7 @@ from age_group_prediction import (
     IndependentTotalProbabilityModel,
     PredictionConfig,
 )
-from age_group_prediction.feature_engineering import FittedFeatureTransformer
+from age_group_prediction.fitted_features import FittedFeatureTransformer
 from age_group_prediction.results import PredictionResult
 from tests.unit.test_bayesian_conditional import _informative_posterior_stub
 from tests.unit.test_direct_cohort import _make_config as _direct_config

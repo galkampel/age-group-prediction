@@ -23,6 +23,9 @@ dependencies = [
 ]
 
 [dependency-groups]
+dev = [
+    "mypy>=2.3.1",
+]
 notebook = [
     "marimo>=0.8.0",
     "nbformat>=5.10.0",
@@ -40,6 +43,23 @@ validation = [
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/student_simulator", "src/age_group_prediction"]
+
+[tool.mypy]
+# Scoped to the package that is annotated end to end, so the baseline passes
+# today. A lenient run over all of src reports 44 errors in 18 files (metrics,
+# models, tracking, experiment); widen `files` to ["src"] once those are fixed
+# and the override below keeps this package strict while the rest stays lenient.
+files = ["src/age_group_prediction/feature_engineering"]
+python_version = "3.13"
+ignore_missing_imports = true        # sklearn, lightgbm and mlflow ship no stubs
+# Type information is read from imported modules, but their errors are not
+# reported: checking this package pulls in the parent __init__, and with it the
+# 44 pre-existing errors. Drop this line when `files` widens to ["src"].
+follow_imports = "silent"
+
+[[tool.mypy.overrides]]
+module = "age_group_prediction.feature_engineering.*"
+disallow_untyped_defs = true
 
 [tool.pytest.ini_options]
 pythonpath = [

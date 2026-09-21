@@ -11,7 +11,7 @@ import numpy as np
 
 from ..data_splitting import ValidationFold
 from ..distributions import pointwise_log_probability
-from ..feature_engineering import FittedFeatureTransformer
+from ..fitted_features import FittedFeatureTransformer
 from ..modeling_config import (
     FeatureSpec,
     IndependentTotalProbabilityConfig,

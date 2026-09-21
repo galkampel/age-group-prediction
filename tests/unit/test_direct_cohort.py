@@ -20,7 +20,7 @@ from age_group_prediction import (
     OptunaTuningConfig,
     PredictionConfig,
 )
-from age_group_prediction.feature_engineering import FittedFeatureTransformer
+from age_group_prediction.fitted_features import FittedFeatureTransformer
 from age_group_prediction.metrics import (
     CompositionLogLoss,
     MeanAbsoluteError,

@@ -286,7 +286,7 @@ def _validate_bayesian_feature_freeze(
     bayesian_specs = {
         spec.component: asdict(spec) for spec in bayesian.component_feature_specs
     }
-    for component in ("total_count", "age_probability"):
+    for component in ("total_count", "composition"):
         if independent_specs.get(component) != bayesian_specs.get(component):
             raise ValueError(
                 "BayesianConditionalModel must consume the selected independent "

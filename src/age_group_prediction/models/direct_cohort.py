@@ -20,7 +20,7 @@ from ..distributions import (
     nb2_total_log_probability,
     pointwise_log_probability,
 )
-from ..feature_engineering import FittedFeatureTransformer
+from ..fitted_features import FittedFeatureTransformer
 from ..modeling_config import (
     DEFAULT_DIRECT_COHORT_CONFIG,
     DEFAULT_MODELING_SCHEMA,
