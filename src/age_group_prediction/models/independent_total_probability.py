@@ -21,7 +21,7 @@ from ..distributions import (
     multinomial_prefix_log_masses,
     pointwise_log_probability,
 )
-from ..feature_engineering import FittedFeatureTransformer
+from ..fitted_features import FittedFeatureTransformer
 from ..modeling_config import (
     DEFAULT_INDEPENDENT_TOTAL_PROBABILITY_CONFIG,
     DEFAULT_MODELING_SCHEMA,

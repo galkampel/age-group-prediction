@@ -15,7 +15,7 @@ import numpy as np
 import pandas as pd
 
 from ..evaluation import evaluate_predictions
-from ..feature_engineering import FittedFeatureTransformer
+from ..fitted_features import FittedFeatureTransformer
 from ..hashing import column_schema_hash, table_hash
 from ..metrics import Metric
 from ..modeling_config import (

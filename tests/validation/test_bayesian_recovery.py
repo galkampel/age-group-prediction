@@ -22,7 +22,7 @@ from age_group_prediction import (
     BayesianConditionalModel,
     PredictionConfig,
 )
-from age_group_prediction.feature_engineering import (
+from age_group_prediction.fitted_features import (
     FittedFeatureTransformer,
 )
 from age_group_prediction.modeling_config import (

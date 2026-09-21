@@ -2,7 +2,7 @@
 
 How building-level features are declared, fitted, transformed, persisted, and
 consumed by each model. Everything here is derived from
-`src/age_group_prediction/feature_engineering.py`,
+`src/age_group_prediction/fitted_features.py`,
 `src/age_group_prediction/modeling_config.py`, and
 `src/age_group_prediction/experiment/candidates.py`; the design rationale is in
 [MODELING_REBUILD_PLAN.md](MODELING_REBUILD_PLAN.md) Section 5.
@@ -12,7 +12,7 @@ consumed by each model. Everything here is derived from
 | Stage | Owner | Learns from data? | When it runs |
 |---|---|---|---|
 | Modeling-table construction | `build_modeling_table` (`dataset_builder.py`) | No: deterministic selection, room-share derivation, validation | Once, before splitting |
-| Feature transformation | `FittedFeatureTransformer` (`feature_engineering.py`) | Yes: scaling and spline knots | Separately inside every fit partition (fold, tuning fold, full refit) |
+| Feature transformation | `FittedFeatureTransformer` (`fitted_features.py`) | Yes: scaling and spline knots | Separately inside every fit partition (fold, tuning fold, full refit) |
 
 Keeping them apart is what prevents leakage: nothing that depends on the data's
 distribution is computed before the split, and every learned statistic comes
@@ -227,7 +227,7 @@ folds.
 
 ## 8. Guarantees
 
-Covered by `tests/unit/test_feature_engineering.py`:
+Covered by `tests/unit/test_fitted_features.py`:
 
 - transform requires fit; transforming validation data never changes fitted
   state;

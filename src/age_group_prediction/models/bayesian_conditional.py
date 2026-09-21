@@ -18,7 +18,7 @@ from ..distributions import (
     dirichlet_multinomial_prefix_log_masses,
     pointwise_log_probability,
 )
-from ..feature_engineering import FittedFeatureTransformer
+from ..fitted_features import FittedFeatureTransformer
 from ..modeling_config import (
     DEFAULT_BAYESIAN_CONDITIONAL_CONFIG,
     DEFAULT_MODELING_SCHEMA,

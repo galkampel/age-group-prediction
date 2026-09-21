@@ -33,7 +33,7 @@ from .experiment import (
     validate_experiment_partitions,
 )
 from .experiment_config import ExperimentConfig, load_experiment_config
-from .feature_engineering import FittedFeatureTransformer
+from .fitted_features import FittedFeatureTransformer
 from .metrics import (
     R2,
     CompositionBrierScore,
