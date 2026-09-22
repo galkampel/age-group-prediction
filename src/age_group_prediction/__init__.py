@@ -110,6 +110,7 @@ from .models import (
     ParametricDistributionSpec,
     PredictionResult,
 )
+from .preprocessing import ShareTransformer
 
 # `tracking` likewise imports MLflow from the optional `tracking` dependency
 # group and is not imported here. Use `from age_group_prediction.tracking import
@@ -199,6 +200,7 @@ __all__ = [
     "SelectionCriterion",
     "SelectionFreeze",
     "SelectionPolicy",
+    "ShareTransformer",
     "SplitManifest",
     "ValidationFold",
     "WeightedIntervalScore",

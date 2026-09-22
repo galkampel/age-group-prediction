@@ -49,7 +49,10 @@ packages = ["src/student_simulator", "src/age_group_prediction"]
 # today. A lenient run over all of src reports 44 errors in 18 files (metrics,
 # models, tracking, experiment); widen `files` to ["src"] once those are fixed
 # and the override below keeps this package strict while the rest stays lenient.
-files = ["src/age_group_prediction/feature_engineering"]
+files = [
+    "src/age_group_prediction/feature_engineering",
+    "src/age_group_prediction/preprocessing.py",
+]
 python_version = "3.13"
 ignore_missing_imports = true        # sklearn, lightgbm and mlflow ship no stubs
 # Type information is read from imported modules, but their errors are not
@@ -58,7 +61,10 @@ ignore_missing_imports = true        # sklearn, lightgbm and mlflow ship no stub
 follow_imports = "silent"
 
 [[tool.mypy.overrides]]
-module = "age_group_prediction.feature_engineering.*"
+module = [
+    "age_group_prediction.feature_engineering.*",
+    "age_group_prediction.preprocessing",
+]
 disallow_untyped_defs = true
 
 [tool.pytest.ini_options]
