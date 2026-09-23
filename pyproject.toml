@@ -52,6 +52,7 @@ packages = ["src/student_simulator", "src/age_group_prediction"]
 files = [
     "src/age_group_prediction/feature_engineering",
     "src/age_group_prediction/preprocessing.py",
+    "src/age_group_prediction/splitting",
 ]
 python_version = "3.13"
 ignore_missing_imports = true        # sklearn, lightgbm and mlflow ship no stubs
@@ -64,6 +65,7 @@ follow_imports = "silent"
 module = [
     "age_group_prediction.feature_engineering.*",
     "age_group_prediction.preprocessing",
+    "age_group_prediction.splitting.*",
 ]
 disallow_untyped_defs = true
 
