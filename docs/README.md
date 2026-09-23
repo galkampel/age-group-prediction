@@ -17,6 +17,7 @@ This index defines document authority for the compact component simulator.
 | [Independent total and probability model](INDEPENDENT_TOTAL_PROBABILITY_MODEL.md) | Model B: NB2/Poisson total with exposure offset, grouped multinomial composition, temperature calibration, joint scoring, bootstrap uncertainty |
 | [Feature engineering](FEATURE_ENGINEERING.md) | Feature specs, validation rules, fitted transformations, output columns, per-model use, and candidate forms |
 | [Data and splitting](DATA_AND_SPLITTING.md) | Modeling table and schema, known-neighborhood outer split, write-once split manifest and replay, training-only folds, partition checks, the canonical lockbox |
+| [Splitting](SPLITTING.md) | The `splitting` package that replaces the above: three split methods each pairing a train/test split with its cross-validator, per-group-size coverage, how to choose a method, hazards |
 | [Evaluation and metrics](EVALUATION_AND_METRICS.md) | Prediction contract, metric protocol and capabilities, metric formulas, canonical metric sets, likelihood comparability, neighborhood-cluster bootstrap |
 | [Cross-validation and selection](CROSS_VALIDATION_AND_SELECTION.md) | Candidate registry, cross-validation runner, fold artifacts and reload checks, permutation importance, within-approach selection, selection freeze, cross-family rule, seeds and provenance |
 | [Known code issues (TODO)](TODO.md) | Open correctness, robustness, comment, and test-gap items found while documenting the components |

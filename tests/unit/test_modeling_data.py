@@ -37,6 +37,8 @@ from age_group_prediction import (
     replay_split_manifest,
     split_known_neighborhood_buildings,
 )
+from age_group_prediction.hashing import column_schema_hash, table_hash
+from age_group_prediction.preprocessing import ShareTransformer
 from student_simulator import StudentPopulationSimulator, load_simulation_config
 
 
@@ -165,6 +167,47 @@ def test_room_shares_omit_the_six_room_reference_category(
     expected_share = source_df["3_rooms"] / source_df["n_apartments"]
     pd.testing.assert_series_equal(
         modeling_df["3_rooms_share"], expected_share.rename("3_rooms_share")
+    )
+
+
+def test_room_counts_sum_to_the_apartment_total_in_the_simulator(
+    source_df: pd.DataFrame,
+) -> None:
+    """The premise that lets a share be taken over the row sum.
+
+    ``build_modeling_table`` divides by ``n_apartments`` while
+    ``ShareTransformer`` divides by the row sum of the room counts. They agree
+    only because the simulator allocates apartments by a multinomial over the
+    room mix. If that ever changes, this fails loudly rather than every share
+    shifting silently.
+    """
+    room_totals = source_df.loc[:, ["3_rooms", "4_rooms", "5_rooms", "6_rooms"]].sum(
+        axis=1
+    )
+
+    pd.testing.assert_series_equal(
+        room_totals, source_df["n_apartments"], check_names=False
+    )
+
+
+def test_the_preprocessing_pipeline_reproduces_build_modeling_table_exactly(
+    source_df: pd.DataFrame,
+    modeling_df: pd.DataFrame,
+) -> None:
+    """The gate on replacing ``build_modeling_table``: it changes nothing.
+
+    Frame-for-frame and hash-for-hash, because both hashes gate the write-once
+    lockbox split manifest. Delete this once ``build_modeling_table`` is gone.
+    """
+    shares = ShareTransformer(
+        ("3_rooms", "4_rooms", "5_rooms", "6_rooms"), reference_column="6_rooms"
+    ).fit_transform(source_df)
+    observed = shares.loc[:, list(DEFAULT_MODELING_SCHEMA.table_columns)]
+
+    pd.testing.assert_frame_equal(observed, modeling_df)
+    assert column_schema_hash(observed) == column_schema_hash(modeling_df)
+    assert table_hash(observed, id_column="building_id") == table_hash(
+        modeling_df, id_column="building_id"
     )
 
 
