@@ -1,5 +1,10 @@
 # Data And Splitting
 
+> **The split described here is the one that runs today.** Its replacement, the
+> `splitting` package, is built and documented in [Splitting](SPLITTING.md) but
+> is not yet wired. When the consumers migrate, §3-§9 below are superseded and
+> fold into that document.
+
 This document covers everything between the simulator's building table and the
 first model fit: the validated modeling table, the known-neighborhood outer
 split that creates the lockbox, the persisted split manifest and its replay,

@@ -1,5 +1,9 @@
 # Cross-Validation And Selection
 
+> **The folds described here are the ones that run today.** How folds are
+> produced is being replaced by the `splitting` package, documented in
+> [Splitting](SPLITTING.md); the selection layer around them is unaffected.
+
 This document describes how candidates are declared, fitted on fixed
 training-only folds, reload-checked, summarized, and selected: first within
 each approach, then across families, ending in the pretest freeze that the
