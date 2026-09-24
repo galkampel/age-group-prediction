@@ -18,7 +18,8 @@ Each stage has five parts:
 - **Validation gate:** checks that must pass before the next stage.
 
 The governing scope and data contracts are in
-[PROBLEM_DEFINITION.md](PROBLEM_DEFINITION.md). Definitions, units, and
+[PROBLEM_DEFINITION.md](PROBLEM_DEFINITION.md). Planned software boundaries are
+in [IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md). Definitions, units, and
 intuition for every configured value are collected in
 [PARAMETER_REFERENCE.md](PARAMETER_REFERENCE.md).
 

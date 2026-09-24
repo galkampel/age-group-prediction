@@ -220,6 +220,8 @@ The simulator is complete when it:
 - documents every calibrated, published, structural, and unresolved assumption.
 
 The generation formulas and their execution order are defined in
-[DATA_GENERATION_PLAN.md](DATA_GENERATION_PLAN.md). Definitions and intuition
+[DATA_GENERATION_PLAN.md](DATA_GENERATION_PLAN.md). The planned class,
+configuration, and validation boundaries are defined in
+[IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md). Definitions and intuition
 for every default parameter are in
 [PARAMETER_REFERENCE.md](PARAMETER_REFERENCE.md).
