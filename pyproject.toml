@@ -54,6 +54,7 @@ files = [
     "src/age_group_prediction/hyperparameter_tuning",
     "src/age_group_prediction/preprocessing.py",
     "src/age_group_prediction/splitting",
+    "src/age_group_prediction/utils.py",
 ]
 python_version = "3.13"
 ignore_missing_imports = true        # sklearn, lightgbm and mlflow ship no stubs
@@ -68,6 +69,7 @@ module = [
     "age_group_prediction.hyperparameter_tuning.*",
     "age_group_prediction.preprocessing",
     "age_group_prediction.splitting.*",
+    "age_group_prediction.utils",
 ]
 disallow_untyped_defs = true
 
