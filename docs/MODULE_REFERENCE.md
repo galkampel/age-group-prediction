@@ -86,8 +86,8 @@ does not import `tracking`.
 ## `age_group_prediction.modeling` — Rebuilt Models (Not Yet Wired)
 
 These are scikit-learn-style models that replace `models/` and
-`modeling_config`: settings in the constructor, and `fit(X, y)` / `predict(X)`
-on an already transformed design matrix. Nothing in `experiment/` or
+`modeling_config`: settings in the constructor, and `fit(X, y, exposure=None)` /
+`predict(X, exposure=None)` on an already transformed design matrix. Nothing in `experiment/` or
 `tracking/` calls them yet; the old `models/` is deleted once all three models
 are rebuilt. Plan: [MODEL_REIMPLEMENTATION_PLAN.md](MODEL_REIMPLEMENTATION_PLAN.md).
 

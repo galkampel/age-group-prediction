@@ -15,10 +15,12 @@ from age_group_prediction.scoring import Metric
 class _Model(BaseAgeGroupModel):
     """A concrete stand-in, since the base class is abstract; only evaluate runs."""
 
-    def fit(self, X: pd.DataFrame, y: pd.Series) -> Self:
+    def fit(
+        self, X: pd.DataFrame, y: pd.Series, exposure: ArrayLike | None = None
+    ) -> Self:
         return self
 
-    def predict(self, X: pd.DataFrame) -> np.ndarray:
+    def predict(self, X: pd.DataFrame, exposure: ArrayLike | None = None) -> np.ndarray:
         raise NotImplementedError
 
 
