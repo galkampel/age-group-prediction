@@ -43,8 +43,6 @@ implementation specifications.
    process with time, proxies, exposure, environment, and decomposition.
 3. [Parameter reference](PARAMETER_REFERENCE.md) explains full-model
    parameters, units, and unresolved choices.
-4. [Advanced implementation plan](IMPLEMENTATION_PLAN.md) proposes future
-   provider, schema, pipeline, and validation architecture.
 
 ## Legacy Sources
 
@@ -150,7 +148,3 @@ is represented in the canonical simplified model specification.
    integer-schema hints and one documented Bayesian warning. The Gate 4
    condition on the composition calibration retention rule was closed in the
    Gate 5 remediation (a 1-df likelihood-ratio test).
-
-Full-model review gates in
-[IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md#19-review-gates-before-coding)
-apply only when their corresponding complexity stage is reached.
