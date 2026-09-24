@@ -4,7 +4,7 @@
 `feat/hyperparameter-tuning`. Draft PR #6 merges into `feat/hyperparameter-tuning` (PR #5's branch).
 **Status (2026-09-24):** Phases 0 and 1 are committed. The non-slow suite gives
 **940 passed**. Phase 2 was revised after a review (§2's starting rate, merged
-fit/predict step, reworked tests). Next: Step 2.1.
+fit/predict step, reworked tests), then again after Step 2.1 (no transformer, `use_exposure`). Steps 2.1 and 2.2 are done (uncommitted). Next: Step 2.3.
 
 **Workflow**
 - Every step in §4 is a validation stop.
@@ -46,14 +46,31 @@ models are rebuilt.
 
 ## 2. The exposure offset in LightGBM
 
-LightGBM's `init_score` is the offset.
+**Terms.** The *exposure* $n_i$ (apartments) is the size the expected count
+scales with. That's the standard Poisson-GLM term, as in person-years at risk.
+Its log, $\log n_i$, is the *offset*: it enters with a coefficient fixed at 1.
+statsmodels calls these `exposure=` and `offset=`, R writes `offset(log(n))`,
+and LightGBM takes the offset as `init_score`.
 
-- **Declaring it.** Set `exposure_column="n_apartments"` on the
-  `FeatureTransformer`. Also keep `n_apartments` in a plan as an ordinary
-  feature, so the trees can learn departures from proportionality
-  ([FEATURE_TRANSFORMATIONS.md](FEATURE_TRANSFORMATIONS.md) §3.3 and §8.1).
-- **At fit**, the model passes `log n + base_log_rate_` as `init_score`, where
-  `log n` is `transformer.log_exposure(X)`.
+With the exposure, the trees learn the cohort's **rate per apartment** rather
+than per building. `predict` multiplies that rate back by $n_i$ to give a
+count. `base_log_rate_` is the model's **intercept in log space**, the average
+log rate per apartment (see "In equations" below).
+
+- **Turning it on.** Construct the model with `use_exposure=True` (Poisson
+  only). Pass the exposure to both methods:
+  `fit(X, y, exposure=n)` and `predict(X, exposure=n)`.
+- **The input.** `exposure` is the raw count `n` (number of apartments), one
+  strictly positive value per row of `X`, in the same order, e.g.
+  `exposure=df["n_apartments"]`. It is the raw count, not `log n`, because the
+  model needs `Σn` for the starting rate below. statsmodels follows the same
+  convention: `exposure=` is raw and logged internally, while `offset=` is
+  already on the log scale.
+- **As a feature too.** To also keep `n_apartments` as an ordinary feature,
+  include the column in `X`. The trees can then learn departures from
+  proportionality ([FEATURE_TRANSFORMATIONS.md](FEATURE_TRANSFORMATIONS.md)
+  §3.3). That is the caller's choice.
+- **At fit**, the model passes `log n + base_log_rate_` as `init_score`.
 - **Why the starting rate.** Given an `init_score`, LightGBM skips
   `boost_from_average`. The trees would then start from `log n` alone, that is
   1 child per apartment, and would have to learn the real rate (about 0.13)
@@ -76,6 +93,67 @@ LightGBM's `init_score` is the offset.
   model computes `exp(raw + log n + base_log_rate_)` itself.
 - **Regression** has no log link, so an exposure is refused.
 
+### In equations
+
+**Notation.** For building $i$ and one cohort:
+
+- $\mathbf{x}_i \in \mathbb{R}^p$ is the transformed feature row (a row of `X`).
+- $y_i \in \{0, 1, \dots\}$ is the cohort count (`y`).
+- $n_i > 0$ is the number of apartments (`exposure`).
+
+**Poisson with `use_exposure=True`:**
+
+$$
+y_i \sim \operatorname{Poisson}(\mu_i), \qquad
+\log \mu_i = \underbrace{\log n_i}_{\text{offset, coefficient } 1}
++ \underbrace{b + F(\mathbf{x}_i)}_{\text{log rate per apartment}}
+$$
+
+- $F(\mathbf{x}) = \sum_{m=1}^{M} \eta\, h_m(\mathbf{x})$ is the sum of trees,
+  with learning rate $\eta$.
+- $b = \log\big(\sum_i y_i / \sum_i n_i\big)$ is `base_log_rate_`.
+- LightGBM receives `init_score` $s_i = \log n_i + b$. It fits $F$ starting
+  from $F \equiv 0$, by minimizing the Poisson loss
+  $\sum_i \big(e^{s_i + F(\mathbf{x}_i)} - y_i\,(s_i + F(\mathbf{x}_i))\big)$.
+
+**Why this $b$.** It is the maximum-likelihood intercept when $F \equiv 0$:
+
+$$
+\frac{\partial}{\partial b} \sum_i \big(y_i(\log n_i + b) - n_i e^{b}\big)
+= \sum_i y_i - e^{b} \sum_i n_i = 0
+\;\Rightarrow\; b = \log \frac{\sum_i y_i}{\sum_i n_i}
+$$
+
+**Prediction.**
+
+$$
+\hat\mu_i = \exp\big(\log n_i + b + \hat F(\mathbf{x}_i)\big) = n_i\, e^{\,b + \hat F(\mathbf{x}_i)}
+$$
+
+LightGBM's `raw_score` returns only $\hat F$, so the model adds $\log n_i + b$
+itself.
+
+- **If $n$ is not a column of `X`,** then
+  $\hat\mu(\mathbf{x}, 2n) = 2\,\hat\mu(\mathbf{x}, n)$.
+- **If `X` includes `n_apartments`,** $F$ can learn departures from
+  proportionality.
+
+**Poisson without exposure.** $\log \mu_i = F(\mathbf{x}_i)$, and $F$ starts at
+$\log \bar y$ (LightGBM's `boost_from_average`).
+
+**Regression.** $\mu_i = F(\mathbf{x}_i)$, and $F$ starts at $\bar y$. The
+loss is $\sum_i (y_i - \mu_i)^2$.
+
+**Correct inputs.**
+
+| Argument | Pass | Not |
+|---|---|---|
+| `X` | Transformed features, one row per building (may include `n_apartments`) | The raw table with targets or IDs |
+| `y` | The raw cohort count $y_i$ | The rate $y_i / n_i$, or $\log y_i$ |
+| `exposure` | The raw $n_i$, in the same row order as `X` | $\log n_i$: the model takes the log itself, so it would be applied twice |
+
+The output $\hat\mu_i$ is an expected **count**, not a rate.
+
 ---
 
 ## 3. Decisions (agreed 2026-09-24)
@@ -90,8 +168,8 @@ LightGBM's `init_score` is the offset.
 | M6 | One `DirectCohortModel` instance per cohort. `y` is a Series, and `predict` returns a 1-D array of means | Cohorts are independent, so each gets its own features, target and tuned hyperparameters |
 | M7 | Only the built-in objectives `"poisson"` and `"regression"`. No NB2, no `custom_nb2_gradient` and no dispersion | Requirement. The old `nb2_gradient_hessian` stays in `distributions.py` until the old stack is deleted (M1) |
 | M8 | Fixed hyperparameters are explicit keyword arguments with LightGBM's defaults: `n_estimators`, `learning_rate`, `num_leaves`, `max_depth`, `min_child_samples`, `reg_alpha`, `reg_lambda`, `min_split_gain`, `subsample` and `colsample_bytree`, plus `random_state=42` and `n_jobs=1`. No Optuna runs inside `fit` | `set_params(**trial_params)` needs explicit arguments. `n_jobs=1` avoids the OpenMP crash alongside torch on macOS. See the note below for the fixed internals |
-| M9 | The constructor takes `transformer: FeatureTransformer`, and `fit` uses `clone(transformer).fit(X)` | Each fold learns its own statistics, and the caller's declaration is never mutated |
-| M10 | When `transformer_.exposure_column` is set, `fit` learns `base_log_rate_ = log(Σy / Σn)` and passes `log n + base_log_rate_` as `init_score`. `predict` returns `exp(raw + log n + base_log_rate_)`. `"regression"` with an exposure raises | See §2. The starting rate replaces the `boost_from_average` that LightGBM switches off when given an `init_score` |
+| M9 | The model takes a finished design matrix `X`. Preprocessing (e.g. a `FeatureTransformer` fitted per fold) happens before the model, which holds no transformer | Your requirement. It keeps the model to one job, fitting trees, and whoever builds the folds decides how the features are made |
+| M10 | `use_exposure: bool = False` in the constructor, with the raw exposure passed as `fit(X, y, exposure=n)` and `predict(X, exposure=n)`. When on, `fit` learns `base_log_rate_ = log(Σy / Σn)` and passes `log n + base_log_rate_` as `init_score`, and `predict` returns `exp(raw + log n + base_log_rate_)`. `ValueError`, only for what would otherwise pass silently: `use_exposure` with `"regression"`; `exposure` not passed exactly when `use_exposure` is on (a forgotten one would drop the offset, an unexpected one would be ignored); an exposure that is not strictly positive and finite (LightGBM accepts a `-inf`/`nan` `init_score`). LightGBM already raises for an unknown objective, a wrong-length exposure and an all-zero `y`, so the model doesn't repeat those checks | See §2. The indicator makes "with or without the offset" a declared setting, so it survives `clone`/`set_params` and a tuner can compare both. It also turns a forgotten `exposure` at predict time into an error rather than silent per-apartment rates. The starting rate replaces the `boost_from_average` that LightGBM switches off when given an `init_score`. `use_exposure` with `"regression"` raises rather than being ignored: like sklearn, a pair of settings that can't be honored together is an error, whereas a merely irrelevant setting is only ignored with a warning. Ignoring it would silently fit a model without the offset and discard the exposure passed in |
 | M11 | Validation happens in `fit`, not in `__init__` | `set_params` bypasses `__init__` |
 | M12 | Dropped from Model A: bootstrap draws, intervals, pointwise log probabilities, `PredictionResult`, state bundles, `configuration_record`, seed records, timers and `minimum_mean` clipping | Out of scope ("means only for now") or not needed. Poisson means are `exp(·) > 0`, and regression output is returned as is. A regression model can predict negative values, and scoring it with `POISSON_DEVIANCE` then raises. That is correct, because the metric is undefined there |
 
@@ -134,18 +212,28 @@ Objective = Literal["poisson", "regression"]
 
 
 class DirectCohortModel(BaseAgeGroupModel):
-    def __init__(self, transformer: FeatureTransformer, *, objective: Objective = "poisson",
+    def __init__(self, *, objective: Objective = "poisson", use_exposure: bool = False,
                  n_estimators=100, ..., random_state=42, n_jobs=1): ...
 
-    # fitted: transformer_, regressor_, base_log_rate_ (None without an exposure)
+    def fit(self, X, y, exposure: ArrayLike | None = None) -> Self: ...
+
+    def predict(self, X, exposure: ArrayLike | None = None) -> np.ndarray: ...
+
+    # fitted: regressor_, base_log_rate_ (None without an exposure)
 ```
 
-Usage: one instance per cohort.
+Usage: transform first, then one instance per cohort.
 
 ```python
-models = {cohort: DirectCohortModel(tree, objective="poisson") for cohort in COHORTS}
+features = clone(tree).fit(train_df)
+X_train, X_test = features.transform(train_df), features.transform(test_df)
+models = {cohort: DirectCohortModel(use_exposure=True) for cohort in COHORTS}
 for cohort, model in models.items():
-    model.fit(X_train, y_train[cohort])
+    model.fit(X_train, train_df[cohort], exposure=train_df["n_apartments"])
+predictions = {
+    cohort: model.predict(X_test, exposure=test_df["n_apartments"])
+    for cohort, model in models.items()
+}
 ```
 
 ---
@@ -275,52 +363,83 @@ Not changed:
   that only checked a library (sklearn's `get_params` and `check_is_fitted`,
   LightGBM's seeding) or restated the implementation were dropped.
 
+*Revised again after Step 2.1.*
+- **Transformer removed.** The model takes a finished design matrix (M9).
+- **`use_exposure` indicator added.** The raw exposure is passed to `fit` and
+  `predict` (M10, §2).
+
 **Step 2.1: constructor and validation.**
-- `__init__` stores every argument verbatim (M8, M9). `objective` is typed
-  `Objective = Literal["poisson", "regression"]`.
-- A private check, called at the start of `fit`, rejects:
-  - an unknown objective;
-  - `"regression"` combined with an exposure, read from
-    `self.transformer.exposure_column` before anything is fitted.
+- `__init__` stores every argument verbatim (M8). `objective` is typed
+  `Objective = Literal["poisson", "regression"]`, and `use_exposure: bool = False`
+  (M10). There is no transformer (M9).
+- A private check, `_check_exposure`, rejects `use_exposure` combined with
+  `"regression"`. An unknown objective is left to LightGBM, which raises
+  `Unknown objective type name`; the `Objective` Literal documents the two
+  supported values.
 
 Done when:
-- [ ] The code reads cleanly. Its behavior is tested in Step 2.3.
+- [x] The code reads cleanly. Its behavior is tested in Step 2.3.
 
 **Step 2.2: `fit` and `predict` (M10).**
 
+Both methods first call `_check_exposure`, which holds the three checks for
+what would otherwise pass silently:
+- regression combined with `use_exposure`;
+- `exposure` passed exactly when `use_exposure` is on;
+- the exposure is strictly positive and finite.
+
+A wrong-length exposure and an all-zero `y` are left to LightGBM, which raises
+for both.
+
 `fit`:
-1. Clone the transformer and fit it on `X`.
-2. When an exposure is declared, compute `log n`, set
-   `base_log_rate_ = log(Σy / Σn)`, and fit the `LGBMRegressor` with
-   `init_score = log n + base_log_rate_`. Otherwise `base_log_rate_ = None` and
-   no `init_score` is passed.
-3. Store `transformer_`, `regressor_` and `base_log_rate_`.
+1. Run `_check_exposure`.
+2. With the exposure on, set `base_log_rate_ = log(Σy / Σn)` and fit the
+   `LGBMRegressor` with `init_score = log n + base_log_rate_`. Otherwise set
+   `base_log_rate_ = None` and pass no `init_score`.
+3. Store `regressor_` and `base_log_rate_`.
 
 `predict`:
-1. Call `check_is_fitted`, then transform `X`.
-2. Without an exposure, return `regressor_.predict(features)`.
-3. With an exposure, return
-   `exp(regressor_.predict(features, raw_score=True) + log n + base_log_rate_)`.
+1. Call `check_is_fitted`, then run the exposure check.
+2. Without the exposure, return `regressor_.predict(X)`.
+3. With it, return
+   `exp(regressor_.predict(X, raw_score=True) + log n + base_log_rate_)`.
 
 Done when:
-- [ ] On a small frame, the mean training prediction is close to the mean of `y`.
+- [x] On a small frame, the mean training prediction is close to the mean of `y`.
+  With 300 rows and 20 trees, the mean of `y` is 6.677. Poisson with the
+  exposure gives 6.684, Poisson without it 6.687, and regression 6.677.
+  Doubling the exposure doubles every prediction exactly.
+
+`DirectCohortModel` and `Objective` are exported from `modeling`.
+
+*Trimmed after review.* The checks went from 7 to 3. Four were removed because
+LightGBM or NumPy already raises for them, as a probe confirmed: an unknown
+objective, a wrong-length exposure (at fit; at predict it's a NumPy broadcast
+error), and an all-zero `y`. The two presence checks were merged into one. Test
+6 pins the errors LightGBM raises. The class docstring and a comment in `fit`
+now say that the exposure gives a rate per apartment, and that
+`base_log_rate_` is the intercept.
 
 **Step 2.3: `tests/unit/test_modeling_direct_cohort.py`.** Six tests on a small
 synthetic frame. Each one names the mistake it catches:
 1. **Constructor stores arguments verbatim**, which the tuner relies on:
    `clone(model).set_params(n_estimators=5)` changes only the copy.
-2. **The caller's transformer stays unfitted** after `fit` (M9).
+2. **Exposure misuse raises**, parametrized: missing while `use_exposure` is on;
+   given while it's off; zero or negative.
 3. **Calibration:** the mean training prediction is close to the mean of `y`
    with 20 trees. It is parametrized over Poisson with an exposure, Poisson
    without one, and regression. It catches a missing starting rate or a broken
    offset.
-4. **Proportionality:** with `n_apartments` as the exposure only, not a
-   feature, doubling it doubles the prediction to 1e-12. It catches an offset
-   ignored at predict time.
+4. **Proportionality:** doubling `exposure` at predict time doubles the
+   prediction to 1e-12. This is exact because the exposure is not a feature
+   unless the caller adds it. It catches an offset ignored at predict time.
 5. **Bagging is active:** `subsample=0.5` gives different predictions from
    `subsample=1.0`. It catches a missing `subsample_freq`.
-6. **Invalid configuration raises:** an unknown objective, and regression with
-   an exposure.
+6. **Invalid input surfaces an error**, parametrized:
+   - regression with `use_exposure` (our check);
+   - an unknown objective, a wrong-length exposure at fit, and an all-zero `y`
+     with the exposure on. These are LightGBM's errors. The test pins the
+     behavior that the removed checks now rely on.
 
 Done when:
 - [ ] The new tests pass.
@@ -330,9 +449,11 @@ Done when:
 
 **Step 2.4: smoke run on simulated data.** A scratchpad script that:
 1. builds the table with `StudentPopulationSimulator` and `ShareTransformer`;
-2. splits it with `Splitter("grouped")`;
+2. splits it with `Splitter("grouped")`, and fits the Model A
+   `FeatureTransformer` (FEATURE_TRANSFORMATIONS §8.1) on the training rows,
+   outside the model;
 3. fits three Poisson models, one per cohort, each with and without the
-   exposure;
+   exposure (`exposure=df["n_apartments"]`);
 4. reports `poisson_deviance` per cohort, with the table added to this doc.
 
 Done when:
@@ -366,6 +487,8 @@ Done when:
 - Switching the tuning evaluator to `BaseAgeGroupModel` (PR #5 §9.7). This
   plan supplies what it needs: `clone`, `set_params` and
   `evaluate(y_true, y_pred, metric)` with a `Metric` that carries its direction.
+  The evaluator will also have to pass `exposure` into `fit` and `predict` on
+  each fold, the way sklearn routes fit parameters.
 - Deleting `modeling_config.py`, the old `models/`, `nb2_gradient_hessian` and
   `tuning.py`, and rewiring `experiment/` and `tracking/`.
 
@@ -382,7 +505,7 @@ Done when:
   - `tests/unit/test_modeling_metrics.py`
   - `tests/unit/test_modeling_direct_cohort.py`
 - **Reused:**
-  - `feature_engineering.FeatureTransformer` (`transform`, `log_exposure`, `exposure_column`)
+  - `feature_engineering.FeatureTransformer`: used by callers and the smoke run, not by the model (M9)
   - `splitting.Splitter`
   - `preprocessing.ShareTransformer`
   - `student_simulator.pipeline.StudentPopulationSimulator`
