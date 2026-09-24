@@ -3,8 +3,8 @@
 **Branch:** `fix/direct-cohort-fixed-hyperparameters`, rebased onto
 `feat/hyperparameter-tuning`. Draft PR #6 merges into `feat/hyperparameter-tuning` (PR #5's branch).
 **Status (2026-09-24):** Phases 0 and 1 are committed. The non-slow suite gives
-**940 passed**. Phase 2 was revised after a review (§2's starting rate, merged
-fit/predict step, reworked tests), then again after Step 2.1 (no transformer, `use_exposure`). Steps 2.1 and 2.2 are committed. Step 2.3 is done (uncommitted). Next: Step 2.4.
+**956 passed** (after Step 2.3). Phase 2 was revised after a review (§2's starting rate, merged
+fit/predict step, reworked tests), then again after Step 2.1 (no transformer, `use_exposure`). Steps 2.1 and 2.2 are committed. Step 2.3 is committed. Step 2.4 is done (results recorded). Step 2.5 is decided: no `get_metadata`. Next: Step 2.6 (docs).
 
 **Workflow**
 - Every step in §4 is a validation stop.
@@ -164,7 +164,7 @@ The output $\hat\mu_i$ is an expected **count**, not a rate.
 | M2 | `BaseAgeGroupModel(BaseEstimator, ABC)`. Settings go in `__init__`, stored verbatim. Data are method arguments only. Fitted state lives in trailing-underscore attributes | scikit-learn then provides `get_params`, `set_params` and `clone`, which the tuning evaluator needs (PR #5, D11) |
 | M3 | Base API: abstract `fit(X, y)` and `predict(X)`, and a concrete `evaluate(y_true, y_pred, metric) -> float` that does not call `predict` | A metric is applied to the targets and the predictions. `evaluate` stays a method so a later model (B or C) can override how it scores. `RegressorMixin` is not used, because its `score` (R²) would be a second scoring path |
 | M4 | A metric is a `Metric(name, function, greater_is_better=False)` in `modeling/metrics.py`, a frozen standard-library dataclass checked in `__post_init__`, like `splitting.Splitter`. It is not callable: `model.evaluate` is the one named way to score. `function(y_true, y_pred) -> float` may be any callable, from sklearn or custom. Ready-made: `POISSON_DEVIANCE`, `RMSE` and `MAE` | Custom metrics can't be assumed to be lower-is-better, so the direction is stored, as sklearn's `make_scorer` does, and the tuner's sign rule (D12) reads it. The package-local module avoids the old top-level `metrics.py`, whose `Metric` Protocol needs a `PredictionResult` and is deleted with the old stack. Not pydantic: a metric is built only in code (a function can't come from a config), so parsing adds nothing, and a dataclass already rejects a misspelled keyword |
-| M5 | `get_metadata` is deferred and decided in Step 2.5 | It may be needed. Until then, `get_params()` and the public fitted attributes cover it |
+| M5 | `get_metadata` is **not added** (decided in Step 2.5). Configuration comes from `get_params()`, and fitted state from the public trailing-underscore attributes (`regressor_`, `base_log_rate_`). Revisit when the new tracking integration exists, and define the method then on `BaseAgeGroupModel` with the fields the tracker actually reads | No caller exists in the new code. A method without a consumer would lock in a guessed schema, which is how the old one grew nine placeholder keys (`models/base.py:460-472`) |
 | M6 | One `DirectCohortModel` instance per cohort. `y` is a Series, and `predict` returns a 1-D array of means | Cohorts are independent, so each gets its own features, target and tuned hyperparameters |
 | M7 | Only the built-in objectives `"poisson"` and `"regression"`. No NB2, no `custom_nb2_gradient` and no dispersion | Requirement. The old `nb2_gradient_hessian` stays in `distributions.py` until the old stack is deleted (M1) |
 | M8 | Fixed hyperparameters are explicit keyword arguments with LightGBM's defaults: `n_estimators`, `learning_rate`, `num_leaves`, `max_depth`, `min_child_samples`, `reg_alpha`, `reg_lambda`, `min_split_gain`, `subsample` and `colsample_bytree`, plus `random_state=42` and `n_jobs=1`. No Optuna runs inside `fit` | `set_params(**trial_params)` needs explicit arguments. `n_jobs=1` avoids the OpenMP crash alongside torch on macOS. See the note below for the fixed internals |
@@ -488,12 +488,51 @@ Noted, not changed:
 4. reports `poisson_deviance` per cohort, with the table added to this doc.
 
 Done when:
-- [ ] You have seen the numbers. They are evidence for the "+ size offset"
+- [x] You have seen the numbers. They are evidence for the "+ size offset"
   variation in FEATURE_TRANSFORMATIONS §5.
+
+**Results (2026-09-24).**
+- **Data:** 10 simulated populations (RNG seeds 0–9) of 245 buildings each,
+  with a grouped split by neighborhood: 196 training and 49 test buildings.
+- **Models:** Poisson with default hyperparameters (100 trees, untuned), and
+  `n_apartments` kept in `X` in both variants.
+- **Score:** held-out mean Poisson deviance, lower is better, as mean ± SD over
+  the 10 populations. "Diff" is with the exposure minus without it, paired by
+  population.
+
+| Cohort | Without exposure | With exposure | Diff (mean ± SD) | Exposure wins |
+|---|---|---|---|---|
+| `n_kindergarten` | 2.732 ± 0.911 | 2.628 ± 0.877 | −0.105 ± 0.169 | 7 / 10 |
+| `n_elementary` | 2.124 ± 0.515 | 2.128 ± 0.499 | +0.004 ± 0.200 | 6 / 10 |
+| `n_highschool` | 2.658 ± 0.703 | 2.572 ± 0.710 | −0.086 ± 0.207 | 7 / 10 |
+
+**Reading.**
+- The exposure lowers deviance by about 4% for kindergarten and high school,
+  and changes nothing for elementary.
+- The paired differences are about as large as their spread. For kindergarten
+  the mean difference is about 2 standard errors from zero; for high school it
+  is about 1.3.
+- So this is weak evidence for the offset, not the "largest gain" §5 expected.
+  With `n_apartments` already a feature, the trees learn much of the size
+  effect themselves.
+- Calibration holds in all six cases: the mean test prediction over the mean
+  test target is 1.00–1.06 on average across populations.
+- The models are untuned, and 196 training rows is small. Tuning (#5) is where
+  the offset should be re-checked.
+
+The script is `smoke_exposure.py` in the session scratchpad, outside the repo.
 
 **Step 2.5: decide `get_metadata` (M5).** Propose keeping or dropping it, with
 a reason based on what exists by then.
-- [ ] You have decided, and this doc records the decision.
+- [x] You have decided, and this doc records the decision.
+
+**Decision (2026-09-24): not added** (M5).
+- Nothing in `modeling/`, `hyperparameter_tuning/`, `splitting/` or
+  `feature_engineering/` calls `get_metadata`. Only the old `experiment/` code
+  does, and it is deleted with `modeling_config`.
+- `get_params()` is already plain JSON (checked with `json.dumps`), and the
+  fitted state is public. `mlflow.log_params(model.get_params())` plus the
+  model artifact covers logging.
 
 **Step 2.6: docs.**
 - `DIRECT_COHORT_MODEL.md`: add a section on the new model and mark the old
