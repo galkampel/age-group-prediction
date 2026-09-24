@@ -1,7 +1,9 @@
 # Plan: Re-implement the Models, Starting with the Base Class and DirectCohortModel
 
-**Branch:** `fix/direct-cohort-fixed-hyperparameters`, with a draft PR against `main`.
-**Status (2026-09-24):** Step 0.1, this doc, is written and waiting for your validation.
+**Branch:** `fix/direct-cohort-fixed-hyperparameters`, rebased onto
+`feat/hyperparameter-tuning`. Draft PR #6 merges into `feat/hyperparameter-tuning` (PR #5's branch).
+**Status (2026-09-24):** Phase 0 is done. The non-slow suite on the rebased branch
+gives **932 passed**. Phase 1 is done (940 passed) and awaiting your validation (uncommitted). Next: Phase 2, Step 2.1.
 
 **Workflow**
 - Every step in §4 is a validation stop.
@@ -64,8 +66,8 @@ LightGBM's `init_score` is the offset.
 |---|---|---|
 | M1 | A new package, `src/age_group_prediction/modeling/`, alongside the old code | The same approach as `splitting` and `feature_engineering`. The old `models/`, `experiment/` and `tracking/` code and their tests keep working until all three models are rebuilt. They are then deleted together with `modeling_config.py` |
 | M2 | `BaseAgeGroupModel(BaseEstimator, ABC)`. Settings go in `__init__`, stored verbatim. Data are method arguments only. Fitted state lives in trailing-underscore attributes | scikit-learn then provides `get_params`, `set_params` and `clone`, which the tuning evaluator needs (PR #5, D11) |
-| M3 | Base API: abstract `fit(X, y)` and `predict(X)`, and a concrete `evaluate(X, y, metric) -> float` | One metric, passed per call. `RegressorMixin` is not used, because its `score` (R²) would be a second scoring path |
-| M4 | `metric` is one of `"poisson_deviance"`, `"rmse"` or `"mae"`. Each maps to a `sklearn.metrics` function, lower is better for all of them, and an unknown name raises `ValueError` | With one direction, the tuning evaluator's sign rule (D12) is simply "negate". The old `metrics.py` is not reused, because it needs a `PredictionResult` |
+| M3 | Base API: abstract `fit(X, y)` and `predict(X)`, and a concrete `evaluate(y_true, y_pred, metric) -> float` that does not call `predict` | A metric is applied to the targets and the predictions. `evaluate` stays a method so a later model (B or C) can override how it scores. `RegressorMixin` is not used, because its `score` (R²) would be a second scoring path |
+| M4 | A metric is a `Metric(name, function, greater_is_better=False)` in `modeling/metrics.py`, a frozen standard-library dataclass checked in `__post_init__`, like `splitting.Splitter`. It is not callable: `model.evaluate` is the one named way to score. `function(y_true, y_pred) -> float` may be any callable, from sklearn or custom. Ready-made: `POISSON_DEVIANCE`, `RMSE` and `MAE` | Custom metrics can't be assumed to be lower-is-better, so the direction is stored, as sklearn's `make_scorer` does, and the tuner's sign rule (D12) reads it. The package-local module avoids the old top-level `metrics.py`, whose `Metric` Protocol needs a `PredictionResult` and is deleted with the old stack. Not pydantic: a metric is built only in code (a function can't come from a config), so parsing adds nothing, and a dataclass already rejects a misspelled keyword |
 | M5 | `get_metadata` is deferred and decided in Step 2.6 | It may be needed. Until then, `get_params()` and the public fitted attributes cover it |
 | M6 | One `DirectCohortModel` instance per cohort. `y` is a Series, and `predict` returns a 1-D array of means | Cohorts are independent, so each gets its own features, target and tuned hyperparameters |
 | M7 | Only the built-in objectives `"poisson"` and `"regression"`. No NB2, no `custom_nb2_gradient` and no dispersion | Requirement. The old `nb2_gradient_hessian` stays in `distributions.py` until the old stack is deleted (M1) |
@@ -84,14 +86,20 @@ LightGBM's `init_score` is the offset.
 ### Target code shape
 
 ```python
+# modeling/metrics.py
+@dataclass(frozen=True)
+class Metric:
+    name: str
+    function: Callable[..., float]  # function(y_true, y_pred) -> float
+    greater_is_better: bool = False
+
+
+POISSON_DEVIANCE = Metric("poisson_deviance", mean_poisson_deviance)
+RMSE = Metric("rmse", root_mean_squared_error)
+MAE = Metric("mae", mean_absolute_error)
+
+
 # modeling/base.py
-METRICS = {
-    "poisson_deviance": mean_poisson_deviance,
-    "rmse": root_mean_squared_error,
-    "mae": mean_absolute_error,
-}  # lower is better for all
-
-
 class BaseAgeGroupModel(BaseEstimator, ABC):
     @abstractmethod
     def fit(self, X: pd.DataFrame, y: pd.Series) -> Self: ...
@@ -99,7 +107,7 @@ class BaseAgeGroupModel(BaseEstimator, ABC):
     @abstractmethod
     def predict(self, X: pd.DataFrame) -> np.ndarray: ...
 
-    def evaluate(self, X: pd.DataFrame, y: pd.Series, metric: str) -> float: ...
+    def evaluate(self, y_true, y_pred, metric: Metric) -> float: ...
 
 
 # modeling/direct_cohort.py
@@ -125,42 +133,112 @@ Each step ends with a stop for your validation.
 ### Phase 0: plan and draft PR
 
 **Step 0.1: write this plan doc.**
-- [ ] You have read and approved this doc, and any requested changes are applied.
+- [x] You have read and approved this doc, and any requested changes are applied.
 
 **Step 0.2: open the draft PR.**
 1. Commit only this doc, as `docs: plan the model re-implementation`.
 2. Push the branch: `git push -u origin fix/direct-cohort-fixed-hyperparameters`.
-3. Open the PR: `gh pr create --draft --base main`, titled "Re-implement the
+3. Open the PR against `feat/hyperparameter-tuning`, titled "Re-implement the
    models: base class and DirectCohortModel". The body gives a summary, a
    checklist of these steps and a link to this doc.
 
 Done when:
-- [ ] The draft PR URL has been reported to you.
+- [x] Draft PR #6 is open: https://github.com/galkampel/age-group-prediction/pull/6
 
-### Phase 1: base class
+### Phase 1: base class and metrics
 
-**Step 1.1: package skeleton.** Add `modeling/__init__.py`. Its docstring
-explains how the pieces fit, and its public API starts empty.
-- [ ] `import age_group_prediction.modeling` works.
-- [ ] The existing non-slow suite still passes.
+The base class holds only what every model shares: the `fit` / `predict` /
+`evaluate` contract.
 
-**Step 1.2: `modeling/base.py`.** Add the `METRICS` mapping and
-`BaseAgeGroupModel` (M2–M4). `evaluate` raises a `ValueError` naming the valid
-metrics, and otherwise returns `float(METRICS[metric](y, self.predict(X)))`.
-- [ ] The code reads cleanly.
-- [ ] `BaseAgeGroupModel` is exported from `modeling`.
+It deliberately has none of the following:
+- **An `__init__`.** There are no shared settings, and sklearn reads each
+  subclass's own constructor.
+- **`get_metadata`.** Deferred (M5).
+- **Fitted-state helpers.**
 
-**Step 1.3: `tests/unit/test_modeling_base.py`.** The tests use a tiny concrete
-subclass that predicts the mean of `y`. They cover:
-- the base class cannot be instantiated;
-- `clone` and `set_params` work;
-- `evaluate` equals each sklearn function;
-- an unknown metric raises.
+Two tests are left out because they would test libraries rather than our code:
+- **"The base cannot be instantiated"** tests Python's `ABC`.
+- **`clone` / `set_params`** tests sklearn. It runs in Step 2.4 instead, on the
+  real `DirectCohortModel` constructor.
+
+*Revised 2026-09-24.* The first version of Step 1.1 put a name-keyed `METRICS`
+table in `base.py`, and `evaluate(X, y, metric)` called `predict` itself. After
+review, a metric became a class in `modeling/metrics.py`, and `evaluate` scores
+`(y_true, y_pred)` (M3, M4).
+
+**Step 1.1: `modeling/metrics.py`.** This file comes first because `base.py`
+imports it. It contains:
+- `Metric(name, function, greater_is_better=False)`, a frozen standard-library
+  dataclass whose `__post_init__` checks for a non-empty name, a callable
+  function and a bool direction;
+- three ready-made metrics: `POISSON_DEVIANCE`, `RMSE` and `MAE`.
+
+Checklist:
+- [x] The file contains only these items.
+- [x] Every docstring states the "why".
+
+**Step 1.2: revise `modeling/base.py`.**
+- Remove `MetricName` and `METRICS`.
+- `evaluate(y_true, y_pred, metric)` returns
+  `float(metric.function(y_true, y_pred))`. The cast turns a NumPy scalar from a
+  custom metric into a plain float.
+- `fit` and `predict` are unchanged.
+
+Checklist:
+- [x] The file contains only the class.
+- [x] The docstrings are updated.
+
+**Step 1.3: `modeling/__init__.py`.** A short docstring saying what the package
+is, and that it replaces `models/` and `modeling_config` (M1). It exports
+`BaseAgeGroupModel`, `Metric`, `POISSON_DEVIANCE`, `RMSE` and `MAE`.
+- [x] Importing these names from `age_group_prediction.modeling` works.
+
+**Step 1.4: register `modeling/` with mypy.** In `pyproject.toml`, add the
+package to `[tool.mypy].files` and to the strict override, as every other new
+package is. Without this, mypy silently skips it.
+- [x] `uv run mypy` passes.
+- [x] `uv run ruff check` passes on the new files.
+
+**Step 1.5: tests.**
+
+`tests/unit/test_modeling_metrics.py`:
+- The ready-made metrics match sklearn, parametrized over the three. This checks
+  that each name is wired to its function and that `greater_is_better` is
+  `False`.
+- Invalid construction is rejected: an empty name, a function that isn't
+  callable, and a `greater_is_better` that isn't a bool.
+
+`tests/unit/test_modeling_base.py`:
+- `evaluate` applies a custom (non-sklearn) metric to `(y_true, y_pred)` and
+  returns a Python `float`. The test uses a minimal subclass, because the base
+  class is abstract.
 
 Done when:
-- [ ] The new tests pass.
-- [ ] `uv run pytest -m "not slow"` passes.
-- [ ] The review findings are fixed.
+- [x] The new tests pass.
+- [x] `uv run pytest -m "not slow"` passes: **940** (932 + 8 new).
+- [x] An independent review of Phase 1 is done and its findings are fixed.
+
+**Review record.** No bugs were found. Fixed:
+- **Unknown keywords.** A misspelled `greater_is_better` now raises instead of
+  silently keeping the default direction. It has a test case. (This was first
+  fixed with pydantic's `extra="forbid"`; after the later switch to a standard
+  dataclass, the dataclass constructor rejects it natively.)
+- **`function` type.** Now `Callable[[ArrayLike, ArrayLike], float | np.floating]`,
+  which states the `(y_true, y_pred)` contract.
+- **Wiring test.** It checks identity (`is`), not values.
+- **The stand-in model in the `evaluate` test.** It no longer has fit/predict
+  logic of its own.
+- **Invalid-construction cases.** Built with lambdas, so the ignores are
+  narrowed.
+
+**Design follow-up (your questions).** `Metric` was switched from a pydantic
+dataclass to a standard frozen dataclass (M4), and it is deliberately not
+callable (M3).
+
+Not changed:
+- **Whitespace-only names** are accepted. Low value.
+- **`Metric` equality** compares function identity. This is noted for a tuner
+  that might deduplicate metrics.
 
 ### Phase 2: DirectCohortModel
 
@@ -238,7 +316,7 @@ Done when:
   (`BayesianConditionalModel`).
 - Switching the tuning evaluator to `BaseAgeGroupModel` (PR #5 §9.7). This
   plan supplies what it needs: `clone`, `set_params` and
-  `evaluate(X, y, metric)`.
+  `evaluate(y_true, y_pred, metric)` with a `Metric` that carries its direction.
 - Deleting `modeling_config.py`, the old `models/`, `nb2_gradient_hessian` and
   `tuning.py`, and rewiring `experiment/` and `tracking/`.
 
@@ -249,8 +327,10 @@ Done when:
 - **New:**
   - `src/age_group_prediction/modeling/__init__.py`
   - `src/age_group_prediction/modeling/base.py`
+  - `src/age_group_prediction/modeling/metrics.py`
   - `src/age_group_prediction/modeling/direct_cohort.py`
   - `tests/unit/test_modeling_base.py`
+  - `tests/unit/test_modeling_metrics.py`
   - `tests/unit/test_modeling_direct_cohort.py`
 - **Reused:**
   - `feature_engineering.FeatureTransformer` (`transform`, `log_exposure`, `exposure_column`)
