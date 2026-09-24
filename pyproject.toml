@@ -52,6 +52,7 @@ packages = ["src/student_simulator", "src/age_group_prediction"]
 files = [
     "src/age_group_prediction/feature_engineering",
     "src/age_group_prediction/hyperparameter_tuning",
+    "src/age_group_prediction/modeling",
     "src/age_group_prediction/preprocessing.py",
     "src/age_group_prediction/splitting",
     "src/age_group_prediction/utils.py",
@@ -67,6 +68,7 @@ follow_imports = "silent"
 module = [
     "age_group_prediction.feature_engineering.*",
     "age_group_prediction.hyperparameter_tuning.*",
+    "age_group_prediction.modeling.*",
     "age_group_prediction.preprocessing",
     "age_group_prediction.splitting.*",
     "age_group_prediction.utils",

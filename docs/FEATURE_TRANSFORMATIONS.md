@@ -1,14 +1,17 @@
 # Feature Transformations: Decisions And Rationale
 
 The transformation each feature gets in each model, what the resulting
-coefficient means, and why the alternatives were rejected. This is a design
-note: none of it is implemented yet. Current behavior is in
-[FEATURE_ENGINEERING.md](FEATURE_ENGINEERING.md), and Section 8 lists the code
-changes needed.
+coefficient means, and why the alternatives were rejected.
+- **Quick answer:** the per-feature × per-model table is in §7.
+- **Implementation:** every transformation here is implemented in
+  [`feature_engineering/`](../src/age_group_prediction/feature_engineering/).
+- **Declarations:** §8 gives each model's declaration, built at the call site.
+- **The old models** still use the older `FeatureSpec` machinery, described in
+  [FEATURE_ENGINEERING.md](FEATURE_ENGINEERING.md).
 
 | Label | Class | Stages and feature use |
 |---|---|---|
-| **A** | `DirectCohortModel` | One LightGBM regressor per cohort (Poisson, NB2 or Normal objective); raw features |
+| **A** | `DirectCohortModel` | One LightGBM regressor per cohort (Poisson or regression objective); raw features; optional exposure offset |
 | **B** | `IndependentTotalProbabilityModel` | Penalized Poisson/NB2 total with a log-exposure offset, plus a grouped multinomial composition stage |
 | **C** | `BayesianConditionalModel` | Hierarchical NB2 total plus a composition stage; uses B's frozen specs; `Normal(0, 0.5)` coefficient priors |
 
@@ -147,13 +150,23 @@ and decorrelates $z$ from $z^2$. Neither concern applies to trees.
 
 ### 3.3 Exposure: add the offset **and** keep `n_apartments`
 
-For the Poisson and NB2 objectives, pass $\log n_i$ as LightGBM's `init_score`:
+For the Poisson objective, `DirectCohortModel(use_exposure=True)` passes
+$\log n_i + b_c$ as LightGBM's `init_score`:
 
 $$
-\log \mu_{i,c} = \log n_i + f_c(\mathbf{x}_i),
+\log \mu_{i,c} = \log n_i + b_c + f_c(\mathbf{x}_i),
+\qquad b_c = \log \frac{\sum_i y_{i,c}}{\sum_i n_i},
 $$
 
 so each cohort's trees learn a **per-apartment rate**.
+- **Why $b_c$:** it is the intercept, the average log rate per apartment.
+  LightGBM skips its `boost_from_average` once given an `init_score`, so
+  without $b_c$ the trees would start at one child per apartment.
+- **Why the model adds the offset itself:** LightGBM's `predict` doesn't add
+  the `init_score` back, so the model returns
+  $\exp(\text{raw score} + \log n_i + b_c)$.
+- **Details:** the equations and the correct inputs are in
+  [DIRECT_COHORT_MODEL.md §0](DIRECT_COHORT_MODEL.md#0-the-rebuilt-model-modelingdirect_cohortpy).
 
 - **Why the offset:** child counts grow roughly in proportion to $n$. Trees
   approximate that with step functions, need many splits to do so, and cannot
@@ -162,8 +175,9 @@ so each cohort's trees learn a **per-apartment rate**.
 - **Why keep `n_apartments` as a feature too:** the offset asserts exact
   proportionality. Keeping the feature lets the trees learn departures from it,
   for example larger buildings having fewer children per apartment.
-- **Not for the Normal family:** it has no log link, so a log-scale offset does
-  not apply. (An alternative there is to model $y/n$ with weights $n$.)
+- **Not for `regression`:** it has no log link, so a log-scale offset does not
+  apply, and the model refuses the combination. (An alternative there is to
+  model $y/n$ with weights $n$.)
 
 ---
 
@@ -405,14 +419,15 @@ carrying an exposure is refused at construction.
 ### Model A: `DirectCohortModel`
 
 One LightGBM regressor per cohort (`n_kindergarten`, `n_elementary`,
-`n_highschool`); Optuna tunes only capacity parameters.
+`n_highschool`). The hyperparameters are fixed per instance and tuned from
+outside, not inside `fit`.
 
 | Variation | What changes | Question it answers |
 |---|---|---|
 | **Base** | All 8 numeric columns raw, one-hot `school_status`, 3-room reference | Reference point for everything below |
 | SES quadratic | Adds $(\text{ses}-m)^2$, keeps `ses` | Does an explicit non-monotone column beat the splits the trees would make anyway? |
-| **+ size offset** | $\log n$ as `init_score` (Poisson/NB2 only); `n_apartments` stays a feature | Does modeling the per-apartment rate beat letting the trees learn size from scratch? Expected to be the largest gain |
-| Family: Poisson / NB2 / Normal | Objective and ancillary parameters | Is over-dispersion worth an extra parameter? |
+| **+ size offset** | `use_exposure=True`: $\log n + b$ as `init_score` (Poisson only); `n_apartments` stays a feature | Does modeling the per-apartment rate beat letting the trees learn size from scratch? It was expected to be the largest gain. An untuned smoke run over 10 simulated populations found only weak evidence: about 4% lower deviance for kindergarten and high school, and none for elementary ([plan, Step 2.4](MODEL_REIMPLEMENTATION_PLAN.md)) |
+| Objective: Poisson / regression | Poisson log-likelihood vs squared error | Does a count likelihood beat squared error? |
 
 ### Model B: `IndependentTotalProbabilityModel`
 
@@ -694,8 +709,8 @@ variable at once.
 | `median_age` | Raw | $z$ (report $\beta/s$; fixed $(x-37)/10$ optional) | Same |
 | `n_daycares_500m` | Raw; drop the `log1p` candidate | Candidate 1: $d/8$ (0 = none; 8 = 99th percentile, no clipping). Candidate 2: $\log\frac{1+d}{1+\bar d}$ | Fixed bounds are fold-stable where a learned min-max is not; the centered log1p keeps its unit across folds and reads as an elasticity |
 | Room shares (4, 5, 6; reference 3) | Raw | $(s_k-\bar s_k)/0.10$, one common unit | 10 pp substituted out of the 3-room reference; centering puts the baseline at the average mix |
-| `n_apartments` | Raw feature **and** $\log n$ as `init_score` (Poisson/NB2) | Not a feature | Trees cannot extrapolate proportional growth; the feature still captures departures from proportionality |
-| Exposure `log_n_apartments` | Via `init_score` (proposed) | $\log n$ offset, coefficient 1, unscaled | Models the per-apartment rate; `log1p` adds a size-dependent bias of about $1/n$ |
+| `n_apartments` | Raw feature, and optionally the exposure (`use_exposure=True`, Poisson) | Not a feature | Trees cannot extrapolate proportional growth; the feature still captures departures from proportionality |
+| Exposure | Raw $n$ passed as `fit(..., exposure=n)` / `predict(..., exposure=n)`; the model uses $\log n + b$ as `init_score` | $\log n$ offset, coefficient 1, unscaled | Models the per-apartment rate; `log1p` adds a size-dependent bias of about $1/n$ |
 | `school_status` | One-hot (the only required transform) | One-hot, reference `none`, unscaled | Already interpretable |
 | Interactions | None needed — splits represent them | **Total:** room share × household size, then × SES. **Composition:** room share × median age, then × daycare. One per candidate | Only room shares vary within a neighborhood, so every well-powered interaction is room share × a neighborhood feature. Each phase takes the moderator matching its question — household size for *how many*, neighborhood age for *which ages* (Section 6) |
 
@@ -733,19 +748,19 @@ Three rules that the declarations depend on:
 ### 8.0 Shared column groups
 
 ```python
-ROOM_SHARES = ("3_rooms_share", "4_rooms_share", "5_rooms_share")
+from age_group_prediction.preprocessing import ShareTransformer
+
+# Section 2: the 3-room share is the omitted reference.
+shares = ShareTransformer(
+    ("3_rooms", "4_rooms", "5_rooms", "6_rooms"), reference_column="3_rooms"
+)
+table = shares.fit_transform(raw_table)  # adds 4_, 5_ and 6_rooms_share
+
+ROOM_SHARES = ("4_rooms_share", "5_rooms_share", "6_rooms_share")
 SCHOOL = OneHot(
     categories=("none", "existing", "planned"), reference_category="none"
 )
 ```
-
-> **`ROOM_SHARES` is what exists today, not what Section 2 decides.**
-> `modeling_config.py` derives `3_`, `4_` and `5_rooms_share`. Section 2 makes
-> the 3-room share the omitted **reference**, so the modeled shares become
-> `4_`, `5_` and `6_rooms_share` — the `build_modeling_table` change listed as
-> outstanding item 1 below. When it lands, this one tuple changes and every
-> declaration follows. Until then the room-share coefficients are relative to
-> whatever the three listed shares leave out, not to the 3-room share.
 
 ### 8.1 Model A — `DirectCohortModel` (LightGBM)
 
@@ -768,23 +783,28 @@ tree = FeatureTransformer(
         ),
         ColumnPlan(name="school", columns="school_status", transforms=(SCHOOL,)),
     ),
-    exposure_column="n_apartments",
 )
 ```
 
-**`n_apartments` is both a feature and the offset, on purpose.** Section 3.3
-keeps it as a column *and* passes $\log n$ as LightGBM's `init_score`: the
-offset asserts exact proportionality, and the feature lets the trees learn
-departures from it. The package permits this — whether an exposure is also a
-predictor is a modeling choice, and it is a redundant one only for a GLM — so
-the offset comes from the transformer, named and checked for positivity:
+**`n_apartments` can be both a feature and the offset, on purpose.** Section
+3.3 keeps it as a column *and* uses $\log n$ as the offset. The offset asserts
+exact proportionality, and the feature lets the trees learn departures from
+it. The model takes the raw exposure itself, so the transformer declares no
+`exposure_column`:
 
 ```python
-fitted = tree.fit(fit_df)
-init_score = fitted.log_exposure(fit_df).to_numpy()   # Poisson and NB2 only
+from sklearn.base import clone
+from age_group_prediction.modeling import DirectCohortModel
+
+features = clone(tree).fit(fit_df)
+model = DirectCohortModel(use_exposure=True).fit(
+    features.transform(fit_df), fit_df["n_kindergarten"],
+    exposure=fit_df["n_apartments"],
+)
 ```
 
-For the Normal family there is no log link and no offset applies (§3.3).
+For `objective="regression"` there is no log link, and the model refuses
+`use_exposure=True` (§3.3).
 
 **SES-quadratic variant.** Add one plan; `ses` itself stays, because the squared
 column earns its place only by being non-monotone (§3.2):
@@ -955,16 +975,17 @@ offset_train = fold.log_exposure(train_df)
 
 ### 8.7 Still Outstanding
 
-What this section replaced was an implementation checklist. Two of its items are
-now satisfied by the package — the daycare, room-share and centering forms of
+What this section replaced was an implementation checklist. Some of its items
+are now satisfied by the package — the daycare, room-share and centering forms of
 its item 2 are expressed by `DomainMinMax`, `RelativeSaturation`,
 `Center`+`DomainScale` and `Standardize`+`Quadratic`; and its item 4, adding
 entries to a closed `_VALID_INTERACTIONS` literal, is replaced by open
 user-named `Interaction`s. **The rest still stand:**
 
-1. **Schema and `build_modeling_table`:** make 3 rooms the reference; derive and
-   validate the 4-, 5- and 6-room shares. Until this lands, `ROOM_SHARES` above
-   is `3/4/5` and the coefficients read against a different omitted share.
+1. **Room-share reference:** done for new code.
+   `ShareTransformer(..., reference_column="3_rooms")` derives the 4-, 5- and
+   6-room shares (§8.0). The old `build_modeling_table` keeps the 6-room
+   reference until it is deleted with `modeling_config`.
 2. **Candidate enumeration:** drop the spline candidates and
    `tree__daycare_log1p`; offer the two daycare forms; keep the composition
    stage's SES form **linear** (no `composition__ses_quadratic`); emit the
@@ -972,9 +993,10 @@ user-named `Interaction`s. **The rest still stand:**
    `FeatureSpec` in
    [fitted_features.py](../src/age_group_prediction/fitted_features.py) rather
    than on the declarations above, and moves when that module is retired.
-3. **`DirectCohortModel`:** pass $\log n$ as `init_score` for Poisson and NB2 in
-   tuning, refit and prediction, and relax the rule forbidding an exposure on
-   the `tree` component.
+3. **`DirectCohortModel`:** done in the rebuilt
+   `modeling.DirectCohortModel`, which takes `use_exposure=True` and uses
+   $\log n + b$ as `init_score`
+   ([DIRECT_COHORT_MODEL.md §0](DIRECT_COHORT_MODEL.md#0-the-rebuilt-model-modelingdirect_cohortpy)).
 4. **Model C:** no candidate changes of its own. Rerun the prior-predictive
    checks after any unit or baseline change, and revisit
    `total_intercept_loc = -2` against the observed log rate of about −0.5.
