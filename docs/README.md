@@ -7,9 +7,6 @@ This index defines document authority for the compact component simulator.
 | Document | Authority |
 |---|---|
 | [Simplified model specification](SIMPLIFIED_MODEL_PLAN.md) | Canonical behavior, formulas, tables, observability rules, and Section 9 complexity roadmap |
-| [Compact simulator migration plan](COMPACT_SIMULATOR_MIGRATION_PLAN.md) | Completed implementation record, validation gates, deletion sequence, and model assignments |
-| [Marimo research workflow migration plan](MARIMO_MIGRATION_PLAN.md) | Completed Jupyter-to-marimo cutover, package setup, reactive notebook structure, validation gates, and per-step model routing |
-| [EDA and predictive modeling plan](EDA_AND_PREDICTIVE_MODELING_PLAN.md) | Completed EDA roadmap and modeling handoff record |
 | [Modeling rebuild and experiment tracking plan](MODELING_REBUILD_PLAN.md) | Implementation and acceptance record for shared model contracts, three model families, evaluation, strict test isolation, MLflow, and Gate 9 cleanup |
 | [Modeling guide](MODELING_GUIDE.md) | User guide to the simulator-to-model pipeline, public APIs, configuration, evidence, and invariants |
 | [MLflow experiments guide](MLFLOW_EXPERIMENTS_GUIDE.md) | User guide to scratch tracking, run layout, metrics, search, final-run semantics, and model loading |
@@ -33,8 +30,7 @@ stage/state implementation plan were moved on 2026-09-15 to a local,
 git-ignored `docs/archive/`. Their outcomes are recorded in the findings
 record, the rebuild plan, and the Gate 9 report.
 
-If implementation details conflict, the model specification controls behavior
-and the compact migration plan controls software boundaries and delivery order.
+If implementation details conflict, the model specification controls behavior.
 
 ## Advanced Target References
 
