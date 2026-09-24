@@ -2,12 +2,13 @@
 
 One entry per Python module in `src/`: what it owns, its main public API, what
 it depends on inside the project, and where to read more. Names come from the
-code as of 2026-09-15. A module's own docstring, when present, is the most
+code as of 2026-09-24. A module's own docstring, when present, is the most
 detailed and current description.
 
 Modules or names starting with `_` are internal: they can change without
 notice. Import public names from a package root (`age_group_prediction`,
-`age_group_prediction.models`, `age_group_prediction.experiment`,
+`age_group_prediction.models`, `age_group_prediction.modeling`,
+`age_group_prediction.hyperparameter_tuning`, `age_group_prediction.experiment`,
 `age_group_prediction.tracking`, `student_simulator`).
 
 ## How The Packages Fit Together
@@ -69,6 +70,9 @@ does not import `tracking`.
 | `fitted_features.py` | Fold-fitted scaling, splines, schema-driven one-hot encoding, exposure offset, and state export. Was `feature_engineering.py`; the models still use it, and it is slated for removal | `FittedFeatureTransformer` | `modeling_config`, `state_bundle` | [Feature engineering](FEATURE_ENGINEERING.md); guide §5 |
 | `feature_engineering/transforms.py` | The vocabulary of typed transformations, each a frozen model carrying only its own parameters | `Standardize`, `Center`, `Quadratic`, `Log`, `Log1p`, `DomainScale`, `DomainMinMax`, `RelativeSaturation`, `OneHot`, `Transform` | — (pydantic, pandas, numpy, scikit-learn only) | [Feature transformations §8](FEATURE_TRANSFORMATIONS.md) |
 | `feature_engineering/transformer.py` | Declaring a design matrix and fitting it: named column plans, products of transformed columns, and the exposure offset | `ColumnPlan`, `Interaction`, `FeatureTransformer` | — (pydantic, pandas, numpy, scikit-learn only) | [Feature transformations §8](FEATURE_TRANSFORMATIONS.md) |
+| `preprocessing.py` | Row-wise preprocessing that learns nothing: count columns to shares, with an optional omitted reference | `ShareTransformer` | — (numpy, pandas, scikit-learn only) | [Feature transformations §8.0](FEATURE_TRANSFORMATIONS.md#80-shared-column-groups) |
+| `hyperparameter_tuning/parameters.py` | The values each hyperparameter may take, one class per Optuna `suggest_*` call, validated when created | `Parameter`, `FloatParameter`, `IntParameter`, `CategoricalParameter`, `ParamValue` | — (optuna, pydantic only) | [Hyperparameter tuning plan](HYPERPARAMETER_TUNING_PLAN.md) |
+| `hyperparameter_tuning/evaluator.py` | Score one Optuna trial: set its parameters, fit and score every CV fold, and combine the fold scores. Not yet switched to `BaseAgeGroupModel` | `CVHyperparameterEvaluator`, `Aggregation` | `utils`, `hyperparameter_tuning.parameters` | [Hyperparameter tuning plan §9.7](HYPERPARAMETER_TUNING_PLAN.md) |
 | `results.py` | Validated, model-independent prediction and evaluation contracts | `PredictionResult`, `EvaluationResult`, `ParametricDistributionSpec` | `modeling_config` | [Evaluation and metrics §1](EVALUATION_AND_METRICS.md#1-the-prediction-contract); guide §6 |
 | `metrics.py` | Metric protocol and classes: point, likelihood, composition, reconciliation, interval, and PIT metrics; capability checks | `Metric`, `MetricResult`, `MeanAbsoluteError`, `RootMeanSquaredError`, `MeanBias`, `R2`, `MeanPoissonDeviance`, `ParametricPredictiveNegativeLogLikelihood`, `PointwisePredictiveNegativeLogLikelihood`, `JointPredictiveNegativeLogLikelihood`, `CompositionLogLoss`, `CompositionBrierScore`, `ReconciliationError`, `IntervalCoverage`, `MeanIntervalWidth`, `WeightedIntervalScore`, `PredictiveNegativeLogLikelihood` and `RandomizedPIT` (abstract bases), `ParametricRandomizedPIT`, `DrawsRandomizedPIT`, `default_metric_set`, `available_prediction_capabilities` | `distributions`, `results`, `modeling_config` | [Evaluation and metrics](EVALUATION_AND_METRICS.md); guide §7; plan §9 |
 | `evaluation.py` | Evaluate fixed predictions and neighborhood-cluster bootstrap intervals; never fits models | `evaluate_predictions`, `neighborhood_cluster_bootstrap`, `BootstrapEvaluationResult`, `MissingCapabilityPolicy` | `metrics`, `resampling`, `results`, `modeling_config` | [Evaluation and metrics §6-7](EVALUATION_AND_METRICS.md#7-neighborhood-cluster-bootstrap); guide §7 |
@@ -78,13 +82,29 @@ does not import `tracking`.
 | `tuning.py` | Deterministic Optuna studies over completed trials | `run_optuna_study`, `TuningResult`, `TrialRecord` | `modeling_config` | — |
 | `state_bundle.py` | JSON state-bundle format and checks shared by all models | `STATE_BUNDLE_FORMAT`, `check_bundle_header`, `verify_training_frame`, `restore_config`, `restore_feature_spec`, `dependency_versions` | `hashing`, `modeling_config` | Guide §13; README "Saving And Reloading" |
 
+## `age_group_prediction.modeling` — Rebuilt Models (Not Yet Wired)
+
+These are scikit-learn-style models that replace `models/` and
+`modeling_config`: settings in the constructor, and `fit(X, y)` / `predict(X)`
+on an already transformed design matrix. Nothing in `experiment/` or
+`tracking/` calls them yet; the old `models/` is deleted once all three models
+are rebuilt. Plan: [MODEL_REIMPLEMENTATION_PLAN.md](MODEL_REIMPLEMENTATION_PLAN.md).
+
+| Module | Responsibility | Main public API | Depends on |
+|---|---|---|---|
+| `__init__.py` | Public surface of the rebuilt models | `BaseAgeGroupModel`, `DirectCohortModel`, `Objective`, `Metric`, `POISSON_DEVIANCE`, `RMSE`, `MAE` | `base`, `direct_cohort`, `metrics` |
+| `base.py` | The shared contract: abstract `fit` and `predict`, and `evaluate(y_true, y_pred, metric)`; `get_params`/`set_params`/`clone` come from scikit-learn's `BaseEstimator` | `BaseAgeGroupModel` | `metrics` |
+| `metrics.py` | A named scoring function of `(y_true, y_pred)` with its direction, and three ready-made ones | `Metric`, `POISSON_DEVIANCE`, `RMSE`, `MAE` | — (scikit-learn only) |
+| `direct_cohort.py` | **Model A, rebuilt.** One LightGBM regressor for one cohort with fixed hyperparameters; `poisson` or `regression`; optional exposure offset | `DirectCohortModel`, `Objective` | `base` |
+
+Model description: [DIRECT_COHORT_MODEL.md §0](DIRECT_COHORT_MODEL.md#0-the-rebuilt-model-modelingdirect_cohortpy).
+
 ## `age_group_prediction.models` — Model Families
 
-Model descriptions: [DIRECT_COHORT_MODEL.md](DIRECT_COHORT_MODEL.md),
+Being replaced by `modeling` (above). Model descriptions: [DIRECT_COHORT_MODEL.md](DIRECT_COHORT_MODEL.md),
 [INDEPENDENT_TOTAL_PROBABILITY_MODEL.md](INDEPENDENT_TOTAL_PROBABILITY_MODEL.md),
 [BAYESIAN_CONDITIONAL_MODEL_OVERVIEW.md](BAYESIAN_CONDITIONAL_MODEL_OVERVIEW.md),
 and the full [BAYESIAN_CONDITIONAL_MODEL.md](BAYESIAN_CONDITIONAL_MODEL.md);
-specification: plan §6-8 in [MODELING_REBUILD_PLAN.md](MODELING_REBUILD_PLAN.md);
 overview: guide §6. `models/__init__.py` imports the LightGBM model before the
 torch model to avoid a native-runtime crash when reloading boosters.
 
@@ -160,7 +180,7 @@ docstring describes the run layout in detail. The final path is described in
 
 | Location | Role | Read more |
 |---|---|---|
-| `notebooks/01_eda.py` | EDA client | [EDA plan](EDA_AND_PREDICTIVE_MODELING_PLAN.md) |
+| `notebooks/01_eda.py` | EDA client | [README](../README.md#run-the-modeling-notebook) (opened the same way as the modeling notebook) |
 | `notebooks/02_model_fitting.py` | Thin, button-gated modeling client | [README](../README.md#run-the-modeling-notebook); guide §15 |
 | `configs/simulation.toml`, `configs/modeling.toml`, `configs/validation.toml` | Simulator, modeling/experiment, and test-only threshold settings | Guide §1 and intro |
 | `tests/unit`, `tests/validation`, `tests/characterization` | Focused contracts; recovery and real-model checks; simulator and notebook behavior | README "Run The Tests" |
