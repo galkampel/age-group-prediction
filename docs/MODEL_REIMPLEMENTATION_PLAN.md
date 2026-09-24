@@ -2,8 +2,9 @@
 
 **Branch:** `fix/direct-cohort-fixed-hyperparameters`, rebased onto
 `feat/hyperparameter-tuning`. Draft PR #6 merges into `feat/hyperparameter-tuning` (PR #5's branch).
-**Status (2026-09-24):** Phase 0 is done. The non-slow suite on the rebased branch
-gives **932 passed**. Phase 1 is done (940 passed) and awaiting your validation (uncommitted). Next: Phase 2, Step 2.1.
+**Status (2026-09-24):** Phases 0 and 1 are committed. The non-slow suite gives
+**940 passed**. Phase 2 was revised after a review (§2's starting rate, merged
+fit/predict step, reworked tests). Next: Step 2.1.
 
 **Workflow**
 - Every step in §4 is a validation stop.
@@ -51,11 +52,28 @@ LightGBM's `init_score` is the offset.
   `FeatureTransformer`. Also keep `n_apartments` in a plan as an ordinary
   feature, so the trees can learn departures from proportionality
   ([FEATURE_TRANSFORMATIONS.md](FEATURE_TRANSFORMATIONS.md) §3.3 and §8.1).
-- **At fit**, the model passes `transformer.log_exposure(X)` as `init_score`.
+- **At fit**, the model passes `log n + base_log_rate_` as `init_score`, where
+  `log n` is `transformer.log_exposure(X)`.
+- **Why the starting rate.** Given an `init_score`, LightGBM skips
+  `boost_from_average`. The trees would then start from `log n` alone, that is
+  1 child per apartment, and would have to learn the real rate (about 0.13)
+  through slow gradient steps. `base_log_rate_ = log(Σy / Σn)` restores that
+  start in rate space.
+
+  Probe on 300 simulated rows with 50 trees:
+
+  | Start | Training mean prediction (true 6.6) | Test Poisson deviance |
+  |---|---|---|
+  | `log n` only | 9.95 | 2.30 |
+  | `log n + base_log_rate_` | 6.60 | 1.13 |
+  | No offset | — | 1.22 |
+
+  Without the starting rate, the offset model is worse than no offset. With
+  200 trees the two starts converge.
 - **At predict**, LightGBM does **not** add the offset back. A probe with
   lightgbm 4.7.0 gave a mean `predict()` of **0.66** against a true mean of
   **29.9**, while `exp(predict(raw_score=True) + log n)` gave 29.9. So the
-  model computes that sum itself.
+  model computes `exp(raw + log n + base_log_rate_)` itself.
 - **Regression** has no log link, so an exposure is refused.
 
 ---
@@ -68,20 +86,21 @@ LightGBM's `init_score` is the offset.
 | M2 | `BaseAgeGroupModel(BaseEstimator, ABC)`. Settings go in `__init__`, stored verbatim. Data are method arguments only. Fitted state lives in trailing-underscore attributes | scikit-learn then provides `get_params`, `set_params` and `clone`, which the tuning evaluator needs (PR #5, D11) |
 | M3 | Base API: abstract `fit(X, y)` and `predict(X)`, and a concrete `evaluate(y_true, y_pred, metric) -> float` that does not call `predict` | A metric is applied to the targets and the predictions. `evaluate` stays a method so a later model (B or C) can override how it scores. `RegressorMixin` is not used, because its `score` (R²) would be a second scoring path |
 | M4 | A metric is a `Metric(name, function, greater_is_better=False)` in `modeling/metrics.py`, a frozen standard-library dataclass checked in `__post_init__`, like `splitting.Splitter`. It is not callable: `model.evaluate` is the one named way to score. `function(y_true, y_pred) -> float` may be any callable, from sklearn or custom. Ready-made: `POISSON_DEVIANCE`, `RMSE` and `MAE` | Custom metrics can't be assumed to be lower-is-better, so the direction is stored, as sklearn's `make_scorer` does, and the tuner's sign rule (D12) reads it. The package-local module avoids the old top-level `metrics.py`, whose `Metric` Protocol needs a `PredictionResult` and is deleted with the old stack. Not pydantic: a metric is built only in code (a function can't come from a config), so parsing adds nothing, and a dataclass already rejects a misspelled keyword |
-| M5 | `get_metadata` is deferred and decided in Step 2.6 | It may be needed. Until then, `get_params()` and the public fitted attributes cover it |
+| M5 | `get_metadata` is deferred and decided in Step 2.5 | It may be needed. Until then, `get_params()` and the public fitted attributes cover it |
 | M6 | One `DirectCohortModel` instance per cohort. `y` is a Series, and `predict` returns a 1-D array of means | Cohorts are independent, so each gets its own features, target and tuned hyperparameters |
 | M7 | Only the built-in objectives `"poisson"` and `"regression"`. No NB2, no `custom_nb2_gradient` and no dispersion | Requirement. The old `nb2_gradient_hessian` stays in `distributions.py` until the old stack is deleted (M1) |
 | M8 | Fixed hyperparameters are explicit keyword arguments with LightGBM's defaults: `n_estimators`, `learning_rate`, `num_leaves`, `max_depth`, `min_child_samples`, `reg_alpha`, `reg_lambda`, `min_split_gain`, `subsample` and `colsample_bytree`, plus `random_state=42` and `n_jobs=1`. No Optuna runs inside `fit` | `set_params(**trial_params)` needs explicit arguments. `n_jobs=1` avoids the OpenMP crash alongside torch on macOS. See the note below for the fixed internals |
 | M9 | The constructor takes `transformer: FeatureTransformer`, and `fit` uses `clone(transformer).fit(X)` | Each fold learns its own statistics, and the caller's declaration is never mutated |
-| M10 | When `transformer_.exposure_column` is set, `fit` passes `log n` as `init_score` and `predict` returns `exp(raw + log n)`. `"regression"` with an exposure raises | See §2 |
+| M10 | When `transformer_.exposure_column` is set, `fit` learns `base_log_rate_ = log(Σy / Σn)` and passes `log n + base_log_rate_` as `init_score`. `predict` returns `exp(raw + log n + base_log_rate_)`. `"regression"` with an exposure raises | See §2. The starting rate replaces the `boost_from_average` that LightGBM switches off when given an `init_score` |
 | M11 | Validation happens in `fit`, not in `__init__` | `set_params` bypasses `__init__` |
-| M12 | Dropped from Model A: bootstrap draws, intervals, pointwise log probabilities, `PredictionResult`, state bundles, `configuration_record`, seed records, timers and `minimum_mean` clipping | Out of scope ("means only for now") or not needed. Poisson means are `exp(·) > 0`, and regression output is returned as is |
+| M12 | Dropped from Model A: bootstrap draws, intervals, pointwise log probabilities, `PredictionResult`, state bundles, `configuration_record`, seed records, timers and `minimum_mean` clipping | Out of scope ("means only for now") or not needed. Poisson means are `exp(·) > 0`, and regression output is returned as is. A regression model can predict negative values, and scoring it with `POISSON_DEVIANCE` then raises. That is correct, because the metric is undefined there |
 
 **Fixed internals (M8):**
-- `deterministic=True`
-- `force_col_wise=True`
-- `verbosity=-1`
-- `subsample_freq=1`, set only when `subsample < 1`. Without it, LightGBM ignores `subsample`.
+- `deterministic=True`, so repeated fits give identical trees.
+- `force_col_wise=True`, which LightGBM's docs recommend alongside `deterministic`.
+- `verbosity=-1`, which silences LightGBM's messages.
+- `subsample_freq=1`, set only when `subsample < 1`. Without it, LightGBM
+  ignores `subsample`: a probe with `subsample=0.5` gave identical predictions.
 
 ### Target code shape
 
@@ -90,7 +109,7 @@ LightGBM's `init_score` is the offset.
 @dataclass(frozen=True)
 class Metric:
     name: str
-    function: Callable[..., float]  # function(y_true, y_pred) -> float
+    function: Callable[[ArrayLike, ArrayLike], float | np.floating]
     greater_is_better: bool = False
 
 
@@ -111,9 +130,14 @@ class BaseAgeGroupModel(BaseEstimator, ABC):
 
 
 # modeling/direct_cohort.py
+Objective = Literal["poisson", "regression"]
+
+
 class DirectCohortModel(BaseAgeGroupModel):
-    def __init__(self, transformer, *, objective="poisson", n_estimators=100, ...,
-                 random_state=42, n_jobs=1): ...
+    def __init__(self, transformer: FeatureTransformer, *, objective: Objective = "poisson",
+                 n_estimators=100, ..., random_state=42, n_jobs=1): ...
+
+    # fitted: transformer_, regressor_, base_log_rate_ (None without an exposure)
 ```
 
 Usage: one instance per cohort.
@@ -158,7 +182,7 @@ It deliberately has none of the following:
 
 Two tests are left out because they would test libraries rather than our code:
 - **"The base cannot be instantiated"** tests Python's `ABC`.
-- **`clone` / `set_params`** tests sklearn. It runs in Step 2.4 instead, on the
+- **`clone` / `set_params`** tests sklearn. It runs in Step 2.3 instead, on the
   real `DirectCohortModel` constructor.
 
 *Revised 2026-09-24.* The first version of Step 1.1 put a name-keyed `METRICS`
@@ -242,50 +266,72 @@ Not changed:
 
 ### Phase 2: DirectCohortModel
 
-**Step 2.1: constructor and validation.** Add `__init__` (M8, M9), which stores
-every argument verbatim. Add a check, called from `fit`, that rejects an
-unknown objective and `"regression"` combined with an exposure.
-- [ ] `get_params()` lists exactly the constructor arguments.
+*Revised 2026-09-24, after Phase 1.*
+- **Starting rate.** §2 adds `base_log_rate_`, found by probing LightGBM.
+- **`fit` and `predict` merged.** They form one step, because the offset is a
+  single contract across both methods, and a fit can only be checked through
+  its predictions.
+- **Tests reworked.** Each test now catches a mistake in our own code. Tests
+  that only checked a library (sklearn's `get_params` and `check_is_fitted`,
+  LightGBM's seeding) or restated the implementation were dropped.
 
-**Step 2.2: `fit`.**
-1. Clone and fit the transformer.
-2. Build the `LGBMRegressor` from the hyperparameters and the fixed internals (M8).
-3. Fit it with `init_score=log n` when an exposure is declared (M10).
-4. Store `transformer_` and `regressor_`.
+**Step 2.1: constructor and validation.**
+- `__init__` stores every argument verbatim (M8, M9). `objective` is typed
+  `Objective = Literal["poisson", "regression"]`.
+- A private check, called at the start of `fit`, rejects:
+  - an unknown objective;
+  - `"regression"` combined with an exposure, read from
+    `self.transformer.exposure_column` before anything is fitted.
 
 Done when:
-- [ ] Fitting a small simulated frame works for both objectives.
+- [ ] The code reads cleanly. Its behavior is tested in Step 2.3.
 
-**Step 2.3: `predict`.**
+**Step 2.2: `fit` and `predict` (M10).**
+
+`fit`:
+1. Clone the transformer and fit it on `X`.
+2. When an exposure is declared, compute `log n`, set
+   `base_log_rate_ = log(Σy / Σn)`, and fit the `LGBMRegressor` with
+   `init_score = log n + base_log_rate_`. Otherwise `base_log_rate_ = None` and
+   no `init_score` is passed.
+3. Store `transformer_`, `regressor_` and `base_log_rate_`.
+
+`predict`:
 1. Call `check_is_fitted`, then transform `X`.
 2. Without an exposure, return `regressor_.predict(features)`.
 3. With an exposure, return
-   `exp(regressor_.predict(features, raw_score=True) + log n)`.
+   `exp(regressor_.predict(features, raw_score=True) + log n + base_log_rate_)`.
 
 Done when:
-- [ ] A Poisson model with an exposure has a mean training-data prediction close
-  to the mean of `y`. The naive path gets this wrong (§2).
+- [ ] On a small frame, the mean training prediction is close to the mean of `y`.
 
-**Step 2.4: `tests/unit/test_modeling_direct_cohort.py`.** The tests cover:
-- `clone` and `set_params` round-trip;
-- the caller's transformer stays unfitted after `fit`;
-- `NotFittedError` is raised before `fit`;
-- Poisson with an exposure: `predict == exp(raw + log n)`;
-- with `n_apartments` as the exposure only, doubling it doubles the prediction exactly;
-- Poisson without an exposure works;
-- `"regression"` with an exposure raises, and so does an unknown objective;
-- a fixed `random_state` with `subsample < 1` is reproducible;
-- `evaluate` matches sklearn.
+**Step 2.3: `tests/unit/test_modeling_direct_cohort.py`.** Six tests on a small
+synthetic frame. Each one names the mistake it catches:
+1. **Constructor stores arguments verbatim**, which the tuner relies on:
+   `clone(model).set_params(n_estimators=5)` changes only the copy.
+2. **The caller's transformer stays unfitted** after `fit` (M9).
+3. **Calibration:** the mean training prediction is close to the mean of `y`
+   with 20 trees. It is parametrized over Poisson with an exposure, Poisson
+   without one, and regression. It catches a missing starting rate or a broken
+   offset.
+4. **Proportionality:** with `n_apartments` as the exposure only, not a
+   feature, doubling it doubles the prediction to 1e-12. It catches an offset
+   ignored at predict time.
+5. **Bagging is active:** `subsample=0.5` gives different predictions from
+   `subsample=1.0`. It catches a missing `subsample_freq`.
+6. **Invalid configuration raises:** an unknown objective, and regression with
+   an exposure.
 
 Done when:
 - [ ] The new tests pass.
-- [ ] The full non-slow suite passes.
-- [ ] The review findings are fixed.
+- [ ] `uv run pytest -m "not slow"` passes: 940 plus the new tests.
+- [ ] mypy and ruff pass, run on the changed files only.
+- [ ] An independent review is done and its findings are fixed.
 
-**Step 2.5: smoke run on simulated data.** A scratchpad script that:
+**Step 2.4: smoke run on simulated data.** A scratchpad script that:
 1. builds the table with `StudentPopulationSimulator` and `ShareTransformer`;
 2. splits it with `Splitter("grouped")`;
-3. fits three Poisson instances, one per cohort, both with and without the
+3. fits three Poisson models, one per cohort, each with and without the
    exposure;
 4. reports `poisson_deviance` per cohort, with the table added to this doc.
 
@@ -293,14 +339,17 @@ Done when:
 - [ ] You have seen the numbers. They are evidence for the "+ size offset"
   variation in FEATURE_TRANSFORMATIONS §5.
 
-**Step 2.6: decide `get_metadata` (M5).** Propose keeping or dropping it, with
+**Step 2.5: decide `get_metadata` (M5).** Propose keeping or dropping it, with
 a reason based on what exists by then.
 - [ ] You have decided, and this doc records the decision.
 
-**Step 2.7: docs.**
-- `DIRECT_COHORT_MODEL.md`: add a new-model section and mark the old one superseded.
-- `FEATURE_TRANSFORMATIONS.md`: drop NB2 from Model A, add the `raw_score`
-  detail to §3.3 and §8.1, and mark §8.7 item 3 done.
+**Step 2.6: docs.**
+- `DIRECT_COHORT_MODEL.md`: add a section on the new model and mark the old
+  one superseded.
+- `FEATURE_TRANSFORMATIONS.md`:
+  - drop NB2 from Model A;
+  - add the `raw_score` and starting-rate details to §3.3 and §8.1;
+  - mark §8.7 item 3 done.
 - `MODULE_REFERENCE.md`: add the `modeling` package.
 - This doc: update the status line.
 
@@ -345,5 +394,5 @@ Done when:
 
 - `uv run pytest tests/unit/test_modeling_base.py tests/unit/test_modeling_direct_cohort.py`
 - `uv run pytest -m "not slow"`: the existing suite is unchanged.
-- The Step 2.5 smoke run, with its results recorded in §4.
+- The Step 2.4 smoke run, with its results recorded in §4.
 - An independent review subagent before each stop.
