@@ -66,6 +66,7 @@ does not import `tracking`.
 | `splitting/splitters.py` | The three split methods; each pairs a train/test split with its cross-validator. Replaces `data_splitting.py`, not yet wired | `Splitter`, `Method`, `DesignMatrix`, `Target`, `Groups` | `splitting.stratified` | [Splitting](SPLITTING.md) |
 | `splitting/stratified.py` | The two splitters scikit-learn does not provide: split within every group, keeping each on both sides | `StratifiedHoldout`, `StratifiedFolds` | — (numpy, scikit-learn only) | [Splitting §3](SPLITTING.md#3-what-stratified_by_group-guarantees) |
 | `utils.py` | Helpers shared across packages: table type aliases and positional row selection | `take_rows`, `DesignMatrix`, `Target`, `Groups` | — | — |
+| `scoring.py` | A named scoring function of `(y_true, y_pred)` with its direction, and three ready-made ones; shared by `modeling` and `hyperparameter_tuning`. Not the root-level `Metric` protocol from `metrics.py` | `Metric`, `POISSON_DEVIANCE`, `RMSE`, `MAE` | — (numpy, scikit-learn only) | [Direct cohort model §0.2](DIRECT_COHORT_MODEL.md#02-api) |
 | `hashing.py` | Stable content hashes for tables and column schemas | `table_hash`, `column_schema_hash` | — | [Data and splitting §4](DATA_AND_SPLITTING.md#4-splitmanifest); guide §14 |
 | `fitted_features.py` | Fold-fitted scaling, splines, schema-driven one-hot encoding, exposure offset, and state export. Was `feature_engineering.py`; the models still use it, and it is slated for removal | `FittedFeatureTransformer` | `modeling_config`, `state_bundle` | [Feature engineering](FEATURE_ENGINEERING.md); guide §5 |
 | `feature_engineering/transforms.py` | The vocabulary of typed transformations, each a frozen model carrying only its own parameters | `Standardize`, `Center`, `Quadratic`, `Log`, `Log1p`, `DomainScale`, `DomainMinMax`, `RelativeSaturation`, `OneHot`, `Transform` | — (pydantic, pandas, numpy, scikit-learn only) | [Feature transformations §8](FEATURE_TRANSFORMATIONS.md) |
@@ -92,9 +93,8 @@ are rebuilt. Plan: [MODEL_REIMPLEMENTATION_PLAN.md](MODEL_REIMPLEMENTATION_PLAN.
 
 | Module | Responsibility | Main public API | Depends on |
 |---|---|---|---|
-| `__init__.py` | Public surface of the rebuilt models | `BaseAgeGroupModel`, `DirectCohortModel`, `Objective`, `Metric`, `POISSON_DEVIANCE`, `RMSE`, `MAE` | `base`, `direct_cohort`, `metrics` |
-| `base.py` | The shared contract: abstract `fit` and `predict`, and `evaluate(y_true, y_pred, metric)`; `get_params`/`set_params`/`clone` come from scikit-learn's `BaseEstimator` | `BaseAgeGroupModel` | `metrics` |
-| `metrics.py` | A named scoring function of `(y_true, y_pred)` with its direction, and three ready-made ones | `Metric`, `POISSON_DEVIANCE`, `RMSE`, `MAE` | — (scikit-learn only) |
+| `__init__.py` | Public surface of the rebuilt models | `BaseAgeGroupModel`, `DirectCohortModel`, `Objective` | `base`, `direct_cohort` |
+| `base.py` | The shared contract: abstract `fit` and `predict`, and `evaluate(y_true, y_pred, metric)`; `get_params`/`set_params`/`clone` come from scikit-learn's `BaseEstimator` | `BaseAgeGroupModel` | `scoring` (top level) |
 | `direct_cohort.py` | **Model A, rebuilt.** One LightGBM regressor for one cohort with fixed hyperparameters; `poisson` or `regression`; optional exposure offset | `DirectCohortModel`, `Objective` | `base` |
 
 Model description: [DIRECT_COHORT_MODEL.md §0](DIRECT_COHORT_MODEL.md#0-the-rebuilt-model-modelingdirect_cohortpy).

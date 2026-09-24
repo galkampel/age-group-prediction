@@ -4,8 +4,8 @@
 committed (`cdc3f98`). Sub-tasks 2.1 and 2.2 committed (`84e8f06`).
 **Unblocked (2026-09-24):** PR #6 (`aee3e6a`) added `modeling.BaseAgeGroupModel`
 and `DirectCohortModel` with fixed hyperparameters; the non-slow suite gives 956
-passed. §9.7's open questions were settled (D11–D17). **Done:** 2.2a (plan doc). **Next:** sub-tasks
-2.2b–2.2d switch the evaluator to `BaseAgeGroupModel`, then 2.3 and 2.4. A new
+passed. §9.7's open questions were settled (D11–D17). **Done:** 2.2a (plan doc), 2.2b (`scoring.py`). **Next:** sub-tasks
+2.2c–2.2d switch the evaluator to `BaseAgeGroupModel`, then 2.3 and 2.4. A new
 session should start with §9, "Handoff notes".
 **Workflow:** each phase ends with an independent review, then stops for your
 approval. Nothing is committed without your approval.
@@ -595,8 +595,8 @@ review, then your approval.
   | 11 | §9.7 repeated §2's decision table | accepted | the table replaced by one pointer line |
   | 12 | `FeatureTransformer.log_exposure` could be mistaken for the exposure | accepted | one §4.2 bullet: pass the raw `n` |
   | 13 | §1's out-of-scope list lacked the old `models/` | accepted | added |
-- [ ] **2.2b Move `Metric` to `age_group_prediction/scoring.py`** (D16).
-  `git mv` `modeling/metrics.py` → `scoring.py` and
+- [x] **2.2b Move `Metric` to `age_group_prediction/scoring.py`** (D16).
+  Move (plain `mv`; git detects the rename when staged) `modeling/metrics.py` → `scoring.py` and
   `tests/unit/test_modeling_metrics.py` → `tests/unit/test_scoring.py`. Update
   the imports: `modeling/base.py`, `modeling/__init__.py` (drops the
   re-export and "the metrics that score them" from its docstring),
@@ -606,8 +606,21 @@ review, then your approval.
   import; `MODEL_REIMPLEMENTATION_PLAN.md` M4 gets a "moved to `scoring.py`
   (D16)" note. Its step records (lines 132–546) stay as history.
   *Done when:*
-  - [ ] a grep finds no `modeling.metrics` and no `Metric`, `POISSON_DEVIANCE`, `RMSE` or `MAE` imported from `modeling`, in src, tests or the current docs (the model plan's step records excluded)
-  - [ ] 956 passed; mypy and ruff clean
+  - [x] a grep finds no `modeling.metrics` and no `Metric`, `POISSON_DEVIANCE`, `RMSE` or `MAE` imported from `modeling`, in src, tests or the current docs (the model plan's step records excluded)
+  - [x] 956 passed (8 warnings, as before); mypy and ruff clean. mypy still checks 15 files (`scoring.py` replaced `modeling/metrics.py`); a temporary untyped function in `scoring.py` was flagged `no-untyped-def`, so the strict override applies.
+
+  *Result:* a pure move. The code is byte-identical and the module docstring
+  gains 3 lines, one of which notes that the root-level `Metric` is the old
+  protocol, a different class. The test changes only its import.
+
+  *Review:*
+
+  | # | finding | verdict | fix |
+  |---|---|---|---|
+  | 1 | the docstring says `hyperparameter_tuning` shares `scoring`, which isn't true yet | rejected | it is D16's purpose, made true in 2.2d of this PR |
+  | 2 | M4's "why" cell still said "package-local" | confirmed | points to `scoring.py` (D16) |
+  | 3 | `MODULE_REFERENCE.md` row omitted numpy | confirmed (`scoring.py:17-18`) | "— (numpy, scikit-learn only)" |
+  | 4 | plan said `git mv`, files moved with `mv` | confirmed | the plan says `mv`; stage the delete and the add together so git records a rename |
 - [ ] **2.2c Exposure in the base contract, and a contract test** (D14, D17).
   `BaseAgeGroupModel.fit(X, y, exposure=None)` and `predict(X, exposure=None)`;
   update the stand-in in `test_modeling_base.py`, and the docs that state

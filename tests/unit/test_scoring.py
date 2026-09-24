@@ -11,7 +11,7 @@ from sklearn.metrics import (
     root_mean_squared_error,
 )
 
-from age_group_prediction.modeling import MAE, POISSON_DEVIANCE, RMSE, Metric
+from age_group_prediction.scoring import MAE, POISSON_DEVIANCE, RMSE, Metric
 
 
 @pytest.mark.parametrize(

@@ -96,7 +96,8 @@ The output $\hat\mu_i$ is an expected **count**, not a rate.
 
 ```python
 from sklearn.base import clone
-from age_group_prediction.modeling import POISSON_DEVIANCE, DirectCohortModel
+from age_group_prediction.modeling import DirectCohortModel
+from age_group_prediction.scoring import POISSON_DEVIANCE
 
 features = clone(tree).fit(train_df)  # tree: a FeatureTransformer (§8.1)
 X_train, X_test = features.transform(train_df), features.transform(test_df)

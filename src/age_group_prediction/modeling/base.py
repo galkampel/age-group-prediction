@@ -10,7 +10,7 @@ import pandas as pd
 from numpy.typing import ArrayLike
 from sklearn.base import BaseEstimator
 
-from .metrics import Metric
+from ..scoring import Metric
 
 __all__ = ["BaseAgeGroupModel"]
 

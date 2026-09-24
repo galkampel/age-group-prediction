@@ -8,7 +8,8 @@ import numpy as np
 import pandas as pd
 from numpy.typing import ArrayLike
 
-from age_group_prediction.modeling import BaseAgeGroupModel, Metric
+from age_group_prediction.modeling import BaseAgeGroupModel
+from age_group_prediction.scoring import Metric
 
 
 class _Model(BaseAgeGroupModel):
