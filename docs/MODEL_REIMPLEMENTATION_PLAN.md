@@ -4,7 +4,7 @@
 `feat/hyperparameter-tuning`. Draft PR #6 merges into `feat/hyperparameter-tuning` (PR #5's branch).
 **Status (2026-09-24):** Phases 0 and 1 are committed. The non-slow suite gives
 **940 passed**. Phase 2 was revised after a review (§2's starting rate, merged
-fit/predict step, reworked tests), then again after Step 2.1 (no transformer, `use_exposure`). Steps 2.1 and 2.2 are done (uncommitted). Next: Step 2.3.
+fit/predict step, reworked tests), then again after Step 2.1 (no transformer, `use_exposure`). Steps 2.1 and 2.2 are committed. Step 2.3 is done (uncommitted). Next: Step 2.4.
 
 **Workflow**
 - Every step in §4 is a validation stop.
@@ -414,22 +414,24 @@ Done when:
 
 *Trimmed after review.* The checks went from 7 to 3. Four were removed because
 LightGBM or NumPy already raises for them, as a probe confirmed: an unknown
-objective, a wrong-length exposure (at fit; at predict it's a NumPy broadcast
-error), and an all-zero `y`. The two presence checks were merged into one. Test
+objective, a wrong-length exposure at fit, and an all-zero `y`. At predict, a
+wrong length above 1 raises a NumPy broadcast error. A scalar or length-1
+exposure broadcasts to every row, meaning "all buildings have this `n`". The two presence checks were merged into one. Test
 6 pins the errors LightGBM raises. The class docstring and a comment in `fit`
 now say that the exposure gives a rate per apartment, and that
 `base_log_rate_` is the intercept.
 
-**Step 2.3: `tests/unit/test_modeling_direct_cohort.py`.** Six tests on a small
-synthetic frame. Each one names the mistake it catches:
+**Step 2.3: `tests/unit/test_modeling_direct_cohort.py`.** Seven tests (16
+cases) on a small synthetic frame. Each one names the mistake it catches:
 1. **Constructor stores arguments verbatim**, which the tuner relies on:
    `clone(model).set_params(n_estimators=5)` changes only the copy.
 2. **Exposure misuse raises**, parametrized: missing while `use_exposure` is on;
-   given while it's off; zero or negative.
+   given while it's off; zero, negative or infinite.
 3. **Calibration:** the mean training prediction is close to the mean of `y`
    with 20 trees. It is parametrized over Poisson with an exposure, Poisson
-   without one, and regression. It catches a missing starting rate or a broken
-   offset.
+   without one, and regression. It catches a missing starting rate (21.75
+   against 6.68) or a broken offset. The two cases without the exposure are the
+   only cover of the plain predict path.
 4. **Proportionality:** doubling `exposure` at predict time doubles the
    prediction to 1e-12. This is exact because the exposure is not a feature
    unless the caller adds it. It catches an offset ignored at predict time.
@@ -440,12 +442,41 @@ synthetic frame. Each one names the mistake it catches:
    - an unknown objective, a wrong-length exposure at fit, and an all-zero `y`
      with the exposure on. These are LightGBM's errors. The test pins the
      behavior that the removed checks now rely on.
+7. **Predict follows the fitted model** (added after review): after
+   `set_params(use_exposure=False)` on a model fitted with the exposure,
+   `predict(X)` raises instead of returning rates per apartment.
 
 Done when:
-- [ ] The new tests pass.
-- [ ] `uv run pytest -m "not slow"` passes: 940 plus the new tests.
-- [ ] mypy and ruff pass, run on the changed files only.
-- [ ] An independent review is done and its findings are fixed.
+- [x] The new tests pass: 16 cases in about 3 s.
+- [x] `uv run pytest -m "not slow"` passes: **956** (940 + 16), after the review
+  fixes.
+- [x] mypy and ruff pass, run on the changed files only.
+- [x] An independent review is done and its findings are fixed.
+
+**Mutation checks.** Each one broke the code on purpose, and the matching test
+failed:
+- no starting rate: calibration (Poisson with exposure) fails;
+- offset dropped at predict: calibration and proportionality fail;
+- `subsample_freq` always 0: the bagging test fails;
+- predict following the current `use_exposure`: test 7 fails.
+
+**Review record.**
+
+Fixed:
+- **Bug:** `predict` read the current `use_exposure`, so a
+  `set_params(use_exposure=False)` after fitting silently returned rates per
+  apartment (mean 0.99 against 6.68). It now follows the fitted state
+  (`base_log_rate_ is not None`), and the regression rule moved into `fit`.
+- `regressor_` and `base_log_rate_` are now assigned together, only after
+  LightGBM's fit succeeds. A failed refit could otherwise pair new trees with
+  an old intercept.
+- Tests: an infinite exposure case; the calibration comment now quotes the
+  20-tree figure; `objective: Objective` replaces a type ignore.
+- Doc: the status line, and the predict-time wrong-length wording.
+
+Noted, not changed:
+- A NaN in `y` passes silently: `np.sum` on a Series skips it, and LightGBM
+  accepts NaN labels. This is outside the three chosen checks.
 
 **Step 2.4: smoke run on simulated data.** A scratchpad script that:
 1. builds the table with `StudentPopulationSimulator` and `ShareTransformer`;
