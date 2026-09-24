@@ -1,6 +1,8 @@
 # Plan: modular Optuna hyperparameter tuning
 
-**Branch:** `feat/hyperparameter-tuning` · **Status:** plan approved · Phase 0.1 done · no code written yet
+**Branch:** `feat/hyperparameter-tuning` · draft PR #5 · **Status:** Phase 1 done:
+reviewed, full suite 917 passed (880 on `main` + 37 new), 0 failed. Waiting for
+your Phase 1 approval and commit. Next: Phase 2 (objective).
 **Workflow:** each phase ends with an independent review, then stops for your
 approval. Nothing is committed without your approval.
 
@@ -28,7 +30,7 @@ be reused, configured or tested on its own.
 
 | class | answers |
 |---|---|
-| **Parameter** (`FloatParameter`, `IntParameter`, `CategoricalParameter`) + `SearchSpace` | Which values may each hyperparameter take? |
+| **Parameter** (`FloatParameter`, `IntParameter`, `CategoricalParameter`); a search space is a plain list of them | Which values may each hyperparameter take? |
 | **`CrossValidationObjective`** | How is one trial scored? The parameters are set once, then every CV fold is fitted and scored, and the fold scores are combined into one number. |
 | **`HyperparameterStudy`** | How does Optuna search, and what was the best result? |
 
@@ -41,7 +43,7 @@ be reused, configured or tested on its own.
 
 | # | decision | why | details |
 |---|---|---|---|
-| D1 | One class per parameter type, built as frozen pydantic models with a `kind` field that tells them apart | Each class holds only the options its type accepts, so a bad combination fails when the object is built. Specs can be loaded from TOML. Same pattern as `feature_engineering/transforms.py`. | §4.1 |
+| D1 | One frozen **pydantic dataclass** per parameter type, under an abstract `Parameter` base. Types are checked strictly by pydantic; value rules are delegated to Optuna's own distribution classes. | Each class holds only the options its type accepts. Pydantic rejects wrong types, which plain dataclasses let through (§4.1.1). Optuna already checks almost every value rule, so we add only the three it lets through. There is no dict/TOML loading in v1: the existing TOML table stores only `[low, high]` pairs without `log`, so a migration would need a new format anyway. | §4.1 |
 | D2 | The model is an sklearn estimator or `Pipeline` used as a template: `clone(template).set_params(**params)` | This is the sklearn standard. Preprocessing inside a `Pipeline` is refitted on every fold, so validation rows can't leak into it. | §4.2 |
 | D3 | The folds are built once, when the objective is created | Every trial is then compared on identical folds. | §4.2 |
 | D4 | The model is fitted inside the objective; everything that doesn't depend on the trial's parameters happens outside it | The parameters change on every trial. The folds (built before the study) and the final refit (after it) do not. | §4.2 |
@@ -60,7 +62,7 @@ The layout mirrors `splitting/` and `feature_engineering/`:
 ```
 src/age_group_prediction/hyperparameter_tuning/
     __init__.py      # docstring (how the pieces fit) and the public API
-    parameters.py    # FloatParameter, IntParameter, CategoricalParameter, Parameter, SearchSpace
+    parameters.py    # ParamValue, Parameter, FloatParameter, IntParameter, CategoricalParameter
     objective.py     # CrossValidationObjective (fold loop, aggregation, corrected SE)
     study.py         # HyperparameterStudy, TuningResult, TrialRecord
 
@@ -73,7 +75,8 @@ tests/unit/
 - **Imports go one way:** `objective.py` imports `parameters.py`, and
   `study.py` imports nothing from the package. The study accepts any
   `trial -> float` callable.
-- **Dependencies:** optuna, scikit-learn, numpy and pydantic. No imports from
+- **Dependencies:** optuna, scikit-learn, numpy and pydantic (already a project
+  dependency, used by `feature_engineering`). No imports from
   `tuning.py`, `modeling_config.py` or `data_splitting.py`.
 - **Not re-exported** from `age_group_prediction/__init__.py`, the same as
   `splitting` and `feature_engineering`.
@@ -85,56 +88,159 @@ tests/unit/
 
 ### 4.1 Parameters (`parameters.py`)
 
+Five names, each doing one thing:
+
 ```python
-class _ParameterBase(BaseModel):              # frozen, extra="forbid"
-    name: str                                 # the set_params key, e.g. "model__learning_rate"
-    def suggest(self, trial: optuna.Trial) -> ParamValue: ...
+from pydantic.dataclasses import dataclass as pydantic_dataclass
 
-class FloatParameter(_ParameterBase):         # -> trial.suggest_float(name, low, high, step=, log=)
-    kind: Literal["float"] = "float"
-    low: float; high: float; log: bool = False; step: float | None = None
+type ParamValue = None | bool | int | float | str      # what Optuna can store
+_STRICT = ConfigDict(strict=True, allow_inf_nan=False)  # no silent conversion; no NaN/inf
 
-class IntParameter(_ParameterBase):           # -> trial.suggest_int(name, low, high, step=, log=)
-    kind: Literal["int"] = "int"
-    low: int; high: int; log: bool = False; step: int = 1
+@pydantic_dataclass(frozen=True, config=_STRICT)
+class Parameter(ABC):
+    """One hyperparameter: its set_params name and the values it may take."""
+    name: str                                           # e.g. "model__learning_rate"; inherited
+    def __post_init__(self) -> None: ...                # builds the Optuna distribution (value rules)
+    @abstractmethod
+    def suggest(self, trial: BaseTrial) -> ParamValue: ...
 
-class CategoricalParameter(_ParameterBase):   # -> trial.suggest_categorical(name, choices)
-    kind: Literal["categorical"] = "categorical"
-    choices: tuple[None | bool | int | float | str, ...]
+@pydantic_dataclass(frozen=True, config=_STRICT)
+class FloatParameter(Parameter):                        # -> trial.suggest_float
+    low: float; high: float
+    _: KW_ONLY                                          # log and step keyword-only, as in Optuna
+    log: bool = False
+    step: float | None = None
 
-Parameter = Annotated[FloatParameter | IntParameter | CategoricalParameter,
-                      Field(discriminator="kind")]
+@pydantic_dataclass(frozen=True, config=_STRICT)
+class IntParameter(Parameter):                          # -> trial.suggest_int
+    low: int; high: int
+    _: KW_ONLY
+    log: bool = False
+    step: int = 1
 
-class SearchSpace(BaseModel):
-    parameters: tuple[Parameter, ...]
-    def suggest(self, trial) -> dict[str, ParamValue]: ...
+@pydantic_dataclass(frozen=True, config=_STRICT)
+class CategoricalParameter(Parameter):                  # -> trial.suggest_categorical
+    # A list is accepted as a tuple; numpy integers and bools are rejected.
+    choices: Annotated[tuple[ParamValue, ...], BeforeValidator(_as_choice_tuple)]
 ```
 
-**Validation when the object is built.** These rules match Optuna's own but
-fail earlier, with a clearer message:
+**A search space is a plain list of parameters**, not a class of its own:
+`[IntParameter("model__max_depth", 3, 8), FloatParameter(...)]`. A
+`SearchSpace` class was built in 1.5 and then removed (§4.1.2).
 
-| type | rules |
+The arguments mirror Optuna's own calls. The name, low and high are
+positional; `log` and `step` are keyword-only, the same as in
+`trial.suggest_float(name, low, high, *, step, log)`:
+`FloatParameter("model__learning_rate", 0.01, 0.2, log=True)`.
+
+**Validation happens in two layers when the object is built:**
+1. **Types (pydantic, strict):** for example `IntParameter("p", 1.5, 9)`,
+   `IntParameter("p", True, 9)`, `log="yes"` and `name=None` are rejected. An
+   int is accepted where a float is expected, as Optuna itself allows.
+2. **Values (Optuna):** see below.
+
+Both layers raise `pydantic.ValidationError`, which is a subclass of
+`ValueError`. A value error names the parameter (`parameter 'model__alpha': ...`).
+A type error names the class and the argument: its position if passed
+positionally, e.g. `1 validation error for IntParameter` / `1` for `low`.
+
+**Value rules.** Measured against Optuna 4.9, Optuna's
+distribution classes already raise a clear `ValueError` for every basic rule:
+`low > high`, `log` with `step`, `log` with `low <= 0` (float) or `low < 1`
+(int), `step <= 0`, an int `log` with `step != 1`, and empty choices. So each
+parameter's `__post_init__` builds its Optuna distribution (`FloatDistribution`,
+`IntDistribution`, `CategoricalDistribution`), and those errors appear when
+the parameter is created instead of at the first trial. The rules aren't
+written a second time.
+
+Only three cases pass Optuna silently. These are the only rules this package
+adds:
+
+| case | what Optuna does | here |
+|---|---|---|
+| the step doesn't divide `high - low` (e.g. `0..1` with step `0.3`) | a warning, then it **quietly lowers `high`** to 0.9 | error. Optuna's warnings are escalated to errors while the distribution is built, which also covers non-scalar categorical choices. |
+| duplicate categorical choices | accepted silently, so the sampler gives that choice double weight | error |
+| two parameters with the same name | the second call returns the first value, or a warning if the ranges differ | error in `CrossValidationObjective`'s constructor |
+
+The objective also rejects an empty list.
+
+**Deliberately left out** (can be added without breaking anything):
+- **the `kind` field, a type union and dict/TOML loading:** nothing loads a
+  search space from a file yet (see D1).
+- **a "fixed" parameter type:** fixed values go on the estimator template (§5).
+- **conditional or derived ranges:** see D9.
+
+#### 4.1.1 Why pydantic dataclasses, not plain dataclasses or `BaseModel`
+
+I measured this against the Phase 1 code as first written with plain dataclasses:
+
+| input | plain `dataclass` | pydantic `dataclass` (strict) |
+|---|---|---|
+| `IntParameter("p", 1.5, 9)` | **accepted**: stores `low=1.5` | rejected: "Input should be a valid integer" |
+| `IntParameter("p", True, 9)` | **accepted** | rejected |
+| `FloatParameter("p", 0.1, 1.0, log="yes")` | **accepted**: `log="yes"` | rejected: "Input should be a valid boolean" |
+| `FloatParameter(None, 0.1, 1.0)` | **accepted**: `name=None` | rejected |
+| `CategoricalParameter("p", ["a", "b"])` | **accepted as a list, and the list can still be changed after creation**, so the "frozen" object isn't frozen | converted to the tuple `("a", "b")` |
+| `FloatParameter("p", 0.1, 1.0, log=True)` (positional, like Optuna) | ✓ | ✓ |
+| `KW_ONLY`, `frozen`, the abstract base, `__post_init__` | ✓ | ✓ (all checked) |
+| mypy `--strict` | ✓ | ✓ (checked) |
+
+| option | verdict |
 |---|---|
-| all | `name` is not empty; `low <= high` |
-| float | `log` and `step` cannot both be set; `log` needs `low > 0`; `step > 0`; `high - low` must be a multiple of `step` (otherwise Optuna quietly lowers `high`) |
-| int | `step >= 1`; `log` needs `step == 1` and `low >= 1`; `high - low` must be a multiple of `step` |
-| categorical | at least one choice; choices are unique |
-| SearchSpace | at least one parameter; no duplicate names |
+| plain `dataclasses.dataclass` | Rejected: wrong types pass silently (table above). |
+| **`pydantic.dataclasses.dataclass`** (chosen) | The same syntax and positional calls as a dataclass, plus type validation, which is what the table shows. The change is one import and a `config=`. |
+| `pydantic.BaseModel` (as in `feature_engineering`) | Rejected: it only accepts keyword arguments (`FloatParameter(name=..., low=..., high=...)`), so the calls would no longer mirror Optuna's `suggest_float(name, low, high)`. `BaseModel`'s extra features (`model_dump`, `model_validate`) aren't needed in v1, and `TypeAdapter` gives the same for pydantic dataclasses if loading is ever added. |
+
+Strict mode is the right default: lax mode would silently turn `"0.1"` into
+`0.1` and `1` into `True`. The single exception is `choices`, where accepting
+a list is what users expect.
+
+**The rule used across this package** (best practice):
+
+| tool | use it for | here |
+|---|---|---|
+| `pydantic.BaseModel` | data that crosses a boundary (config files, JSON, APIs): parsed, validated and serialized | not needed in v1; `feature_engineering`'s specs are this case |
+| `pydantic.dataclasses.dataclass` | small value objects that code builds, needing validation plus stdlib dataclass behavior (positional arguments, `KW_ONLY`, `dataclasses.asdict/replace`) | **the parameter classes**, the one place where user-typed values enter |
+| stdlib `dataclasses.dataclass` | internal data whose types the code already guarantees | **`TrialRecord` and `TuningResult`** (Phase 3), which are built from Optuna's own records |
+
+This choice doesn't block loading from a file later:
+`TypeAdapter(FloatParameter).validate_python({...})` works on pydantic
+dataclasses.
+
+**Readability:** the decorator is imported as
+`from pydantic.dataclasses import dataclass as pydantic_dataclass`, so every
+class shows it's pydantic (`@pydantic_dataclass(frozen=True, config=_STRICT)`).
+Imported under its bare name, it looked exactly like the standard library.
+
+#### 4.1.2 Why a list, not a `SearchSpace` class
+
+| what `SearchSpace` did | needs a class? |
+|---|---|
+| `suggest(trial)` → `{name: value}` | no: one dict comprehension, in the objective |
+| reject an empty space | no: one check |
+| check each item is a `Parameter` | no: mypy checks it statically |
+| **reject duplicate names** | the only real content; runs once in the objective's constructor, where the parameters are used |
+
+It had one consumer, and it added a type users must learn and wrap lists in.
+If a second consumer ever needs the same checks, a module-level function can
+hold them.
 
 ### 4.2 Objective (`objective.py`)
 
 ```python
 class CrossValidationObjective:
-    def __init__(self, estimator: BaseEstimator, search_space: SearchSpace,
+    def __init__(self, estimator: BaseEstimator, parameters: Sequence[Parameter],
                  X, y, *, cv: BaseCrossValidator, scoring: str | Scorer, groups=None,
                  aggregation: Literal["weighted_mean", "mean", "lower_bound"] = "weighted_mean",
                  z: float | None = None): ...     # "lower_bound" only; None -> 1.0
         # folds = list(cv.split(X, y, groups))   -- once (D3)
-        # rejects: zero folds; an empty validation fold; "lower_bound" with one fold;
+        # rejects: no parameters; duplicate parameter names (Optuna would silently
+        #          reuse the first one's value); zero folds; an empty validation fold;
+        #          "lower_bound" with one fold;
         #          z <= 0; z given with any other aggregation
 
     def __call__(self, trial: optuna.Trial) -> float:
-        # params = search_space.suggest(trial)                   -- once, before any fold
+        # params = {p.name: p.suggest(trial) for p in parameters} -- once, before any fold
         # for each fold i:
         #     model = build_estimator(params).fit(fit rows)
         #     score = scorer(model, validation rows)              -- NaN or inf -> the trial fails
@@ -204,18 +310,18 @@ parallel jobs are allowed; the result records which kind of run it was.
 ## 5. Worked example: `DirectCohortModel`'s LightGBM tuning
 
 ```python
-space = SearchSpace(parameters=(            # same bounds as [direct_cohort_search_space]
-    IntParameter(name="model__max_depth", low=3, high=8),
-    IntParameter(name="model__num_leaves", low=7, high=63),
-    IntParameter(name="model__min_child_samples", low=5, high=40),
-    FloatParameter(name="model__learning_rate", low=0.01, high=0.2, log=True),
-    IntParameter(name="model__n_estimators", low=50, high=400),
-    FloatParameter(name="model__reg_alpha", low=1e-8, high=10.0, log=True),
-    FloatParameter(name="model__reg_lambda", low=1e-8, high=10.0, log=True),
-    FloatParameter(name="model__min_split_gain", low=0.0, high=1.0),
-    FloatParameter(name="model__subsample", low=0.7, high=1.0),
-    FloatParameter(name="model__colsample_bytree", low=0.7, high=1.0),
-))
+parameters = [                              # same bounds as [direct_cohort_search_space]
+    IntParameter("model__max_depth", 3, 8),
+    IntParameter("model__num_leaves", 7, 63),
+    IntParameter("model__min_child_samples", 5, 40),
+    FloatParameter("model__learning_rate", 0.01, 0.2, log=True),
+    IntParameter("model__n_estimators", 50, 400),
+    FloatParameter("model__reg_alpha", 1e-8, 10.0, log=True),
+    FloatParameter("model__reg_lambda", 1e-8, 10.0, log=True),
+    FloatParameter("model__min_split_gain", 0.0, 1.0),
+    FloatParameter("model__subsample", 0.7, 1.0),
+    FloatParameter("model__colsample_bytree", 0.7, 1.0),
+]
 pipeline = Pipeline([                         # fixed settings live on the template
     ("features", FeatureTransformer(...)),
     ("model", LGBMRegressor(objective="poisson", subsample_freq=1, random_state=seed,
@@ -228,7 +334,7 @@ X_train, X_test, y_train, y_test, g_train, g_test = splitter.train_test_split(
 
 for cohort in cohort_columns:                 # one study per cohort, as today
     objective = CrossValidationObjective(
-        pipeline, space, X_train, y_train[cohort], groups=g_train,
+        pipeline, parameters, X_train, y_train[cohort], groups=g_train,
         cv=splitter.cv(n_splits=5, random_state=42), scoring="neg_mean_poisson_deviance")
     result = HyperparameterStudy(seed=seeds[cohort], n_trials=30).optimize(objective)
     model = objective.build_estimator(result.best_params).fit(X_train, y_train[cohort])
@@ -260,32 +366,89 @@ PR.
 ### Phase 0: setup
 - [x] **0.1 Plan doc.** Copy this plan to `docs/HYPERPARAMETER_TUNING_PLAN.md`.
   *Done when:* the doc matches this plan.
-- [ ] **0.2 Draft PR.** *(Needs your approval: it is the first commit.)* Commit
+- [x] **0.2 Draft PR.** (PR #5) *(Needs your approval: it is the first commit.)* Commit
   the plan doc, push, and run `gh pr create --draft` with the text in §8.
   *Done when:* the draft PR URL is shared with you.
 
 **Stop: you approve the plan and the PR.**
 
 ### Phase 1: parameters (`parameters.py`)
-- [ ] **1.1 Package skeleton.** Create `hyperparameter_tuning/__init__.py` (the
+Every class test uses the same method. Ask a real study for a trial, call
+`suggest`, then compare `trial.distributions[name]` with the expected Optuna
+distribution. That one comparison proves every option (`low`, `high`, `log`,
+`step`, `choices`) reached Optuna unchanged.
+
+- [x] **1.1 Package skeleton.** Create `hyperparameter_tuning/__init__.py` (the
   docstring and an empty `__all__`) and add the package to `[tool.mypy].files`.
   *Done when:* `import age_group_prediction.hyperparameter_tuning` works and
   `uv run mypy` passes.
-- [ ] **1.2 `FloatParameter`.** *Done when:* tests show that `suggest` passes
-  `low`, `high`, `log` and `step` through to `trial.suggest_float` (checked
-  with `FixedTrial` and a real study), and that every float rule in §4.1
-  rejects bad input.
-- [ ] **1.3 `IntParameter`.** *Done when:* the same checks pass for `suggest_int`
-  and the int rules.
-- [ ] **1.4 `CategoricalParameter`.** *Done when:* `suggest_categorical` is
-  called with the choices; empty or duplicate choices are rejected; `None`,
-  `bool`, `int`, `float` and `str` choices are accepted.
-- [ ] **1.5 `SearchSpace` and the `Parameter` union.** *Done when:* it builds
-  from a list of dicts; an unknown `kind` names the valid options in the
-  error; duplicate names and an empty space are rejected; `suggest` returns
-  one value per parameter; the §5 LightGBM space builds.
-- [ ] **1.6 Exports and docstrings.** Fill in `__all__`.
-  *Done when:* ruff and mypy pass, and the suite passes (696 plus the new tests).
+- [x] **1.2 `Parameter` base and `FloatParameter`.** *Done when:*
+  - plain, `log=True` and `step=` settings each reach Optuna exactly
+  - the value drawn lies in `[low, high]`
+  - an invalid setting raises when the parameter is created, not at the first
+    trial (Optuna's own error). One representative case: `log=True` with `low=0`.
+  - a step that doesn't divide the range raises (this package's rule)
+  - the object is frozen: assigning an attribute raises
+- [x] **1.3 `IntParameter`.** *Done when:* the same checks as 1.2 pass, and the
+  drawn value is an `int`.
+- [x] **1.4 `CategoricalParameter`.** *Done when:*
+  - the choices reach Optuna in order
+  - a mix of `None`, `bool`, `int`, `float` and `str` is accepted
+  - duplicate choices raise (this package's rule)
+  - a non-scalar choice such as `[1]` raises (since 1.4b, pydantic's type check
+    catches it before Optuna's warning)
+- [x] **1.4b Switch to pydantic dataclasses** (§4.1.1). In `parameters.py`,
+  import `dataclass` from `pydantic.dataclasses`, add `config=_STRICT` to all
+  four classes, and type `choices` as
+  `Annotated[tuple[ParamValue, ...], Strict(False)]`. Nothing else in the
+  classes changes. In the plan doc, update D1, the dependencies and §4.1 to
+  match this plan. *Done when:*
+  - all 19 existing tests still pass. One test changes: passing `log`
+    positionally now raises pydantic's `ValidationError` (a `ValueError`)
+    instead of `TypeError`, so `test_log_and_step_are_keyword_only` expects
+    `ValueError`. A non-scalar choice is now caught by pydantic's type check
+    first; that test's `match` changes accordingly.
+  - new, parametrized test: the wrong types from §4.1.1's table are rejected
+    (`1.5` and `True` for an int, `log="yes"`, `name=None`)
+  - new test: a list of choices is stored as a tuple, and the parameter can't
+    be changed afterwards
+  - mypy `--strict` and ruff pass
+- [x] **1.4c Make pydantic visible.** Import the decorator as
+  `pydantic_dataclass` and use `@pydantic_dataclass(frozen=True, config=_STRICT)`
+  on all four classes. Copy the "rule used across this package" table (§4.1.1)
+  into the plan doc. *Done when:* no bare `@dataclass` is left in
+  `parameters.py`, and the 26 tests, mypy and ruff pass. There is no
+  behavior change.
+- [x] **1.5 `SearchSpace` and exports.** Built and tested, then **superseded
+  by 1.5b**: a class was not needed (§4.1.2).
+- [x] **1.5b Replace `SearchSpace` with a plain list.** Delete the class and its
+  export; the duplicate-name and empty checks move to Phase 2.1 (the objective's
+  constructor). *Done when:*
+  - `parameters.py` has five public names: `ParamValue`, `Parameter`,
+    `FloatParameter`, `IntParameter`, `CategoricalParameter`; `__all__` in the
+    package lists the same five
+  - the `SearchSpace` tests are removed; the LightGBM test keeps checking that
+    the §5 parameter list builds and that a 5-trial study drawing every
+    parameter runs
+  - ruff, mypy and the full suite pass (the four `SearchSpace` tests go; after
+    the review fixes below, 880 on `main` + 37 = 917)
+
+**Phase 1 independent review** (after 1.5b). Each finding was reproduced before
+it was fixed:
+
+| # | finding | verdict | fix |
+|---|---|---|---|
+| 1 | `choices` silently turned `np.int64(7)` into `7.0` and `np.True_` into `1.0` | **bug**, confirmed | `choices` now uses a `BeforeValidator` that turns a list into a tuple and rejects numpy integers and bools. The reviewer's suggestion (strict items) was tested and **did not** fix it: pydantic's float validator still converts them. |
+| 2 | NaN or inf bounds passed construction and failed at the first trial with `OverflowError` / `decimal.InvalidOperation` | **bug**, confirmed | `ConfigDict(strict=True, allow_inf_nan=False)` |
+| 3 | two distinct NaN choices passed the duplicate check | covered by fix 2 | none needed |
+| 4 | warning escalation swallowed unrelated warnings (e.g. a `DeprecationWarning`) | should-fix, confirmed | `simplefilter("error", UserWarning)` only; other warnings pass through |
+| 5 | numpy integer bounds are rejected by `IntParameter` | documented | module docstring: pass Python numbers (`int(x)`) |
+| 6 | no test that a float step which divides the range is accepted | added | `0.1..1.0/0.1` and `0.7..1.0/0.05` |
+| 7 | package docstring names modules not yet written | accepted | resolved in Phases 2 and 3 |
+| 8 | `[direct_cohort_search_space]` is "not in any config" | **rejected** | it is at `configs/modeling.toml:53` |
+
+New tests: 9, so 37 parameter tests in all. Final full suite: **917 passed**,
+0 failed; the 15 warnings all come from existing tests.
 
 **Stop: review and your approval of Phase 1.**
 
@@ -293,7 +456,8 @@ PR.
 - [ ] **2.1 Constructor.** Build the folds once, compute the fold sizes and
   weights, set up the scorer, and add `build_estimator`.
   *Done when:* tests show that `KFold(shuffle=True, random_state=None)` gives
-  identical folds on repeated calls; that zero folds, an empty validation fold
+  identical folds on repeated calls; that an empty parameter list, duplicate
+  parameter names, zero folds, an empty validation fold
   and every bad `aggregation`/`z` combination are rejected; and that
   `build_estimator` returns an unfitted clone with the given parameters and
   leaves the template unchanged.
@@ -346,7 +510,7 @@ PR.
 ## 7. Verification
 
 - `uv run pytest tests/unit/test_hyperparameter_tuning_*.py -q`
-- `uv run pytest -q`: the 696 baseline tests pass, plus the new tests, with no new warnings
+- `uv run pytest -q`: the 880 tests on `main` pass, plus the new tests, with no warnings from the new tests (the full run takes about 10 minutes)
 - `uv run mypy` and `uv run ruff check src tests`
 - `git status` shows only the package, its tests, `pyproject.toml` and the docs changed
 
@@ -362,7 +526,8 @@ Adds the `hyperparameter_tuning` package: Optuna tuning in three independent cla
 
 - **Parameters** (`parameters.py`): `FloatParameter`, `IntParameter` and
   `CategoricalParameter` cover every option of Optuna's `suggest_*` calls and
-  are validated when built. `SearchSpace` groups them and can be loaded from TOML.
+  are validated when built, using Optuna's own checks plus the three cases
+  Optuna lets through silently. A search space is a plain list of them.
 - **`CrossValidationObjective`** (`objective.py`): builds the folds once and
   suggests one parameter set per trial. It fits and scores every fold and
   combines the fold scores as set by `aggregation`: the fold-size-weighted mean
@@ -384,7 +549,7 @@ objectives are unchanged. The design and its decisions are in
 - [ ] Phase 2: objective
 - [ ] Phase 3: study, including the LightGBM integration test
 - [ ] Phase 4: docs
-- [ ] Full suite passes: the 696 existing tests plus the new ones
+- [ ] Full suite passes: the 880 tests on `main` plus the new ones
 
 🤖 Generated with [Claude Code](https://claude.com/claude-code)
 ```
