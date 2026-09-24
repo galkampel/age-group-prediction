@@ -7,6 +7,15 @@ which are deleted once every model is rebuilt here.
 """
 
 from .base import BaseAgeGroupModel
+from .direct_cohort import DirectCohortModel, Objective
 from .metrics import MAE, POISSON_DEVIANCE, RMSE, Metric
 
-__all__ = ["MAE", "POISSON_DEVIANCE", "RMSE", "BaseAgeGroupModel", "Metric"]
+__all__ = [
+    "MAE",
+    "POISSON_DEVIANCE",
+    "RMSE",
+    "BaseAgeGroupModel",
+    "DirectCohortModel",
+    "Metric",
+    "Objective",
+]
