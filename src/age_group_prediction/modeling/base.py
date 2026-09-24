@@ -19,10 +19,12 @@ class BaseAgeGroupModel(BaseEstimator, ABC):
     """A scikit-learn-style model of one count target.
 
     Subclasses take their settings in ``__init__`` and store them verbatim, so
-    ``get_params``, ``set_params`` and ``clone`` work and a tuner can build a
-    fresh model per trial. Data are only ever method arguments (``X``, ``y``,
-    and ``exposure`` where a model uses one), and fitted state lives in
-    trailing-underscore attributes.
+    ``get_params`` and ``set_params`` (inherited from ``BaseEstimator``) and
+    ``sklearn.base.clone`` work, and a tuner can build a fresh model per trial.
+    Data are only ever method arguments (``X``, ``y``, and ``exposure`` where a
+    model uses one), and fitted state lives in trailing-underscore attributes.
+    ``fit`` replaces all fitted state, so a refit equals a fresh fit: a tuner
+    reuses one copy across the folds of a trial.
     """
 
     @abstractmethod

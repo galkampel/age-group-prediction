@@ -20,7 +20,6 @@ from .parameters import (
     FloatParameter,
     IntParameter,
     Parameter,
-    ParamValue,
 )
 
 __all__ = [
@@ -29,6 +28,5 @@ __all__ = [
     "CategoricalParameter",
     "FloatParameter",
     "IntParameter",
-    "ParamValue",
     "Parameter",
 ]

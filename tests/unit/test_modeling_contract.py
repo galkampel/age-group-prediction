@@ -13,7 +13,10 @@ from __future__ import annotations
 import inspect
 from collections.abc import Callable
 
+import numpy as np
+import pandas as pd
 import pytest
+from sklearn.base import clone
 from sklearn.utils.estimator_checks import (
     check_do_not_raise_errors_in_init_or_set_params,
     check_no_attributes_set_in_init,
@@ -63,3 +66,19 @@ def test_model_keeps_the_parameter_contract(
     check: Callable[[str, BaseAgeGroupModel], None],
 ) -> None:
     check(model_class.__name__, model_class())
+
+
+@pytest.mark.parametrize("model_class", MODELS, ids=lambda c: c.__name__)
+def test_a_refit_equals_a_fresh_fit(model_class: type[BaseAgeGroupModel]) -> None:
+    # The tuner reuses one copy across a trial's folds, so fit must replace
+    # all fitted state rather than build on the previous fold's.
+    rng = np.random.default_rng(0)
+    X = pd.DataFrame({"x": rng.normal(size=200)})
+    y = pd.Series(rng.poisson(np.exp(1 + 0.5 * X["x"])))
+    first, second = slice(0, 100), slice(100, 200)
+    template = model_class()
+
+    refitted = clone(template).fit(X[first], y[first]).fit(X[second], y[second])
+    fresh = clone(template).fit(X[second], y[second])
+
+    np.testing.assert_array_equal(refitted.predict(X), fresh.predict(X))

@@ -110,9 +110,8 @@ def test_step_that_divides_the_range_is_accepted() -> None:
         lambda: FloatParameter("p", math.nan, 1.0),
         lambda: FloatParameter("p", 0.0, math.inf),
         lambda: FloatParameter("p", 0.0, 1.0, step=math.inf),
-        lambda: CategoricalParameter("p", (math.nan, 1.0)),
     ],
-    ids=["nan-low", "inf-high", "inf-step", "nan-choice"],
+    ids=["nan-low", "inf-high", "inf-step"],
 )
 def test_nan_and_inf_are_rejected_at_construction(
     build: Callable[[], object],
@@ -195,19 +194,34 @@ def test_categorical_choices_reach_optuna_in_order() -> None:
 
 @pytest.mark.parametrize(
     "choices",
-    [("gbdt", "dart", "gbdt"), (True, 1)],
-    ids=["repeated", "true-equals-1"],
+    [("gbdt", "dart", "gbdt"), (True, 1), ([1], [1])],
+    ids=["repeated", "true-equals-1", "unhashable"],
 )
 def test_duplicate_choices_are_rejected(choices: tuple[object, ...]) -> None:
     # Optuna maps 1 to True's slot, so (True, 1) is a duplicate there too.
     with pytest.raises(ValueError, match=r"parameter 'p': choices must be unique"):
-        CategoricalParameter("p", choices)  # type: ignore[arg-type]
+        CategoricalParameter("p", choices)
 
 
-def test_non_scalar_choice_is_rejected() -> None:
-    # Optuna would only warn; pydantic's type check rejects it first.
-    with pytest.raises(ValueError, match="validation errors? for CategoricalParameter"):
-        CategoricalParameter("p", ([1], "b"))  # type: ignore[arg-type]
+def test_non_scalar_choices_reach_optuna() -> None:
+    # E.g. layer sizes. Optuna's own warning, that such choices suit only
+    # in-memory storage, is left to each suggest.
+    choices = ([32], [64, 32])
+    parameter = CategoricalParameter("layers", choices)
+    trial = optuna.create_study(sampler=optuna.samplers.RandomSampler(seed=0)).ask()
+
+    with pytest.warns(UserWarning, match="persistent storage"):
+        value = parameter.suggest(trial)
+
+    assert parameter.choices == ([32], [64, 32])
+    assert value in choices
+
+
+def test_a_set_of_choices_is_rejected() -> None:
+    # A set's order depends on the hash seed, so a seeded study would differ
+    # between runs.
+    with pytest.raises(ValueError, match="valid tuple"):
+        CategoricalParameter("p", {"gbdt", "dart"})  # type: ignore[arg-type]
 
 
 def test_list_of_choices_is_stored_as_a_tuple() -> None:
@@ -221,19 +235,13 @@ def test_list_of_choices_is_stored_as_a_tuple() -> None:
 
 
 @pytest.mark.parametrize(
-    "choice", [np.int64(7), np.True_], ids=["numpy-int", "numpy-bool"]
+    "choice", [np.int64(7), np.float64(0.5)], ids=["numpy-int", "numpy-float"]
 )
-def test_numpy_integer_choices_are_rejected(choice: object) -> None:
-    # Strict mode alone would store these as 7.0 and 1.0.
-    with pytest.raises(ValueError, match="choices must be None, bool, int"):
-        CategoricalParameter("p", (choice, "a"))  # type: ignore[arg-type]
+def test_choices_are_stored_as_given(choice: object) -> None:
+    # Not converted: strict pydantic would have turned np.int64(7) into 7.0.
+    parameter = CategoricalParameter("p", (choice, "a"))
 
-
-def test_numpy_float_choice_becomes_a_plain_float() -> None:
-    # np.float64 is a float subclass, so its value survives unchanged.
-    parameter = CategoricalParameter("p", (np.float64(0.5), "a"))
-    assert parameter.choices == (0.5, "a")
-    assert type(parameter.choices[0]) is float
+    assert parameter.choices[0] is choice
 
 
 def test_empty_choices_are_rejected() -> None:
@@ -244,16 +252,16 @@ def test_empty_choices_are_rejected() -> None:
 def test_lightgbm_parameters_run_in_a_study() -> None:
     # The DirectCohortModel bounds ([direct_cohort_search_space]) as a plain list.
     parameters = [
-        IntParameter("model__max_depth", 3, 8),
-        IntParameter("model__num_leaves", 7, 63),
-        IntParameter("model__min_child_samples", 5, 40),
-        FloatParameter("model__learning_rate", 0.01, 0.2, log=True),
-        IntParameter("model__n_estimators", 50, 400),
-        FloatParameter("model__reg_alpha", 1e-8, 10.0, log=True),
-        FloatParameter("model__reg_lambda", 1e-8, 10.0, log=True),
-        FloatParameter("model__min_split_gain", 0.0, 1.0),
-        FloatParameter("model__subsample", 0.7, 1.0),
-        FloatParameter("model__colsample_bytree", 0.7, 1.0),
+        IntParameter("max_depth", 3, 8),
+        IntParameter("num_leaves", 7, 63),
+        IntParameter("min_child_samples", 5, 40),
+        FloatParameter("learning_rate", 0.01, 0.2, log=True),
+        IntParameter("n_estimators", 50, 400),
+        FloatParameter("reg_alpha", 1e-8, 10.0, log=True),
+        FloatParameter("reg_lambda", 1e-8, 10.0, log=True),
+        FloatParameter("min_split_gain", 0.0, 1.0),
+        FloatParameter("subsample", 0.7, 1.0),
+        FloatParameter("colsample_bytree", 0.7, 1.0),
     ]
 
     def objective(trial: optuna.Trial) -> float:
@@ -273,6 +281,5 @@ def test_package_exports_the_public_names() -> None:
         "CategoricalParameter",
         "FloatParameter",
         "IntParameter",
-        "ParamValue",
         "Parameter",
     }
