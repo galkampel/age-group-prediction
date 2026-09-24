@@ -67,21 +67,21 @@ class DirectCohortModel(BaseAgeGroupModel):
         # 1 by default: more OpenMP threads crash alongside torch on macOS.
         self.n_jobs = n_jobs
 
-    def _check_exposure(self, exposure: ArrayLike | None) -> np.ndarray | None:
-        """Return the exposure as floats, or ``None`` when ``use_exposure`` is off.
+    def _check_exposure(
+        self, exposure: ArrayLike | None, *, expected: bool
+    ) -> np.ndarray | None:
+        """Return the exposure as floats, or ``None`` when none is ``expected``.
 
         Only what would otherwise pass silently is checked here; LightGBM itself
-        rejects an unknown objective, a wrong-length exposure and an all-zero y.
+        rejects an unknown objective, a wrong-length exposure at fit and an
+        all-zero y.
         """
-        if self.use_exposure and self.objective == "regression":
-            raise ValueError(
-                "an exposure offset needs a log link, which 'regression' lacks; "
-                "set use_exposure=False or use objective='poisson'"
-            )
         # A forgotten exposure would silently drop the offset, and an unexpected
         # one would be silently ignored.
-        if (exposure is None) == self.use_exposure:
-            raise ValueError("pass `exposure` exactly when use_exposure=True")
+        if (exposure is None) == expected:
+            raise ValueError(
+                "pass `exposure` exactly when the model uses one (use_exposure=True)"
+            )
         if exposure is None:
             return None
         n = np.asarray(exposure, dtype=float)
@@ -94,16 +94,21 @@ class DirectCohortModel(BaseAgeGroupModel):
         self, X: pd.DataFrame, y: pd.Series, exposure: ArrayLike | None = None
     ) -> Self:
         """Fit the trees on ``X`` and ``y``; ``exposure`` is the raw count ``n``."""
-        n = self._check_exposure(exposure)
+        if self.use_exposure and self.objective == "regression":
+            raise ValueError(
+                "an exposure offset needs a log link, which 'regression' lacks; "
+                "set use_exposure=False or use objective='poisson'"
+            )
+        n = self._check_exposure(exposure, expected=self.use_exposure)
         init_score = None
-        self.base_log_rate_: float | None = None
+        base_log_rate = None
         if n is not None:
             # The intercept in log space: the average log rate per apartment,
             # log(sum y / sum n). LightGBM skips boost_from_average once given an
             # init_score, so without it the trees would start at 1 per apartment.
-            self.base_log_rate_ = float(np.log(np.sum(y) / n.sum()))
-            init_score = np.log(n) + self.base_log_rate_
-        self.regressor_ = LGBMRegressor(
+            base_log_rate = float(np.log(np.sum(y) / n.sum()))
+            init_score = np.log(n) + base_log_rate
+        regressor = LGBMRegressor(
             objective=self.objective,
             n_estimators=self.n_estimators,
             learning_rate=self.learning_rate,
@@ -124,15 +129,20 @@ class DirectCohortModel(BaseAgeGroupModel):
             force_col_wise=True,
             verbosity=-1,
         ).fit(X, y, init_score=init_score)
+        # Set together, only once fitting succeeded, so a failed refit cannot pair
+        # new trees with an old intercept or the reverse.
+        self.regressor_ = regressor
+        self.base_log_rate_: float | None = base_log_rate
         return self
 
     def predict(self, X: pd.DataFrame, exposure: ArrayLike | None = None) -> np.ndarray:
         """The predicted mean count for each row of ``X``."""
         check_is_fitted(self)
-        n = self._check_exposure(exposure)
-        if n is None:
+        # Follows how the model was fitted, not the current use_exposure, which
+        # set_params may have changed since.
+        n = self._check_exposure(exposure, expected=self.base_log_rate_ is not None)
+        if n is None or self.base_log_rate_ is None:
             return np.asarray(self.regressor_.predict(X))
-        assert self.base_log_rate_ is not None
         # LightGBM's predict never adds the init_score back; the offset is ours.
         raw = self.regressor_.predict(X, raw_score=True)
         return np.asarray(np.exp(raw + np.log(n) + self.base_log_rate_))
