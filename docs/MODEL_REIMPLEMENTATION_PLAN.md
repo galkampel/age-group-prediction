@@ -3,7 +3,8 @@
 **Branch:** `fix/direct-cohort-fixed-hyperparameters`, rebased onto
 `feat/hyperparameter-tuning`. Draft PR #6 merges into `feat/hyperparameter-tuning` (PR #5's branch).
 **Status (2026-09-24):** Phases 0, 1 and 2 are done, including the docs cleanup in
-Step 2.6. The non-slow suite gives **956 passed**. Next: the out-of-scope work in §5.
+Step 2.6. The non-slow suite gives **956 passed**. PR #6 was squash-merged into `feat/hyperparameter-tuning` as `aee3e6a`. Next: roadmap
+step 2 (§5).
 
 **Workflow**
 - Every step in §4 is a validation stop.
@@ -16,7 +17,7 @@ Step 2.6. The non-slow suite gives **956 passed**. Next: the out-of-scope work i
 2. The exposure offset in LightGBM
 3. Decisions
 4. Steps
-5. Out of scope
+5. Roadmap after this PR
 6. Files
 7. Verification
 
@@ -510,20 +511,27 @@ Done when:
 
 ---
 
-## 5. Out of scope (later plans)
+## 5. Roadmap after this PR
 
-- Rebuilding Model B (`IndependentTotalProbabilityModel`) and Model C
-  (`BayesianConditionalModel`).
-- Switching the tuning evaluator to `BaseAgeGroupModel` (PR #5 §9.7). This
-  plan supplies what it needs: `clone`, `set_params` and
-  `evaluate(y_true, y_pred, metric)` with a `Metric` that carries its direction.
-  The evaluator will also have to pass `exposure` into `fit` and `predict` on
-  each fold, the way sklearn routes fit parameters.
-- Deleting `modeling_config.py`, the old `models/`, `nb2_gradient_hessian` and
-  `tuning.py`, and rewiring `experiment/` and `tracking/`. Delete
-  `MODELING_REBUILD_PLAN.md`, `GATE_VALIDATION_FINDINGS.md` and
-  `GATE_9_INDEPENDENT_VALIDATION_REPORT.md` at the same time: the old code
-  cites them, and nothing else will.
+In order. Each step has its own plan and gated phases.
+
+1. ✓ **Merge PR #6 into `feat/hyperparameter-tuning`**: squash-merged as
+   `aee3e6a` (2026-09-24).
+2. **Resume the tuning package** at
+   [HYPERPARAMETER_TUNING_PLAN.md §9.7](HYPERPARAMETER_TUNING_PLAN.md): switch
+   the evaluator to `BaseAgeGroupModel`, then tune `DirectCohortModel` per
+   cohort. Re-check the exposure offset once tuned; Step 2.4 found only weak
+   evidence, untuned.
+3. **Rebuild Model B** (`IndependentTotalProbabilityModel`) in `modeling/`,
+   with its own plan doc. Its feature declarations are already in
+   [FEATURE_TRANSFORMATIONS.md §8.2–8.5](FEATURE_TRANSFORMATIONS.md).
+4. **Rebuild Model C** (`BayesianConditionalModel`). *Needs step 3*: C reuses
+   B's frozen feature forms.
+5. **Delete the old stack:** `modeling_config.py`, `models/`,
+   `nb2_gradient_hessian` and `tuning.py`; rewire `experiment/` and `tracking/`
+   onto `modeling/`; delete `MODELING_REBUILD_PLAN.md`,
+   `GATE_VALIDATION_FINDINGS.md` and `GATE_9_INDEPENDENT_VALIDATION_REPORT.md`,
+   which only the old code cites. *Needs steps 3 and 4.*
 
 ---
 
