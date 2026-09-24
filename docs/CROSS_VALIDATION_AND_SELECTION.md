@@ -278,6 +278,12 @@ the freeze's candidate descriptors and manifest fingerprint, and
    the first criterion that differs; `final_tie_break_used` is true when none
    does.
 
+**Why composition first.** Composition-first was chosen because age-group
+probabilities are a primary estimand and because it gives a complete
+deterministic answer when composition and cohort count accuracy disagree.
+RMSE-first would subordinate that estimand. A Pareto rule can leave the
+measured disagreement unresolved and would still need a fallback.
+
 Every read must be a metric the candidate declared, with exactly one finite
 aggregate row. Per-target `predictive_nll` is never read.
 

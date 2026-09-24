@@ -2,9 +2,8 @@
 
 **Branch:** `fix/direct-cohort-fixed-hyperparameters`, rebased onto
 `feat/hyperparameter-tuning`. Draft PR #6 merges into `feat/hyperparameter-tuning` (PR #5's branch).
-**Status (2026-09-24):** Phases 0 and 1 are committed. The non-slow suite gives
-**956 passed** (after Step 2.3). Phase 2 was revised after a review (§2's starting rate, merged
-fit/predict step, reworked tests), then again after Step 2.1 (no transformer, `use_exposure`). Steps 2.1 and 2.2 are committed. Step 2.3 is committed. Step 2.4 is done (results recorded). Step 2.5 is decided: no `get_metadata`. Next: Step 2.6 (docs).
+**Status (2026-09-24):** Phases 0, 1 and 2 are done, including the docs cleanup in
+Step 2.6. The non-slow suite gives **956 passed**. Next: the out-of-scope work in §5.
 
 **Workflow**
 - Every step in §4 is a validation stop.
@@ -95,64 +94,10 @@ log rate per apartment (see "In equations" below).
 
 ### In equations
 
-**Notation.** For building $i$ and one cohort:
-
-- $\mathbf{x}_i \in \mathbb{R}^p$ is the transformed feature row (a row of `X`).
-- $y_i \in \{0, 1, \dots\}$ is the cohort count (`y`).
-- $n_i > 0$ is the number of apartments (`exposure`).
-
-**Poisson with `use_exposure=True`:**
-
-$$
-y_i \sim \operatorname{Poisson}(\mu_i), \qquad
-\log \mu_i = \underbrace{\log n_i}_{\text{offset, coefficient } 1}
-+ \underbrace{b + F(\mathbf{x}_i)}_{\text{log rate per apartment}}
-$$
-
-- $F(\mathbf{x}) = \sum_{m=1}^{M} \eta\, h_m(\mathbf{x})$ is the sum of trees,
-  with learning rate $\eta$.
-- $b = \log\big(\sum_i y_i / \sum_i n_i\big)$ is `base_log_rate_`.
-- LightGBM receives `init_score` $s_i = \log n_i + b$. It fits $F$ starting
-  from $F \equiv 0$, by minimizing the Poisson loss
-  $\sum_i \big(e^{s_i + F(\mathbf{x}_i)} - y_i\,(s_i + F(\mathbf{x}_i))\big)$.
-
-**Why this $b$.** It is the maximum-likelihood intercept when $F \equiv 0$:
-
-$$
-\frac{\partial}{\partial b} \sum_i \big(y_i(\log n_i + b) - n_i e^{b}\big)
-= \sum_i y_i - e^{b} \sum_i n_i = 0
-\;\Rightarrow\; b = \log \frac{\sum_i y_i}{\sum_i n_i}
-$$
-
-**Prediction.**
-
-$$
-\hat\mu_i = \exp\big(\log n_i + b + \hat F(\mathbf{x}_i)\big) = n_i\, e^{\,b + \hat F(\mathbf{x}_i)}
-$$
-
-LightGBM's `raw_score` returns only $\hat F$, so the model adds $\log n_i + b$
-itself.
-
-- **If $n$ is not a column of `X`,** then
-  $\hat\mu(\mathbf{x}, 2n) = 2\,\hat\mu(\mathbf{x}, n)$.
-- **If `X` includes `n_apartments`,** $F$ can learn departures from
-  proportionality.
-
-**Poisson without exposure.** $\log \mu_i = F(\mathbf{x}_i)$, and $F$ starts at
-$\log \bar y$ (LightGBM's `boost_from_average`).
-
-**Regression.** $\mu_i = F(\mathbf{x}_i)$, and $F$ starts at $\bar y$. The
-loss is $\sum_i (y_i - \mu_i)^2$.
-
-**Correct inputs.**
-
-| Argument | Pass | Not |
-|---|---|---|
-| `X` | Transformed features, one row per building (may include `n_apartments`) | The raw table with targets or IDs |
-| `y` | The raw cohort count $y_i$ | The rate $y_i / n_i$, or $\log y_i$ |
-| `exposure` | The raw $n_i$, in the same row order as `X` | $\log n_i$: the model takes the log itself, so it would be applied twice |
-
-The output $\hat\mu_i$ is an expected **count**, not a rate.
+The equations, the derivation of $b$, and the correct inputs now live in
+[DIRECT_COHORT_MODEL.md §0.1](DIRECT_COHORT_MODEL.md#01-the-model), the
+reference for the rebuilt model. They were moved there in Step 2.6a so that
+there is one copy.
 
 ---
 
@@ -534,19 +479,34 @@ a reason based on what exists by then.
   fitted state is public. `mlflow.log_params(model.get_params())` plus the
   model artifact covers logging.
 
-**Step 2.6: docs.**
-- `DIRECT_COHORT_MODEL.md`: add a section on the new model and mark the old
-  one superseded.
-- `FEATURE_TRANSFORMATIONS.md`:
-  - drop NB2 from Model A;
-  - add the `raw_score` and starting-rate details to §3.3 and §8.1;
-  - mark §8.7 item 3 done.
-- `MODULE_REFERENCE.md`: add the `modeling` package.
-- This doc: update the status line.
+**Step 2.6: docs, and a docs cleanup.** You widened this step: document the
+rebuilt model, fix outdated docs, and remove completed plans. A doc was deleted
+only if it held no information for future steps (or that information was moved
+first), and no kept doc or code depended on its content. Every file was read in
+full before deciding.
+
+| Sub-step | What was done |
+|---|---|
+| 2.6a | `DIRECT_COHORT_MODEL.md` §0: the rebuilt model, with the equations moved in from §2 of this doc |
+| 2.6b | `FEATURE_TRANSFORMATIONS.md`: intro, Model A passages, §8.0 room shares (4/5/6 via `ShareTransformer`), §8.7 items 1 and 3 done. Every §8 code block was run on a simulated table |
+| 2.6c | `MODULE_REFERENCE.md`: the `modeling` section, plus `preprocessing.py` and `hyperparameter_tuning/` |
+| 2.6d | Deleted the three completed plans below, and fixed their links |
+| 2.6e, then R | Deleted `IMPLEMENTATION_PLAN.md`, **then restored it** (`767a47a`). A full read found future-stage validation content (§13–§16, §19) that exists nowhere else. The first check had looked only at model content |
+| E | Moved the two open items of the deleted EDA plan into `SIMPLIFIED_MODEL_PLAN.md` §9 Stage 6 and `TODO.md` |
+| 2.6f | Moved the only copies of the Gate 8 canonical run record (into `GATE_VALIDATION_FINDINGS.md`) and of the composition-first rationale (into `CROSS_VALIDATION_AND_SELECTION.md` §9). Checked them byte for byte, then deleted `docs/archive/` |
+| 2.6g | Rewrote `docs/README.md` as a grouped index of every remaining doc |
+| 2.6h | This record, the §2 link, §5, §6 and the status line |
+
+| Doc | Decision | Why |
+|---|---|---|
+| `COMPACT_SIMULATOR_MIGRATION_PLAN.md`, `MARIMO_MIGRATION_PLAN.md` | Deleted (in git) | Completed; no open items |
+| `EDA_AND_PREDICTIVE_MODELING_PLAN.md` | Deleted (in git) | Completed; its two open items moved (E) |
+| `docs/archive/` (19 files) | Deleted (never committed, so gone for good) | Finished handoffs; the two unique pieces moved (2.6f) |
+| `MODELING_REBUILD_PLAN.md`, `GATE_VALIDATION_FINDINGS.md`, `GATE_9_INDEPENDENT_VALIDATION_REPORT.md` | Kept until the old stack is deleted (§5) | The running old code cites the rebuild plan, and the three link to each other |
+| `DATA_GENERATION_PLAN.md`, `PARAMETER_REFERENCE.md`, `PROBLEM_DEFINITION.md`, `IMPLEMENTATION_PLAN.md`, `legacy/*` | Kept | They extend the simplified model (time, projects, building types, dynamics, future validation) beyond `SIMPLIFIED_MODEL_PLAN.md` §9 |
 
 Done when:
 - [ ] You have reviewed the docs.
-- [ ] The PR checklist is ticked for each approved commit.
 
 ---
 
@@ -560,7 +520,10 @@ Done when:
   The evaluator will also have to pass `exposure` into `fit` and `predict` on
   each fold, the way sklearn routes fit parameters.
 - Deleting `modeling_config.py`, the old `models/`, `nb2_gradient_hessian` and
-  `tuning.py`, and rewiring `experiment/` and `tracking/`.
+  `tuning.py`, and rewiring `experiment/` and `tracking/`. Delete
+  `MODELING_REBUILD_PLAN.md`, `GATE_VALIDATION_FINDINGS.md` and
+  `GATE_9_INDEPENDENT_VALIDATION_REPORT.md` at the same time: the old code
+  cites them, and nothing else will.
 
 ---
 
@@ -579,6 +542,11 @@ Done when:
   - `splitting.Splitter`
   - `preprocessing.ShareTransformer`
   - `student_simulator.pipeline.StudentPopulationSimulator`
+- **Docs edited (Step 2.6):** `DIRECT_COHORT_MODEL.md`, `FEATURE_TRANSFORMATIONS.md`,
+  `MODULE_REFERENCE.md`, `README.md` (root and `docs/`), `SIMPLIFIED_MODEL_PLAN.md`,
+  `TODO.md`, `CROSS_VALIDATION_AND_SELECTION.md`, `GATE_VALIDATION_FINDINGS.md`,
+  `MODELING_REBUILD_PLAN.md`, the two `legacy/` files.
+- **Docs deleted (Step 2.6):** see the table in Step 2.6.
 - **Not touched:** `modeling_config.py`, `models/*`, `experiment/*`, `tracking/*`.
 
 ---
