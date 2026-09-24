@@ -2,7 +2,7 @@
 
 :mod:`~age_group_prediction.hyperparameter_tuning.parameters`
     Which values each hyperparameter may take.
-:mod:`~age_group_prediction.hyperparameter_tuning.objective`
+:mod:`~age_group_prediction.hyperparameter_tuning.evaluator`
     How one trial is scored: its parameters are set once, then every
     cross-validation fold is fitted and scored.
 :mod:`~age_group_prediction.hyperparameter_tuning.study`
@@ -14,6 +14,7 @@ decisions are in ``docs/HYPERPARAMETER_TUNING_PLAN.md``.
 
 from __future__ import annotations
 
+from .evaluator import Aggregation, CVHyperparameterEvaluator
 from .parameters import (
     CategoricalParameter,
     FloatParameter,
@@ -23,6 +24,8 @@ from .parameters import (
 )
 
 __all__ = [
+    "Aggregation",
+    "CVHyperparameterEvaluator",
     "CategoricalParameter",
     "FloatParameter",
     "IntParameter",
