@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import json
 import math
+from collections.abc import Sequence
 from typing import Any, ClassVar, Self
 
 import numpy as np
@@ -24,9 +26,13 @@ from age_group_prediction.feature_engineering.transformer import (
 )
 from age_group_prediction.feature_engineering.transforms import Standardize
 from age_group_prediction.hyperparameter_tuning import (
+    Aggregation,
     CVHyperparameterEvaluator,
     FloatParameter,
     IntParameter,
+    LowerBound,
+    Mean,
+    WeightedMean,
 )
 from age_group_prediction.modeling import BaseAgeGroupModel, DirectCohortModel
 from age_group_prediction.scoring import POISSON_DEVIANCE, Metric
@@ -39,7 +45,7 @@ PARAMETERS = [FloatParameter("alpha", 0.1, 10.0, log=True)]
 GROUPS = np.repeat(np.arange(4), [3, 5, 8, 12])
 X = pd.DataFrame({"id": np.arange(28.0), "x": np.linspace(-1.0, 1.0, 28)})
 Y = np.arange(28.0) ** 1.5
-N = np.arange(1.0, 29.0)  # an exposure, distinct per row
+EXPOSURE = np.arange(1.0, 29.0)  # distinct per row
 
 MSE = Metric("mse", mean_squared_error)
 
@@ -83,6 +89,11 @@ class _RecordingTransformer(FeatureTransformer):
 
     def transform(self, X: Any) -> Any:
         return X.assign(fitted_by=self.fit_number_)
+
+
+class _Median(Aggregation):
+    def aggregate(self, scores: Sequence[float], fold_sizes: Sequence[int]) -> float:
+        return float(np.median(scores))
 
 
 class _AlwaysPrune(BasePruner):
@@ -129,7 +140,7 @@ def _evaluator(**overrides: Any) -> CVHyperparameterEvaluator:
         "cv": _cv(),
         "metric": MSE,
         # Passes the columns through: most tests need no transformation.
-        "features": FeatureTransformer(remainder="passthrough"),
+        "feature_transformer": FeatureTransformer(remainder="passthrough"),
     } | overrides
     model = kwargs.pop("model", _RecordingModel())
     parameters = kwargs.pop("parameters", PARAMETERS)
@@ -167,32 +178,22 @@ def _optimize(
             },
             r"unique, repeated: \['alpha'\]",
         ),
-        ({"aggregation": "median"}, "unknown aggregation 'median'"),
-        ({"z": 2.0}, "z applies only to 'lower_bound'"),
-        ({"aggregation": "mean", "z": 2.0}, "z applies only to 'lower_bound'"),
-        ({"aggregation": "lower_bound", "z": 0.0}, "positive finite"),
-        ({"aggregation": "lower_bound", "z": -1.0}, "positive finite"),
-        ({"aggregation": "lower_bound", "z": float("nan")}, "positive finite"),
     ],
-    ids=[
-        "no-parameters",
-        "duplicate-names",
-        "unknown-aggregation",
-        "z-with-weighted-mean",
-        "z-with-mean",
-        "z-zero",
-        "z-negative",
-        "z-nan",
-    ],
+    ids=["no-parameters", "duplicate-names"],
 )
 def test_invalid_settings_are_rejected(overrides: dict[str, Any], message: str) -> None:
     with pytest.raises(ValueError, match=message):
         _evaluator(**overrides)
 
 
-@pytest.mark.parametrize(("z", "expected"), [(None, 1.0), (2.0, 2.0)])
-def test_lower_bound_z_defaults_to_one(z: float | None, expected: float) -> None:
-    assert _evaluator(aggregation="lower_bound", z=z).z == expected
+def test_aggregation_must_be_an_aggregation() -> None:
+    # The old API took strings.
+    with pytest.raises(TypeError, match="aggregation must be an Aggregation"):
+        _evaluator(aggregation="mean")
+
+
+def test_the_default_aggregation_is_the_weighted_mean() -> None:
+    assert _evaluator().aggregation == WeightedMean()
 
 
 def test_metric_must_be_a_metric() -> None:
@@ -201,30 +202,34 @@ def test_metric_must_be_a_metric() -> None:
         _evaluator(metric="neg_mean_squared_error")
 
 
-def test_features_must_be_a_feature_transformer() -> None:
-    with pytest.raises(TypeError, match="features must be a FeatureTransformer"):
-        _evaluator(features=StandardScaler())
+def test_feature_transformer_must_be_a_feature_transformer() -> None:
+    with pytest.raises(
+        TypeError, match="feature_transformer must be a FeatureTransformer"
+    ):
+        _evaluator(feature_transformer=StandardScaler())
 
 
-def test_build_features_and_model_returns_unfitted_copies() -> None:
-    features_template = FeatureTransformer(remainder="passthrough")
+def test_build_feature_transformer_and_model_returns_unfitted_copies() -> None:
+    transformer_template = FeatureTransformer(remainder="passthrough")
     model_template = _RecordingModel(alpha=1.0)
-    evaluator = _evaluator(features=features_template, model=model_template)
+    evaluator = _evaluator(
+        feature_transformer=transformer_template, model=model_template
+    )
 
-    features, model = evaluator.build_features_and_model({"alpha": 3.0})
+    transformer, model = evaluator.build_feature_transformer_and_model({"alpha": 3.0})
 
-    assert features is not features_template
+    assert transformer is not transformer_template
     assert model is not model_template
     assert model.get_params()["alpha"] == 3.0
     assert model_template.get_params()["alpha"] == 1.0
-    for built in (features, model):
+    for built in (transformer, model):
         with pytest.raises(NotFittedError):
             check_is_fitted(built)
 
 
-def test_build_features_and_model_rejects_an_unknown_parameter() -> None:
+def test_build_feature_transformer_and_model_rejects_an_unknown_parameter() -> None:
     with pytest.raises(ValueError, match="Invalid parameter 'beta'"):
-        _evaluator().build_features_and_model({"beta": 1.0})
+        _evaluator().build_feature_transformer_and_model({"beta": 1.0})
 
 
 # --- evaluate ---------------------------------------------------------
@@ -261,8 +266,8 @@ def test_every_trial_sees_identical_folds() -> None:
     assert rows[0:3] == [sorted(train.tolist()) for train, _ in _folds()]
 
 
-def test_features_are_fitted_per_fold_on_training_rows_only() -> None:
-    _evaluator(features=_RecordingTransformer()).evaluate(
+def test_the_transformer_is_fitted_per_fold_on_training_rows_only() -> None:
+    _evaluator(feature_transformer=_RecordingTransformer()).evaluate(
         FixedTrial({"alpha": 1.0}), X, Y, GROUPS
     )
 
@@ -275,26 +280,34 @@ def test_features_are_fitted_per_fold_on_training_rows_only() -> None:
     assert [seen for _, seen in _RecordingModel.predicts] == [[0], [1], [2]]
 
 
-def test_the_features_template_is_left_unfitted() -> None:
+def test_the_transformer_template_is_left_unfitted() -> None:
     # Each fold fits a clone: a shared, refitted template would carry one
     # trial's statistics into another's when trials run in parallel.
-    evaluator = _evaluator(features=FeatureTransformer(remainder="passthrough"))
+    evaluator = _evaluator(
+        feature_transformer=FeatureTransformer(remainder="passthrough")
+    )
 
     evaluator.evaluate(FixedTrial({"alpha": 1.0}), X, Y, GROUPS)
 
     with pytest.raises(NotFittedError):
-        check_is_fitted(evaluator.features)
+        check_is_fitted(evaluator.feature_transformer)
 
 
 def test_exposure_is_sliced_to_each_fold() -> None:
     # A shuffled index, so slicing by label would pick the wrong rows.
-    exposure = pd.Series(N, index=np.random.default_rng(0).permutation(len(N)))
+    exposure = pd.Series(
+        EXPOSURE, index=np.random.default_rng(0).permutation(len(EXPOSURE))
+    )
 
     _evaluator().evaluate(FixedTrial({"alpha": 1.0}), X, Y, GROUPS, exposure=exposure)
 
     folds = _folds()
-    assert [e for _, _, e in _RecordingModel.fits] == [N[t].tolist() for t, _ in folds]
-    assert [e for e, _ in _RecordingModel.predicts] == [N[v].tolist() for _, v in folds]
+    assert [e for _, _, e in _RecordingModel.fits] == [
+        EXPOSURE[t].tolist() for t, _ in folds
+    ]
+    assert [e for e, _ in _RecordingModel.predicts] == [
+        EXPOSURE[v].tolist() for _, v in folds
+    ]
 
 
 def test_no_exposure_arrives_as_none() -> None:
@@ -306,7 +319,7 @@ def test_no_exposure_arrives_as_none() -> None:
 
 @pytest.mark.parametrize(
     "exposure",
-    [np.concatenate([N, N]), N[:-1], N[:, None]],
+    [np.concatenate([EXPOSURE, EXPOSURE]), EXPOSURE[:-1], EXPOSURE[:, None]],
     ids=["long", "short", "2-d"],
 )
 def test_an_exposure_not_one_per_row_is_rejected(exposure: np.ndarray) -> None:
@@ -352,25 +365,60 @@ def test_a_non_finite_score_raises_and_skips_the_remaining_folds(bad: float) -> 
     assert len(_RecordingModel.fits) == 1
 
 
-@pytest.mark.parametrize("aggregation", ["weighted_mean", "mean"])
-def test_each_fold_reports_the_running_mean(aggregation: str) -> None:
+def _fold_scores() -> tuple[list[float], list[int]]:
+    """Each fold's score under _mean_of_y (the validation rows' mean y), and size."""
+    folds = _folds()
+    return [float(np.mean(Y[v])) for _, v in folds], [len(v) for _, v in folds]
+
+
+@pytest.mark.parametrize(
+    ("aggregation", "rule"),
+    [
+        (WeightedMean(), lambda scores, sizes: np.average(scores, weights=sizes)),
+        (Mean(), lambda scores, sizes: np.mean(scores)),
+        (
+            LowerBound(z=2),
+            # 3 folds partition the rows: the K-fold corrected SE.
+            lambda scores, sizes: (
+                np.average(scores, weights=sizes)
+                - 2 * np.std(scores, ddof=1) * math.sqrt(1 / 3 + 1 / 2)
+            ),
+        ),
+        (_Median(), lambda scores, sizes: np.median(scores)),
+    ],
+    ids=["weighted-mean", "mean", "lower-bound", "median"],
+)
+def test_each_fold_reports_its_score_and_the_value_is_the_aggregation(
+    aggregation: Aggregation, rule: Any
+) -> None:
     study = _optimize(
         _evaluator(metric=_mean_of_y(), aggregation=aggregation), n_trials=1
     )
 
-    folds = _folds()
-    scores = [float(np.mean(Y[validation_index])) for _, validation_index in folds]
-    sizes = [len(validation_index) for _, validation_index in folds]
+    scores, sizes = _fold_scores()
     assert len(set(sizes)) > 1  # the folds really differ in size
-    weights = sizes if aggregation == "weighted_mean" else [1] * len(sizes)
-    expected = [
-        float(np.average(scores[: k + 1], weights=weights[: k + 1]))
-        for k in range(len(scores))
-    ]
     reported = study.trials[0].intermediate_values
     assert list(reported) == [0, 1, 2]
-    assert list(reported.values()) == pytest.approx(expected)
-    assert study.trials[0].value == pytest.approx(expected[-1])
+    assert list(reported.values()) == pytest.approx(scores)
+    assert study.trials[0].value == pytest.approx(rule(scores, sizes))
+
+
+def test_a_completed_trial_records_its_folds() -> None:
+    evaluator = _evaluator(metric=_mean_of_y())
+    study = _optimize(evaluator, n_trials=1)
+    fixed = FixedTrial({"alpha": 1.0})
+    evaluator.evaluate(fixed, X, Y, GROUPS)
+
+    scores, sizes = _fold_scores()
+    for attrs in (study.trials[0].user_attrs, fixed.user_attrs):
+        assert set(attrs) == {"fold_scores", "fold_sizes"}
+        assert attrs["fold_scores"] == pytest.approx(scores)
+        assert attrs["fold_sizes"] == sizes
+        # JSON-native, as sqlite storage requires.
+        assert type(attrs["fold_scores"]) is list
+        assert {type(v) for v in attrs["fold_scores"]} == {float}
+        assert {type(v) for v in attrs["fold_sizes"]} == {int}
+        json.dumps(attrs)
 
 
 def test_a_pruned_trial_stops_after_the_first_fold() -> None:
@@ -378,6 +426,7 @@ def test_a_pruned_trial_stops_after_the_first_fold() -> None:
 
     assert study.trials[0].state == optuna.trial.TrialState.PRUNED
     assert len(_RecordingModel.fits) == 1
+    assert study.trials[0].user_attrs == {}  # only a completed trial records folds
 
 
 def test_pandas_and_numpy_inputs_score_the_same() -> None:
@@ -425,25 +474,29 @@ def test_matches_a_hand_written_fold_loop() -> None:
         [IntParameter("n_estimators", 5, 20)],
         cv=cv,
         metric=POISSON_DEVIANCE,
-        features=tree,
+        feature_transformer=tree,
     )
 
     value = evaluator.evaluate(
         FixedTrial({"n_estimators": 10}), df, y, groups, exposure=df["n"]
     )
 
-    n = df["n"].to_numpy()
+    exposure = df["n"].to_numpy()
     scores: list[float] = []
     sizes: list[int] = []
-    for train, validation in cv.split(df, y, groups):
-        features = clone(tree).fit(df.iloc[train], y.iloc[train])
+    for train, val in cv.split(df, y, groups):
+        transformer = clone(tree).fit(df.iloc[train], y.iloc[train])
         fitted = clone(model).set_params(n_estimators=10)
-        fitted.fit(features.transform(df.iloc[train]), y.iloc[train], exposure=n[train])
-        predicted = fitted.predict(
-            features.transform(df.iloc[validation]), exposure=n[validation]
+        fitted.fit(
+            transformer.transform(df.iloc[train]),
+            y.iloc[train],
+            exposure=exposure[train],
         )
-        scores.append(-float(POISSON_DEVIANCE.function(y.iloc[validation], predicted)))
-        sizes.append(len(validation))
+        y_val_pred = fitted.predict(
+            transformer.transform(df.iloc[val]), exposure=exposure[val]
+        )
+        scores.append(-float(POISSON_DEVIANCE.function(y.iloc[val], y_val_pred)))
+        sizes.append(len(val))
     assert len(set(sizes)) > 1
     assert value == pytest.approx(np.average(scores, weights=sizes))
 
