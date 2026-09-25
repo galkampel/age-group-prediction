@@ -1,10 +1,9 @@
 # Plan: modular Optuna hyperparameter tuning
 
 **Branch:** `feat/hyperparameter-tuning` · draft PR #5.
-**Status:** Phases 1 (parameters) and 2 (evaluator, aggregations) are done;
-2.3c is committed (`e756667`), and 2.4 with the Phase 2 review fixes awaits
-commit. Non-slow suite: 1002 passed, 8 warnings. **Next: Phase 3** (study),
-then Phase 4 (docs).
+**Status:** Phases 1 (parameters) and 2 (evaluator, aggregations) are done
+and committed through `0bf1562`. Non-slow suite: 1002 passed, 8 warnings.
+**Next: 3.1** (the study), then the rest of Phase 3 and Phase 4 (docs).
 The history of each step is in the git log and the commit messages.
 **To resume:** read this doc (§2 decisions, §4 design, §6 remaining work, §7
 working notes), then the package code and its tests; start the next sub-task
@@ -286,6 +285,16 @@ checks or docs that aren't essential; comments keep only the non-obvious
 commands and a file-by-file .py summary (ask before a `Co-Authored-By`
 line).
 
+**Docs policy:** this doc holds only the current decisions, design and
+remaining work; update those sections in place, with no step records or
+review tables (the commit messages keep the history). Code comments keep only
+the non-obvious "why".
+
+**Before designing:** check what the library recommends (e.g. Optuna's
+`WilcoxonPruner` docs for CV pruning), and measure the alternatives before
+recommending one. When the user asks "why X?", answer with the evidence; ask
+before changing a settled decision.
+
 **Routine per sub-task:** implement → ruff, mypy (with the changed test
 files), the changed tests under `-W error` → a mutation check per claimed
 behavior (break it, see a test fail, restore, `cmp`) → an independent review
@@ -331,44 +340,52 @@ stop, update the status line and checklist, and give the user the lines to
 paste. No "Generated with" footer: the user removed it.
 
 ```markdown
-**Status:** draft. Phases 1 (parameters) and 2 (the evaluator and fold
-aggregations) are in. Next: the study.
+**Status:** draft. Phase 1 (parameters) and Phase 2 (the evaluator and fold
+aggregations) are in. Next: the study (Phase 3), then the docs (Phase 4).
 
 ## Summary
-Adds the `hyperparameter_tuning` package: Optuna tuning in independent parts.
+Adds the `hyperparameter_tuning` package: Optuna tuning split into independent,
+tested parts that tune the repo's own `modeling.BaseAgeGroupModel`s.
 
 - **Parameters** (`parameters.py`): `FloatParameter`, `IntParameter` and
-  `CategoricalParameter`, strict pydantic dataclasses validated when created
-  (Optuna's checks plus the cases Optuna lets through). A search space is a
-  plain list of them.
+  `CategoricalParameter`, strict pydantic dataclasses validated when created.
+  They run Optuna's own checks, plus three that Optuna lets through silently:
+  a step that doesn't divide the range, duplicate choices, and NaN/inf
+  bounds. A search space is a plain list of them.
 - **`CVHyperparameterEvaluator`** (`evaluator.py`): a frozen pydantic
-  dataclass of settings (a `BaseAgeGroupModel`, parameters, a `Splitter.cv`
-  validator, a `Metric`, a `FeatureTransformer`, an `Aggregation`), checked
-  when built; data in `evaluate(trial, X, y, groups, *, exposure=None)`. Each
-  trial copies the transformer and model once, and each fold refits them on
-  its training rows. A lower-is-better metric is negated. Each fold's score
-  is reported for pruning; a NaN or inf score raises. A completed trial
-  records its fold scores and sizes.
-- **Aggregations** (`aggregation.py`): `WeightedMean` (default), `Mean` and
-  `LowerBound(z)`, via `aggregate(scores, fold_sizes)`; `corrected_std_error`
-  is the K-fold Nadeau–Bengio SE.
-- **`HyperparameterStudy`** (`study.py`, not started).
+  dataclass of settings, checked when built: a model, parameters, a
+  `Splitter.cv` validator, a `Metric`, a `FeatureTransformer` and an
+  `Aggregation`. The data go to `evaluate(trial, X, y, groups, *, exposure=None)`.
+  - Each trial copies the transformer and the model once; each fold refits
+    them on its training rows only, so no validation rows leak in.
+  - A lower-is-better metric is negated, so the study always maximizes.
+  - Each fold's own score is reported for pruning, the contract of Optuna's
+    `WilcoxonPruner`. A NaN or inf score raises.
+  - A completed trial records its `fold_scores` and `fold_sizes`.
+- **Aggregations** (`aggregation.py`): `WeightedMean` (the default), `Mean`
+  and `LowerBound(z)`, each through `aggregate(scores, fold_sizes)`.
+  `corrected_std_error` is the K-fold Nadeau–Bengio standard error.
+- **`HyperparameterStudy`** (`study.py`): not started.
 
-Supporting changes: `Metric` moved to `scoring.py`; `BaseAgeGroupModel.fit`/
-`predict` take `exposure=None`, with a contract test over every model;
-`Splitter.cv` requires an int `random_state`; a public `utils.py` with
-`take_rows` and the table type aliases.
+Supporting changes:
+- `Metric` and the ready-made metrics moved to the top-level `scoring.py`.
+- `BaseAgeGroupModel.fit`/`predict` take `exposure=None`, and a contract test
+  runs sklearn's parameter checks over every model.
+- `Splitter.cv` requires an int `random_state`, so every trial sees identical
+  folds.
+- A public `utils.py` holds `take_rows` and the table type aliases.
 
 ## Scope
-Not wired into the experiment runner; `tuning.py` and the old `models/` are
-unchanged. Design and decisions: `docs/HYPERPARAMETER_TUNING_PLAN.md`.
+Not wired into the experiment runner. `tuning.py` and the old `models/` are
+unchanged. The design, the decisions and the remaining work are in
+`docs/HYPERPARAMETER_TUNING_PLAN.md`.
 
 ## Checklist
 - [x] Phase 1: parameters
 - [x] Phase 2: evaluator and aggregations
 - [ ] Phase 3: study, including the integration test
 - [ ] Phase 4: docs
-- [ ] Non-slow suite passes
+- [x] Non-slow suite passes (1002 passed)
 ```
 
 ## 9. The switch to `BaseAgeGroupModel` (settled 2026-09-24)
