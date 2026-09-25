@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import dataclasses
 import json
 import math
 from collections.abc import Sequence
@@ -14,6 +15,7 @@ import pytest
 from numpy.typing import ArrayLike
 from optuna.pruners import BasePruner
 from optuna.trial import FixedTrial
+from pydantic import ValidationError
 from sklearn.base import clone
 from sklearn.exceptions import NotFittedError
 from sklearn.metrics import mean_squared_error
@@ -165,48 +167,57 @@ def _optimize(
 
 
 @pytest.mark.parametrize(
-    ("overrides", "message"),
+    ("overrides", "field"),
     [
-        ({"parameters": []}, "parameters must not be empty"),
-        (
-            {
-                "parameters": [
-                    FloatParameter("alpha", 0.1, 1.0),
-                    IntParameter("alpha", 1, 9),
-                    FloatParameter("tol", 1e-4, 1e-2),
-                ]
-            },
-            r"unique, repeated: \['alpha'\]",
-        ),
+        ({"parameters": []}, "parameters"),
+        ({"parameters": set(PARAMETERS)}, "parameters"),
+        ({"model": StandardScaler()}, "model"),
+        ({"metric": "neg_mean_squared_error"}, "metric"),  # the old sklearn API
+        ({"metric": {"name": "mse", "function": mean_squared_error}}, "metric"),
+        ({"cv": 5}, "cv"),
+        ({"feature_transformer": StandardScaler()}, "feature_transformer"),
+        ({"aggregation": "mean"}, "aggregation"),  # the old string API
     ],
-    ids=["no-parameters", "duplicate-names"],
+    ids=[
+        "no-parameters",
+        "parameter-set",
+        "model",
+        "metric-string",
+        "metric-dict",
+        "cv",
+        "feature-transformer",
+        "aggregation-string",
+    ],
 )
-def test_invalid_settings_are_rejected(overrides: dict[str, Any], message: str) -> None:
-    with pytest.raises(ValueError, match=message):
+def test_invalid_settings_are_rejected(overrides: dict[str, Any], field: str) -> None:
+    with pytest.raises(ValidationError) as error:
         _evaluator(**overrides)
+    # Positional arguments are named by position: model 0, parameters 1.
+    location = {"model": 0, "parameters": 1}.get(field, field)
+    assert error.value.errors()[0]["loc"][0] == location
 
 
-def test_aggregation_must_be_an_aggregation() -> None:
-    # The old API took strings.
-    with pytest.raises(TypeError, match="aggregation must be an Aggregation"):
-        _evaluator(aggregation="mean")
+def test_duplicate_parameter_names_are_named() -> None:
+    parameters = [FloatParameter("alpha", 0.1, 1.0), IntParameter("alpha", 1, 9)]
+    with pytest.raises(ValidationError, match=r"unique, repeated: \['alpha'\]"):
+        _evaluator(parameters=parameters)
 
 
-def test_the_default_aggregation_is_the_weighted_mean() -> None:
-    assert _evaluator().aggregation == WeightedMean()
+def test_settings_are_stored_as_given_and_frozen() -> None:
+    model = _RecordingModel()
+    transformer = FeatureTransformer(remainder="passthrough")
+    evaluator = _evaluator(
+        parameters=list(PARAMETERS), model=model, feature_transformer=transformer
+    )
 
-
-def test_metric_must_be_a_metric() -> None:
-    # The old sklearn API took scoring strings.
-    with pytest.raises(TypeError, match="metric must be a Metric"):
-        _evaluator(metric="neg_mean_squared_error")
-
-
-def test_feature_transformer_must_be_a_feature_transformer() -> None:
-    with pytest.raises(
-        TypeError, match="feature_transformer must be a FeatureTransformer"
-    ):
-        _evaluator(feature_transformer=StandardScaler())
+    assert evaluator.parameters == tuple(PARAMETERS)
+    # Not copied here: the templates are cloned per trial.
+    assert evaluator.model is model
+    assert evaluator.feature_transformer is transformer
+    assert evaluator.metric is MSE
+    assert evaluator.aggregation == WeightedMean()  # the default
+    with pytest.raises(dataclasses.FrozenInstanceError):
+        evaluator.metric = MSE  # type: ignore[misc]
 
 
 def test_build_feature_transformer_and_model_returns_unfitted_copies() -> None:

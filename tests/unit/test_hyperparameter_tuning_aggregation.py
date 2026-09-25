@@ -18,7 +18,7 @@ from age_group_prediction.hyperparameter_tuning import (
     WeightedMean,
     corrected_std_error,
 )
-from age_group_prediction.splitting import Splitter
+from age_group_prediction.splitting import Method, Splitter
 
 # Unequal folds: the `grouped` sizes on the evaluator tests' 28 rows.
 SCORES = [-3.0, -5.0, -4.5]
@@ -42,7 +42,7 @@ def test_corrected_std_error_matches_the_hand_value() -> None:
     assert corrected_std_error(SCORES) == pytest.approx(STD_ERROR)
 
 
-def _size_ratio(method: str, groups: np.ndarray) -> float:
+def _size_ratio(method: Method, groups: np.ndarray) -> float:
     """``mean(n_val) / mean(n_train)`` over a 5-fold ``Splitter.cv`` split."""
     X = pd.DataFrame({"x": np.arange(len(groups), dtype=float)})
     folds = (
@@ -55,7 +55,7 @@ def _size_ratio(method: str, groups: np.ndarray) -> float:
 
 
 @pytest.mark.parametrize("method", ["random", "stratified_by_group", "grouped"])
-def test_the_splitter_gives_the_ratio_the_std_error_assumes(method: str) -> None:
+def test_the_splitter_gives_the_ratio_the_std_error_assumes(method: Method) -> None:
     groups = np.repeat(np.arange(10), 4)
     assert _size_ratio(method, groups) == pytest.approx(1 / (5 - 1))
 
@@ -88,7 +88,9 @@ def test_each_aggregation_matches_the_hand_value(
 
 @pytest.mark.parametrize("aggregation", [WeightedMean(), Mean(), LowerBound()])
 def test_numpy_arrays_score_like_lists(aggregation: Aggregation) -> None:
-    arrays = aggregation.aggregate(np.array(SCORES), np.array(FOLD_SIZES))
+    # Outside the typed contract (Sequence), but it works: len() and numpy.
+    scores, sizes = np.array(SCORES), np.array(FOLD_SIZES)
+    arrays = aggregation.aggregate(scores, sizes)  # type: ignore[arg-type]
     assert arrays == aggregation.aggregate(SCORES, FOLD_SIZES)
 
 

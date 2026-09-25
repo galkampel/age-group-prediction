@@ -38,15 +38,14 @@ __all__ = [
 
 
 def corrected_std_error(scores: Sequence[float]) -> float:
-    """The corrected standard error of the mean fold score, for K-fold splits.
+    """The Nadeau–Bengio corrected standard error of the mean fold score.
 
-    ``s * sqrt(1/K + 1/(K-1))``, with ``s`` the scores' std (ddof=1): the
-    Nadeau–Bengio correction in its K-fold form (Bouckaert & Frank, 2004),
-    where ``n_val/n_train = 1/(K-1)``. The naive ``s/sqrt(K)`` is too small:
-    the folds share most of their training rows. The ratio is exact when
-    every row is validated once (``random``, ``grouped``). Under
-    ``stratified_by_group``, rows alone in their stratum are never validated,
-    so the SE comes out slightly large, i.e. conservative. Needs 2 folds.
+    ``s * sqrt(1/K + 1/(K-1))``, ``s`` the scores' std (ddof=1): the K-fold
+    form (Bouckaert & Frank, 2004). The naive ``s/sqrt(K)`` is too small
+    because the folds share most of their training rows. Exact when every row
+    is validated once (``random``, ``grouped``); slightly conservative under
+    ``stratified_by_group``, which never validates a row alone in its stratum.
+    Needs at least 2 folds.
     """
     k = len(scores)
     if k < 2:

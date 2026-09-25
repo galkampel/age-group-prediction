@@ -1,11 +1,7 @@
 """How one trial is scored: set the parameters once, then fit and score every fold.
 
-The evaluator holds the settings; the data are arguments to
-:meth:`CVHyperparameterEvaluator.evaluate`, so one evaluator can score many
-datasets. Every call re-splits with ``cv``, a :meth:`Splitter.cv` validator,
-which requires an int seed, so every trial is compared on identical folds.
-Each trial gets its own copies of ``feature_transformer`` and the model, with
-the trial's parameters set; each fold refits them on its training rows only.
+Every call re-splits with ``cv``, a :meth:`Splitter.cv` validator with an int
+seed, so every trial is compared on identical folds.
 """
 
 from __future__ import annotations
@@ -13,11 +9,14 @@ from __future__ import annotations
 import math
 from collections import Counter
 from collections.abc import Mapping, Sequence
-from typing import Any
+from dataclasses import KW_ONLY, field
+from typing import Annotated, Any
 
 import numpy as np
 import optuna
 from optuna.trial import BaseTrial
+from pydantic import AfterValidator, ConfigDict, Field, InstanceOf
+from pydantic.dataclasses import dataclass as pydantic_dataclass
 from sklearn.base import clone
 from sklearn.model_selection import BaseCrossValidator
 
@@ -31,6 +30,18 @@ from .parameters import Parameter
 __all__ = ["CVHyperparameterEvaluator"]
 
 
+def _unique_names(parameters: Sequence[Parameter]) -> tuple[Parameter, ...]:
+    # Optuna would silently hand the second parameter the first one's value.
+    names = Counter(p.name for p in parameters)
+    duplicates = sorted(name for name, count in names.items() if count > 1)
+    if duplicates:
+        raise ValueError(f"parameter names must be unique, repeated: {duplicates}")
+    return tuple(parameters)
+
+
+# Settings are checked when the evaluator is built, not after a fold is fitted.
+# Arbitrary types are checked with isinstance and stored as given.
+@pydantic_dataclass(frozen=True, config=ConfigDict(arbitrary_types_allowed=True))
 class CVHyperparameterEvaluator:
     """Score one hyperparameter set by cross-validation; greater is better.
 
@@ -45,58 +56,24 @@ class CVHyperparameterEvaluator:
             trial, train_df, y_train, groups_train, exposure=exposure_train))
 
     A lower-is-better metric is negated, so the study always maximizes.
-    ``feature_transformer`` turns the raw table ``X`` into each fold's design
-    matrix and is refitted on that fold's training rows, so validation rows
-    can't leak into it. ``aggregation`` combines the fold scores into the
-    trial value; the pruner sees each fold's own score. For the ``random``
-    method pass ``groups=None``: ``KFold`` warns on every split that receives
-    groups.
+    ``feature_transformer`` turns the raw table into each fold's design
+    matrix. ``aggregation`` combines the fold scores into the trial value.
+    For the ``random`` method pass ``groups=None``: ``KFold`` warns on every
+    split that receives groups.
     """
 
-    def __init__(
-        self,
-        model: BaseAgeGroupModel,
-        parameters: Sequence[Parameter],
-        *,
-        cv: BaseCrossValidator,
-        metric: Metric,
-        feature_transformer: FeatureTransformer,
-        aggregation: Aggregation = WeightedMean(),  # noqa: B008 (frozen: safe to share)
-    ) -> None:
-        if not isinstance(metric, Metric):
-            # An old sklearn scoring string would otherwise fail only after the
-            # first fold is fitted.
-            raise TypeError(f"metric must be a Metric, got {metric!r}")
-        if not isinstance(feature_transformer, FeatureTransformer):
-            # Any sklearn transformer would run; the repo's features are declared
-            # through FeatureTransformer.
-            raise TypeError(
-                "feature_transformer must be a FeatureTransformer, "
-                f"got {type(feature_transformer).__name__}"
-            )
-        if not isinstance(aggregation, Aggregation):
-            # A string ("mean") would otherwise fail only after every fold is fitted.
-            raise TypeError(f"aggregation must be an Aggregation, got {aggregation!r}")
-
-        if not parameters:
-            raise ValueError("parameters must not be empty")
-        # Optuna would silently hand the second parameter the first one's value.
-        duplicates = sorted(
-            name
-            for name, count in Counter(p.name for p in parameters).items()
-            if count > 1
-        )
-        if duplicates:
-            raise ValueError(f"parameter names must be unique, repeated: {duplicates}")
-
-        self.model = model
-        self.parameters = tuple(parameters)
-        # Split in every call; Splitter.cv guarantees at least 2 non-empty
-        # folds, identical on each call.
-        self.cv = cv
-        self.metric = metric
-        self.feature_transformer = feature_transformer
-        self.aggregation = aggregation
+    model: BaseAgeGroupModel
+    # A list or tuple, stored as a tuple; a set is rejected, since its order
+    # (and so a seeded study's draws) varies between runs.
+    parameters: Annotated[
+        Sequence[Parameter], Field(min_length=1), AfterValidator(_unique_names)
+    ]
+    _: KW_ONLY
+    cv: BaseCrossValidator
+    # InstanceOf: lax pydantic would otherwise build a Metric from a dict.
+    metric: InstanceOf[Metric]
+    feature_transformer: FeatureTransformer
+    aggregation: Aggregation = field(default_factory=WeightedMean)
 
     def evaluate(
         self,
@@ -109,12 +86,10 @@ class CVHyperparameterEvaluator:
     ) -> float:
         """Fit and score every fold with the trial's parameters.
 
-        ``trial`` comes from a study, or is ``optuna.trial.FixedTrial(params)``
-        to score one parameter set without a study. ``X`` is the raw table,
-        a DataFrame for any ``feature_transformer`` with plans (a numpy array
-        works only with a pass-through transformer). ``exposure``: one raw
-        exposure per row of ``X``, sliced by position like ``X`` and passed to
-        the model's ``fit`` and ``predict``.
+        ``trial`` may be ``optuna.trial.FixedTrial(params)`` to score one
+        parameter set without a study. ``X`` is the raw table; a numpy array
+        works only with a pass-through transformer. ``exposure`` holds one raw
+        exposure per row of ``X``.
         """
         self._check_exposure(exposure, X)
         params = {p.name: p.suggest(trial) for p in self.parameters}
@@ -129,7 +104,7 @@ class CVHyperparameterEvaluator:
                 if exposure is None
                 else (take_rows(exposure, train_index), take_rows(exposure, val_index))
             )
-            # Refitted on this fold's training rows only, so no validation
+            # Fitted on this fold's training rows only, so no validation
             # statistics leak in; fit replaces the previous fold's state.
             feature_transformer.fit(X_train, y_train)
             X_train, X_val = (
@@ -139,7 +114,6 @@ class CVHyperparameterEvaluator:
             model.fit(X_train, y_train, exposure=exposure_train)
             y_val_pred = model.predict(X_val, exposure=exposure_val)
             value = model.evaluate(y_val, y_val_pred, self.metric)
-            # One direction everywhere: the study always maximizes.
             score = value if self.metric.greater_is_better else -value
             # Checked before report: Optuna stores a NaN intermediate silently.
             if not math.isfinite(score):
@@ -161,12 +135,8 @@ class CVHyperparameterEvaluator:
 
     @staticmethod
     def _check_exposure(exposure: Exposure | None, X: DesignMatrix) -> None:
-        """Reject an exposure that isn't one value per row of ``X``.
-
-        ``cv.split`` checks only ``X``, ``y`` and ``groups``. Each fold would
-        silently slice a longer exposure to size; a shorter one would fail
-        mid-CV.
-        """
+        # cv.split checks only X, y and groups: each fold would silently slice
+        # a longer exposure to size, and a shorter one would fail mid-CV.
         if exposure is not None and np.shape(exposure) != (len(X),):
             raise ValueError(
                 f"exposure must hold one value per row of X ({len(X)}), "
@@ -178,10 +148,9 @@ class CVHyperparameterEvaluator:
     ) -> tuple[FeatureTransformer, BaseAgeGroupModel]:
         """Unfitted copies of the templates, with ``params`` set on the model.
 
-        Called once per trial, and for the final refit. Copies, so the
-        templates stay unfitted and parallel trials (Optuna ``n_jobs > 1``)
-        share nothing. One pair serves every fold of a trial, because ``fit``
-        replaces all fitted state.
+        Called once per trial and for the final refit. Copies, so the
+        templates stay unfitted and parallel trials share nothing; one pair
+        serves every fold, because ``fit`` replaces all fitted state.
         """
         model: BaseAgeGroupModel = clone(self.model).set_params(**params)
         return clone(self.feature_transformer), model

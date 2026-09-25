@@ -521,7 +521,7 @@ In order. Each step has its own plan and gated phases.
 1. ✓ **Merge PR #6 into `feat/hyperparameter-tuning`**: squash-merged as
    `aee3e6a` (2026-09-24).
 2. **Resume the tuning package** at
-   [HYPERPARAMETER_TUNING_PLAN.md §9.7](HYPERPARAMETER_TUNING_PLAN.md): switch
+   [HYPERPARAMETER_TUNING_PLAN.md §9](HYPERPARAMETER_TUNING_PLAN.md): switch
    the evaluator to `BaseAgeGroupModel`, then tune `DirectCohortModel` per
    cohort. Re-check the exposure offset once tuned; Step 2.4 found only weak
    evidence, untuned.

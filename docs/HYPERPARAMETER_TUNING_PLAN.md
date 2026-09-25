@@ -1,477 +1,220 @@
 # Plan: modular Optuna hyperparameter tuning
 
-**Branch:** `feat/hyperparameter-tuning` · draft PR #5 · **Status:** Phase 1
-committed (`cdc3f98`), 2.1–2.2 (`84e8f06`). PR #6 (`aee3e6a`) added
-`modeling.BaseAgeGroupModel` and `DirectCohortModel`. Committed through
-`a5bbe14`: 2.2a–2.2d (the evaluator tunes `BaseAgeGroupModel`) and 1.6
-(generic categorical choices). 2.3a (`6b485d9`, aggregation classes) and
-2.3b (the evaluator uses them; awaiting commit) done. Non-slow suite: 998
-passed, 8 warnings.
-**Next: 2.4** (§9.8). A new session should start with §9, "Handoff notes".
-**Workflow:** each phase ends with an independent review, then stops for your
-approval. Nothing is committed without your approval.
+**Branch:** `feat/hyperparameter-tuning` · draft PR #5.
+**Status:** Phase 1 (parameters) and 2.1–2.3c (evaluator, aggregations) are
+done; the last commit is 2.3b (`9f9ce2e`), and 2.3c awaits commit.
+Non-slow suite: 1002 passed, 8 warnings. **Next: 2.4**, then Phase 3 (study)
+and Phase 4 (docs).
+The history of each step is in the git log and the commit messages.
+**To resume:** read this doc (§2 decisions, §4 design, §6 remaining work, §7
+working notes), then the package code and its tests; start the next sub-task
+in plan mode.
 
-## Contents
-1. Context and goal
-2. Key decisions
-3. Package layout
-4. Design: parameters, objective, study
-5. Worked example: `DirectCohortModel`'s LightGBM tuning
-6. Implementation phases and sub-tasks
-7. Verification
-8. Draft PR
-9. Handoff notes (read first when resuming)
+## 1. Goal and scope
 
----
+Every Optuna objective in the old stack is a closure inside a model
+(`models/direct_cohort.py`, `models/independent_total_probability.py`) that
+hard-codes the search space, the study settings and the fold loop. This
+package splits them into independent, tested parts:
 
-## 1. Context and goal
-
-Every Optuna objective in the repo today is a closure inside a model
-(`models/direct_cohort.py:128-148` with `_suggest_parameters`, and
-`models/independent_total_probability.py:178-200`). Each closure hard-codes the
-search space, the study settings and the fold loop together, so none of it can
-be reused, configured or tested on its own.
-
-**Goal:** a new standalone package with three independent classes:
-
-| class | answers |
+| part | answers |
 |---|---|
-| **Parameter** (`FloatParameter`, `IntParameter`, `CategoricalParameter`); a search space is a plain list of them | Which values may each hyperparameter take? |
-| **`CVHyperparameterEvaluator`** | How is one trial scored? The parameters are set once, then every CV fold is fitted and scored, and the fold scores are combined into one number. |
-| **`HyperparameterStudy`** | How does Optuna search, and what was the best result? |
+| `Parameter`s (a search space is a plain list of them) | which values may each hyperparameter take? |
+| `CVHyperparameterEvaluator` + an `Aggregation` | how is one trial scored? |
+| `HyperparameterStudy` | how does Optuna search, and which trial won? |
 
-**Out of scope:** changing the old `tuning.py` and the old `models/` (D17). This follows the same
-approach as the `splitting` package. **Changed 2026-09-24:** the evaluator
-tunes the repo's own models (`modeling.BaseAgeGroupModel`), not generic
-sklearn estimators (D11–D17).
+The package tunes the repo's own `modeling.BaseAgeGroupModel`s. **Out of
+scope:** the old `tuning.py` and `models/` (unchanged), and wiring into the
+experiment runner.
 
----
+## 2. Decisions
 
-## 2. Key decisions
+| # | decision | why |
+|---|---|---|
+| D1 | One frozen, strict pydantic dataclass per parameter type; Optuna's own distribution classes check the values | pydantic rejects wrong types that a plain dataclass stores; Optuna already checks almost every value rule (§4.1) |
+| D3 | Every trial splits with a `Splitter.cv` validator, which requires an int seed | trials are compared on identical folds; `Splitter.cv` guarantees at least 2 non-empty folds |
+| D4 | Only the trial's parameters are fitted inside the objective | the folds and the final refit don't depend on them |
+| D5 | Fold aggregation is an `Aggregation` object: `WeightedMean()` (default), `Mean()`, `LowerBound(z)` or a custom subclass, with one method `aggregate(scores, fold_sizes)` | it takes plain lists, so it knows nothing about the data; each class carries its own settings (`z`) |
+| D7 | The study takes Optuna sampler and pruner objects, with seeded defaults | wrapping them would duplicate Optuna's API |
+| D8 | Only COMPLETE trials can win | a pruned trial's value comes from fewer folds |
+| D9 | No conditional or derived parameters in v1 | the LightGBM example (§5) doesn't need them |
+| D10 | Settings in the constructor; data (`X, y, groups, exposure`) as arguments of the named method `evaluate` | the sklearn convention; one evaluator scores many targets; Optuna's one-argument objective is a lambda |
+| D11 | The evaluator tunes a `BaseAgeGroupModel`: per trial, `build_feature_transformer_and_model(params)` makes copies (`clone`, `set_params`); each fold refits them, predicts, and scores with `model.evaluate(y, y_pred, metric)` | the repo's models get `clone`/`set_params` from `BaseEstimator`; a misspelled parameter raises at `set_params` |
+| D12 | One direction: the score is the metric's value if `greater_is_better`, else its negation; the study always maximizes | no sign to get wrong |
+| D13 | A required `feature_transformer: FeatureTransformer`, fitted per fold on the training rows and targets | a transformer fitted on all rows would leak validation statistics; a `Pipeline` was rejected (its `fit` and `predict` name the exposure differently, and it has no `evaluate`) |
+| D14 | `exposure=None` is part of `BaseAgeGroupModel.fit`/`predict`; the evaluator slices it per fold and always passes it | typed calls (mypy); the model decides whether it needs one |
+| D15 | `evaluate(trial, X, y, groups=None, *, exposure=None)`; `X` is the raw table | the exposure is data (D10) |
+| D16 | `Metric` and the ready-made metrics live in the top-level `scoring.py` | models and tuning both use them |
+| D17 | Only `modeling.BaseAgeGroupModel`s are tunable; a contract test runs sklearn's parameter checks over every one | the old models can't be cloned; a rebuilt model gets `clone`/`set_params` if it stores its settings verbatim and validates in `fit` |
 
-| # | decision | why | details |
-|---|---|---|---|
-| D1 | One frozen **pydantic dataclass** per parameter type, under an abstract `Parameter` base. Types are checked strictly by pydantic; value rules are delegated to Optuna's own distribution classes. | Each class holds only the options its type accepts. Pydantic rejects wrong types, which plain dataclasses let through (§4.1.1). Optuna already checks almost every value rule, so we add only the three it lets through. There is no dict/TOML loading in v1: the existing TOML table stores only `[low, high]` pairs without `log`, so a migration would need a new format anyway. | §4.1 |
-| D2 | ~~The model is an sklearn estimator or `Pipeline` used as a template: `clone(template).set_params(**params)`~~ **Superseded by D11 and D13.** | This is the sklearn standard. Preprocessing inside a `Pipeline` is refitted on every fold, so validation rows can't leak into it. | §4.2 |
-| D3 | Every trial sees identical folds: `split()` runs in each trial on a `Splitter.cv` validator, which requires an int seed | Trials are compared on the same rows. Re-splitting costs ~0.3 ms, and the Splitter already guarantees at least 2 non-empty folds, so the objective checks no folds itself (revised in 2.1, 2026-09-24). | §4.2 |
-| D4 | The model is fitted inside the objective; everything that doesn't depend on the trial's parameters happens outside it | The parameters change on every trial. The folds (built before the study) and the final refit (after it) do not. | §4.2 |
-| D5 | Fold aggregation is a strategy object: `WeightedMean()` (default), `Mean()`, `LowerBound(z=1.0)`, or a custom `Aggregation` subclass. Each carries its own parameters (revised 2026-09-24; it was a string plus a separate `z`). Its one method, `aggregate(scores, fold_sizes) -> float`, takes two plain lists computed by the evaluator, so it knows nothing about the data (revised 2026-09-25: no `FoldScores` container, no `running`) | For a metric that is a mean over rows, the size-weighted mean is the pooled per-row loss, the same measure the test set uses. The others are there when a different rule fits. A class keeps `z` with the one rule that uses it, so the evaluator needs no "`z` only with `lower_bound`" checks. | §4.2.1 |
-| D6 | ~~Scoring uses sklearn scorers~~ (**superseded by D11**), where greater is better, and the study always maximizes | One sign convention, so there's no sign to get wrong. D12 keeps it. | §4.2 |
-| D7 | The study takes Optuna sampler and pruner objects directly, with seeded defaults | Wrapping them would duplicate Optuna's API. | §4.3 |
-| D8 | Only COMPLETE trials can win | A pruned trial's value comes from fewer folds. | §4.3 |
-| D9 | No conditional or derived parameters in v1 | The LightGBM example (§5) didn't need them. | §5 |
-| D10 | Settings go in the constructor; the data (`X, y, groups`) are arguments to `evaluate`, and a named method replaces `__call__` | The scikit-learn convention (`Ridge(alpha)`, then `.fit(X, y)`). One evaluator can score many datasets, e.g. every cohort's target. Optuna needs a one-argument callable, so the call site binds the data with a lambda (decided 2026-09-24). | §4.2 |
-| D11 | The evaluator tunes a `modeling.BaseAgeGroupModel`. The parameters are suggested once per trial, and `build_feature_transformer_and_model(params)` makes the trial's own copies (`clone(feature_transformer)` and `clone(model).set_params(**params)`); each fold refits them, then runs `predict`, then `model.evaluate(y_true, y_pred, metric)` with one `Metric`. The constructor takes `model` and a required `metric`; `build_estimator` becomes `build_feature_transformer_and_model` (decided 2026-09-24; revised the same day from a per-fold `build_model`; renamed from `build_features_and_model` 2026-09-25). | The repo's models are `BaseAgeGroupModel`s, and PR #6 gave them `get_params`/`set_params`/`clone` (via `BaseEstimator`) and fixed hyperparameters. Measured: `clone(DirectCohortModel).set_params(...)` with all 10 §5 parameters fits and leaves the template unchanged; a misspelled name raises at `set_params`, a bad value (`num_leaves=1`) at `fit`; sklearn's four parameter checks pass (§9.7). Supersedes D2 and D6's scorers. | §4.2, §9.7 |
-| D12 | **One direction everywhere:** the score is the metric's value if `metric.greater_is_better`, else its negation. The trial value, the fold scores the pruner sees, the SE and the lower bound all use this score (decided 2026-09-24). | sklearn's convention (its `neg_*` scorers), and D6's single sign: the study always maximizes, so there's no sign to get wrong. `Metric` carries its own direction, so the old `target_zero` case no longer exists. | §4.2 |
-| D13 | Per-fold features: a **required** `feature_transformer: FeatureTransformer` (from `feature_engineering`; named `features` until 2026-09-25) in the constructor; any other type raises `TypeError` (revised 2026-09-24: it was an optional sklearn transformer). `FeatureTransformer(remainder="passthrough")` passes columns through when nothing needs transforming. Each fold fits `clone(feature_transformer)` on its training rows and targets (`fit(X_train, y_train)`, as a `Pipeline` would), then transforms the training and validation rows (decided 2026-09-24). | The model takes a finished `X`, so a transformer fitted on all rows would leak validation statistics. Rejected: a `Pipeline(feature_transformer, model)`. Measured, its `fit` needs `model__exposure=` but `predict` needs `exposure=` (the other name raises), and it isn't a `BaseAgeGroupModel` and has no `evaluate`. sklearn's metadata routing fixes the naming only with a process-wide `set_config` flag. | §4.2 |
-| D14 | `exposure: ArrayLike \| None = None` joins the base contract: `BaseAgeGroupModel.fit(X, y, exposure=None)` and `predict(X, exposure=None)`. The evaluator slices it per fold with `take_rows` and always passes it, `None` included; the model decides whether it needs one, and `DirectCohortModel` raises on a mismatch (decided 2026-09-24). | Measured with mypy `--strict`: `model.fit(X, y, exposure=n)` on a `BaseAgeGroupModel` is a `call-arg` error, and passing it as `**dict[str, Any]` only hides the call from the checker. `DirectCohortModel` already has this signature, and the offset models to be rebuilt take an exposure too. | §4.2 |
-| D15 | `evaluate(trial, X, y, groups=None, *, exposure=None)`. `X` is the raw table (decided 2026-09-24). | The exposure is data, so it's a method argument (D10), named as in the model's `fit`. It is keyword-only, so existing calls don't change. | §4.2 |
-| D16 | `Metric`, `POISSON_DEVIANCE`, `RMSE` and `MAE` move from `modeling/metrics.py` to the top-level `age_group_prediction/scoring.py`. That module is their only import location, with no re-export (decided 2026-09-24). | Models and tuning both score with them, as `sklearn.metrics` sits beside the estimators. The name `metrics.py` is taken by the old stack; the module can be renamed once that's deleted (model roadmap step 5). | §3 |
-| D17 | The evaluator accepts only `modeling.BaseAgeGroupModel`. The old `models.IndependentTotalProbabilityModel` and `BayesianConditionalModel` are not patched. A contract test runs three of sklearn's parameter checks over every `modeling` model; they are the smallest set that caught every contract breach tried (2.2c) (decided 2026-09-24). | Measured: `clone` raises `TypeError` on both old models. They have no `get_params`, they validate in `__init__` and nest their hyperparameters in config objects, and their `fit(train_df, feature_spec, rng)` differs. They're deleted once rebuilt. Rebuilt in `modeling/`, they get `clone`/`set_params` from `BaseEstimator` if they follow the model plan's M2/M11 (settings stored verbatim, validated in `fit`); the contract test fails any model that doesn't. | §9.7 |
-
----
+D2 (sklearn estimators) and D6 (sklearn scorers) were superseded by D11–D13.
 
 ## 3. Package layout
 
-The layout mirrors `splitting/` and `feature_engineering/`:
-
 ```
 src/age_group_prediction/hyperparameter_tuning/
-    __init__.py      # docstring (how the pieces fit) and the public API
+    __init__.py      # how the parts fit; the public API
+    _config.py       # _STRICT: the pydantic config shared by parameters and aggregation
     parameters.py    # Parameter, FloatParameter, IntParameter, CategoricalParameter
     aggregation.py   # Aggregation, WeightedMean, Mean, LowerBound, corrected_std_error
-    _config.py       # _STRICT, the pydantic config shared by parameters and aggregation
-    evaluator.py     # CVHyperparameterEvaluator (fold loop)
-    study.py         # HyperparameterStudy, TuningResult, TrialRecord
-
-tests/unit/
-    test_hyperparameter_tuning_parameters.py
-    test_hyperparameter_tuning_aggregation.py
-    test_hyperparameter_tuning_evaluator.py
-    test_hyperparameter_tuning_study.py
-    test_scoring.py                       # 2.2b: moved from test_modeling_metrics.py
-    test_modeling_contract.py             # 2.2c: sklearn's parameter checks, every modeling model
+    evaluator.py     # CVHyperparameterEvaluator
+    study.py         # HyperparameterStudy, TrialRecord, TuningResult (Phase 3)
 ```
 
-- **Shared helpers:** `take_rows` and the `DesignMatrix`, `Target` and
-  `Groups` aliases live in the public `age_group_prediction/utils.py`, which
-  `splitting` also uses (`tests/unit/test_utils.py`).
-- **Imports go one way:** `evaluator.py` imports `parameters.py`,
-  `aggregation.py`, `modeling.BaseAgeGroupModel` and `scoring.Metric` (D16);
-  `parameters.py` and `aggregation.py` import only the package-internal
-  `_STRICT` config from `_config.py`, not each other; `study.py`
-  imports nothing from the package. The study accepts any `trial -> float`
-  callable.
-- **Dependencies:** optuna, scikit-learn, numpy and pydantic (already a project
-  dependency, used by `feature_engineering`). No imports from
-  `tuning.py`, `modeling_config.py` or `data_splitting.py`.
-- **Not re-exported** from `age_group_prediction/__init__.py`, the same as
-  `splitting` and `feature_engineering`.
-- **Type-checked strictly:** added to `[tool.mypy].files` in `pyproject.toml`.
-
----
+- Shared helpers: `utils.take_rows` and the `DesignMatrix`, `Target`,
+  `Groups` and `Exposure` aliases.
+- Imports go one way: `evaluator` → `parameters`, `aggregation`, `modeling`,
+  `scoring`, `feature_engineering`; `study` imports only
+  `aggregation.corrected_std_error`, and accepts any `trial -> float` objective.
+- The package is not re-exported from `age_group_prediction`, and mypy checks
+  it strictly.
+- Tests: `tests/unit/test_hyperparameter_tuning_{parameters,aggregation,evaluator,study}.py`,
+  `test_scoring.py`, `test_modeling_contract.py`.
 
 ## 4. Design
 
+**Pydantic or dataclass** (the package's rule): a frozen pydantic dataclass
+for objects that users build and whose values need checking (parameters,
+aggregations, the evaluator's settings); a stdlib dataclass for data the code
+builds itself (`TrialRecord`, `TuningResult`); a plain `ABC` for an interface
+that holds no data (`Aggregation`).
+
 ### 4.1 Parameters (`parameters.py`)
 
-Five names, each doing one thing:
-
 ```python
-from pydantic.dataclasses import dataclass as pydantic_dataclass
-
-_STRICT = ConfigDict(strict=True, allow_inf_nan=False)  # no silent conversion; no NaN/inf
-
-@pydantic_dataclass(frozen=True, config=_STRICT)
-class Parameter(ABC):
-    """One hyperparameter: its set_params name and the values it may take."""
-    name: str                                           # the set_params name, e.g. "learning_rate"; inherited
-    def __post_init__(self) -> None: ...                # builds the Optuna distribution (value rules)
-    @abstractmethod
-    def suggest(self, trial: BaseTrial) -> Any: ...
-
-@pydantic_dataclass(frozen=True, config=_STRICT)
-class FloatParameter(Parameter):                        # -> trial.suggest_float
-    low: float; high: float
-    _: KW_ONLY                                          # log and step keyword-only, as in Optuna
-    log: bool = False
-    step: float | None = None
-
-@pydantic_dataclass(frozen=True, config=_STRICT)
-class IntParameter(Parameter):                          # -> trial.suggest_int
-    low: int; high: int
-    _: KW_ONLY
-    log: bool = False
-    step: int = 1
-
-@pydantic_dataclass(frozen=True, config=_STRICT)
-class CategoricalParameter(Parameter):                  # -> trial.suggest_categorical
-    # Any objects, passed to Optuna unchanged (1.6); a list is stored as a tuple.
-    choices: Annotated[tuple[Any, ...], BeforeValidator(list_to_tuple)]
+FloatParameter("learning_rate", 0.01, 0.2, log=True)   # -> trial.suggest_float
+IntParameter("max_depth", 3, 8)                        # -> trial.suggest_int
+CategoricalParameter("layers", [[32], [64, 32]])       # -> trial.suggest_categorical
 ```
-
-**A search space is a plain list of parameters**, not a class of its own:
-`[IntParameter("max_depth", 3, 8), FloatParameter(...)]`. A
-`SearchSpace` class was built in 1.5 and then removed (§4.1.2).
-
-The arguments mirror Optuna's own calls. The name, low and high are
-positional; `log` and `step` are keyword-only, the same as in
-`trial.suggest_float(name, low, high, *, step, log)`:
-`FloatParameter("learning_rate", 0.01, 0.2, log=True)`.
-
-**Validation happens in two layers when the object is built:**
-1. **Types (pydantic, strict):** for example `IntParameter("p", 1.5, 9)`,
-   `IntParameter("p", True, 9)`, `log="yes"` and `name=None` are rejected. An
-   int is accepted where a float is expected, as Optuna itself allows.
-2. **Values (Optuna):** see below.
-
-Both layers raise `pydantic.ValidationError`, which is a subclass of
-`ValueError`. A value error names the parameter (`parameter 'reg_alpha': ...`).
-A type error names the class and the argument: its position if passed
-positionally, e.g. `1 validation error for IntParameter` / `1` for `low`.
-
-**Value rules.** Measured against Optuna 4.9, Optuna's
-distribution classes already raise a clear `ValueError` for every basic rule:
-`low > high`, `log` with `step`, `log` with `low <= 0` (float) or `low < 1`
-(int), `step <= 0`, an int `log` with `step != 1`, and empty choices. So each
-parameter's `__post_init__` builds its Optuna distribution (`FloatDistribution`,
-`IntDistribution`, `CategoricalDistribution`), and those errors appear when
-the parameter is created instead of at the first trial. The rules aren't
-written a second time.
-
-Only three cases pass Optuna silently. These are the only rules this package
-adds:
-
-| case | what Optuna does | here |
-|---|---|---|
-| the step doesn't divide `high - low` (e.g. `0..1` with step `0.3`) | a warning, then it **quietly lowers `high`** to 0.9 | error. Optuna's warnings are escalated to errors while the distribution is built, except its note that non-scalar categorical choices suit only in-memory storage: those choices are allowed (1.6), and Optuna repeats the note at each `suggest`. |
-| duplicate categorical choices | accepted silently, so the sampler gives that choice double weight | error; compared with `==`, so unhashable choices such as lists work |
-| two parameters with the same name | the second call returns the first value, or a warning if the ranges differ | error in `CVHyperparameterEvaluator`'s constructor |
-
-The objective also rejects an empty list.
-
-**Deliberately left out** (can be added without breaking anything):
-- **the `kind` field, a type union and dict/TOML loading:** nothing loads a
-  search space from a file yet (see D1).
-- **a "fixed" parameter type:** fixed values go on the model template (§5).
-- **conditional or derived ranges:** see D9.
-
-#### 4.1.1 Why pydantic dataclasses, not plain dataclasses or `BaseModel`
-
-I measured this against the Phase 1 code as first written with plain dataclasses:
-
-| input | plain `dataclass` | pydantic `dataclass` (strict) |
-|---|---|---|
-| `IntParameter("p", 1.5, 9)` | **accepted**: stores `low=1.5` | rejected: "Input should be a valid integer" |
-| `IntParameter("p", True, 9)` | **accepted** | rejected |
-| `FloatParameter("p", 0.1, 1.0, log="yes")` | **accepted**: `log="yes"` | rejected: "Input should be a valid boolean" |
-| `FloatParameter(None, 0.1, 1.0)` | **accepted**: `name=None` | rejected |
-| `CategoricalParameter("p", ["a", "b"])` | **accepted as a list, and the list can still be changed after creation**, so the "frozen" object isn't frozen | converted to the tuple `("a", "b")` |
-| `FloatParameter("p", 0.1, 1.0, log=True)` (positional, like Optuna) | ✓ | ✓ |
-| `KW_ONLY`, `frozen`, the abstract base, `__post_init__` | ✓ | ✓ (all checked) |
-| mypy `--strict` | ✓ | ✓ (checked) |
-
-| option | verdict |
-|---|---|
-| plain `dataclasses.dataclass` | Rejected: wrong types pass silently (table above). |
-| **`pydantic.dataclasses.dataclass`** (chosen) | The same syntax and positional calls as a dataclass, plus type validation, which is what the table shows. The change is one import and a `config=`. |
-| `pydantic.BaseModel` (as in `feature_engineering`) | Rejected: it only accepts keyword arguments (`FloatParameter(name=..., low=..., high=...)`), so the calls would no longer mirror Optuna's `suggest_float(name, low, high)`. `BaseModel`'s extra features (`model_dump`, `model_validate`) aren't needed in v1, and `TypeAdapter` gives the same for pydantic dataclasses if loading is ever added. |
-
-Strict mode is the right default: lax mode would silently turn `"0.1"` into
-`0.1` and `1` into `True`. The single exception is `choices`, where accepting
-a list is what users expect.
-
-**The rule used across this package** (best practice):
-
-| tool | use it for | here |
-|---|---|---|
-| `pydantic.BaseModel` | data that crosses a boundary (config files, JSON, APIs): parsed, validated and serialized | not needed in v1; `feature_engineering`'s specs are this case |
-| `pydantic.dataclasses.dataclass` | small value objects that code builds, needing validation plus stdlib dataclass behavior (positional arguments, `KW_ONLY`, `dataclasses.asdict/replace`) | **the parameter classes** and **the aggregation classes** (`LowerBound.z`), the places where user-typed values enter |
-| stdlib `dataclasses.dataclass` | internal data whose types the code already guarantees | **`TrialRecord` and `TuningResult`** (Phase 3), built from Optuna's own records |
-
-This choice doesn't block loading from a file later:
-`TypeAdapter(FloatParameter).validate_python({...})` works on pydantic
-dataclasses.
-
-**Readability:** the decorator is imported as
-`from pydantic.dataclasses import dataclass as pydantic_dataclass`, so every
-class shows it's pydantic (`@pydantic_dataclass(frozen=True, config=_STRICT)`).
-Imported under its bare name, it looked exactly like the standard library.
-
-#### 4.1.2 Why a list, not a `SearchSpace` class
-
-| what `SearchSpace` did | needs a class? |
-|---|---|
-| `suggest(trial)` → `{name: value}` | no: one dict comprehension, in the objective |
-| reject an empty space | no: one check |
-| check each item is a `Parameter` | no: mypy checks it statically |
-| **reject duplicate names** | the only real content; runs once in the objective's constructor, where the parameters are used |
-
-It had one consumer, and it added a type users must learn and wrap lists in.
-If a second consumer ever needs the same checks, a module-level function can
-hold them.
+- Arguments mirror Optuna: name, low and high are positional; `log` and
+  `step` are keyword-only.
+- Validated when created: pydantic checks the types strictly (`1.5` or
+  `True` for an int is rejected); Optuna's distribution classes check the
+  values. Both raise `ValueError`: a value error is prefixed
+  `parameter '<name>'`; a type error names the class and the argument (its
+  position if passed positionally).
+- Three rules Optuna lets through, added here: a step that doesn't divide the
+  range (Optuna quietly lowers `high`), duplicate choices (double weight),
+  and duplicate parameter names (in the evaluator).
+- Choices may be any objects and are passed unchanged. A list is stored as a
+  tuple; a set is rejected, since its order varies between runs.
 
 ### 4.2 Evaluator (`evaluator.py`)
 
-The design after 2.3b: the model is built and scored per D11–D15 (2.2d),
-and the folds are combined by an `Aggregation` object (D5, 2.3b). The fold
-loop and the checks are unchanged from 2.1–2.2.
-
 ```python
+@pydantic_dataclass(frozen=True, config=ConfigDict(arbitrary_types_allowed=True))
 class CVHyperparameterEvaluator:
-    def __init__(self, model: BaseAgeGroupModel, parameters: Sequence[Parameter],
-                 *, cv: BaseCrossValidator,             # from Splitter.cv(...)
-                 metric: Metric,                        # scoring.Metric, carries its direction (D12)
-                 feature_transformer: FeatureTransformer,  # required; cloned and fitted per fold (D13)
-                 aggregation: Aggregation = WeightedMean()): ...  # §4.2.1
-        # settings only (D10); the folds are not built here (D3)
-        # rejects: no parameters; duplicate parameter names (Optuna would silently
-        #          reuse the first one's value); an aggregation that isn't an
-        #          Aggregation (e.g. the old string "mean", which would otherwise
-        #          fail only after every fold is fitted)
+    model: BaseAgeGroupModel
+    parameters: Annotated[Sequence[Parameter], Field(min_length=1),
+                          AfterValidator(_unique_names)]   # stored as a tuple
+    _: KW_ONLY
+    cv: BaseCrossValidator                     # from Splitter.cv(...)
+    metric: InstanceOf[Metric]
+    feature_transformer: FeatureTransformer
+    aggregation: Aggregation = field(default_factory=WeightedMean)
 
-    def evaluate(self, trial: BaseTrial, X, y, groups=None, *, exposure=None) -> float:
-        # params = {p.name: p.suggest(trial) for p in parameters} -- once, before any fold
-        # feature_transformer, model = build_feature_transformer_and_model(params)  -- the trial's own copies
-        # for fold, (train_index, val_index) in enumerate(cv.split(X, y, groups)):
-        #     X_train, X_val, y_train, y_val, exposure_train, exposure_val = rows  -- identical folds (D3)
-        #     feature_transformer.fit(X_train, y_train); X_train, X_val = transform(...)   (D13)
-        #     model.fit(X_train, y_train, exposure=exposure_train)       (D14)
-        #     y_val_pred = model.predict(X_val, exposure=exposure_val)
-        #     score = ±model.evaluate(y_val, y_val_pred, metric)   -- signed (D12); NaN or inf -> ValueError
-        #     scores.append(score); fold_sizes.append(len(val_index))
-        #     trial.report(score, step=fold); prune if the pruner says so   -- the fold's own score
-        # after the last fold: user attrs fold_scores, fold_sizes
-        # return aggregation.aggregate(scores, fold_sizes)   (§4.2.1)
-
-    def build_feature_transformer_and_model(self, params) -> tuple[FeatureTransformer, BaseAgeGroupModel]:
-        # (clone(feature_transformer), clone(model).set_params(**params)); also used for the final refit
+    def evaluate(self, trial, X, y, groups=None, *, exposure=None) -> float: ...
+    def build_feature_transformer_and_model(self, params) -> tuple[FeatureTransformer, BaseAgeGroupModel]: ...
 ```
 
-- Usage: `study.optimize(lambda trial: evaluator.evaluate(trial, X_train, y_train, groups_train, exposure=exposure_train))`.
-- Rows are selected by position with `utils.take_rows`: `.iloc` for pandas,
-  plain indexing for numpy. The exposure (`utils.Exposure`: a Series or an
-  ndarray) is sliced the same way, with no conversion, and `None` is passed
-  on as `None`. `_check_exposure` rejects, once and before any fit, an
-  exposure that isn't one value per row of `X`: each fold would otherwise
-  slice a longer one to the right size, silently (measured: a
-  doubled exposure gave the identical score). The model decides whether it needs one:
-  `DirectCohortModel` raises on the first fold if `exposure` doesn't match
-  `use_exposure` (D14).
-- `exposure` is the raw count `n` that `DirectCohortModel` expects, not
-  `FeatureTransformer.log_exposure(...)`: the model takes the log itself, so
-  passing the log would apply it twice.
-- `cv` is the validator `Splitter.cv(...)` returns, typed as its return type
-  `BaseCrossValidator`. Measured, `Splitter.cv` guarantees at least 2 folds
-  (all three methods reject `n_splits=1`), no empty validation fold (each
-  validator raises instead) and, since 2.1, identical folds on every `split()`
-  call (it requires an int `random_state`; `None` reshuffled on each call). So
-  the objective has no fold checks. There is no one-split holdout: the
-  Splitter doesn't offer one.
-- `groups`: pass `groups_train`, or `None` for the `random` method, since
-  `KFold` warns on every `split()` call that receives groups (now once per
-  trial).
-- `metric` is required: the right one depends on the model's objective
-  (`POISSON_DEVIANCE` for `"poisson"`, `RMSE` for `"regression"`).
-- **Copies once per trial, refits per fold** (measured, revised 2026-09-24).
-  - `fit` replaces all fitted state: `DirectCohortModel` refit on fold B predicts identically to a fresh fit on B (with and without exposure, with bagging), and so does `FeatureTransformer`. So a trial's folds can reuse one pair. `BaseAgeGroupModel`'s docstring states this rule, and a contract test checks it for every model.
-  - Copies are still needed per trial. The templates would otherwise be left fitted, and parallel trials (Optuna `n_jobs > 1`, run as threads) would share them: a simulated interleaving gave one trial another's statistics, silently.
-  - sklearn's `cross_validate` clones per fold only because it runs folds in parallel; the evaluator's folds run in sequence.
-  - An in-place reset was rejected: it would still share one object across parallel trials, and it would need to list every model's fitted attributes.
-- `features` is required, so the fold-local fit always runs. That makes
-  leakage unlikely, not impossible: a matrix already fitted on all rows can
-  still be passed with a pass-through transformer. `X` is the raw DataFrame;
-  numpy works only with a pass-through transformer. Measured:
-  `FeatureTransformer(remainder="passthrough")` returns a DataFrame's columns
-  and index unchanged (an ndarray comes back as a DataFrame).
-- `trial` is a `BaseTrial`, as in `Parameter.suggest`, so
-  `evaluate(FixedTrial(params), ...)` scores one parameter set without a study
-  (its `report` is a no-op, and `should_prune` is False).
-- Measured on Optuna 4.9: a repeated `suggest` with the same name returns the
-  cached value, so a test must count `suggest` calls to prove they happen once;
-  `trial.report(nan)` is stored silently, so the finiteness check runs before
-  `report`.
-- The fold sizes are taken in each trial from the folds it splits. Nothing
-  about the folds is stored on the evaluator.
-- **User attrs** (`fold_scores`, `fold_sizes`) are written after the last
-  fold, whatever the aggregation, so a pruned or failed trial has none; it
-  can't win anyway (D8). The SE is not stored: it is derived from
-  `fold_scores` with `corrected_std_error` (Phase 3's `TrialRecord`). They are plain Python numbers: measured,
-  Optuna's sqlite storage rejects an `np.int64` attr as not JSON-serializable.
-- **A NaN or inf fold score raises `ValueError`** (decided 2026-09-24). Each
-  score is checked as soon as its fold is scored, so a bad trial skips the
-  remaining folds. The message names the trial, the fold and the score. The
-  check runs before `trial.report`, so the pruner never sees NaN. Optuna then
-  marks the trial FAIL and, by default, stops the study. Returning NaN would
-  only mark the trial FAIL, and a non-finite score almost always means a bug
-  (bad data, the wrong metric), which a long study would hide. Phase 3 adds
-  no `catch=` option in v1.
+Per trial: suggest the parameters once, build one copy of the transformer and
+the model, then for each fold (`train_index`, `val_index`):
+1. slice `X`, `y` and `exposure` by position (`take_rows`);
+2. fit the transformer on the training rows and transform both parts;
+3. fit the model, predict the validation rows, and score them (signed, D12);
+4. report the fold's own score to the pruner, and prune if it says so.
 
-#### 4.2.1 How the fold scores are combined (`aggregation.py`)
+After the last fold: record the user attrs `fold_scores` and `fold_sizes`,
+and return `aggregation.aggregate(scores, fold_sizes)`.
 
-An aggregation knows nothing about the data. The evaluator computes two plain
-lists, each fold's signed score (D12) and its size (validation rows), and
-hands them over; the aggregation returns the trial value (revised 2026-09-25):
+- **Settings are validated when the evaluator is built** (pydantic). Each
+  check prevents a silent or late failure (measured): a string metric failed
+  after 1 fold was fitted, a string aggregation after every fold; any sklearn
+  transformer ran; an empty search space gave identical trials; duplicate
+  names made Optuna reuse the first value; a set of parameters would make a
+  seeded study's order vary between runs. `model` (D17) and `cv` (always a
+  `Splitter.cv` validator) are type-checked too. `InstanceOf[Metric]`: lax
+  pydantic would otherwise build a `Metric` from a dict.
+- **Data checks in `evaluate`:** an exposure that isn't one value per row of
+  `X` (a longer one would be sliced to size silently); a NaN or inf fold score
+  raises `ValueError` before `report` (Optuna stores NaN silently), which
+  marks the trial FAIL and stops the study.
+- **Copies once per trial, refits per fold:** `fit` replaces all fitted state
+  (a contract test checks it), so one pair serves every fold; copies keep the
+  templates unfitted and parallel trials (`n_jobs > 1`) independent.
+- **Pruning** sees each fold's own score (`step` = fold number), the contract
+  of Optuna's `WilcoxonPruner`, which pairs fold k across trials. Measured,
+  on 10 folds of unequal difficulty with a bad trial that ties on fold 0:
+  `WilcoxonPruner` pruned it after 5 folds and `SuccessiveHalvingPruner`
+  after 2; `MedianPruner`/`PercentilePruner` never did, whatever was reported,
+  because they compare a trial's best value over its steps (a learning-curve
+  assumption).
+- **User attrs** are written only for a completed trial, as plain lists (what
+  sqlite storage accepts and returns). A pruned trial's scores are its
+  intermediate values.
+- `groups=None` for the `random` method: `KFold` warns when given groups.
+- `exposure` is the raw count the model expects, not its log.
+- Leakage is still possible if `X` was already fitted on all rows and a
+  pass-through transformer is used.
 
-```python
-def corrected_std_error(scores) -> float: ...  # s(ddof=1) * sqrt(1/K + 1/(K-1)); ValueError for K < 2
+### 4.3 Aggregation (`aggregation.py`)
 
-class Aggregation(ABC):                 # subclass it for a custom rule, e.g. a median
-    @abstractmethod
-    def aggregate(self, scores: Sequence[float], fold_sizes: Sequence[int]) -> float: ...
-
-# WeightedMean, Mean: the same decorator, no fields (repr "WeightedMean()", compare by value).
-@pydantic_dataclass(frozen=True, config=_STRICT)            # the same checks as Parameter
-class LowerBound(Aggregation):
-    z: Annotated[float, Field(gt=0)] = 1.0                  # rejects 0, <0, NaN, inf, "1", True
-```
-
-The base is a plain `ABC`: it holds no data, as sklearn's
-`BaseCrossValidator` and Optuna's `BaseSampler` don't. The concrete classes
-are pydantic dataclasses, for the validated `z` (§4.1.1's rule). Measured
-(2026-09-25) against decorating the base with pydantic or stdlib: every
-kind of user subclass works under all three, and the only gain is a
-readable repr and `==` for an undecorated user subclass. In exchange, every
-subclass silently becomes a dataclass, and under a pydantic base a subclass
-that forgets its decorator gets an error naming the base
-(`ValidationError … for Aggregation`) instead of its own class.
-
-The built-ins reject no folds and unequal lengths with a clear `ValueError`
-(numpy's own errors are "Weights sum to zero" and "Axis must be specified"),
-accept lists, tuples and numpy arrays, and return a plain `float` (JSON-native
-user attrs).
-
-| class | trial value | when to use it |
+| class | trial value | use it |
 |---|---|---|
-| `WeightedMean()` (**default**) | `Σ n_k · score_k / Σ n_k` | Almost always. For a metric that is a mean over rows (MAE, Poisson deviance) it is the pooled per-row score, the same measure the test set reports. On equal folds it equals `Mean()`. |
-| `Mean()` | `mean(score_k)` | To match sklearn's `cross_val_score(...).mean()` or the old models' tuning |
-| `LowerBound(z=1.0)` | `weighted_mean − z · SE` (the Splitter guarantees at least 2 folds) | Only when you explicitly want stable settings over the best average. `z` is how many SEs to subtract: 1 is the one-SE rule, 1.645 roughly a one-sided 95% bound. The ranking gets noisier: the SE is estimated from K numbers, and most of the spread between folds is difficulty every trial shares. |
+| `WeightedMean()` (default) | `Σ n_k·score_k / Σ n_k` | almost always; for a per-row mean metric (MAE, Poisson deviance) it is the pooled score the test set reports |
+| `Mean()` | `mean(score_k)` | to match `cross_val_score(...).mean()` |
+| `LowerBound(z=1.0)` | `weighted mean − z·SE` | to prefer stable settings; `z=1` is the one-SE rule, `z=1.645` roughly a one-sided 95% bound. Its ranking is noisier: the SE comes from K scores |
 
-The fold sizes depend on the data. On the evaluator tests' 4 strata (28
-rows, 3 folds), `random` and `stratified_by_group` give 10/9/9 and `grouped`
-gives 20/5/3. `WeightedMean` and `Mean` agree only on equal folds.
-`LowerBound` ranks differently even on equal folds, because each trial's SE
-differs.
+- `aggregate(scores, fold_sizes)` rejects no folds and unequal lengths with a
+  clear `ValueError` (numpy's own errors are unclear), and returns a float.
+- For a metric that isn't a mean over rows (RMSE, R²), size weights reduce
+  noise but don't equal the pooled metric. Rejected weightings: by each
+  fold's variance (leans toward easy folds) and by neighborhoods (a different
+  target from the test-set metric).
+- **SE** (`corrected_std_error(scores)`): Nadeau–Bengio in its K-fold form,
+  `s·sqrt(1/K + 1/(K−1))`. Exact when every row is validated once (`random`,
+  `grouped`); under `stratified_by_group`, rows alone in their stratum are
+  never validated, so it is slightly conservative (measured: 7% at 20%
+  singletons, small next to the SE's own ~35% sampling error at K=5). Under
+  `LowerBound` it is the unweighted mean's SE, an approximation on unequal
+  folds. It needs at least 2 folds. It is not stored per trial; compute it
+  from `fold_scores`.
 
-- **SE:** the Nadeau–Bengio correction in its K-fold form (Bouckaert & Frank,
-  2004), `s · sqrt(1/K + 1/(K−1))`, `s` the unweighted std of the fold scores
-  (ddof=1). The naive `s/√K` is too small, because the folds share most of
-  their training rows. `n_val/n_train = 1/(K−1)` is exact when every row is
-  validated once (`random`, `grouped`; a test pins it for each method). Under
-  `stratified_by_group`, rows alone in their stratum are never validated
-  (`StratifiedFolds`' docstring), so the true ratio is lower and the SE comes
-  out slightly large, i.e. conservative: measured, 20% singletons at K=5 give
-  0.19 against 0.25, an SE 7% too large. That is small next to the SE's own
-  sampling error (`s` from K−1 = 4 degrees of freedom: about 35%), so exact
-  training sizes weren't worth a third input on every aggregation (decided
-  2026-09-25; it replaced `FoldScores.training_sizes`). Under `LowerBound`
-  the SE is the unweighted mean's, an approximation when fold sizes differ.
-  Any completed trial's SE is `corrected_std_error(fold_scores)`, whatever
-  the aggregation.
-- **Pruning** sees each fold's own score, `trial.report(score, step=fold)`,
-  and the aggregation runs once, for the trial value (decided 2026-09-25).
-  This is the contract of Optuna's `WilcoxonPruner`, which its docs name for
-  "the k-fold cross-validation score": it pairs fold k of a trial with fold
-  k of the best trial, and the reported value "need not converge".
-  Measured, with 10 folds of unequal difficulty and a bad trial that ties on
-  fold 0 and then trails by 0.2: `WilcoxonPruner` pruned it after 5 folds
-  and `SuccessiveHalvingPruner` after 2, whether each fold's score, the
-  running mean or the running lower bound was reported. `MedianPruner` and
-  `PercentilePruner` **never** pruned it with any of the three: they compare
-  a trial's best value over its steps, which assumes a learning curve that
-  improves, not folds. Phase 3 documents which pruners suit CV. Reporting
-  the running aggregation (tried first) also needed a special case for
-  `LowerBound`, which has no SE after one fold.
-- **Rejected weightings:** by each fold's own variance (this leans toward easy
-  folds), and by neighborhoods per fold (this measures loss per neighborhood,
-  a different target from the test-set metric).
-- **Caveat:** for a metric that isn't an average over rows (RMSE, R²), size
-  weights still reduce noise but don't equal the pooled metric exactly.
-
-### 4.3 Study (`study.py`)
+### 4.4 Study (`study.py`, Phase 3)
 
 ```python
 class HyperparameterStudy:
     def __init__(self, *, seed: int, n_trials: int | None = 50,
                  timeout_seconds: float | None = None, n_jobs: int = 1,
-                 sampler: BaseSampler | None = None,     # None -> TPESampler(seed=seed, multivariate=True)
-                 pruner: BasePruner | None = None,       # None -> NopPruner()
+                 sampler: BaseSampler | None = None,   # None -> TPESampler(seed=seed, multivariate=True)
+                 pruner: BasePruner | None = None,     # None -> NopPruner()
                  show_progress_bar: bool = False, study_name: str | None = None,
-                 storage: str | None = None,             # e.g. "sqlite:///tuning.db" to persist or resume
-                 initial_params: Sequence[dict[str, Any]] = ()): ...  # run first
+                 storage: str | None = None,           # e.g. "sqlite:///tuning.db"
+                 initial_params: Sequence[dict[str, Any]] = ()): ...
         # rejects: n_trials and timeout_seconds both None; n_trials < 1; n_jobs == 0
 
     def optimize(self, objective: Callable[[optuna.Trial], float]) -> TuningResult:
-        # create_study(direction="maximize", ...); enqueue initial_params; study.optimize(...)
-        # best = max over COMPLETE trials; ties -> lowest trial number
-        # RuntimeError if no trial completed
-        # self.optuna_study_ is kept for optuna.visualization
+        # direction="maximize"; enqueue initial_params; best = max over COMPLETE
+        # trials, ties -> lowest number; RuntimeError if none completed
 
 @dataclass(frozen=True)
-class TrialRecord:  number, state, value, params, fold_scores, fold_sizes, std_error  # the last three None unless COMPLETE; std_error = corrected_std_error(fold_scores)
+class TrialRecord: number, state, value, params, fold_scores, fold_sizes, std_error
+    # the last three None unless COMPLETE; std_error = corrected_std_error(fold_scores)
 
 @dataclass(frozen=True)
 class TuningResult: best_params, best_value, best_trial_number, trials, is_reproducible
-    def to_dict(self) -> dict        # JSON-safe, e.g. for MLflow logging
+    def to_dict(self) -> dict   # JSON-safe, e.g. for MLflow
 ```
+`is_reproducible` is `n_jobs == 1 and timeout_seconds is None`: timeouts and
+parallel jobs are allowed, and the result records which kind of run it was.
+The Optuna study is kept as `optuna_study_` for `optuna.visualization`. No
+`catch=` option in v1: a NaN fold score stops the study (§4.2).
 
-`is_reproducible` is `n_jobs == 1 and timeout_seconds is None`. Timeouts and
-parallel jobs are allowed; the result records which kind of run it was.
-
----
-
-## 5. Worked example: `DirectCohortModel`'s LightGBM tuning
+## 5. Worked example: `DirectCohortModel`
 
 ```python
-from sklearn.base import clone
-from age_group_prediction.hyperparameter_tuning import (
-    CVHyperparameterEvaluator, FloatParameter, HyperparameterStudy, IntParameter)
-from age_group_prediction.modeling import DirectCohortModel
-from age_group_prediction.scoring import POISSON_DEVIANCE
-from age_group_prediction.splitting import Splitter
-
-parameters = [                              # same bounds as [direct_cohort_search_space]
-    IntParameter("max_depth", 3, 8),        # plain set_params names: no Pipeline prefix
+parameters = [                                  # same bounds as [direct_cohort_search_space]
+    IntParameter("max_depth", 3, 8),
     IntParameter("num_leaves", 7, 63),
     IntParameter("min_child_samples", 5, 40),
     FloatParameter("learning_rate", 0.01, 0.2, log=True),
@@ -482,797 +225,155 @@ parameters = [                              # same bounds as [direct_cohort_sear
     FloatParameter("subsample", 0.7, 1.0),
     FloatParameter("colsample_bytree", 0.7, 1.0),
 ]
-
 splitter = Splitter("stratified_by_group")
 train_df, test_df, Y_train, Y_test, g_train, g_test = splitter.train_test_split(
     df, df[cohort_columns], groups, test_size=0.2, random_state=42)
-
-evaluator = CVHyperparameterEvaluator(       # built once: settings only (D10)
-    DirectCohortModel(use_exposure=True),    # fixed settings live on the template
-    parameters,
+evaluator = CVHyperparameterEvaluator(
+    DirectCohortModel(use_exposure=True), parameters,
     cv=splitter.cv(n_splits=5, random_state=42),
-    metric=POISSON_DEVIANCE,                 # lower is better, so the score is negated (D12)
-    feature_transformer=tree,                # fitted per fold (D13)
+    metric=POISSON_DEVIANCE, feature_transformer=tree,
 )
 exposure_train = train_df["n_apartments"]
-models = {}
-for cohort in cohort_columns:                 # one study per cohort, as today
+for cohort in cohort_columns:                    # one study per cohort
     result = HyperparameterStudy(seed=seeds[cohort], n_trials=30).optimize(
         lambda trial: evaluator.evaluate(
             trial, train_df, Y_train[cohort], g_train, exposure=exposure_train))
-    # The final refit, on all training rows.
     transformer, model = evaluator.build_feature_transformer_and_model(result.best_params)
     transformer.fit(train_df, Y_train[cohort])
     models[cohort] = model.fit(
         transformer.transform(train_df), Y_train[cohort], exposure=exposure_train)
 ```
 
-**What the example showed:**
+Compared with the old closure: `num_leaves` and `max_depth` are sampled
+independently (D9; LightGBM caps the leaves by depth); `subsample_freq` is
+derived inside the model; fixed settings live on the template; the model's
+`random_state` replaces a seed per trial and fold. Out-of-fold predictions
+(for `_cross_fitted_normal_scale`) are a possible later
+`evaluator.out_of_fold_predict(params)`.
 
-| in `models/direct_cohort.py` (old) | in the new design | outcome |
-|---|---|---|
-| 11 `trial.suggest_*` calls | 10 `Parameter`s, with the same bounds as the TOML table | covered |
-| `num_leaves <= 2**max_depth`, a range that depends on another parameter | Both are sampled independently. LightGBM already caps the leaves by depth. A range that changes between trials is an Optuna "dynamic search space", which multivariate TPE can't model jointly with the other parameters. | no conditional component (D9); slightly changes how the search behaves |
-| `subsample_freq` derived from `subsample` | derived inside `DirectCohortModel.fit` (`1` if `subsample < 1`, else `0`) | no derived-parameter component (D9) |
-| fixed LightGBM settings | on the model template | no "fixed parameter" class |
-| feature transformer cached per fold | `feature_transformer=`, cloned and refitted per fold (D13) | no cache component; the cost is trivial at about 1.2k rows |
-| mean Poisson NLL | `POISSON_DEVIANCE`, negated (D12); it ranks trials in the same order | a `Metric` (D11) |
-| a different seed for each trial and fold | the template's `random_state` | simpler, and trial comparisons are less noisy |
-| NB2 `dispersion` | the rebuilt model has no NB2 (DIRECT_COHORT_MODEL.md §0.4) | gap closed |
-| `_cross_fitted_normal_scale` needs out-of-fold predictions | not part of tuning | possible later addition: `evaluator.out_of_fold_predict(params)` |
+## 6. Remaining work
 
----
+Every sub-task: plan mode first (probe, a plan with a "done when" list, open
+choices asked), then §7's routine, then a stop for approval.
 
-## 6. Implementation phases and sub-tasks
-
-Each sub-task has a checkbox and a **done when** line. At the end of each phase:
-an independent review, fix its findings, run the full suite, then **stop for
-your approval**. With your approval, I commit and push the phase to the draft
-PR.
-
-### Phase 0: setup
-- [x] **0.1 Plan doc.** Copy this plan to `docs/HYPERPARAMETER_TUNING_PLAN.md`.
-  *Done when:* the doc matches this plan.
-- [x] **0.2 Draft PR.** (PR #5) *(Needs your approval: it is the first commit.)* Commit
-  the plan doc, push, and run `gh pr create --draft` with the text in §8.
-  *Done when:* the draft PR URL is shared with you.
-
-**Stop: you approve the plan and the PR.**
-
-### Phase 1: parameters (`parameters.py`)
-Every class test uses the same method. Ask a real study for a trial, call
-`suggest`, then compare `trial.distributions[name]` with the expected Optuna
-distribution. That one comparison proves every option (`low`, `high`, `log`,
-`step`, `choices`) reached Optuna unchanged.
-
-- [x] **1.1 Package skeleton.** Create `hyperparameter_tuning/__init__.py` (the
-  docstring and an empty `__all__`) and add the package to `[tool.mypy].files`.
-  *Done when:* `import age_group_prediction.hyperparameter_tuning` works and
-  `uv run mypy` passes.
-- [x] **1.2 `Parameter` base and `FloatParameter`.** *Done when:*
-  - plain, `log=True` and `step=` settings each reach Optuna exactly
-  - the value drawn lies in `[low, high]`
-  - an invalid setting raises when the parameter is created, not at the first
-    trial (Optuna's own error). One representative case: `log=True` with `low=0`.
-  - a step that doesn't divide the range raises (this package's rule)
-  - the object is frozen: assigning an attribute raises
-- [x] **1.3 `IntParameter`.** *Done when:* the same checks as 1.2 pass, and the
-  drawn value is an `int`.
-- [x] **1.4 `CategoricalParameter`.** *Done when:*
-  - the choices reach Optuna in order
-  - a mix of `None`, `bool`, `int`, `float` and `str` is accepted
-  - duplicate choices raise (this package's rule)
-  - a non-scalar choice such as `[1]` raises (since 1.4b, pydantic's type check
-    catches it before Optuna's warning)
-- [x] **1.4b Switch to pydantic dataclasses** (§4.1.1). In `parameters.py`,
-  import `dataclass` from `pydantic.dataclasses`, add `config=_STRICT` to all
-  four classes, and type `choices` as
-  `Annotated[tuple[ParamValue, ...], Strict(False)]`. Nothing else in the
-  classes changes. In the plan doc, update D1, the dependencies and §4.1 to
-  match this plan. *Done when:*
-  - all 19 existing tests still pass. One test changes: passing `log`
-    positionally now raises pydantic's `ValidationError` (a `ValueError`)
-    instead of `TypeError`, so `test_log_and_step_are_keyword_only` expects
-    `ValueError`. A non-scalar choice is now caught by pydantic's type check
-    first; that test's `match` changes accordingly.
-  - new, parametrized test: the wrong types from §4.1.1's table are rejected
-    (`1.5` and `True` for an int, `log="yes"`, `name=None`)
-  - new test: a list of choices is stored as a tuple, and the parameter can't
-    be changed afterwards
-  - mypy `--strict` and ruff pass
-- [x] **1.4c Make pydantic visible.** Import the decorator as
-  `pydantic_dataclass` and use `@pydantic_dataclass(frozen=True, config=_STRICT)`
-  on all four classes. Copy the "rule used across this package" table (§4.1.1)
-  into the plan doc. *Done when:* no bare `@dataclass` is left in
-  `parameters.py`, and the 26 tests, mypy and ruff pass. There is no
-  behavior change.
-- [x] **1.5 `SearchSpace` and exports.** Built and tested, then **superseded
-  by 1.5b**: a class was not needed (§4.1.2).
-- [x] **1.5b Replace `SearchSpace` with a plain list.** Delete the class and its
-  export; the duplicate-name and empty checks move to Phase 2.1 (the objective's
-  constructor). *Done when:*
-  - `parameters.py` has five public names: `ParamValue`, `Parameter`,
-    `FloatParameter`, `IntParameter`, `CategoricalParameter`; `__all__` in the
-    package lists the same five
-  - the `SearchSpace` tests are removed; the LightGBM test keeps checking that
-    the §5 parameter list builds and that a 5-trial study drawing every
-    parameter runs
-  - ruff, mypy and the full suite pass (the four `SearchSpace` tests go; after
-    the review fixes below, 880 on `main` + 37 = 917)
-
-- [x] **1.6 Generic categorical choices** (your review, 2026-09-24). Choices
-  may be any objects, e.g. layer sizes `[[32], [64, 32]]`, and are passed to
-  Optuna unchanged. Measured on Optuna 4.9:
-  - Optuna accepts non-scalar choices and warns twice per trial that they
-    suit only in-memory storage. With sqlite, a tuple comes back from
-    `best_params` as a list, and a non-JSON object can't be stored.
-  - It handles a NaN choice too: it samples by index.
-  - So `_as_choice_tuple`, `_SCALARS` and `ParamValue` are removed. `choices`
-    is a strict `tuple[Any, ...]` whose validator turns only a list into a
-    tuple, leaving every choice as given. A set, a generator or a bare string
-    is rejected: a set's order depends on the hash seed, which would make a
-    seeded study differ between runs (found in review). The duplicate check
-    uses `==`.
-  - Optuna's storage warning is ignored only while the parameter is built,
-    and left visible at `suggest`; every other Optuna `UserWarning` is still
-    an error.
-
-  *Done when:*
-  - [x] no `_as_choice_tuple`, `_SCALARS` or `ParamValue` in src or tests
-  - [x] `[[32], [64, 32]]` builds, and `suggest` returns one of the lists unchanged
-  - [x] a step that doesn't divide the range still raises
-  - [x] tests: the 4 scalar-only/numpy-rejection tests and the NaN-choice case removed; 5 added (non-scalar choices reach Optuna, choices stored as given ×2, an unhashable duplicate, a set rejected). 37 parameter tests pass under `-W error`
-
-  *Review:* no bugs. A set was accepted in lax mode, with hash-seed-dependent order (measured: two seeds gave different suggestions): fixed as above. `MODULE_REFERENCE.md` still listed `ParamValue`: fixed. An unused `type: ignore` removed. Left as nits: numpy arrays as choices can't be compared with `==` (lists or tuples are the natural form), and two NaN choices aren't caught as duplicates.
-
-**Phase 1 independent review** (after 1.5b). Each finding was reproduced before
-it was fixed:
-
-| # | finding | verdict | fix |
-|---|---|---|---|
-| 1 | `choices` silently turned `np.int64(7)` into `7.0` and `np.True_` into `1.0` | **bug**, confirmed | `choices` now uses a `BeforeValidator` that turns a list into a tuple and rejects numpy integers and bools. The reviewer's suggestion (strict items) was tested and **did not** fix it: pydantic's float validator still converts them. |
-| 2 | NaN or inf bounds passed construction and failed at the first trial with `OverflowError` / `decimal.InvalidOperation` | **bug**, confirmed | `ConfigDict(strict=True, allow_inf_nan=False)` |
-| 3 | two distinct NaN choices passed the duplicate check | covered by fix 2 | none needed |
-| 4 | warning escalation swallowed unrelated warnings (e.g. a `DeprecationWarning`) | should-fix, confirmed | `simplefilter("error", UserWarning)` only; other warnings pass through |
-| 5 | numpy integer bounds are rejected by `IntParameter` | documented | module docstring: pass Python numbers (`int(x)`) |
-| 6 | no test that a float step which divides the range is accepted | added | `0.1..1.0/0.1` and `0.7..1.0/0.05` |
-| 7 | package docstring names modules not yet written | accepted | resolved in Phases 2 and 3 |
-| 8 | `[direct_cohort_search_space]` is "not in any config" | **rejected** | it is at `configs/modeling.toml:53` |
-
-New tests: 9, so 37 parameter tests in all. Final full suite: **917 passed**,
-0 failed; the 15 warnings all come from existing tests.
-
-**Stop: review and your approval of Phase 1.**
-
-### Phase 2: evaluator (`evaluator.py`)
-- [x] **2.1 Constructor.** Store the `Splitter.cv` validator and `groups`,
-  set up the scorer, and add `build_estimator`. `Splitter.cv` now requires an
-  int `random_state` (a `TypeError` otherwise).
-  *Done when:* tests show that an empty parameter list, duplicate parameter
-  names and every bad `aggregation`/`z` combination are rejected; that
-  `build_estimator` returns an unfitted clone with the given parameters and
-  leaves the template unchanged; and that `Splitter.cv` rejects `None` and a
-  `RandomState` and gives identical folds on repeated calls.
-  *Result:* 12 objective tests, plus 6 + 3 splitter tests. The first version
-  built the folds in the constructor; it was revised so each trial splits,
-  with the Splitter guaranteeing valid, repeatable folds (D3).
-  *Reworked in review (2026-09-24):* renamed `CVHyperparameterEvaluator`;
-  settings only in the constructor, data passed to `evaluate` (D10); the
-  shared helpers moved to `utils.py`.
-- [x] **2.2 Fold loop.** Suggest once, then fit and score every fold, then
-  report and prune.
-  *Done when:* tests show that the parameters are suggested once and every fold
-  sees the same values (a test estimator records them); that every trial
-  sees identical folds (D3, end to end); that a `Pipeline`
-  transformer is fitted only on fit rows; that a NaN score raises; and that
-  `trial.report` gets one value per fold.
-  *Result:* 11 tests (23 objective tests in all). Also covered: pruning stops
-  after one fit, pandas and numpy inputs score the same, and `FixedTrial`
-  matches a hand-computed weighted mean. A mutation check confirmed the tests
-  catch per-fold suggests, an unweighted running mean, and fitting on all
-  rows. `"lower_bound"` returns the weighted mean until 2.3.
-  *Reworked in review:* `evaluate(trial, X, y, groups)` replaces `__call__`;
-  the folds are named `train_index` / `validation_index`; a new test shows one
-  evaluator scoring two targets. 24 evaluator tests, plus 2 `take_rows` tests;
-  the mutation check still catches all three bugs.
-
-**The switch to `BaseAgeGroupModel`** (D11–D17, decided 2026-09-24). From here
-on, **every sub-task is its own stop**: the checks (§9.3), an independent
-review, then your approval.
-- [x] **2.2a Plan doc.** Record D11–D17 with their evidence; rewrite §4.2
-  and §5; resolve §9.7; add 2.2a–2.2d.
-  *Done when:*
-  - [x] §2, §4.2, §5, §6 and §9 agree
-  - [x] no "to confirm" or "pending" is left
-
-  *Review* (independent subagent; each finding checked against the code
-  before fixing):
-
-  | # | finding | verdict | fix |
-  |---|---|---|---|
-  | 1 | "`None` stays `None`, which every model accepts" is false: `DirectCohortModel` raises when `exposure` doesn't match `use_exposure` | confirmed (`direct_cohort.py:81-84`) | D14 and §4.2 reworded; a 2.2d test that the error reaches the caller |
-  | 2 | 2.2d named the wrong docstrings: `__init__.py` has no `<step>__` text; `evaluator.py`'s module and class docstrings and NaN message do | confirmed (grep) | 2.2d lists them |
-  | 3 | "the 24 tests pass on the new API" can't hold: 3 tests test removed API | confirmed | 2.2d says which carry over, are renamed, replaced or dropped |
-  | 4 | 2.2b's docs list was vague, and its grep would fail on the model plan's step records | confirmed (`MODEL_REIMPLEMENTATION_PLAN.md` M4 and lines 132–546) | named files; M4 gets a note; step records excluded |
-  | 5 | `scoring.py` also needs the strict mypy override, not just `files` | confirmed (`pyproject.toml` overrides) | added to 2.2b |
-  | 6 | 2.2c missed the docs stating `fit(X, y)`, and didn't say how "every model" is found | confirmed (also `MODULE_REFERENCE.md:88`) | docs listed; the test uses `BaseAgeGroupModel.__subclasses__()`; §3 lists both new test files |
-  | 7 | §5 lacked imports; the refit shadowed `features` and overwrote `model` | confirmed | imports added; `fitted_tree`, `models[cohort]` |
-  | 8 | the per-fold transformer should get `y`, as a `Pipeline` passes it | accepted | `fit(X_train, y_train)` in D13 and §4.2 |
-  | 9 | D11 said one clone per trial; the code clones per fold | confirmed (`evaluator.py:108`) | D11 reworded |
-  | 10 | §8's PR body is stale | accepted | refreshed at 2.2d's stop (its done-when) |
-  | 11 | §9.7 repeated §2's decision table | accepted | the table replaced by one pointer line |
-  | 12 | `FeatureTransformer.log_exposure` could be mistaken for the exposure | accepted | one §4.2 bullet: pass the raw `n` |
-  | 13 | §1's out-of-scope list lacked the old `models/` | accepted | added |
-- [x] **2.2b Move `Metric` to `age_group_prediction/scoring.py`** (D16).
-  Move (plain `mv`; git detects the rename when staged) `modeling/metrics.py` → `scoring.py` and
-  `tests/unit/test_modeling_metrics.py` → `tests/unit/test_scoring.py`. Update
-  the imports: `modeling/base.py`, `modeling/__init__.py` (drops the
-  re-export and "the metrics that score them" from its docstring),
-  `tests/unit/test_modeling_base.py` and the moved test. In `pyproject.toml`,
-  add `scoring.py` to mypy's `files` **and** `age_group_prediction.scoring`
-  to the strict override. Docs: `DIRECT_COHORT_MODEL.md` §0.2's example
-  import; `MODEL_REIMPLEMENTATION_PLAN.md` M4 gets a "moved to `scoring.py`
-  (D16)" note. Its step records (lines 132–546) stay as history.
-  *Done when:*
-  - [x] a grep finds no `modeling.metrics` and no `Metric`, `POISSON_DEVIANCE`, `RMSE` or `MAE` imported from `modeling`, in src, tests or the current docs (the model plan's step records excluded)
-  - [x] 956 passed (8 warnings, as before); mypy and ruff clean. mypy still checks 15 files (`scoring.py` replaced `modeling/metrics.py`); a temporary untyped function in `scoring.py` was flagged `no-untyped-def`, so the strict override applies.
-
-  *Result:* a pure move. The code is byte-identical and the module docstring
-  gains 3 lines, one of which notes that the root-level `Metric` is the old
-  protocol, a different class. The test changes only its import.
-
-  *Review:*
-
-  | # | finding | verdict | fix |
-  |---|---|---|---|
-  | 1 | the docstring says `hyperparameter_tuning` shares `scoring`, which isn't true yet | rejected | it is D16's purpose, made true in 2.2d of this PR |
-  | 2 | M4's "why" cell still said "package-local" | confirmed | points to `scoring.py` (D16) |
-  | 3 | `MODULE_REFERENCE.md` row omitted numpy | confirmed (`scoring.py:17-18`) | "— (numpy, scikit-learn only)" |
-  | 4 | plan said `git mv`, files moved with `mv` | confirmed | the plan says `mv`; stage the delete and the add together so git records a rename |
-- [x] **2.2c Exposure in the base contract, and a contract test** (D14, D17).
-  `BaseAgeGroupModel.fit(X, y, exposure=None)` and `predict(X, exposure=None)`;
-  update the stand-in in `test_modeling_base.py`, and the docs that state
-  the old contract (`base.py`'s docstrings, `modeling/__init__.py`,
-  `MODULE_REFERENCE.md`'s modeling entry, `MODEL_REIMPLEMENTATION_PLAN.md`
-  M3 as a note). A new `tests/unit/test_modeling_contract.py` runs sklearn's
-  `check_do_not_raise_errors_in_init_or_set_params`,
-  `check_parameters_default_constructible`, `check_no_attributes_set_in_init`
-  and `check_set_params` over every concrete `BaseAgeGroupModel` subclass shipped in `modeling`
-  (today `DirectCohortModel`). The subclasses are found by a recursive
-  `__subclasses__()` walk, filtered by module because it also returns test
-  stand-ins, so a new model can't be left out.
-
-  *Why these four* (measured on sklearn 1.9; F = the check catches the broken model):
-
-  | broken model | do_not_raise_errors_in_init_or_set_params | parameters_default_constructible | no_attributes_set_in_init | set_params |
-  |---|---|---|---|---|
-  | stores the argument under another name | F | F | F | F |
-  | converts it (`float(alpha)`) | F | | | |
-  | validates in `__init__` (breaks M11) | F | | | |
-  | replaces a `None` default | | F | | |
-  | sets fitted state in `__init__` | | | F | |
-  | overrides `set_params` to do nothing (found in review) | | | | F |
-
-  The four checks planned first (`get_params_invariance`, `set_params`,
-  `no_attributes_set_in_init`, `parameters_default_constructible`) missed
-  the converting and the validating model. `estimator_cloneable`,
-  `estimator_repr` and `get_params_invariance` caught nothing beyond the
-  four. No data-free check catches an `__init__` that copies a mutable
-  argument; the test's docstring says so.
-  *Done when:*
-  - [x] mypy accepts `model.fit(X, y, exposure=n)` on a `BaseAgeGroupModel` (a probe; `call-arg` before)
-  - [x] the contract test passes, and a mutation script (scratch, not committed) shows each broken model above is caught while a correct one passes
-  - [x] 956 + the new tests pass; mypy and ruff clean
-
-  *Review:*
-
-  | # | finding | verdict | fix |
-  |---|---|---|---|
-  | 1 | a model whose `set_params` does nothing passes the 3 checks | confirmed (probe) | `check_set_params` added |
-  | 2 | mypy `type-abstract` on `_models(BaseAgeGroupModel)` when the test is type-checked | confirmed | `base: type` |
-  | 3 | a diamond subclass was listed twice | confirmed (probe) | de-duplicated |
-  | 4 | the module filter missed a class defined in `modeling/__init__.py` | accepted | filter on the package's first two name parts |
-  | 5 | an `__init__` copying a mutable argument passes every data-free check | confirmed | stated in the test docstring; no check added |
-  | 6 | base docstring gave only one direction of the exposure rule | accepted | both directions |
-  | 7 | the model plan's code sketch still shows `fit(X, y)` and `modeling/metrics.py` | confirmed | a one-line note above it |
-- [x] **2.2d Switch the evaluator** (D11–D15). Constructor
-  `(model, parameters, *, cv, metric, features, aggregation, z)` (the
-  aggregation settings are unchanged until 2.3b);
-  `build_features_and_model` (once per trial; revised from `build_model`); each fold: fold-local features, the sliced exposure,
-  `fit` → `predict` → `model.evaluate`, the signed score. The NaN rule,
-  reporting and pruning don't change. Docstrings: `evaluator.py`'s module
-  and class docstrings and its NaN message lose the `Pipeline`/`scoring`
-  wording; `parameters.py` loses the `<step>__` names. The tests use a small
-  recording `BaseAgeGroupModel` (it records the parameters, the row ids and
-  the exposure, and predicts a hand-computable value) in place of the sklearn
-  estimators.
-  *Done when:*
-  - [x] the 24 existing evaluator tests are ported: 21 kept on the new API; `test_build_estimator_returns_an_unfitted_clone` renamed `test_build_model_...`; the `Pipeline` test replaced by the `features` test; `test_scoring_accepts_a_callable` dropped (a `Metric` takes any callable). The Ridge fixed-trial test became a real `DirectCohortModel` + `FeatureTransformer` + `POISSON_DEVIANCE` + exposure run, compared with a hand-written fold loop.
-  - [x] a missing exposure raises the model's `ValueError` to the caller; an exposure that isn't one per row raises the evaluator's
-  - [x] `features` is fitted once per fold, on the training rows and targets only, and that fold's own fit transforms its validation rows
-  - [x] the exposure (a Series with a shuffled index) reaches `fit` and `predict` sliced by position; `None` arrives as `None`
-  - [x] a greater-is-better metric is returned as is, a lower-is-better one negated
-  - [x] `build_model` returns an unfitted clone and leaves the template unchanged; an unknown parameter name raises
-  - [x] mutation check (temporary edits, restored): a per-fold suggest, features fitted on all rows or without `y`, a dropped negation, exposure sliced by label, and a removed shape check are each caught
-  - [x] 34 evaluator tests pass under `-W error` (33 before your review's +1); the non-slow suite passes; mypy (including on the test file) and ruff are clean
-  - [x] §8's PR body is refreshed
-
-  *Review:*
-
-  | # | finding | verdict | fix |
-  |---|---|---|---|
-  | 1 | an exposure of the wrong length went unchecked: a doubled one gave the identical score | confirmed (probe) | `ValueError` unless one value per row; 3 tests |
-  | 2 | the `fit_rows` stamp couldn't tell folds 1 and 2 apart (both train on 19 rows) | confirmed | the stamp is the fit's number |
-  | 3 | no test pinned `y` reaching `features.fit` | confirmed (mutation not caught) | the transformer records `y` |
-  | 4 | no test pinned position-based slicing of a Series exposure | confirmed (mutation not caught) | a Series with a shuffled index |
-  | 5 | the pandas-vs-numpy test no longer depended on `X`, and used a default index | confirmed | a reversed index; the fitted rows compared too |
-  | 6 | a redundant disjointness assertion | accepted | removed |
-  | 7 | the "mismatched exposure" test covered only a missing one | accepted | renamed `..._a_missing_exposure_...` |
-  | 8 | `build_model` rejecting an unknown name tests sklearn | kept | listed in the done-when; documents the behavior |
-  | 9 | 2 mypy errors in the test file (tests aren't in mypy's `files`) | confirmed | fixed; mypy on the test file is clean |
-  | 10 | `evaluate`'s docstring didn't say how the exposure is sliced | accepted | docstring |
-  | 11 | `features=tree` could read as the model | rejected | it's `FEATURE_TRANSFORMATIONS.md`'s own name for the transformer |
-  | 12 | `MODULE_REFERENCE.md` still said "Not yet switched" | confirmed | row updated |
-  | 13 | the parameters test still used `model__` names | confirmed | plain names |
-
-  *Your review* (2026-09-24): `features` must be the repo's `FeatureTransformer`,
-  and required (D13 revised). `features: FeatureTransformer` with a `TypeError`
-  check, and the `None` branch removed; the recording stand-in subclasses
-  `FeatureTransformer`; +1 test (34 evaluator tests). clone/set_params needed
-  no change: they are inherited from `BaseEstimator` (`BaseAgeGroupModel`'s
-  docstring now says so), and rebuilt Models B and C inherit them the same
-  way. Why `features` is cloned (your question): see §4.2; the comment now
-  says so, and a test pins that the template stays unfitted. Then, per your
-  review: the copies moved out of the fold loop to once per trial
-  (`build_features_and_model`, replacing `build_model`), since `fit` resets
-  all state. The rule is in `BaseAgeGroupModel`'s docstring, and a new
-  contract test (`test_a_refit_equals_a_fresh_fit`) checks it. Mutations
-  caught: templates returned instead of copies (2 tests), and a model that
-  keeps its trees across fits (the contract test and the hand-written-loop
-  test). Its review: no bugs; the numpy-`X` limit and the leakage wording
-  clarified in the docstring and §4.2; D15's "with `features` set" removed.
-
-- [x] **2.3a Aggregation classes** (`aggregation.py` and its tests; §4.2.1, D5).
-  *Revised in your review (2026-09-25):* an aggregation takes two plain
-  lists, `aggregate(scores, fold_sizes)`, computed by the evaluator, so it
-  knows nothing about the data. `FoldScores` (and its `training_sizes`) and
-  the `running` method were removed; `corrected_std_error(scores)` is a
-  public function. `_STRICT` moved to a private `_config.py`, shared by
-  `parameters.py` and `aggregation.py` without either depending on the
-  other. Pydantic dataclasses were kept over stdlib ones (your question):
-  measured, a stdlib `LowerBound` silently stores `z` = 0, −1, NaN, inf,
-  `"1"`, `True` and `None`, while pydantic rejects all of them with no
-  hand-written check; building one costs 0.42 µs against 0.12 µs, once per
-  study. The `Aggregation` base stays a plain `ABC` (your follow-up; the
-  comparison of the three base options is in §4.2.1).
-  *Done when:*
-  - [x] on 20/5/3 folds, `WeightedMean`, `Mean`, `LowerBound()`, `LowerBound(z=2)` and a custom median subclass return the hand values; `corrected_std_error` equals the hand SE
-  - [x] no folds and unequal lengths raise a clear `ValueError`; `corrected_std_error` raises for one fold (no numpy warning under `-W error`); numpy arrays score like lists; results are plain `float`s
-  - [x] `LowerBound` rejects `z` ≤ 0, NaN, inf, `"1"` and `True`; the classes are frozen and compare by value; `Aggregation()` can't be instantiated
-  - [x] each `Splitter.cv` method gives the ratio `1/(K−1)` the SE assumes, and singleton strata make it conservative (tests)
-  - [x] mutation check (restored, checked with `cmp`): unweighted, the uncorrected SE, `ddof=0`, the length check, the empty check (and `not scores`), the K<2 check, `gt=0` dropped and `Mean` skipping the check: 9 of 9 caught
-  - [x] 28 aggregation tests (100 tuning tests) pass under `-W error`; the non-slow suite gives 1001 passed (973 + 28), 8 warnings; mypy (including the test file) and ruff are clean
-
-  *Review* (independent subagent; each finding reproduced first):
-
-  | # | finding | verdict | fix |
-  |---|---|---|---|
-  | 1 | `StratifiedFolds` never validates rows alone in their stratum, so the folds don't partition the rows and `1/(K−1)` overstates the ratio | confirmed (probe: 0.19 vs 0.25, an SE 7% too large) | kept `1/(K−1)`, the published K-fold form; the docstring and §4.2.1 state the conservative case; 2 tests pin it (§4.2.1 says why) |
-  | 2 | the evaluator accepts any `BaseCrossValidator`; `RepeatedKFold`/`ShuffleSplit` break the ratio, and one split breaks the SE | confirmed (probe) | none: `cv` always comes from `Splitter.cv` (≥ 2 K-fold splits); your call in 2.3b was no check or extra doc |
-  | 3 | `LowerBound` subtracts the unweighted mean's SE from the weighted mean | accepted | stated as an approximation in the docstring and §4.2.1 |
-  | 4 | "the pooled per-row score" is false for RMSE | confirmed (probe: 1.93 vs 2.71) | worded for per-row mean metrics |
-  | 5 | "1.645 a one-sided 95% bound" overstates | accepted | "roughly" |
-  | 6 | sizes ≤ 0 aren't rejected | rejected | the evaluator's sizes are `len(validation_index)` ≥ 1 |
-  | 7 | NaN scores propagate | rejected | the evaluator raises on a non-finite fold score first (§4.2) |
-  | 11 | `_config.py`'s "fail at the first trial" fits only `Parameter` | accepted | "surface only when a trial runs" |
-
-  Found before the review: `if not scores` raised "truth value is ambiguous"
-  on a numpy array; fixed with `len(scores) == 0`, and a test.
-- [x] **2.3b Wire the classes into the evaluator.**
-  `aggregation: Aggregation = WeightedMean()` (your call: the signature shows
-  the real default; the instance is frozen, so sharing it is safe, and a
-  `# noqa: B008` says so, since your user-level ruff config enables B008 and
-  a project `[tool.ruff]` table would replace it). Each fold appends its
-  score and size and reports its own score to the pruner; a completed trial
-  records `fold_scores` and `fold_sizes`, then returns
-  `aggregation.aggregate(scores, fold_sizes)`. Measured: `FixedTrial` keeps
-  user attrs, and sqlite returns list attrs as lists with their int/float
-  types.
-  *Revised in your review (2026-09-25):*
-  - names: `features` → `feature_transformer` (and
-    `build_feature_transformer_and_model`); `validation` → `val` in
-    identifiers (`val_index`, `X_val`, a new `y_val`), reversing the 2.2
-    preference; `predicted` → `y_val_pred`; the exposure array `n` →
-    `exposure_array`, with explicit `exposure_train`/`exposure_val` per fold;
-    the test constant `N` → `EXPOSURE`; §5's `n_train` → `exposure_train`
-  - exposure (your follow-up): the parameter keeps the name `exposure`, typed
-    `utils.Exposure` (Series or ndarray), and each fold slices it with
-    `take_rows`. The old `np.asarray` did two jobs, measured: it let a plain
-    list be sliced, and it made a Series positional (array indexing is by
-    label, `KeyError`); `take_rows` handles a Series by `.iloc`. The check
-    moved to a private `_check_exposure`, called once before any fit, as
-    `DirectCohortModel` does. Comments trimmed to their "why"; the
-    MedianPruner remark lives in §4.2.1. Review: a plain list now fails
-    with numpy's `TypeError` before any fit (reproduced); left as is, since
-    it is outside the declared type and loud; two comment fixes accepted
-  - only the aggregation: no `WeightedMean()` or `corrected_std_error` call in
-    the evaluator; the `std_error` attr is dropped (derived from
-    `fold_scores`, §4.2)
-  - pruning: each fold's own score, measured against Optuna's pruners
-    (§4.2.1). The first revision reported the running aggregation, which the
-    review showed defeats `MedianPruner` under `LowerBound`; the measurement
-    showed `MedianPruner` fails on folds with any signal
-  *Done when:*
-  - [x] `aggregation=` takes an `Aggregation` (default `WeightedMean()`), and `z=` is gone. The `Literal` alias, `TODO(2.3)` and the `"lower_bound"`/`z` docstring text are removed. The 6 string/`z` rows and the 2-case `z`-default test are replaced by the class tests
-  - [x] a non-`Aggregation` (e.g. `"mean"`) is rejected in the constructor with a clear `TypeError`; the default is `WeightedMean()`
-  - [x] each fold appends its score and `len(val_index)` and reports its own score; the trial value is `aggregation.aggregate(scores, fold_sizes)`, checked against each class's rule computed by hand (`WeightedMean`, `Mean`, `LowerBound(z=2)`, a custom median)
-  - [x] a completed trial's attrs are exactly `fold_scores` and `fold_sizes`, equal to the hand values, as lists of plain `float`/`int`, and `json.dumps` accepts them; through a study and a `FixedTrial`
-  - [x] a pruned trial has no fold attrs
-  - [x] ~~the `cv` docstring says a `Splitter.cv` validator~~ dropped (your call): not essential. `corrected_std_error` states the K-fold assumption, and `cv` always comes from `Splitter.cv`
-  - [x] a grep finds none of the old names in `evaluator.py` or its tests
-  - [x] mutation check (restored, `cmp`): the pruner fed the running aggregation, the value always the weighted mean, the attrs written before pruning (the pruned-trial test alone), the `isinstance` check removed, fold sizes taken from `train_index`, and `exposure_train`/`exposure_val` swapped: 6 of 6 caught
-  - [x] 97 tuning tests pass under `-W error`; the non-slow suite gives 998 passed, 8 warnings; mypy (including the test files) and ruff are clean; `aggregation.py` is unchanged from 2.3a
-
-  *Review, first version* (independent subagent; each finding reproduced first):
-
-  | # | finding | verdict | fix |
-  |---|---|---|---|
-  | 1 | a one-split `cv` makes `corrected_std_error` raise after all folds, even under `WeightedMean` | reproduced, **rejected** | `cv` comes from `Splitter.cv`, whose three methods reject `n_splits < 2` (2.1); your call was no `cv` check or doc. Moot since: the evaluator no longer computes the SE |
-  | 2 | the `TypeError` comment said a string fails "after the first fold"; it fails after every fold | confirmed (`aggregate` runs once, at the end) | comment fixed |
-  | 3 | the running-mean test's name understated it | accepted | renamed; renamed again for the revision |
-  | 4 | "as sqlite storage returns them" is a proxy, not an sqlite test | accepted (reviewer reproduced sqlite with `n_jobs=3`: correct) | "JSON-native, as sqlite storage requires" |
-
-  *Review, revision* (independent subagent):
-
-  | # | finding | verdict | fix |
-  |---|---|---|---|
-  | 1 | `MedianPruner`/`PercentilePruner` use a trial's best value over steps, so `LowerBound`'s unpenalized first report defeats them | reproduced (Optuna `_percentile.py:201-213`); broader than reported: `MedianPruner` never pruned on folds with any signal | each fold reports its own score (your call), `WilcoxonPruner`'s contract; §4.2.1 records the measurement; Phase 3 documents the pruners |
-  | 2 | the `Aggregation` contract didn't say it runs on every prefix of the folds | moot | `aggregate` runs once |
-  | 3 | `LowerBound`'s docstrings omit the one-fold rule | moot | the rule was reverted |
-  | 4 | the evaluator's docstring didn't say what the pruner sees; a line was unwrapped | confirmed | fixed |
-  | 5 | the last fold was aggregated twice | moot | `aggregate` runs once |
-
-  Also checked by the reviewers, no finding: no old API or names left in
-  src, tests or docs; the new code is thread-safe (local lists, a frozen
-  shared aggregation); empty and unequal inputs still raise clearly.
-- [ ] **2.4 Split methods.**
-  *Done when:*
+- [ ] **2.4 Split methods.** *Done when:*
   - [ ] one parametrized test runs the evaluator with each `Splitter` method (`groups=None` for `random`) under `pytest.mark.filterwarnings("error")`
-  - [ ] under `grouped`, `fold_sizes` equals the validator's fold sizes (20/5/3 on the test data)
+  - [ ] under `grouped`, the `fold_sizes` attr equals the validator's fold sizes (20/5/3 on the test data)
 
-*Revision of 2.3 and 2.4 (2026-09-24):* `z` moved onto a `LowerBound` class
-(your call). The done-when items that were only arithmetic identities were
-dropped, the attr rules added, and 2.4 sharpened. Review, each finding checked
-before fixing:
+  **Then the Phase 2 review** (the whole evaluator phase), and your approval.
+- [ ] **3.1 Study constructor and defaults.** *Done when:* the default sampler is a seeded multivariate TPE and the default pruner `NopPruner`; invalid `n_trials`, timeout or `n_jobs` combinations are rejected.
+- [ ] **3.2 `optimize` and the best trial.** *Done when:* the same seed gives an identical `TuningResult`; a pruned trial never wins; ties go to the lowest number; no completed trial raises `RuntimeError`; `initial_params` run first.
+- [ ] **3.3 Records and results.** *Done when:* each `TrialRecord` carries the fold scores and sizes and the derived SE; `to_dict()` round-trips through `json`; `is_reproducible` is False with a timeout or `n_jobs > 1`.
+- [ ] **3.4 Integration test** (§5 on a small simulated table, a few trials). *Done when:* the best parameters refit through `build_feature_transformer_and_model` and predict.
+- [ ] **3.5 Pruners in the docs:** `WilcoxonPruner` or `SuccessiveHalvingPruner` for CV, not `MedianPruner` (§4.2). Wilcoxon's docs also advise shuffling the evaluation order per trial; decide whether that applies with fixed folds.
+  **Then the Phase 3 review** and your approval.
+- [ ] **4.1 `docs/HYPERPARAMETER_TUNING.md`:** the three parts, the decisions, aggregation and pruning guidance, the worked example, hazards, how a rebuilt model becomes tunable (D17), what remains.
+- [ ] **4.2 Links** from `docs/README.md`, `docs/MODULE_REFERENCE.md` and `docs/SPLITTING.md` §7; mark this plan implemented.
+- [ ] **4.3 Final check** (§7; `git status` shows only the package, `modeling/`, `scoring.py`, `utils.py`, their tests, `pyproject.toml` and the docs) and the PR checklist. **Then the Phase 4 review** and your approval; the PR moves from draft to ready.
 
-| # | finding | verdict | fix |
-|---|---|---|---|
-| 1 | "all three rank alike" on equal folds | confirmed: `LowerBound` ranks by SE too | reworded |
-| 2 | equal folds held only for that data | confirmed: the test data gives 10/9/9 | the test data's sizes quoted |
-| 3 | "every trial records its SE" vs no attrs for pruned trials | confirmed | "every completed trial" |
-| 4 | §4.2's intro said the aggregation was unchanged | confirmed | describes the design after 2.3b |
-| 5, 6 | §3's imports and §4.1.1's tool table missed `aggregation.py` | confirmed | updated; `_STRICT` shared package-internally |
-| 7 | exports, the `Literal` alias `Aggregation`, `TODO(2.3)` and docstrings uncovered | confirmed (`evaluator.py:27-29,130`) | done-when items |
-| 8 | one-fold SE: numpy warns and returns NaN; empty folds divide by zero | confirmed (probe) | `FoldScores` checks; `std_error` raises |
-| 9 | sqlite returns attrs as lists | confirmed | attrs written as lists |
-| 10 | a string `aggregation` would fail only at the first fold | accepted | `TypeError` in the constructor |
-| 11 | is `training_sizes` needed? | kept: taken from `train_index`, so right for any validator | reason stated; "fit" renamed "training" |
-| 12, 13, 14 | missing class line; SE is an approximation; repeated `z` list | accepted | fixed |
-| 15 | 2.4's "no warnings" was unchecked | accepted | `filterwarnings("error")`; sizes named |
-| 17 | `TrialRecord` fields for pruned trials | accepted | `None` unless COMPLETE (Phase 3) |
+## 7. Working notes
 
-**Stop: review and your approval of Phase 2.**
+**How the user works:** one sub-task at a time, each ending with a stop.
+Every class, field and mechanism is justified with measured evidence (probe
+Optuna/sklearn/pydantic), or dropped; generic and simple over specific. No
+checks or docs that aren't essential; comments keep only the non-obvious
+"why". sklearn conventions and informative names (`train`/`val`,
+`feature_transformer`, `exposure_*`). The user commits and pushes: give the
+commands and a file-by-file .py summary (ask before a `Co-Authored-By`
+line).
 
-### Phase 3: study (`study.py`)
-- [ ] **3.1 Constructor and defaults.** *Done when:* the default sampler is a
-  seeded multivariate TPE and the default pruner is `NopPruner`; invalid
-  `n_trials`, timeout or `n_jobs` combinations are rejected.
-- [ ] **3.2 `optimize` and selecting the best trial.** *Done when:* tests show
-  that the same seed gives an identical `TuningResult`; a pruned trial never
-  wins; ties go to the lowest trial number; a study with no completed trial
-  raises `RuntimeError`; `initial_params` run first.
-- [ ] **3.3 Records and results.** *Done when:* each `TrialRecord` carries the
-  fold scores, sizes and SE from the objective; `to_dict()` round-trips through
-  `json`; `is_reproducible` is False when a timeout is set or `n_jobs > 1`.
-- [ ] **3.4 LightGBM integration test** (the §5 example: `DirectCohortModel`,
-  a `FeatureTransformer`, `POISSON_DEVIANCE` and an exposure) on a small
-  simulated table, for a few trials. *Done when:* the best parameters refit
-  through `build_feature_transformer_and_model` and predict.
-
-**Stop: review and your approval of Phase 3.**
-
-### Phase 4: docs
-- [ ] **4.1 `docs/HYPERPARAMETER_TUNING.md`:** the three classes, the decisions
-  (§2), aggregation guidance (§4.2.1), the worked example and what it showed,
-  hazards, how a rebuilt model becomes tunable (M2/M11 and the contract
-  test, D17), and what remains (out-of-fold predictions).
-- [ ] **4.2 Links** from `docs/README.md`, `docs/MODULE_REFERENCE.md` and
-  `docs/SPLITTING.md` §7. Mark the plan doc as implemented.
-- [ ] **4.3 Final check:** the full verification in §7, and the PR checklist is updated.
-
-**Stop: review and your approval. Then the PR can move from draft to ready.**
-
----
-
-## 7. Verification
-
-- `uv run pytest tests/unit/test_hyperparameter_tuning_*.py -q`
-- `uv run pytest -m "not slow"`: the 956 tests on the branch after PR #6 pass, plus the new tests, with no warnings from the new tests
-- `uv run mypy`, plus `uv run ruff check <files>` and `uv run ruff format <files>` on the changed files only
-- `git status` shows only the package, `modeling/`, `scoring.py`, their tests, `pyproject.toml` and the docs changed
-
----
-
-## 8. Draft PR
-
-**Title:** `feat: add modular Optuna hyperparameter tuning`
-
-The body below is the PR #5 description as of 2.2d (2026-09-24).
-At each phase stop, update the status line and the checklist, and give the user
-the new lines to paste. There is no "Generated with" footer: the user removed it.
-
-```markdown
-**Status:** draft. Phase 1 (parameters) is in. Phase 2 (the evaluator) is
-mostly in: it tunes the repo's own `modeling.BaseAgeGroupModel`s and
-combines the folds with an `Aggregation`. Next: the split methods test, then
-the Phase 2 review.
-
-## Summary
-Adds the `hyperparameter_tuning` package: Optuna tuning in three independent classes.
-
-- **Parameters** (`parameters.py`): `FloatParameter`, `IntParameter` and
-  `CategoricalParameter` cover every option of Optuna's `suggest_*` calls.
-  They are strict pydantic dataclasses, validated when created: Optuna's own
-  checks, plus three cases Optuna lets through silently (a step that doesn't
-  divide the range, duplicate choices, NaN/inf). A search space is a plain
-  list of them.
-- **`CVHyperparameterEvaluator`** (`evaluator.py`): settings in the
-  constructor (a `BaseAgeGroupModel` template, parameters, a `Splitter.cv`
-  validator, a `Metric`, a `feature_transformer`); data in
-  `evaluate(trial, X, y, groups, *, exposure=None)`. Each trial suggests one
-  parameter set and its own copies of the features and the model; each
-  fold refits them on the training rows and scores the validation rows. A
-  lower-is-better metric is negated, so the study always maximizes. A NaN or
-  inf fold score raises; each fold's score is reported for pruning.
-- **Aggregations** (`aggregation.py`): `WeightedMean` (default), `Mean` and
-  `LowerBound(z)` combine the fold scores, `aggregate(scores, fold_sizes)`;
-  `corrected_std_error` is the K-fold Nadeau–Bengio SE. The evaluator takes
-  one as `aggregation=` (default `WeightedMean()`) and records each
-  completed trial's `fold_scores` and `fold_sizes`.
-- **`HyperparameterStudy`** (`study.py`, not started): creates and runs the
-  study and records the best result and every trial. Only completed trials
-  can win.
-
-Supporting changes:
-- `modeling`: `Metric` and the ready-made metrics moved to the top-level
-  `scoring.py`; `BaseAgeGroupModel.fit`/`predict` take `exposure=None`; a
-  contract test runs four sklearn parameter checks over every model, so
-  `clone`/`set_params` keep working.
-- `Splitter.cv` now requires an int `random_state`. With `None` every
-  `split()` call reshuffled, so tuning trials would be scored on different
-  folds.
-- New public `utils.py`: `take_rows` and the `DesignMatrix` / `Target` /
-  `Groups` aliases, shared by `splitting` and `hyperparameter_tuning`.
-
-## Scope
-Not wired into the experiment runner. `tuning.py` and the old `models/` are
-unchanged. The design and its decisions are in
-`docs/HYPERPARAMETER_TUNING_PLAN.md`.
-
-## Checklist
-- [x] Phase 0: plan doc
-- [x] Phase 1: parameters (37 tests)
-- [ ] Phase 2: evaluator (2.1–2.3b done; next: 2.4)
-- [ ] Phase 3: study, including the LightGBM integration test
-- [ ] Phase 4: docs
-- [ ] Non-slow suite passes (956 after #6, plus the new tests)
-```
-
----
-
-## 9. Handoff notes (read first when resuming)
-
-This doc is the **source of truth**: edit it directly as work proceeds. Tick
-the sub-tasks, add a review table after each phase, and keep the status line
-current.
-
-### 9.1 How the user works
-- **One sub-task at a time.** After each one, report what changed and stop.
-  The user replies "continue to 2.x".
-- **Ask before any design choice the plan doesn't settle.** §9.5 lists the
-  known ones.
-- **Justify every class, field and option.** The user regularly asks "is this
-  necessary?" and "why X over Y?". Compare alternatives with **measured**
-  evidence (probe the library's actual behavior), then recommend one.
-  Phase 1 dropped a `SearchSpace` class and switched to pydantic this way.
-- **Comments are concise and relevant, but keep the important "why".**
-- **Commits:** the user commits and pushes; never commit or push yourself. At
-  each stop, propose the commit commands and the updated PR text (§8). The
-  user questioned the `Co-Authored-By` trailer, so ask before adding it.
-- **Plan mode per sub-task** (from 2.2b on). The user says "plan 2.x". Probe
-  the libraries, write the plan with a "done when" list, and ask open choices
-  with AskUserQuestion (with previews for code options). Implement only after
-  approval.
-- **Best practice, simple and generic.** When the user defers ("use best
-  practices, don't overcomplicate"), decide from measured evidence and say
-  why. Prefer generic over specific (1.6 removed the scalar-only choices), and
-  the repo's own classes over generic sklearn ones (`FeatureTransformer`).
-- **Every mechanism is questioned**, e.g. "why clone here?", "a reset
-  method?". Answer with measurements plus sklearn/Optuna practice, then pin
-  the reason in a comment and a test.
-- **The user reads the code in the IDE.** At each stop, give a file-by-file
-  summary of the .py changes. If a file "looks unchanged", it's usually a
-  stale editor buffer: "File: Revert File", and never save the old tab.
-
-### 9.2 Routine for every sub-task
-1. Plan in plan mode (§9.1), and get approval.
-2. Implement.
-3. Checks (§9.3): ruff, mypy (including the changed test files), and the
-   changed tests with `-W error`.
-4. A **mutation check** for each claimed behavior: break it temporarily,
-   see a test fail, and restore the file (check with `cmp` against a backup).
-5. An independent review subagent reads the diff and reports findings only.
-6. **Reproduce every finding before fixing it.** Reject wrong findings with
-   evidence: several findings so far were wrong, or their fix didn't work.
-7. Run the non-slow suite in the background, and report the count against
-   the expected total.
-8. Update this doc (tick, "done when", review table, status line, §8), then
-   stop with the commit commands.
-
-### 9.3 Commands
+**Routine per sub-task:** implement → ruff, mypy (with the changed test
+files), the changed tests under `-W error` → a mutation check per claimed
+behavior (break it, see a test fail, restore, `cmp`) → an independent review
+subagent → reproduce each finding before fixing or rejecting it → the
+non-slow suite in the background, with nothing editing src → update this
+doc → stop with the commands.
 
 | purpose | command |
 |---|---|
-| new tests | `uv run pytest tests/unit/test_hyperparameter_tuning_*.py -q` |
-| suite | `uv run pytest -m "not slow"` (**998** passed after 2.3b; run it in the background, and don't edit src while it runs) |
-| types | `uv run mypy` (strict for this package), **plus** `uv run mypy <changed test files> src/age_group_prediction/hyperparameter_tuning`: tests aren't in `[tool.mypy].files`. `test_hyperparameter_tuning_parameters.py` has 4 deliberate wrong-type errors |
-| lint / format | `uv run ruff check <files>` and `uv run ruff format <files>`, on the changed files only, never on a glob that catches unrelated files. List the paths explicitly: zsh doesn't split a `$FILES` variable |
-| probes | `PYTHONPATH=src uv run --group test python -c "..."` (a bare `uv run python` may not find the package) |
+| package tests | `uv run pytest tests/unit/test_hyperparameter_tuning_*.py -q -W error` |
+| suite | `uv run pytest -m "not slow"` (1002 passed, 8 warnings, ~85 s) |
+| types | `uv run mypy`, plus `uv run mypy src/age_group_prediction/hyperparameter_tuning <changed test files>`. The package path is needed: without it, mypy doesn't check the tests' calls into the package. The parameters test has 4 deliberate type errors |
+| lint | `uv run ruff check <files>` and `uv run ruff format <files>`, changed files only, paths listed explicitly (zsh doesn't split `$FILES`) |
+| probes | `PYTHONPATH=src uv run --group test python -c "..."` |
 
-The non-slow run after 2.3b gives 998 passed, 20 deselected and 8 warnings
-(about 85 s), all from existing tests. New tests should add none.
+**Pitfalls:**
+- Pydantic wraps only `ValueError` in `ValidationError`: validators raise
+  `ValueError`. In strict mode a float field turns `np.int64` into a float,
+  and an int field rejects it; lax tuples accept sets and generators (a
+  `Sequence` annotation rejects them); lax mode builds a stdlib dataclass
+  from a dict (use `InstanceOf`).
+- Your ruff settings (user-level; the repo has no `[tool.ruff]`, and adding
+  one would replace them) enable B008 and RUF009: use
+  `field(default_factory=...)` for a dataclass default.
+- Optuna only warns for some bad settings (a step that doesn't divide the
+  range lowers `high`), and its errors don't name the parameter. It warns at
+  each `suggest` for non-scalar categorical choices (mind
+  `filterwarnings("error")`), and a repeated `suggest` of a name returns the
+  cached value, so a test must count calls.
+- Optuna's sqlite storage returns tuples as lists and rejects `np.int64`
+  attrs: store plain Python numbers.
+- mypy's blind spots: pandas has no stubs, and `clone` returns `Any`.
+- `BaseAgeGroupModel.__subclasses__()` includes test stand-ins (filter by
+  package), and an empty `parametrize` list skips instead of failing.
+- `if not x` raises on a numpy array; use `len(x) == 0`.
+- A .py file that "looks unchanged" in the IDE is usually a stale buffer:
+  "File: Revert File", and never save the old tab.
 
-### 9.4 Pitfalls learned
-- **Pydantic wraps only `ValueError`** in its `ValidationError`, so validators
-  must raise `ValueError`, not `TypeError`. Ruff's TRY004 rule then flags a
-  `raise ValueError` inside an `isinstance` check; collect the bad items first,
-  then raise.
-- **Strict pydantic still converts numpy scalars:** its float validator turns
-  `np.int64(7)` into `7.0` and `np.True_` into `1.0`. Since 1.6, choices are
-  typed `Any` in non-strict mode, so pydantic leaves them as given.
-- **Optuna warns instead of raising** for some bad settings, e.g. a step that
-  doesn't divide the range makes it quietly lower `high`. `Parameter` escalates
-  only `UserWarning` to an error.
-- **Optuna's error messages don't name the parameter.** `parameters.py`
-  prefixes them with `parameter '<name>': ...`. Pydantic type errors name the
-  class and argument instead.
-- **mypy's blind spots here:** pandas has no stubs, so mypy accepts a
-  `DesignMatrix` where a `pd.DataFrame` is expected, and `sklearn.base.clone`
-  returns `Any`. Neither is type-checked, so runtime checks (`isinstance`)
-  guard the evaluator's settings.
-- **`BaseAgeGroupModel.__subclasses__()` also returns test stand-ins,** so
-  filter by package. An empty `parametrize` list makes pytest skip, not fail,
-  so keep a guard test.
-- **sklearn's parameter checks:** only `do_not_raise_errors_in_init_or_set_params`,
-  `parameters_default_constructible`, `no_attributes_set_in_init` and
-  `set_params` catch the contract breaches tried (2.2c).
-- **`fit` must replace all fitted state:** the evaluator reuses one copy per
-  trial across the folds. `test_modeling_contract.py` checks that a refit
-  equals a fresh fit.
-- **Optuna and non-scalar choices:** it warns twice per trial. Its sqlite
-  storage returns tuples as lists, and rejects `np.int64` user attrs as not
-  JSON-serializable, so attrs must be plain Python numbers (2.3b).
-- **Lax pydantic tuples accept sets and generators,** whose order can vary;
-  `CategoricalParameter` converts only a list.
-- **An exposure of the wrong length would be re-sliced per fold silently,** so
-  `evaluate` checks its shape up front.
-- **`StratifiedFolds` never validates a row alone in its stratum,** so its
-  folds don't partition the rows (2.3a). The corrected SE's `1/(K−1)` is
-  then conservative.
-- **`if not x` on a numpy array raises;** use `len(x) == 0` in code that
-  takes any sequence.
+## 8. Draft PR text
 
-### 9.5 Phase 2 details (all resolved 2026-09-24)
-- **2.1, scorer and rows:** done. `check_scoring`, and the row helper is
-  `utils.take_rows`, shared with `splitting`.
-- **2.1, folds:** revised. The evaluator takes `Splitter.cv(...)` and splits
-  in each trial; `Splitter.cv` requires an int seed (D3). The empty-list and
-  duplicate-name checks stay in the constructor.
-- **2.2, NaN or inf fold score:** decided: raise `ValueError` (§4.2). The
-  measurements behind the decision, on Optuna 4.9:
+**Title:** `feat: add modular Optuna hyperparameter tuning`. At each phase
+stop, update the status line and checklist, and give the user the lines to
+paste. No "Generated with" footer: the user removed it.
 
-  | the objective... | trial | study |
-  |---|---|---|
-  | returns `nan` | FAIL | continues |
-  | raises | FAIL | **stops**: the error is re-raised after the first trial |
-  | raises, with `study.optimize(..., catch=(ValueError,))` | FAIL | continues |
+```markdown
+**Status:** draft. Phase 1 (parameters) and most of Phase 2 (the evaluator
+and fold aggregations) are in. Next: the split-methods test and the Phase 2
+review, then the study.
 
-- **2.3, the SE with unequal folds:** decided, as proposed (§4.2.1).
+## Summary
+Adds the `hyperparameter_tuning` package: Optuna tuning in independent parts.
 
-### 9.6 Known gaps (out of scope for this PR)
-- Out-of-fold predictions for `_cross_fitted_normal_scale`: a possible later
-  `evaluator.out_of_fold_predict(params)` (§5).
+- **Parameters** (`parameters.py`): `FloatParameter`, `IntParameter` and
+  `CategoricalParameter`, strict pydantic dataclasses validated when created
+  (Optuna's checks plus the cases Optuna lets through). A search space is a
+  plain list of them.
+- **`CVHyperparameterEvaluator`** (`evaluator.py`): a frozen pydantic
+  dataclass of settings (a `BaseAgeGroupModel`, parameters, a `Splitter.cv`
+  validator, a `Metric`, a `FeatureTransformer`, an `Aggregation`), checked
+  when built; data in `evaluate(trial, X, y, groups, *, exposure=None)`. Each
+  trial copies the transformer and model once, and each fold refits them on
+  its training rows. A lower-is-better metric is negated. Each fold's score
+  is reported for pruning; a NaN or inf score raises. A completed trial
+  records its fold scores and sizes.
+- **Aggregations** (`aggregation.py`): `WeightedMean` (default), `Mean` and
+  `LowerBound(z)`, via `aggregate(scores, fold_sizes)`; `corrected_std_error`
+  is the K-fold Nadeau–Bengio SE.
+- **`HyperparameterStudy`** (`study.py`, not started).
 
-### 9.7 The switch to `BaseAgeGroupModel` (settled 2026-09-24)
+Supporting changes: `Metric` moved to `scoring.py`; `BaseAgeGroupModel.fit`/
+`predict` take `exposure=None`, with a contract test over every model;
+`Splitter.cv` requires an int `random_state`; a public `utils.py` with
+`take_rows` and the table type aliases.
 
-**What PR #6 changed.** `BaseAgeGroupModel` (`modeling/base.py`) gets
-`get_params`/`set_params`/`clone` from scikit-learn's `BaseEstimator`, and
-`DirectCohortModel` takes fixed hyperparameters in its constructor, with no
-search inside `fit`. Its interface
-([DIRECT_COHORT_MODEL.md §0](DIRECT_COHORT_MODEL.md#0-the-rebuilt-model-modelingdirect_cohortpy)):
-`fit(X, y, exposure=None)`, `predict(X, exposure=None)` and
-`evaluate(y_true, y_pred, metric) -> float`, where `X` is the finished design
-matrix.
+## Scope
+Not wired into the experiment runner; `tuning.py` and the old `models/` are
+unchanged. Design and decisions: `docs/HYPERPARAMETER_TUNING_PLAN.md`.
 
-**How the open questions were settled:** D13 (per-fold features), D14
-(exposure routing), D15 (signature), D11/D12 confirmed, D16 (where `Metric`
-lives) and D17 (the other models), in §2. The measurements behind them
-(sklearn 1.9.0, Optuna 4.9.0, LightGBM 4.7.0, with every warning escalated
-to an error):
-- `clone(DirectCohortModel(use_exposure=True)).set_params(**all 10 §5
-  parameters)` fits, and the template is unchanged. A clone of a fitted model
-  is unfitted. `set_params(n_estimator=...)` and `set_params(model__n_estimators=...)`
-  raise `ValueError`. `num_leaves=1`, `learning_rate=-0.1` and
-  `subsample=1.5` raise `LightGBMError` at `fit`.
-- sklearn's `check_no_attributes_set_in_init`, `check_get_params_invariance`,
-  `check_set_params` and `check_parameters_default_constructible` pass on
-  `DirectCohortModel`; the first two also pass on `FeatureTransformer`.
-- `clone(IndependentTotalProbabilityModel())` and
-  `clone(BayesianConditionalModel())` raise `TypeError: Cannot clone object`.
-- `Pipeline([("features", ...), ("model", DirectCohortModel(use_exposure=True))])`:
-  `fit(X, y, model__exposure=n)` works, `predict(X, exposure=n)` works,
-  `predict(X, model__exposure=n)` raises `TypeError`. With
-  `sklearn.set_config(enable_metadata_routing=True)` and
-  `set_fit_request`/`set_predict_request(exposure=True)`, both take `exposure=`.
-- mypy `--strict`: `model.fit(X, y, exposure=n)` with `model: BaseAgeGroupModel`
-  gives `call-arg`. Passing `**kwargs` typed `dict[str, Any]` gives no error,
-  because mypy doesn't check that call.
-- Two `clone(FeatureTransformer)`s fitted on different halves standardize
-  the same rows differently, and the template stays unfitted.
-
-### 9.8 Resume here (2026-09-25)
-**Next: 2.4**, per §6: one parametrized test runs the evaluator with each
-`Splitter` method under `filterwarnings("error")`, and under `grouped` the
-`fold_sizes` attr equals the validator's sizes (20/5/3). It ends Phase 2 with
-its review. Then Phase 3 (the study; its `TrialRecord` reads the attrs
-`fold_scores` and `fold_sizes` and derives `std_error`; its docs say which
-pruners suit CV: `WilcoxonPruner` or `SuccessiveHalvingPruner`, not
-`MedianPruner`, §4.2.1) and Phase 4 (docs).
-
-**Prompt for a new session:**
-
+## Checklist
+- [x] Phase 1: parameters
+- [ ] Phase 2: evaluator (2.1–2.3c done; next: 2.4)
+- [ ] Phase 3: study, including the integration test
+- [ ] Phase 4: docs
+- [ ] Non-slow suite passes
 ```
-Resume the hyperparameter-tuning work on branch `feat/hyperparameter-tuning`
-(draft PR #5) at sub-task 2.4.
 
-Read first, in this order:
-1. docs/HYPERPARAMETER_TUNING_PLAN.md: the status line, §9 "Handoff notes"
-   (especially §9.8 "Resume here"), the decisions in §2 (D1–D17; D5 revised 2026-09-25),
-   §4.2 and §4.2.1 (the evaluator and the aggregation design), and §6
-   sub-tasks 2.3a, 2.3b, 2.4 and Phases 3–4.
-2. The code: src/age_group_prediction/hyperparameter_tuning/ (parameters.py,
-   aggregation.py, evaluator.py), modeling/base.py, scoring.py, utils.py, and the tests in
-   tests/unit/ (test_hyperparameter_tuning_*.py, test_modeling_contract.py).
+## 9. The switch to `BaseAgeGroupModel` (settled 2026-09-24)
 
-Task: 2.4 (end of Phase 2), then
-Phase 3 (study) and Phase 4 (docs).
-
-How I work:
-- Start each sub-task in plan mode: probe the libraries, write the plan with a
-  "done when" list, and ask me open choices. Stop after every sub-task for my
-  approval.
-- Before each stop, run a mutation check and an independent review subagent;
-  reproduce each finding, then fix it or reject it with evidence.
-- Justify every class, field and mechanism with measured evidence; drop what
-  isn't needed. Prefer generic, simple, best-practice solutions.
-- scikit-learn conventions: settings in the constructor, data as method
-  arguments, named methods, informative names, shared helpers in utils.py.
-- Concise comments that keep the important "why". Keep the docs current.
-- Never commit or push; give me the commands, and a file-by-file summary of
-  the .py changes.
-
-Checks:
-- `uv run pytest -m "not slow"` (baseline: 998 passed, 8 warnings)
-- `uv run mypy`, plus mypy on the changed test files
-- `uv run ruff check` and `uv run ruff format` on the changed files only
-```
+The evaluator was first built for generic sklearn estimators. PR #6 gave
+`modeling.BaseAgeGroupModel` `clone`/`set_params` (via `BaseEstimator`) and
+fixed hyperparameters, so the evaluator tunes it instead (D11–D17). Measured
+then: `clone(DirectCohortModel(...)).set_params(**all 10 §5 parameters)` fits
+and leaves the template unchanged; the old `IndependentTotalProbabilityModel`
+and `BayesianConditionalModel` can't be cloned; a `Pipeline` needs
+`model__exposure=` in `fit` but `exposure=` in `predict`.
