@@ -29,7 +29,7 @@ from ..scoring import Metric
 from ..utils import DesignMatrix, Groups, Target, take_rows
 from .parameters import Parameter
 
-__all__ = ["Aggregation", "CVHyperparameterEvaluator"]
+__all__ = ["CVHyperparameterEvaluator"]
 
 Aggregation = Literal["weighted_mean", "mean", "lower_bound"]
 

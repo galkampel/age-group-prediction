@@ -4,8 +4,9 @@
 committed (`cdc3f98`), 2.1–2.2 (`84e8f06`). PR #6 (`aee3e6a`) added
 `modeling.BaseAgeGroupModel` and `DirectCohortModel`. Committed through
 `a5bbe14`: 2.2a–2.2d (the evaluator tunes `BaseAgeGroupModel`) and 1.6
-(generic categorical choices). Non-slow suite: 973 passed, 8 warnings.
-**Next: 2.3a** (§9.8). A new session should start with §9, "Handoff notes".
+(generic categorical choices). 2.3a (aggregation classes) done, awaiting
+commit. Non-slow suite: 1001 passed, 8 warnings.
+**Next: 2.3b** (§9.8). A new session should start with §9, "Handoff notes".
 **Workflow:** each phase ends with an independent review, then stops for your
 approval. Nothing is committed without your approval.
 
@@ -53,7 +54,7 @@ sklearn estimators (D11–D17).
 | D2 | ~~The model is an sklearn estimator or `Pipeline` used as a template: `clone(template).set_params(**params)`~~ **Superseded by D11 and D13.** | This is the sklearn standard. Preprocessing inside a `Pipeline` is refitted on every fold, so validation rows can't leak into it. | §4.2 |
 | D3 | Every trial sees identical folds: `split()` runs in each trial on a `Splitter.cv` validator, which requires an int seed | Trials are compared on the same rows. Re-splitting costs ~0.3 ms, and the Splitter already guarantees at least 2 non-empty folds, so the objective checks no folds itself (revised in 2.1, 2026-09-24). | §4.2 |
 | D4 | The model is fitted inside the objective; everything that doesn't depend on the trial's parameters happens outside it | The parameters change on every trial. The folds (built before the study) and the final refit (after it) do not. | §4.2 |
-| D5 | Fold aggregation is a strategy object: `WeightedMean()` (default), `Mean()`, `LowerBound(z=1.0)`, or a custom `Aggregation` subclass. Each carries its own parameters (revised 2026-09-24; it was a string plus a separate `z`) | The size-weighted mean is the pooled per-row loss, the same measure the test set uses, and the least noisy combination. The others are there when a different rule fits. A class keeps `z` with the one rule that uses it, so the evaluator needs no "`z` only with `lower_bound`" checks. | §4.2.1 |
+| D5 | Fold aggregation is a strategy object: `WeightedMean()` (default), `Mean()`, `LowerBound(z=1.0)`, or a custom `Aggregation` subclass. Each carries its own parameters (revised 2026-09-24; it was a string plus a separate `z`). Its one method, `aggregate(scores, fold_sizes) -> float`, takes two plain lists computed by the evaluator, so it knows nothing about the data (revised 2026-09-25: no `FoldScores` container, no `running`) | For a metric that is a mean over rows, the size-weighted mean is the pooled per-row loss, the same measure the test set uses. The others are there when a different rule fits. A class keeps `z` with the one rule that uses it, so the evaluator needs no "`z` only with `lower_bound`" checks. | §4.2.1 |
 | D6 | ~~Scoring uses sklearn scorers~~ (**superseded by D11**), where greater is better, and the study always maximizes | One sign convention, so there's no sign to get wrong. D12 keeps it. | §4.2 |
 | D7 | The study takes Optuna sampler and pruner objects directly, with seeded defaults | Wrapping them would duplicate Optuna's API. | §4.3 |
 | D8 | Only COMPLETE trials can win | A pruned trial's value comes from fewer folds. | §4.3 |
@@ -77,7 +78,8 @@ The layout mirrors `splitting/` and `feature_engineering/`:
 src/age_group_prediction/hyperparameter_tuning/
     __init__.py      # docstring (how the pieces fit) and the public API
     parameters.py    # Parameter, FloatParameter, IntParameter, CategoricalParameter
-    aggregation.py   # FoldScores, Aggregation, WeightedMean, Mean, LowerBound (corrected SE)
+    aggregation.py   # Aggregation, WeightedMean, Mean, LowerBound, corrected_std_error
+    _config.py       # _STRICT, the pydantic config shared by parameters and aggregation
     evaluator.py     # CVHyperparameterEvaluator (fold loop)
     study.py         # HyperparameterStudy, TuningResult, TrialRecord
 
@@ -95,8 +97,8 @@ tests/unit/
   `splitting` also uses (`tests/unit/test_utils.py`).
 - **Imports go one way:** `evaluator.py` imports `parameters.py`,
   `aggregation.py`, `modeling.BaseAgeGroupModel` and `scoring.Metric` (D16);
-  `aggregation.py` imports only the package-internal `_STRICT` config from
-  `parameters.py`; `study.py`
+  `parameters.py` and `aggregation.py` import only the package-internal
+  `_STRICT` config from `_config.py`, not each other; `study.py`
   imports nothing from the package. The study accepts any `trial -> float`
   callable.
 - **Dependencies:** optuna, scikit-learn, numpy and pydantic (already a project
@@ -224,7 +226,7 @@ a list is what users expect.
 |---|---|---|
 | `pydantic.BaseModel` | data that crosses a boundary (config files, JSON, APIs): parsed, validated and serialized | not needed in v1; `feature_engineering`'s specs are this case |
 | `pydantic.dataclasses.dataclass` | small value objects that code builds, needing validation plus stdlib dataclass behavior (positional arguments, `KW_ONLY`, `dataclasses.asdict/replace`) | **the parameter classes** and **the aggregation classes** (`LowerBound.z`), the places where user-typed values enter |
-| stdlib `dataclasses.dataclass` | internal data whose types the code already guarantees | **`FoldScores`** (built by the evaluator), and **`TrialRecord` and `TuningResult`** (Phase 3), built from Optuna's own records |
+| stdlib `dataclasses.dataclass` | internal data whose types the code already guarantees | **`TrialRecord` and `TuningResult`** (Phase 3), built from Optuna's own records |
 
 This choice doesn't block loading from a file later:
 `TypeAdapter(FloatParameter).validate_python({...})` works on pydantic
@@ -276,9 +278,10 @@ class CVHyperparameterEvaluator:
         #     model.fit(X_train, y_train, exposure=exposure_train)       (D14)
         #     y_pred = model.predict(X_val, exposure=exposure_val)
         #     score = ±model.evaluate(y_val, y_pred, metric)   -- signed (D12); NaN or inf -> ValueError
-        #     trial.report(aggregation.running(folds so far), step=i); prune if the pruner says so
-        # after the last fold: user attrs fold_scores, validation_sizes, std_error
-        # return aggregation.aggregate(folds)   (§4.2.1)
+        #     scores.append(score); fold_sizes.append(len(validation_index))
+        #     trial.report(weighted mean of the folds so far, step=i); prune if the pruner says so
+        # after the last fold: user attrs fold_scores, fold_sizes, std_error
+        # return aggregation.aggregate(scores, fold_sizes)   (§4.2.1)
 
     def build_features_and_model(self, params) -> tuple[FeatureTransformer, BaseAgeGroupModel]:
         # (clone(features), clone(model).set_params(**params)); also used for the final refit
@@ -328,7 +331,7 @@ class CVHyperparameterEvaluator:
   `report`.
 - The fold sizes are taken in each trial from the folds it splits. Nothing
   about the folds is stored on the evaluator.
-- **User attrs** (`fold_scores`, `validation_sizes`, `std_error`) are written
+- **User attrs** (`fold_scores`, `fold_sizes`, `std_error`) are written
   after the last fold, whatever the aggregation, so a pruned or failed trial
   has none; it can't win anyway (D8). They are plain Python numbers: measured,
   Optuna's sqlite storage rejects an `np.int64` attr as not JSON-serializable.
@@ -343,37 +346,43 @@ class CVHyperparameterEvaluator:
 
 #### 4.2.1 How the fold scores are combined (`aggregation.py`)
 
-The evaluator collects each trial's folds in a `FoldScores` and hands them to
-an `Aggregation`:
+An aggregation knows nothing about the data. The evaluator computes two plain
+lists, each fold's signed score (D12) and its size (validation rows), and
+hands them over; the aggregation returns the trial value (revised 2026-09-25):
 
 ```python
-@dataclass(frozen=True)                 # internal: built by the evaluator (§4.1.1's rule)
-class FoldScores:                       # rejects: no folds; sequences of unequal length
-    scores: tuple[float, ...]           # signed, greater is better (D12)
-    validation_sizes: tuple[int, ...]
-    training_sizes: tuple[int, ...]     # from each fold's train_index, so correct for any validator
-    def weighted_mean(self) -> float: ...
-    def mean(self) -> float: ...
-    def std_error(self) -> float: ...   # corrected, below; ValueError for fewer than 2 folds
+def corrected_std_error(scores) -> float: ...  # s(ddof=1) * sqrt(1/K + 1/(K-1)); ValueError for K < 2
 
 class Aggregation(ABC):                 # subclass it for a custom rule, e.g. a median
     @abstractmethod
-    def aggregate(self, folds: FoldScores) -> float: ...   # the trial value
-    def running(self, folds: FoldScores) -> float:         # reported after each fold
-        return self.aggregate(folds)
+    def aggregate(self, scores: Sequence[float], fold_sizes: Sequence[int]) -> float: ...
 
-# WeightedMean, Mean: the same decorator, no fields.
+# WeightedMean, Mean: the same decorator, no fields (repr "WeightedMean()", compare by value).
 @pydantic_dataclass(frozen=True, config=_STRICT)            # the same checks as Parameter
 class LowerBound(Aggregation):
-    z: Annotated[float, Field(gt=0)] = 1.0
-    ...
+    z: Annotated[float, Field(gt=0)] = 1.0                  # rejects 0, <0, NaN, inf, "1", True
 ```
+
+The base is a plain `ABC`: it holds no data, as sklearn's
+`BaseCrossValidator` and Optuna's `BaseSampler` don't. The concrete classes
+are pydantic dataclasses, for the validated `z` (§4.1.1's rule). Measured
+(2026-09-25) against decorating the base with pydantic or stdlib: every
+kind of user subclass works under all three, and the only gain is a
+readable repr and `==` for an undecorated user subclass. In exchange, every
+subclass silently becomes a dataclass, and under a pydantic base a subclass
+that forgets its decorator gets an error naming the base
+(`ValidationError … for Aggregation`) instead of its own class.
+
+The built-ins reject no folds and unequal lengths with a clear `ValueError`
+(numpy's own errors are "Weights sum to zero" and "Axis must be specified"),
+accept lists, tuples and numpy arrays, and return a plain `float` (JSON-native
+user attrs).
 
 | class | trial value | when to use it |
 |---|---|---|
-| `WeightedMean()` (**default**) | `Σ n_k · score_k / Σ n_k` | Almost always. It is the pooled per-row score, the same measure the test set reports. When folds differ in size (e.g. under `grouped`) it is the least noisy combination. On equal folds it equals `Mean()`. |
+| `WeightedMean()` (**default**) | `Σ n_k · score_k / Σ n_k` | Almost always. For a metric that is a mean over rows (MAE, Poisson deviance) it is the pooled per-row score, the same measure the test set reports. On equal folds it equals `Mean()`. |
 | `Mean()` | `mean(score_k)` | To match sklearn's `cross_val_score(...).mean()` or the old models' tuning |
-| `LowerBound(z=1.0)` | `weighted_mean − z · SE` (the Splitter guarantees at least 2 folds) | Only when you explicitly want stable settings over the best average. `z` is how many SEs to subtract: 1 is the one-SE rule, 1.645 a one-sided 95% bound. The ranking gets noisier: the SE is estimated from K numbers, and most of the spread between folds is difficulty every trial shares. |
+| `LowerBound(z=1.0)` | `weighted_mean − z · SE` (the Splitter guarantees at least 2 folds) | Only when you explicitly want stable settings over the best average. `z` is how many SEs to subtract: 1 is the one-SE rule, 1.645 roughly a one-sided 95% bound. The ranking gets noisier: the SE is estimated from K numbers, and most of the spread between folds is difficulty every trial shares. |
 
 The fold sizes depend on the data. On the evaluator tests' 4 strata (28
 rows, 3 folds), `random` and `stratified_by_group` give 10/9/9 and `grouped`
@@ -381,16 +390,26 @@ gives 20/5/3. `WeightedMean` and `Mean` agree only on equal folds.
 `LowerBound` ranks differently even on equal folds, because each trial's SE
 differs.
 
-- **SE:** the Nadeau–Bengio corrected formula, `s · sqrt(1/K + n_val/n_train)`.
-  The naive `s/√K` is too small, because the folds share most of their
-  training rows. The correction was derived for random splits; applying it to
-  K-fold is the usual approximation. With unequal folds (decided 2026-09-24):
-  `s` is the unweighted std of the fold scores (ddof=1), and `n_val/n_train`
-  is the mean validation size over the mean training size. Every completed
-  trial records its SE, whatever the aggregation.
-- **Pruning** sees `aggregation.running(...)` after each fold. It equals
-  `aggregate` except in `LowerBound`, which reports the weighted mean: an SE
-  from 1–2 folds is too unstable to prune on.
+- **SE:** the Nadeau–Bengio correction in its K-fold form (Bouckaert & Frank,
+  2004), `s · sqrt(1/K + 1/(K−1))`, `s` the unweighted std of the fold scores
+  (ddof=1). The naive `s/√K` is too small, because the folds share most of
+  their training rows. `n_val/n_train = 1/(K−1)` is exact when every row is
+  validated once (`random`, `grouped`; a test pins it for each method). Under
+  `stratified_by_group`, rows alone in their stratum are never validated
+  (`StratifiedFolds`' docstring), so the true ratio is lower and the SE comes
+  out slightly large, i.e. conservative: measured, 20% singletons at K=5 give
+  0.19 against 0.25, an SE 7% too large. That is small next to the SE's own
+  sampling error (`s` from K−1 = 4 degrees of freedom: about 35%), so exact
+  training sizes weren't worth a third input on every aggregation (decided
+  2026-09-25; it replaced `FoldScores.training_sizes`). Under `LowerBound`
+  the SE is the unweighted mean's, an approximation when fold sizes differ.
+  Every completed trial records its SE, whatever the aggregation.
+- **Pruning** sees the size-weighted mean of the folds so far, whatever the
+  aggregation (revised 2026-09-25; a `running` method was removed). It is
+  what `LowerBound` needs anyway: no SE exists after fold 0, and one from 2
+  folds is too unstable to prune on. Under `Mean` the pruner sees the
+  weighted rather than the plain partial mean: the same scale, and every
+  trial is compared on identical folds (D3).
 - **Rejected weightings:** by each fold's own variance (this leans toward easy
   folds), and by neighborhoods per fold (this measures loss per neighborhood,
   a different target from the test-set metric).
@@ -417,7 +436,7 @@ class HyperparameterStudy:
         # self.optuna_study_ is kept for optuna.visualization
 
 @dataclass(frozen=True)
-class TrialRecord:  number, state, value, params, fold_scores, validation_sizes, std_error  # the last three None unless COMPLETE
+class TrialRecord:  number, state, value, params, fold_scores, fold_sizes, std_error  # the last three None unless COMPLETE
 
 @dataclass(frozen=True)
 class TuningResult: best_params, best_value, best_trial_number, trials, is_reproducible
@@ -801,27 +820,56 @@ review, then your approval.
   test). Its review: no bugs; the numpy-`X` limit and the leakage wording
   clarified in the docstring and §4.2; D15's "with `features` set" removed.
 
-- [ ] **2.3a Aggregation classes** (`aggregation.py` and its tests; §4.2.1, D5).
+- [x] **2.3a Aggregation classes** (`aggregation.py` and its tests; §4.2.1, D5).
+  *Revised in your review (2026-09-25):* an aggregation takes two plain
+  lists, `aggregate(scores, fold_sizes)`, computed by the evaluator, so it
+  knows nothing about the data. `FoldScores` (and its `training_sizes`) and
+  the `running` method were removed; `corrected_std_error(scores)` is a
+  public function. `_STRICT` moved to a private `_config.py`, shared by
+  `parameters.py` and `aggregation.py` without either depending on the
+  other. Pydantic dataclasses were kept over stdlib ones (your question):
+  measured, a stdlib `LowerBound` silently stores `z` = 0, −1, NaN, inf,
+  `"1"`, `True` and `None`, while pydantic rejects all of them with no
+  hand-written check; building one costs 0.42 µs against 0.12 µs, once per
+  study. The `Aggregation` base stays a plain `ABC` (your follow-up; the
+  comparison of the three base options is in §4.2.1).
   *Done when:*
-  - [ ] on unequal folds, `weighted_mean`, `mean` and `std_error` match hand-calculated values
-  - [ ] each class's `aggregate` matches them, `LowerBound(z=2)` included; `LowerBound.running` is the weighted mean
-  - [ ] `LowerBound` rejects `z` ≤ 0, NaN, inf, `"1"` and `True`
-  - [ ] `FoldScores` rejects no folds and sequences of unequal length; `std_error` raises `ValueError` for one fold (numpy would warn and return NaN)
-  - [ ] `FoldScores`, `Aggregation`, `WeightedMean`, `Mean` and `LowerBound` are exported from `hyperparameter_tuning`, and the package docstring lists `aggregation`
-  - [ ] suite, mypy and ruff pass
+  - [x] on 20/5/3 folds, `WeightedMean`, `Mean`, `LowerBound()`, `LowerBound(z=2)` and a custom median subclass return the hand values; `corrected_std_error` equals the hand SE
+  - [x] no folds and unequal lengths raise a clear `ValueError`; `corrected_std_error` raises for one fold (no numpy warning under `-W error`); numpy arrays score like lists; results are plain `float`s
+  - [x] `LowerBound` rejects `z` ≤ 0, NaN, inf, `"1"` and `True`; the classes are frozen and compare by value; `Aggregation()` can't be instantiated
+  - [x] each `Splitter.cv` method gives the ratio `1/(K−1)` the SE assumes, and singleton strata make it conservative (tests)
+  - [x] mutation check (restored, checked with `cmp`): unweighted, the uncorrected SE, `ddof=0`, the length check, the empty check (and `not scores`), the K<2 check, `gt=0` dropped and `Mean` skipping the check: 9 of 9 caught
+  - [x] 28 aggregation tests (100 tuning tests) pass under `-W error`; the non-slow suite gives 1001 passed (973 + 28), 8 warnings; mypy (including the test file) and ruff are clean
+
+  *Review* (independent subagent; each finding reproduced first):
+
+  | # | finding | verdict | fix |
+  |---|---|---|---|
+  | 1 | `StratifiedFolds` never validates rows alone in their stratum, so the folds don't partition the rows and `1/(K−1)` overstates the ratio | confirmed (probe: 0.19 vs 0.25, an SE 7% too large) | kept `1/(K−1)`, the published K-fold form; the docstring and §4.2.1 state the conservative case; 2 tests pin it (§4.2.1 says why) |
+  | 2 | the evaluator accepts any `BaseCrossValidator`; `RepeatedKFold`/`ShuffleSplit` break the ratio, and one split breaks the SE | confirmed (probe) | 2.3b: `cv` documented as a `Splitter.cv` validator |
+  | 3 | `LowerBound` subtracts the unweighted mean's SE from the weighted mean | accepted | stated as an approximation in the docstring and §4.2.1 |
+  | 4 | "the pooled per-row score" is false for RMSE | confirmed (probe: 1.93 vs 2.71) | worded for per-row mean metrics |
+  | 5 | "1.645 a one-sided 95% bound" overstates | accepted | "roughly" |
+  | 6 | sizes ≤ 0 aren't rejected | rejected | the evaluator's sizes are `len(validation_index)` ≥ 1 |
+  | 7 | NaN scores propagate | rejected | the evaluator raises on a non-finite fold score first (§4.2) |
+  | 11 | `_config.py`'s "fail at the first trial" fits only `Parameter` | accepted | "surface only when a trial runs" |
+
+  Found before the review: `if not scores` raised "truth value is ambiguous"
+  on a numpy array; fixed with `len(scores) == 0`, and a test.
 - [ ] **2.3b Wire the classes into the evaluator.**
   *Done when:*
-  - [ ] `aggregation=` takes an `Aggregation`, and `z=` is gone. The `Literal` alias `Aggregation` in `evaluator.py`, its `TODO(2.3)` and the `"lower_bound"`/`z` docstring text are removed. The 2.1 `z` and aggregation-string tests are replaced by the class tests
+  - [ ] `aggregation=` takes an `Aggregation` (default `WeightedMean()`), and `z=` is gone. The `Literal` alias `Aggregation` in `evaluator.py`, its `TODO(2.3)` and the `"lower_bound"`/`z` docstring text are removed. The 2.1 `z` and aggregation-string tests are replaced by the class tests
   - [ ] a non-`Aggregation` (e.g. `"mean"`) is rejected in the constructor with a clear `TypeError`
-  - [ ] the running-mean report test passes for each class
-  - [ ] a completed trial's attrs equal the hand-built `FoldScores` values, written as lists (JSON-native, what sqlite storage returns), and `json.dumps` accepts them
+  - [ ] each fold appends its score and `len(validation_index)`; the pruner sees the size-weighted mean of the folds so far, for every aggregation (§4.2.1)
+  - [ ] the trial value is `aggregation.aggregate(scores, fold_sizes)`, for each class and a custom subclass (a median)
+  - [ ] a completed trial's attrs `fold_scores`, `fold_sizes` and `std_error` equal the hand-computed values, as lists (JSON-native, what sqlite storage returns), and `json.dumps` accepts them
   - [ ] a pruned trial has no fold attrs
-  - [ ] a custom subclass (a median) works as `aggregation=`
+  - [ ] the `cv` docstring says a `Splitter.cv` validator: the SE assumes K-fold (review finding 2)
   - [ ] suite, mypy and ruff pass
 - [ ] **2.4 Split methods.**
   *Done when:*
   - [ ] one parametrized test runs the evaluator with each `Splitter` method (`groups=None` for `random`) under `pytest.mark.filterwarnings("error")`
-  - [ ] under `grouped`, `validation_sizes` equals the validator's fold sizes (20/5/3 on the test data)
+  - [ ] under `grouped`, `fold_sizes` equals the validator's fold sizes (20/5/3 on the test data)
 
 *Revision of 2.3 and 2.4 (2026-09-24):* `z` moved onto a `LowerBound` class
 (your call). The done-when items that were only arithmetic identities were
@@ -896,8 +944,9 @@ the new lines to paste. There is no "Generated with" footer: the user removed it
 
 ```markdown
 **Status:** draft. Phase 1 (parameters) is in. Phase 2 (the evaluator) is
-mostly in: it now tunes the repo's own `modeling.BaseAgeGroupModel`s. Next:
-aggregation classes and the corrected standard error, then the split methods.
+mostly in: it now tunes the repo's own `modeling.BaseAgeGroupModel`s, and
+the aggregation classes are in. Next: wiring them into the evaluator, then
+the split methods.
 
 ## Summary
 Adds the `hyperparameter_tuning` package: Optuna tuning in three independent classes.
@@ -916,7 +965,10 @@ Adds the `hyperparameter_tuning` package: Optuna tuning in three independent cla
   fold refits them on the training rows and scores the validation rows. A
   lower-is-better metric is negated, so the study always maximizes. A NaN or
   inf fold score raises; the running mean is reported for pruning.
-  *In progress:* aggregation classes and the corrected standard error.
+- **Aggregations** (`aggregation.py`): `WeightedMean` (default), `Mean` and
+  `LowerBound(z)` combine the fold scores, `aggregate(scores, fold_sizes)`;
+  `corrected_std_error` is the K-fold Nadeau–Bengio SE. *In progress:*
+  wiring them into the evaluator.
 - **`HyperparameterStudy`** (`study.py`, not started): creates and runs the
   study and records the best result and every trial. Only completed trials
   can win.
@@ -940,7 +992,7 @@ unchanged. The design and its decisions are in
 ## Checklist
 - [x] Phase 0: plan doc
 - [x] Phase 1: parameters (37 tests)
-- [ ] Phase 2: evaluator (2.1–2.2d done; next: 2.3a, 2.3b, 2.4)
+- [ ] Phase 2: evaluator (2.1–2.3a done; next: 2.3b, 2.4)
 - [ ] Phase 3: study, including the LightGBM integration test
 - [ ] Phase 4: docs
 - [ ] Non-slow suite passes (956 after #6, plus the new tests)
@@ -1002,12 +1054,12 @@ current.
 | purpose | command |
 |---|---|
 | new tests | `uv run pytest tests/unit/test_hyperparameter_tuning_*.py -q` |
-| suite | `uv run pytest -m "not slow"` (**973** passed at `a5bbe14`; run it in the background) |
+| suite | `uv run pytest -m "not slow"` (**1001** passed after 2.3a; run it in the background, and don't edit src while it runs) |
 | types | `uv run mypy` (strict for this package), **plus** `uv run mypy <changed test files> src/age_group_prediction/hyperparameter_tuning`: tests aren't in `[tool.mypy].files`. `test_hyperparameter_tuning_parameters.py` has 4 deliberate wrong-type errors |
 | lint / format | `uv run ruff check <files>` and `uv run ruff format <files>`, on the changed files only, never on a glob that catches unrelated files. List the paths explicitly: zsh doesn't split a `$FILES` variable |
 | probes | `PYTHONPATH=src uv run --group test python -c "..."` (a bare `uv run python` may not find the package) |
 
-The non-slow run at `a5bbe14` gives 973 passed, 20 deselected and 8 warnings
+The non-slow run after 2.3a gives 1001 passed, 20 deselected and 8 warnings
 (about 85 s), all from existing tests. New tests should add none.
 
 ### 9.4 Pitfalls learned
@@ -1044,6 +1096,11 @@ The non-slow run at `a5bbe14` gives 973 passed, 20 deselected and 8 warnings
   `CategoricalParameter` converts only a list.
 - **An exposure of the wrong length would be re-sliced per fold silently,** so
   `evaluate` checks its shape up front.
+- **`StratifiedFolds` never validates a row alone in its stratum,** so its
+  folds don't partition the rows (2.3a). The corrected SE's `1/(K−1)` is
+  then conservative.
+- **`if not x` on a numpy array raises;** use `len(x) == 0` in code that
+  takes any sequence.
 
 ### 9.5 Phase 2 details (all resolved 2026-09-24)
 - **2.1, scorer and rows:** done. `check_scoring`, and the row helper is
@@ -1104,36 +1161,36 @@ to an error):
   the same rows differently, and the template stays unfitted.
 
 ### 9.8 Resume here (2026-09-25)
-**Next: 2.3a**, per §6 and §4.2.1: a new `hyperparameter_tuning/aggregation.py`
-with `FoldScores`, `Aggregation`, `WeightedMean`, `Mean` and `LowerBound(z)`,
-and its tests. Then 2.3b (wire them into the evaluator in place of the
-`aggregation` string and `z`, and record the fold attrs), then 2.4, which
-ends Phase 2 with its review. Then Phase 3 (the study) and Phase 4 (docs).
+**Next: 2.3b**, per §6 and §4.2.1: wire `aggregation.py` into the evaluator
+in place of the `aggregation` string and `z`, report the running weighted
+mean, and record the attrs `fold_scores`, `fold_sizes` and `std_error`. Then
+2.4, which ends Phase 2 with its review. Then Phase 3 (the study) and Phase 4
+(docs).
 
-Raise these when planning 2.3a:
-- `_STRICT` lives in `parameters.py`; `aggregation.py` would import it
-  package-internally (§3), or it moves to a shared place.
-- `FoldScores.training_sizes` is kept because it comes from `train_index`, so
-  it's right for any validator (the 2.3/2.4 review).
-- `std_error` raises for fewer than 2 folds, since numpy would warn and
-  return NaN.
+Raise these when planning 2.3b:
+- the pruning signal is the weighted mean for every aggregation (§4.2.1);
+  the evaluator can call `WeightedMean().aggregate(...)` on the folds so far
+- `std_error` needs ≥ 2 folds; the Splitter guarantees that, so the attr is
+  always defined for a completed trial
+- review finding 2: the SE assumes K-fold, so `cv` should be documented (or
+  checked) as a `Splitter.cv` validator
 
 **Prompt for a new session:**
 
 ```
 Resume the hyperparameter-tuning work on branch `feat/hyperparameter-tuning`
-(draft PR #5) at sub-task 2.3a.
+(draft PR #5) at sub-task 2.3b.
 
 Read first, in this order:
 1. docs/HYPERPARAMETER_TUNING_PLAN.md: the status line, §9 "Handoff notes"
-   (especially §9.8 "Resume here"), the decisions in §2 (D1–D17; D5 revised),
+   (especially §9.8 "Resume here"), the decisions in §2 (D1–D17; D5 revised 2026-09-25),
    §4.2 and §4.2.1 (the evaluator and the aggregation design), and §6
    sub-tasks 2.3a, 2.3b, 2.4 and Phases 3–4.
 2. The code: src/age_group_prediction/hyperparameter_tuning/ (parameters.py,
-   evaluator.py), modeling/base.py, scoring.py, utils.py, and the tests in
+   aggregation.py, evaluator.py), modeling/base.py, scoring.py, utils.py, and the tests in
    tests/unit/ (test_hyperparameter_tuning_*.py, test_modeling_contract.py).
 
-Task: 2.3a (aggregation classes), then 2.3b, then 2.4 (end of Phase 2), then
+Task: 2.3b (wire the aggregations into the evaluator), then 2.4 (end of Phase 2), then
 Phase 3 (study) and Phase 4 (docs).
 
 How I work:
@@ -1151,7 +1208,7 @@ How I work:
   the .py changes.
 
 Checks:
-- `uv run pytest -m "not slow"` (baseline: 973 passed, 8 warnings)
+- `uv run pytest -m "not slow"` (baseline: 1001 passed, 8 warnings)
 - `uv run mypy`, plus mypy on the changed test files
 - `uv run ruff check` and `uv run ruff format` on the changed files only
 ```

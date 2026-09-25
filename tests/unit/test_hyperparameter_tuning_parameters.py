@@ -281,5 +281,9 @@ def test_package_exports_the_public_names() -> None:
         "CategoricalParameter",
         "FloatParameter",
         "IntParameter",
+        "LowerBound",
+        "Mean",
         "Parameter",
+        "WeightedMean",
+        "corrected_std_error",
     }

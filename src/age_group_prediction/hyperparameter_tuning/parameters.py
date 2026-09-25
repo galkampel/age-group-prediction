@@ -28,8 +28,10 @@ from optuna.distributions import (
     IntDistribution,
 )
 from optuna.trial import BaseTrial
-from pydantic import BeforeValidator, ConfigDict
+from pydantic import BeforeValidator
 from pydantic.dataclasses import dataclass as pydantic_dataclass
+
+from ._config import _STRICT
 
 __all__ = [
     "CategoricalParameter",
@@ -37,10 +39,6 @@ __all__ = [
     "IntParameter",
     "Parameter",
 ]
-
-# Strict: no silent conversion, so "0.1" is not read as 0.1, nor 1 as True.
-# NaN and inf bounds would otherwise pass here and fail only at the first trial.
-_STRICT = ConfigDict(strict=True, allow_inf_nan=False)
 
 
 @pydantic_dataclass(frozen=True, config=_STRICT)

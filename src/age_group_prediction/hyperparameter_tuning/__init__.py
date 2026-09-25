@@ -5,6 +5,8 @@
 :mod:`~age_group_prediction.hyperparameter_tuning.evaluator`
     How one trial is scored: its parameters are set once, then every
     cross-validation fold is fitted and scored.
+:mod:`~age_group_prediction.hyperparameter_tuning.aggregation`
+    How a trial's fold scores are combined into one value.
 :mod:`~age_group_prediction.hyperparameter_tuning.study`
     How Optuna searches, and which trial won.
 
@@ -14,7 +16,14 @@ decisions are in ``docs/HYPERPARAMETER_TUNING_PLAN.md``.
 
 from __future__ import annotations
 
-from .evaluator import Aggregation, CVHyperparameterEvaluator
+from .aggregation import (
+    Aggregation,
+    LowerBound,
+    Mean,
+    WeightedMean,
+    corrected_std_error,
+)
+from .evaluator import CVHyperparameterEvaluator
 from .parameters import (
     CategoricalParameter,
     FloatParameter,
@@ -28,5 +37,9 @@ __all__ = [
     "CategoricalParameter",
     "FloatParameter",
     "IntParameter",
+    "LowerBound",
+    "Mean",
     "Parameter",
+    "WeightedMean",
+    "corrected_std_error",
 ]
