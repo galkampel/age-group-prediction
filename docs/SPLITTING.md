@@ -124,7 +124,8 @@ within groups. Canonical (min 4, median 10) is fine; the default config (10 of
 
 - **Draw the split once.** `train_test_split` re-draws on every call, so calling
   it again with a different `random_state` silently moves the test set. `cv` is
-  the half meant to be re-derived freely.
+  the half meant to be re-derived freely. It requires an int `random_state`,
+  so every `split()` call gives the same folds; tuning re-splits in every trial.
 - **Give `cv` the training rows only** — `groups_train`, never `groups`. Hand it
   the whole table and the test set leaks into tuning.
 - **Fold indices are positions inside `X_train`.** With a DataFrame the pandas

@@ -11,10 +11,9 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Literal, get_args
+from numbers import Integral
+from typing import Literal, get_args
 
-import numpy as np
-import pandas as pd
 from sklearn.model_selection import (
     BaseCrossValidator,
     GroupKFold,
@@ -23,21 +22,12 @@ from sklearn.model_selection import (
     ShuffleSplit,
 )
 
+from ..utils import DesignMatrix, Groups, Target, take_rows
 from .stratified import StratifiedFolds, StratifiedHoldout
 
 __all__ = ["DesignMatrix", "Groups", "Method", "Splitter", "Target"]
 
 Method = Literal["random", "stratified_by_group", "grouped"]
-
-type DesignMatrix = pd.DataFrame | np.ndarray  # the features, one row per unit
-type Target = pd.Series | pd.DataFrame | np.ndarray  # one column, or several
-type Groups = pd.Series | np.ndarray  # the split key, one label per row
-
-
-def _take[T](array: T, index: np.ndarray) -> T:
-    """The rows at ``index``: ``.iloc`` for pandas, plain indexing otherwise."""
-    rows: Any = array
-    return rows.iloc[index] if hasattr(array, "iloc") else rows[index]
 
 
 @dataclass(frozen=True)
@@ -100,14 +90,23 @@ class Splitter:
         # Arrays outermost gives scikit-learn's order. Unpacked into names
         # because a comprehension is variadic and would not typecheck.
         X_train, X_test, y_train, y_test, groups_train, groups_test = (
-            _take(array, index)
+            take_rows(array, index)
             for array in (X, y, groups)
             for index in (train_index, test_index)
         )
         return X_train, X_test, y_train, y_test, groups_train, groups_test
 
-    def cv(self, *, n_splits: int, random_state: int | None) -> BaseCrossValidator:
-        """The validator for the training rows. Give it ``groups_train``."""
+    def cv(self, *, n_splits: int, random_state: int) -> BaseCrossValidator:
+        """The validator for the training rows. Give it ``groups_train``.
+
+        ``random_state`` must be an int: every ``split()`` call then returns the
+        same folds, which tuning relies on when it re-splits in every trial.
+        ``None`` or a ``RandomState`` would reshuffle on each call.
+        """
+        if not isinstance(random_state, Integral):
+            raise TypeError(
+                f"random_state must be an int, got {type(random_state).__name__}"
+            )
         # Rows arrive sorted by group, so unshuffled folds would be grouped ones.
         if self.method == "random":
             return KFold(n_splits=n_splits, shuffle=True, random_state=random_state)

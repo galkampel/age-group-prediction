@@ -760,6 +760,9 @@ answer different questions and can be validated independently.
 - Tune forecasts for asymmetric under- versus over-capacity cost.
 - Monitor calibration by neighborhood, building size, and cohort.
 - Stress-test distribution shift and uncertain proxy mappings.
+- Before using real data, repeat the availability audit, define the decision
+  time and deployment split, validate target construction, and reassess
+  missingness, fairness, and privacy.
 
 ## 10. Exclusions and Extension Criteria
 

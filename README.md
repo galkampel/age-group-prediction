@@ -10,13 +10,6 @@ building-level DataFrame:
 
 - [Simplified model specification](docs/SIMPLIFIED_MODEL_PLAN.md) defines the
 	current behavior and formulas.
-- [Compact simulator migration plan](docs/COMPACT_SIMULATOR_MIGRATION_PLAN.md)
-  records the compact component migration and its validation gates.
-- [Marimo research workflow migration plan](docs/MARIMO_MIGRATION_PLAN.md)
-	records the completed Jupyter cutover, package setup, notebook structure,
-	validation gates, and model assignments.
-- [EDA and predictive modeling plan](docs/EDA_AND_PREDICTIVE_MODELING_PLAN.md)
-	defines the immediate EDA deliverable and modeling handoff.
 - [Modeling guide](docs/MODELING_GUIDE.md) explains the supported pipeline,
   public APIs, configuration, evidence, and invariants.
 - [MLflow experiments guide](docs/MLFLOW_EXPERIMENTS_GUIDE.md) covers scratch

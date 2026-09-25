@@ -282,6 +282,29 @@ def test_a_test_size_outside_the_unit_interval_is_rejected(test_size: float) -> 
         _split("stratified_by_group", 0, test_size=test_size)
 
 
+@pytest.mark.parametrize("method", METHODS)
+@pytest.mark.parametrize(
+    "random_state", [None, np.random.RandomState(0)], ids=["none", "random-state"]
+)
+def test_cv_requires_an_int_seed(method: str, random_state: object) -> None:
+    # Either would reshuffle on every split() call, and tuning re-splits per trial.
+    with pytest.raises(TypeError, match="random_state must be an int"):
+        Splitter(method).cv(n_splits=3, random_state=random_state)  # type: ignore[arg-type]
+
+
+@pytest.mark.parametrize("method", METHODS)
+def test_repeated_splits_give_identical_folds(method: str) -> None:
+    X, _, groups = _frame()
+    validator = Splitter(method).cv(n_splits=3, random_state=np.int64(0))
+    keywords = {} if method == "random" else {"groups": groups}
+
+    first, second = (
+        [val.tolist() for _, val in validator.split(X, **keywords)] for _ in range(2)
+    )
+
+    assert first == second
+
+
 def test_there_are_no_default_parameters() -> None:
     # Sizing and seeding are decisions, so the call site has to state them.
     X, y, groups = _frame()
