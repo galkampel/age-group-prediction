@@ -1,12 +1,11 @@
 # Plan: modular Optuna hyperparameter tuning
 
 **Branch:** `feat/hyperparameter-tuning` · draft PR #5 · **Status:** Phase 1
-committed (`cdc3f98`); 2.1 and 2.2 (`84e8f06`). PR #6 (`aee3e6a`) added
-`modeling.BaseAgeGroupModel` and `DirectCohortModel`. §9.7's open questions
-are settled (D11–D17). 2.2a–2.2c are committed (`81ae3c4`, `5a28c5f`,
-`aa15167`); 2.2d (the evaluator tunes `BaseAgeGroupModel`) and 1.6 (generic
-categorical choices) are done, not yet committed (non-slow suite: 973 passed). **Next:** 2.3a, 2.3b and 2.4.
-A new session should start with §9, "Handoff notes".
+committed (`cdc3f98`), 2.1–2.2 (`84e8f06`). PR #6 (`aee3e6a`) added
+`modeling.BaseAgeGroupModel` and `DirectCohortModel`. Committed through
+`a5bbe14`: 2.2a–2.2d (the evaluator tunes `BaseAgeGroupModel`) and 1.6
+(generic categorical choices). Non-slow suite: 973 passed, 8 warnings.
+**Next: 2.3a** (§9.8). A new session should start with §9, "Handoff notes".
 **Workflow:** each phase ends with an independent review, then stops for your
 approval. Nothing is committed without your approval.
 
@@ -966,34 +965,52 @@ current.
   Phase 1 dropped a `SearchSpace` class and switched to pydantic this way.
 - **Comments are concise and relevant, but keep the important "why".**
 - **Commits:** the user commits and pushes; never commit or push yourself. At
-  each phase stop, propose a commit message and the updated PR lines (§8). The
+  each stop, propose the commit commands and the updated PR text (§8). The
   user questioned the `Co-Authored-By` trailer, so ask before adding it.
+- **Plan mode per sub-task** (from 2.2b on). The user says "plan 2.x". Probe
+  the libraries, write the plan with a "done when" list, and ask open choices
+  with AskUserQuestion (with previews for code options). Implement only after
+  approval.
+- **Best practice, simple and generic.** When the user defers ("use best
+  practices, don't overcomplicate"), decide from measured evidence and say
+  why. Prefer generic over specific (1.6 removed the scalar-only choices), and
+  the repo's own classes over generic sklearn ones (`FeatureTransformer`).
+- **Every mechanism is questioned**, e.g. "why clone here?", "a reset
+  method?". Answer with measurements plus sklearn/Optuna practice, then pin
+  the reason in a comment and a test.
+- **The user reads the code in the IDE.** At each stop, give a file-by-file
+  summary of the .py changes. If a file "looks unchanged", it's usually a
+  stale editor buffer: "File: Revert File", and never save the old tab.
 
-### 9.2 Phase-end routine
-1. An independent review subagent reads the phase's diff and reports findings
-   only, with no edits.
-2. **Reproduce every finding before fixing it.** Reject wrong findings with
-   evidence: in Phase 1 one finding was wrong, and one suggested fix didn't
-   work.
-3. Run the full suite in the background (§9.3). Report the pass count against
+### 9.2 Routine for every sub-task
+1. Plan in plan mode (§9.1), and get approval.
+2. Implement.
+3. Checks (§9.3): ruff, mypy (including the changed test files), and the
+   changed tests with `-W error`.
+4. A **mutation check** for each claimed behavior: break it temporarily,
+   see a test fail, and restore the file (check with `cmp` against a backup).
+5. An independent review subagent reads the diff and reports findings only.
+6. **Reproduce every finding before fixing it.** Reject wrong findings with
+   evidence: several findings so far were wrong, or their fix didn't work.
+7. Run the non-slow suite in the background, and report the count against
    the expected total.
-4. Update this doc: tick the sub-tasks, add the review table (finding /
-   verdict / fix) and set the status line. Then stop for approval.
+8. Update this doc (tick, "done when", review table, status line, §8), then
+   stop with the commit commands.
 
 ### 9.3 Commands
 
 | purpose | command |
 |---|---|
 | new tests | `uv run pytest tests/unit/test_hyperparameter_tuning_*.py -q` |
-| suite | `uv run pytest -m "not slow"` (**956** passed after PR #6; run it in the background) |
-| types | `uv run mypy` (strict for this package) |
-| lint / format | `uv run ruff check <files>` and `uv run ruff format <files>`, on the changed files only, never on a glob that catches unrelated files |
+| suite | `uv run pytest -m "not slow"` (**973** passed at `a5bbe14`; run it in the background) |
+| types | `uv run mypy` (strict for this package), **plus** `uv run mypy <changed test files> src/age_group_prediction/hyperparameter_tuning`: tests aren't in `[tool.mypy].files`. `test_hyperparameter_tuning_parameters.py` has 4 deliberate wrong-type errors |
+| lint / format | `uv run ruff check <files>` and `uv run ruff format <files>`, on the changed files only, never on a glob that catches unrelated files. List the paths explicitly: zsh doesn't split a `$FILES` variable |
 | probes | `PYTHONPATH=src uv run --group test python -c "..."` (a bare `uv run python` may not find the package) |
 
-The baseline non-slow run gives 956 passed, 20 deselected and 8 warnings
-(about 95 s), all from existing tests. New tests should add none.
+The non-slow run at `a5bbe14` gives 973 passed, 20 deselected and 8 warnings
+(about 85 s), all from existing tests. New tests should add none.
 
-### 9.4 Pitfalls learned in Phase 1
+### 9.4 Pitfalls learned
 - **Pydantic wraps only `ValueError`** in its `ValidationError`, so validators
   must raise `ValueError`, not `TypeError`. Ruff's TRY004 rule then flags a
   `raise ValueError` inside an `isinstance` check; collect the bad items first,
@@ -1007,6 +1024,26 @@ The baseline non-slow run gives 956 passed, 20 deselected and 8 warnings
 - **Optuna's error messages don't name the parameter.** `parameters.py`
   prefixes them with `parameter '<name>': ...`. Pydantic type errors name the
   class and argument instead.
+- **mypy's blind spots here:** pandas has no stubs, so mypy accepts a
+  `DesignMatrix` where a `pd.DataFrame` is expected, and `sklearn.base.clone`
+  returns `Any`. Neither is type-checked, so runtime checks (`isinstance`)
+  guard the evaluator's settings.
+- **`BaseAgeGroupModel.__subclasses__()` also returns test stand-ins,** so
+  filter by package. An empty `parametrize` list makes pytest skip, not fail,
+  so keep a guard test.
+- **sklearn's parameter checks:** only `do_not_raise_errors_in_init_or_set_params`,
+  `parameters_default_constructible`, `no_attributes_set_in_init` and
+  `set_params` catch the contract breaches tried (2.2c).
+- **`fit` must replace all fitted state:** the evaluator reuses one copy per
+  trial across the folds. `test_modeling_contract.py` checks that a refit
+  equals a fresh fit.
+- **Optuna and non-scalar choices:** it warns twice per trial. Its sqlite
+  storage returns tuples as lists, and rejects `np.int64` user attrs as not
+  JSON-serializable, so attrs must be plain Python numbers (2.3b).
+- **Lax pydantic tuples accept sets and generators,** whose order can vary;
+  `CategoricalParameter` converts only a list.
+- **An exposure of the wrong length would be re-sliced per fold silently,** so
+  `evaluate` checks its shape up front.
 
 ### 9.5 Phase 2 details (all resolved 2026-09-24)
 - **2.1, scorer and rows:** done. `check_scoring`, and the row helper is
@@ -1065,3 +1102,56 @@ to an error):
   because mypy doesn't check that call.
 - Two `clone(FeatureTransformer)`s fitted on different halves standardize
   the same rows differently, and the template stays unfitted.
+
+### 9.8 Resume here (2026-09-25)
+**Next: 2.3a**, per §6 and §4.2.1: a new `hyperparameter_tuning/aggregation.py`
+with `FoldScores`, `Aggregation`, `WeightedMean`, `Mean` and `LowerBound(z)`,
+and its tests. Then 2.3b (wire them into the evaluator in place of the
+`aggregation` string and `z`, and record the fold attrs), then 2.4, which
+ends Phase 2 with its review. Then Phase 3 (the study) and Phase 4 (docs).
+
+Raise these when planning 2.3a:
+- `_STRICT` lives in `parameters.py`; `aggregation.py` would import it
+  package-internally (§3), or it moves to a shared place.
+- `FoldScores.training_sizes` is kept because it comes from `train_index`, so
+  it's right for any validator (the 2.3/2.4 review).
+- `std_error` raises for fewer than 2 folds, since numpy would warn and
+  return NaN.
+
+**Prompt for a new session:**
+
+```
+Resume the hyperparameter-tuning work on branch `feat/hyperparameter-tuning`
+(draft PR #5) at sub-task 2.3a.
+
+Read first, in this order:
+1. docs/HYPERPARAMETER_TUNING_PLAN.md: the status line, §9 "Handoff notes"
+   (especially §9.8 "Resume here"), the decisions in §2 (D1–D17; D5 revised),
+   §4.2 and §4.2.1 (the evaluator and the aggregation design), and §6
+   sub-tasks 2.3a, 2.3b, 2.4 and Phases 3–4.
+2. The code: src/age_group_prediction/hyperparameter_tuning/ (parameters.py,
+   evaluator.py), modeling/base.py, scoring.py, utils.py, and the tests in
+   tests/unit/ (test_hyperparameter_tuning_*.py, test_modeling_contract.py).
+
+Task: 2.3a (aggregation classes), then 2.3b, then 2.4 (end of Phase 2), then
+Phase 3 (study) and Phase 4 (docs).
+
+How I work:
+- Start each sub-task in plan mode: probe the libraries, write the plan with a
+  "done when" list, and ask me open choices. Stop after every sub-task for my
+  approval.
+- Before each stop, run a mutation check and an independent review subagent;
+  reproduce each finding, then fix it or reject it with evidence.
+- Justify every class, field and mechanism with measured evidence; drop what
+  isn't needed. Prefer generic, simple, best-practice solutions.
+- scikit-learn conventions: settings in the constructor, data as method
+  arguments, named methods, informative names, shared helpers in utils.py.
+- Concise comments that keep the important "why". Keep the docs current.
+- Never commit or push; give me the commands, and a file-by-file summary of
+  the .py changes.
+
+Checks:
+- `uv run pytest -m "not slow"` (baseline: 973 passed, 8 warnings)
+- `uv run mypy`, plus mypy on the changed test files
+- `uv run ruff check` and `uv run ruff format` on the changed files only
+```
