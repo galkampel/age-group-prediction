@@ -87,14 +87,6 @@ def test_each_aggregation_matches_the_hand_value(
 
 
 @pytest.mark.parametrize("aggregation", [WeightedMean(), Mean(), LowerBound()])
-def test_numpy_arrays_score_like_lists(aggregation: Aggregation) -> None:
-    # Outside the typed contract (Sequence), but it works: len() and numpy.
-    scores, sizes = np.array(SCORES), np.array(FOLD_SIZES)
-    arrays = aggregation.aggregate(scores, sizes)  # type: ignore[arg-type]
-    assert arrays == aggregation.aggregate(SCORES, FOLD_SIZES)
-
-
-@pytest.mark.parametrize("aggregation", [WeightedMean(), Mean(), LowerBound()])
 def test_no_folds_are_rejected(aggregation: Aggregation) -> None:
     with pytest.raises(ValueError, match="at least one fold"):
         aggregation.aggregate([], [])

@@ -67,7 +67,7 @@ def _check_folds(scores: Sequence[float], fold_sizes: Sequence[int]) -> None:
             "scores and fold_sizes must have equal lengths, "
             f"got {len(scores)} and {len(fold_sizes)}"
         )
-    if len(scores) == 0:  # not `not scores`: ambiguous for a numpy array
+    if len(scores) == 0:
         raise ValueError("at least one fold is required")
 
 

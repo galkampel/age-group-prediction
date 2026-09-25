@@ -38,7 +38,7 @@ from age_group_prediction.hyperparameter_tuning import (
 )
 from age_group_prediction.modeling import BaseAgeGroupModel, DirectCohortModel
 from age_group_prediction.scoring import POISSON_DEVIANCE, Metric
-from age_group_prediction.splitting import Splitter
+from age_group_prediction.splitting import Method, Splitter
 
 PARAMETERS = [FloatParameter("alpha", 0.1, 10.0, log=True)]
 
@@ -79,8 +79,9 @@ class _RecordingModel(BaseAgeGroupModel):
 
 
 class _RecordingTransformer(FeatureTransformer):
-    # Replaces fit and transform wholesale; only these two are called.
     """Records the row ids and targets at each fit; stamps rows with that fit's number."""
+
+    # Replaces fit and transform wholesale; only these two are called.
 
     fits: ClassVar[list[tuple[list[int], list[float]]]] = []
 
@@ -521,3 +522,23 @@ def test_one_evaluator_scores_several_datasets() -> None:
     for y in (Y, np.sqrt(Y)):
         fresh = _evaluator().evaluate(trial, X, y, GROUPS)
         assert shared.evaluate(trial, X, y, GROUPS) == fresh
+
+
+@pytest.mark.filterwarnings("error")
+@pytest.mark.parametrize("method", ["random", "stratified_by_group", "grouped"])
+def test_each_split_method_scores_its_own_folds(method: Method) -> None:
+    groups = None if method == "random" else GROUPS  # KFold warns if given groups
+    cv = Splitter(method).cv(n_splits=3, random_state=0)
+    trial = FixedTrial({"alpha": 1.0})
+
+    _evaluator(cv=cv, metric=_mean_of_y()).evaluate(trial, X, Y, groups)
+
+    # The trial value is the same for every method here (the weighted mean of
+    # fold means over all rows), so compare the folds themselves.
+    folds = list(cv.split(X, Y, groups))
+    assert trial.user_attrs["fold_sizes"] == [len(v) for _, v in folds]
+    assert trial.user_attrs["fold_scores"] == pytest.approx(
+        [float(np.mean(Y[v])) for _, v in folds]
+    )
+    if method == "grouped":
+        assert trial.user_attrs["fold_sizes"] == [20, 5, 3]  # unequal folds

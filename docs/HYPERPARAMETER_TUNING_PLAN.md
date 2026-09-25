@@ -1,10 +1,10 @@
 # Plan: modular Optuna hyperparameter tuning
 
 **Branch:** `feat/hyperparameter-tuning` · draft PR #5.
-**Status:** Phase 1 (parameters) and 2.1–2.3c (evaluator, aggregations) are
-done; the last commit is 2.3b (`9f9ce2e`), and 2.3c awaits commit.
-Non-slow suite: 1002 passed, 8 warnings. **Next: 2.4**, then Phase 3 (study)
-and Phase 4 (docs).
+**Status:** Phases 1 (parameters) and 2 (evaluator, aggregations) are done;
+2.3c is committed (`e756667`), and 2.4 with the Phase 2 review fixes awaits
+commit. Non-slow suite: 1002 passed, 8 warnings. **Next: Phase 3** (study),
+then Phase 4 (docs).
 The history of each step is in the git log and the commit messages.
 **To resume:** read this doc (§2 decisions, §4 design, §6 remaining work, §7
 working notes), then the package code and its tests; start the next sub-task
@@ -256,11 +256,15 @@ derived inside the model; fixed settings live on the template; the model's
 Every sub-task: plan mode first (probe, a plan with a "done when" list, open
 choices asked), then §7's routine, then a stop for approval.
 
-- [ ] **2.4 Split methods.** *Done when:*
-  - [ ] one parametrized test runs the evaluator with each `Splitter` method (`groups=None` for `random`) under `pytest.mark.filterwarnings("error")`
-  - [ ] under `grouped`, the `fold_sizes` attr equals the validator's fold sizes (20/5/3 on the test data)
-
-  **Then the Phase 2 review** (the whole evaluator phase), and your approval.
+- [x] **2.4 Split methods:** `test_each_split_method_scores_its_own_folds`
+  runs the evaluator with each `Splitter` method under
+  `filterwarnings("error")` and compares each fold's size and score with the
+  validator's folds (`grouped`: 20/5/3). The trial value alone can't tell the
+  methods apart here: over folds that cover every row, the weighted mean of
+  fold means is the overall mean. **Phase 2 review:** no correctness bugs.
+  Fixed: `evaluate`'s `y` is typed as one target (`pd.Series | np.ndarray`;
+  a two-column `y` failed inside LightGBM), the package docstring, a numpy
+  test on a path nothing uses, and a misplaced comment.
 - [ ] **3.1 Study constructor and defaults.** *Done when:* the default sampler is a seeded multivariate TPE and the default pruner `NopPruner`; invalid `n_trials`, timeout or `n_jobs` combinations are rejected.
 - [ ] **3.2 `optimize` and the best trial.** *Done when:* the same seed gives an identical `TuningResult`; a pruned trial never wins; ties go to the lowest number; no completed trial raises `RuntimeError`; `initial_params` run first.
 - [ ] **3.3 Records and results.** *Done when:* each `TrialRecord` carries the fold scores and sizes and the derived SE; `to_dict()` round-trips through `json`; `is_reproducible` is False with a timeout or `n_jobs > 1`.
@@ -327,9 +331,8 @@ stop, update the status line and checklist, and give the user the lines to
 paste. No "Generated with" footer: the user removed it.
 
 ```markdown
-**Status:** draft. Phase 1 (parameters) and most of Phase 2 (the evaluator
-and fold aggregations) are in. Next: the split-methods test and the Phase 2
-review, then the study.
+**Status:** draft. Phases 1 (parameters) and 2 (the evaluator and fold
+aggregations) are in. Next: the study.
 
 ## Summary
 Adds the `hyperparameter_tuning` package: Optuna tuning in independent parts.
@@ -362,7 +365,7 @@ unchanged. Design and decisions: `docs/HYPERPARAMETER_TUNING_PLAN.md`.
 
 ## Checklist
 - [x] Phase 1: parameters
-- [ ] Phase 2: evaluator (2.1–2.3c done; next: 2.4)
+- [x] Phase 2: evaluator and aggregations
 - [ ] Phase 3: study, including the integration test
 - [ ] Phase 4: docs
 - [ ] Non-slow suite passes

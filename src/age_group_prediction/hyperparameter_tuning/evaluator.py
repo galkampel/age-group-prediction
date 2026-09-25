@@ -14,6 +14,7 @@ from typing import Annotated, Any
 
 import numpy as np
 import optuna
+import pandas as pd
 from optuna.trial import BaseTrial
 from pydantic import AfterValidator, ConfigDict, Field, InstanceOf
 from pydantic.dataclasses import dataclass as pydantic_dataclass
@@ -23,7 +24,7 @@ from sklearn.model_selection import BaseCrossValidator
 from ..feature_engineering import FeatureTransformer
 from ..modeling import BaseAgeGroupModel
 from ..scoring import Metric
-from ..utils import DesignMatrix, Exposure, Groups, Target, take_rows
+from ..utils import DesignMatrix, Exposure, Groups, take_rows
 from .aggregation import Aggregation, WeightedMean
 from .parameters import Parameter
 
@@ -79,7 +80,7 @@ class CVHyperparameterEvaluator:
         self,
         trial: BaseTrial,
         X: DesignMatrix,
-        y: Target,
+        y: pd.Series | np.ndarray,  # one target, as BaseAgeGroupModel.fit takes
         groups: Groups | None = None,
         *,
         exposure: Exposure | None = None,
