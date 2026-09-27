@@ -143,6 +143,21 @@ def test_it_works_on_numpy_arrays_too() -> None:
     assert set(groups_test) <= set(groups_train)
 
 
+def test_random_takes_groups_none_and_returns_none_pieces() -> None:
+    # random never reads groups, and its validator warns if given them, so a
+    # caller without groups must not have to invent some.
+    X, y, _ = _frame()
+    X_train, X_test, y_train, y_test, groups_train, groups_test = Splitter(
+        "random"
+    ).train_test_split(X, y, None, test_size=0.25, random_state=0)
+
+    assert groups_train is None
+    assert groups_test is None
+    assert len(X_train) + len(X_test) == len(X)
+    assert list(X_train.index) == list(y_train.index)
+    assert list(X_test.index) == list(y_test.index)
+
+
 # --- The cross-validator ----------------------------------------------
 
 
@@ -230,6 +245,8 @@ def test_the_grouped_validator_keeps_whole_groups_out_of_each_fit_set() -> None:
 @pytest.mark.parametrize("method", METHODS)
 def test_the_documented_two_step_flow_scores_every_fold(method: str) -> None:
     X, y, groups = _frame(rows_per_group=6, n_groups=12)
+    # random reads no groups, and KFold warns if given them.
+    groups = None if method == "random" else groups
     splitter = Splitter(method)
 
     X_train, _, y_train, _, groups_train, _ = splitter.train_test_split(
@@ -265,7 +282,7 @@ def test_the_method_is_frozen() -> None:
 
 
 def test_an_unknown_method_is_rejected_at_construction() -> None:
-    # Otherwise it would fall through to the grouped branch silently.
+    # A config string is never type-checked, so the check is at runtime.
     with pytest.raises(ValueError, match="unknown method"):
         Splitter("temporal")  # type: ignore[arg-type]
 
@@ -280,6 +297,15 @@ def test_a_test_size_outside_the_unit_interval_is_rejected(test_size: float) -> 
     # Left to each holdout class, which already names the parameter.
     with pytest.raises(ValueError, match="test_size|should be"):
         _split("stratified_by_group", 0, test_size=test_size)
+
+
+@pytest.mark.parametrize("method", ["stratified_by_group", "grouped"])
+def test_the_group_aware_methods_reject_groups_none(method: str) -> None:
+    # One message for both: StratifiedHoldout raises sklearn's own wording.
+    X, y, _ = _frame()
+
+    with pytest.raises(ValueError, match="should not be None"):
+        Splitter(method).train_test_split(X, y, None, test_size=0.25, random_state=0)
 
 
 @pytest.mark.parametrize("method", METHODS)

@@ -11,9 +11,9 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from numbers import Integral
-from typing import Literal, get_args
+from typing import Literal, assert_never, get_args
 
+import numpy as np
 from sklearn.model_selection import (
     BaseCrossValidator,
     GroupKFold,
@@ -25,7 +25,7 @@ from sklearn.model_selection import (
 from ..utils import DesignMatrix, Groups, Target, take_rows
 from .stratified import StratifiedFolds, StratifiedHoldout
 
-__all__ = ["DesignMatrix", "Groups", "Method", "Splitter", "Target"]
+__all__ = ["Method", "Splitter"]
 
 Method = Literal["random", "stratified_by_group", "grouped"]
 
@@ -53,7 +53,8 @@ class Splitter:
     method: Method
 
     def __post_init__(self) -> None:
-        # An unknown method would otherwise fall through to the grouped branch.
+        # A method read from a config is never type-checked: fail here, not at
+        # the first split.
         if self.method not in get_args(Method):
             raise ValueError(
                 f"unknown method {self.method!r}; expected {list(get_args(Method))}"
@@ -63,15 +64,19 @@ class Splitter:
         self,
         X: DesignMatrix,
         y: Target,
-        groups: Groups,
+        groups: Groups | None,
         *,
         test_size: float,
         random_state: int | None,
-    ) -> tuple[DesignMatrix, DesignMatrix, Target, Target, Groups, Groups]:
+    ) -> tuple[
+        DesignMatrix, DesignMatrix, Target, Target, Groups | None, Groups | None
+    ]:
         """Split ``X``, ``y`` and ``groups``, as scikit-learn's function does.
 
         Returns two per array in scikit-learn's order; the groups come back
-        because :meth:`cv` needs ``groups_train``.
+        because :meth:`cv` needs ``groups_train``. ``groups`` may be ``None``
+        only for ``random``, which then returns ``None`` for both group pieces;
+        the other methods split by groups and raise.
         """
         # ShuffleSplit ignores groups and warns if given them.
         keys = None if self.method == "random" else groups
@@ -82,17 +87,20 @@ class Splitter:
             )
         elif self.method == "stratified_by_group":
             holdout = StratifiedHoldout(test_size=test_size, random_state=random_state)
-        else:
+        elif self.method == "grouped":
             holdout = GroupShuffleSplit(
                 n_splits=1, test_size=test_size, random_state=random_state
             )
+        else:
+            # mypy flags this call if a new Method has no branch above.
+            assert_never(self.method)
         train_index, test_index = next(holdout.split(X, groups=keys))
-        # Arrays outermost gives scikit-learn's order. Unpacked into names
-        # because a comprehension is variadic and would not typecheck.
-        X_train, X_test, y_train, y_test, groups_train, groups_test = (
-            take_rows(array, index)
-            for array in (X, y, groups)
-            for index in (train_index, test_index)
+        X_train, X_test = take_rows(X, train_index), take_rows(X, test_index)
+        y_train, y_test = take_rows(y, train_index), take_rows(y, test_index)
+        groups_train, groups_test = (
+            (None, None)
+            if groups is None
+            else (take_rows(groups, train_index), take_rows(groups, test_index))
         )
         return X_train, X_test, y_train, y_test, groups_train, groups_test
 
@@ -103,7 +111,8 @@ class Splitter:
         same folds, which tuning relies on when it re-splits in every trial.
         ``None`` or a ``RandomState`` would reshuffle on each call.
         """
-        if not isinstance(random_state, Integral):
+        # Not numbers.Integral: typeshed's int isn't one, so mypy skips the rest.
+        if not isinstance(random_state, (int, np.integer)):
             raise TypeError(
                 f"random_state must be an int, got {type(random_state).__name__}"
             )
@@ -112,4 +121,8 @@ class Splitter:
             return KFold(n_splits=n_splits, shuffle=True, random_state=random_state)
         if self.method == "stratified_by_group":
             return StratifiedFolds(n_splits=n_splits, random_state=random_state)
-        return GroupKFold(n_splits=n_splits, shuffle=True, random_state=random_state)
+        if self.method == "grouped":
+            return GroupKFold(
+                n_splits=n_splits, shuffle=True, random_state=random_state
+            )
+        assert_never(self.method)

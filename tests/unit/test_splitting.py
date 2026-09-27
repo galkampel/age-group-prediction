@@ -220,6 +220,20 @@ def test_a_single_fold_is_rejected_at_construction() -> None:
         StratifiedFolds(n_splits=1)
 
 
+def test_the_holdout_rejects_groups_none() -> None:
+    # Unchecked, np.unique(np.asarray(None)) is one singleton "stratum" that is
+    # skipped, and the holdout silently comes back empty.
+    with pytest.raises(ValueError, match="should not be None"):
+        next(StratifiedHoldout(test_size=0.2).split(_X(), groups=None))
+
+
+def test_the_folds_reject_groups_none() -> None:
+    # Unchecked, the same empty strata blame the data: "0 rows have a
+    # stratum-mate" points at the groups' values, not at the missing groups.
+    with pytest.raises(ValueError, match="should not be None"):
+        next(StratifiedFolds(n_splits=3).split(_X(), groups=None))
+
+
 def test_fewer_rows_with_a_stratum_mate_than_folds_is_rejected() -> None:
     # Two rows have a mate, so a third fold would be empty and score nan.
     groups = np.array(["A", "A", "B"])
