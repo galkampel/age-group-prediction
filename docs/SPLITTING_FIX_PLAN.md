@@ -10,7 +10,7 @@ Branch `fix/splitting` (off `feat/hyperparameter-tuning`; draft PR will target i
 
 **Contract chosen:** `groups=None` is legal exactly where the method ignores groups (`random` in `train_test_split`, returning `None` group pieces) and a clear `ValueError` everywhere else — sklearn's own wording, "The 'groups' parameter should not be None.", so all three methods fail uniformly (`grouped` already raises it via sklearn).
 
-**Status (2026-09-27):** Tasks 1-3 committed; Task 3b implemented, awaiting review; resume at Task 4.
+**Status (2026-09-27):** Tasks 1-3b committed; Task 4 implemented, awaiting review; branch complete after this commit.
 
 **Workflow:** per sub-task: implement → run that sub-task's gates → **STOP for your validation; you commit**. I never commit. Old `data_splitting.py` is out of scope.
 
