@@ -16,14 +16,20 @@ from sklearn.model_selection import BaseCrossValidator
 __all__ = ["StratifiedFolds", "StratifiedHoldout"]
 
 
-def _strata(groups: np.ndarray, rng: np.random.Generator) -> Iterator[np.ndarray]:
+def _strata(groups: ArrayLike | None, rng: np.random.Generator) -> Iterator[np.ndarray]:
     """Yield each stratum's row positions, shuffled, one block per stratum.
 
     Skipping singletons is how they reach every fit set: a position never
     yielded is validated nowhere, and ``split`` fits on the complement.
     """
-    for label in np.unique(groups):
-        positions = np.flatnonzero(groups == label)
+    if groups is None:
+        # np.asarray(None) is one singleton "stratum", skipped below, and the
+        # holdout would silently come back empty. sklearn's group splitters
+        # raise this same message.
+        raise ValueError("The 'groups' parameter should not be None.")
+    labels = np.asarray(groups)
+    for label in np.unique(labels):
+        positions = np.flatnonzero(labels == label)
         if positions.size > 1:
             yield rng.permutation(positions)
 
@@ -62,9 +68,7 @@ class StratifiedHoldout(BaseCrossValidator):
                     1, min(round(positions.size * self.test_size), positions.size - 1)
                 )
             ]
-            for positions in _strata(
-                np.asarray(groups), np.random.default_rng(self.random_state)
-            )
+            for positions in _strata(groups, np.random.default_rng(self.random_state))
         ]
         return [np.concatenate(held) if held else np.empty(0, dtype=int)]
 
@@ -103,7 +107,7 @@ class StratifiedFolds(BaseCrossValidator):
         singletons stay in training.
         """
         rng = np.random.default_rng(self.random_state)
-        shuffled = list(_strata(np.asarray(groups), rng))
+        shuffled = list(_strata(groups, rng))
         ordered = np.concatenate(shuffled) if shuffled else np.empty(0, dtype=int)
         if ordered.size < self.n_splits:
             # Fold f takes a row only when f < size, so a shortfall is an empty
