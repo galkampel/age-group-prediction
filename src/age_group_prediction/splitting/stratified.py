@@ -34,6 +34,14 @@ def _strata(groups: ArrayLike | None, rng: np.random.Generator) -> Iterator[np.n
             yield rng.permutation(positions)
 
 
+def _held_out_count(size: int, test_size: float) -> int:
+    """How many of a stratum's ``size`` rows to hold out: at least one, never all.
+
+    Needs ``size >= 2``, which ``_strata`` guarantees by skipping singletons.
+    """
+    return max(1, min(round(size * test_size), size - 1))
+
+
 class StratifiedHoldout(BaseCrossValidator):
     """One split holding out part of every stratum.
 
@@ -46,7 +54,7 @@ class StratifiedHoldout(BaseCrossValidator):
         self, test_size: float = 0.2, *, random_state: int | None = None
     ) -> None:
         if not 0 < test_size < 1:
-            # Outside the interval the clamp below still returns a plausible
+            # Outside the interval _held_out_count still returns a plausible
             # split, of the wrong size.
             raise ValueError(f"test_size must lie in (0, 1), got {test_size}")
         self.test_size = test_size
@@ -63,11 +71,7 @@ class StratifiedHoldout(BaseCrossValidator):
     ) -> list[np.ndarray]:
         """The held-out rows; ``split`` keeps the complement to train on."""
         held = [
-            positions[
-                : max(
-                    1, min(round(positions.size * self.test_size), positions.size - 1)
-                )
-            ]
+            positions[: _held_out_count(positions.size, self.test_size)]
             for positions in _strata(groups, np.random.default_rng(self.random_state))
         ]
         return [np.concatenate(held) if held else np.empty(0, dtype=int)]

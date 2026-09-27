@@ -25,7 +25,7 @@ from sklearn.model_selection import (
 from ..utils import DesignMatrix, Groups, Target, take_rows
 from .stratified import StratifiedFolds, StratifiedHoldout
 
-__all__ = ["DesignMatrix", "Groups", "Method", "Splitter", "Target"]
+__all__ = ["Method", "Splitter"]
 
 Method = Literal["random", "stratified_by_group", "grouped"]
 
