@@ -10,7 +10,7 @@ Branch `fix/splitting` (off `feat/hyperparameter-tuning`; draft PR will target i
 
 **Contract chosen:** `groups=None` is legal exactly where the method ignores groups (`random` in `train_test_split`, returning `None` group pieces) and a clear `ValueError` everywhere else — sklearn's own wording, "The 'groups' parameter should not be None.", so all three methods fail uniformly (`grouped` already raises it via sklearn).
 
-**Status (2026-09-27):** Tasks 1-2 committed; Task 3 implemented, awaiting review; resume at Task 4.
+**Status (2026-09-27):** Tasks 1-3 committed; Task 3b implemented, awaiting review; resume at Task 4.
 
 **Workflow:** per sub-task: implement → run that sub-task's gates → **STOP for your validation; you commit**. I never commit. Old `data_splitting.py` is out of scope.
 
@@ -75,6 +75,22 @@ Deliberately left alone (surgical): the method dispatch in `train_test_split`/`c
 No new tests — the existing suites prove no behavior change. ruff · `uv run mypy` · `uv run pytest tests/unit/test_splitting.py tests/unit/test_splitters.py -W error`
 
 **STOP — validate 3.1–3.3; you commit.**
+
+---
+
+## Task 3b — refactor(splitting): exhaustive method dispatch
+
+Added after Task 3, to answer a user question. `__post_init__` rejects unknown method *values* at runtime, because config strings are never type-checked. But the bare `else` in both dispatches meant a new `Method` literal with a forgotten branch passed `__post_init__` and silently ran the `grouped` split.
+
+### 3b.1 Code
+[splitters.py](../src/age_group_prediction/splitting/splitters.py): each method gets an explicit branch in `train_test_split` and `cv`, and each dispatch ends with `typing.assert_never(self.method)`. mypy then proves the dispatch covers every `Method`. The stale "fall through to the grouped branch" comments in `__post_init__` and its test are reworded.
+
+Found during the mutation check: mypy had never type-checked the body of `cv`. Typeshed does not declare `int` a subclass of `numbers.Integral`, so mypy reads `not isinstance(random_state, Integral)` as always true, treats the rest of `cv` as unreachable, and skips it. A deliberate type error placed there went unreported. The guard now checks `(int, np.integer)`, which accepts and rejects exactly the same values: `int`, `bool`, `np.int64` and `np.int32` pass; `None`, `RandomState` and `float` fail.
+
+### 3b.2 Gates
+ruff · `uv run mypy` · both splitting test files under `-W error`. Mutation check: adding `"temporal"` to `Method` must make mypy flag `assert_never` in both methods. No new unit test, because the static check is the guarantee.
+
+**STOP — validate 3b.1–3b.2; you commit.**
 
 ---
 

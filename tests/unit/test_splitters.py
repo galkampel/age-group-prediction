@@ -282,7 +282,7 @@ def test_the_method_is_frozen() -> None:
 
 
 def test_an_unknown_method_is_rejected_at_construction() -> None:
-    # Otherwise it would fall through to the grouped branch silently.
+    # A config string is never type-checked, so the check is at runtime.
     with pytest.raises(ValueError, match="unknown method"):
         Splitter("temporal")  # type: ignore[arg-type]
 
