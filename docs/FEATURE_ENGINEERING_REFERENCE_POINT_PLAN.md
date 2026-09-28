@@ -34,10 +34,11 @@ This plan is saved as `docs/FEATURE_ENGINEERING_REFERENCE_POINT_PLAN.md`, writte
 
 Added 2026-09-28, after Task 1's baseline gate failed before any edit. Under `-W error`, `test_a_log_after_another_transform_is_caught_by_the_output_check` failed. It fitted `Center() → Log()`, and sklearn's `check_inverse` warned about the resulting `nan` before the finite-output check ran. The user ruled that a log must be rejected only where an earlier step makes negative values certain, and left to the data otherwise.
 
-- **Rule:** each transform declares, as `ClassVar`s on `_TransformBase`, `negative_output` (`"always"` for `Center` and `Standardize`; `"as_input"` for `DomainScale`, `Log1p`; `"depends_on_data"` for `DomainMinMax`, `Log`, `RelativeSaturation`; `"never"` for `Quadratic`, `OneHot`) and `needs_nonnegative_input` (`Log`, `Log1p`, `RelativeSaturation`). Both are class-level, so dumped specs are unchanged.
+- **Rule:** each transform declares, as `ClassVar`s on `_TransformBase`, `negative_output` (`"always"` for `Center`, `Standardize` and `RelativeSaturation`, whose output is negative wherever `x < mean(x)`; `"as_input"` for `DomainScale`, `Log1p`; `"depends_on_data"` for `DomainMinMax`, `Log`; `"never"` for `Quadratic`, `OneHot`) and `needs_nonnegative_input` (`Log`, `Log1p`, `RelativeSaturation`). Both are class-level, so dumped specs are unchanged.
 - **Where:** `ColumnPlan._check_input_signs` (`transformer.py`) walks the chain and rejects a step needing non-negative input once negatives are certain. `"always"` makes them certain, `"as_input"` keeps that, `"depends_on_data"` and `"never"` clear it. Nothing else changes at runtime: a data-dependent bad value still fails at fit or transform, by the step's own input check (`RelativeSaturation`) or the finite-output check. The rule is on sign, so `Center → Log1p` is rejected even though `log1p` survives values in (-1, 0): a log of a mean-zero column is a mistake either way.
-- **Tests:** rejection cases `center-log`, `standardize-log`, `standardize-log1p`, `center-relative_saturation`, plus `Center → DomainScale → Log`; accepted chains `DomainMinMax → Log`, `Log → Log`, `Center → DomainMinMax(-10, 10) → Log`, `Center → Quadratic → Log1p`, `Log → Center`; a bad value under `DomainMinMax → Log` fails with "non-finite"; and `_SIGN_BEHAVIOR` in `test_feature_transforms.py` pins every member's two facts, so a new transform must be classified.
+- **Tests:** rejection cases `center-log`, `standardize-log`, `standardize-log1p`, `center-relative_saturation`, `relative_saturation-log`, plus `Center → DomainScale → Log`; accepted chains `DomainMinMax → Log`, `Log → Log`, `Center → DomainMinMax(-10, 10) → Log`, `Center → Quadratic → Log1p`, `Log → Center`; a bad value under `DomainMinMax → Log` fails with "non-finite"; and `_SIGN_BEHAVIOR` in `test_feature_transforms.py` pins every member's two facts, so a new transform must be classified.
 - **Docs:** the `Log` docstring no longer claims a fit-time check that never existed, and `FEATURE_TRANSFORMATIONS.md` §8 lists the rule.
+- **Corrected in review (2026-09-28):** `RelativeSaturation` was first classified `"depends_on_data"`; its output is negative wherever `x < mean(x)`, which some value always is, so it is `"always"`, and `RelativeSaturation → Log` is rejected at declaration.
 
 ## Task 1 — refactor(feature_engineering): explicit loops and clearer names in the builders
 
@@ -144,6 +145,19 @@ In [docs/FEATURE_TRANSFORMATIONS.md](docs/FEATURE_TRANSFORMATIONS.md), re-read i
 - Wherever the doc names `RelativeSaturation`'s estimator, use `Log1pRatioScaler`. (Task 2 added the only such mention, in §8.5.2.)
 
 In [docs/MODULE_REFERENCE.md:72](docs/MODULE_REFERENCE.md#L72), add `CenterByReferencePoint` to the API list.
+
+**As built (2026-09-28).**
+- **The SES reference point is 0.0 and is the true population mean.** `ses` is drawn from `N(0, 1)`, clipped symmetrically to ±2.5.
+- **The simulator's U-shape bottoms out exactly there.** The total-children log-mean has `0.05 · ses²` and no linear SES term (`simulation.toml` `ses_quadratic_coef`, `outcomes.py`).
+- **Household size is drawn from median age plus noise**, independently of SES, so the doc's r = −0.13 is sampling variation.
+- **Decision (user): a quadratic SES term is centered at the reference point.**
+  - Model A's `ses_sq` and GLM candidate 2's `ses_sq` are both `(CenterByReferencePoint(reference_point=0.0), Quadratic())`.
+  - The GLM base `ses` stays `Standardize()`, so candidate 2 remains a one-plan change. β1 on z reads as the slope at the reference point; β2 as the curvature per population SD².
+- **Measured over 20 runs of 60 neighborhoods:**
+  - A run's SES mean ranges from −0.25 to +0.26, and its SD from 0.82 to 1.14.
+  - corr(ses, ses²) ranges from −0.55 to +0.27, and corr(z, z²) from −0.39 to +0.35.
+  - So neither center decorrelates the columns, and the old "decorrelates" claim in §4.2 was dropped.
+- **§1 now says** a learned center is harmless for a linear column, while before squaring the center fixes the vertex.
 
 ## Final gate (after Task 4)
 

@@ -53,12 +53,13 @@ most of the choices below.
 
 | | What it changes | What it does not change |
 |---|---|---|
-| Centering ($x - c$) | The intercept, and every main effect that appears inside an interaction | The slope; and in B, nothing about the fit, since the intercept is unpenalized |
+| Centering ($x - c$) | The intercept, every main effect that appears inside an interaction, and, before squaring, where the vertex lies | The slope of a linear column; and in B, nothing about a linear column's fit, since the intercept is unpenalized |
 | Scaling ($x/s$) | The coefficient's unit, and hence how hard B's L2 penalty and C's priors shrink it | The shape of the fitted relationship |
 
 **Consequence:** a scale learned per fold changes the unit from fold to fold,
-while a center learned per fold is harmless. This is the main argument in
-Sections 4.1 and 4.2.
+while a center learned per fold is harmless for a linear column. This is the
+main argument in Sections 4.1 and 4.2. Before squaring, the center fixes the
+vertex, so a declared reference point is better there (Section 3.2).
 
 **Trees see only ordering.** For Model A, any strictly monotone per-feature
 transform (scaling, `log1p`) leaves the splits unchanged. Only these matter:
@@ -70,7 +71,8 @@ $s$ chosen from domain knowledge, keeps units the same across folds, cannot
 leak, and reads naturally ("per decade", "from no daycare to 8"). Choosing $s$
 near 2 SD follows Gelman (2008): a one-unit change is then comparable to
 switching a binary indicator, which is the scale the `Normal(0, 0.5)` priors
-were set for.
+were set for. In the package, `CenterByReferencePoint` fixes $c$, `DomainScale`
+fixes $s$, and `DomainMinMax` fixes both ends of a declared range.
 
 ---
 
@@ -112,7 +114,7 @@ All 8 numeric columns (`ses`, `avg_household_size`, `median_age`,
 | Z-scoring, min-max, fixed anchors | None: monotone, identical splits | **Not used.** Keep raw |
 | One-hot `school_status` (reference `none` dropped) | Required, because LightGBM needs numeric input. `none` is the row with both dummies at 0, so isolating it takes two splits. Dropping a reference is unnecessary for trees but harmless. | **Keep.** This is the only required transform. Alternatives: an ordinal code `none`=0 < `planned`=1 < `existing`=2, or native categorical support; with 3 levels the difference is negligible |
 | `log1p` daycares | None: monotone, so the partition of the training rows is identical. Only the thresholds move, which can change predictions for counts falling between observed values. | **Drop the `tree__daycare_log1p` candidate:** it can't be distinguished from the linear form |
-| `ses` squared | Adds a **non-monotone** column while keeping `ses`: $(\text{ses}-c)^2$ orders buildings by their distance from $c$, so one split isolates both tails where `ses` alone needs two. Useless if $c$ lies outside the data range, since $x^2$ is then monotone | **Keep as a candidate.** Center at the mean for robustness; with this SES it barely matters (Section 3.2) |
+| `ses` squared | Adds a **non-monotone** column while keeping `ses`: $(\text{ses}-c)^2$ orders buildings by their distance from $c$, so one split isolates both tails where `ses` alone needs two. Useless if $c$ lies outside the data range, since $x^2$ is then monotone | **Keep as a candidate.** Center at the SES reference point 0.0 (Section 3.2) |
 | SES B-spline | **Removes `ses`** and replaces it with 5 overlapping basis columns ([fitted_features.py:285-290](../src/age_group_prediction/fitted_features.py#L285-L290)), so no column orders buildings by SES and a simple SES threshold has to be approximated across columns | **Rejected** |
 | Interactions | Trees build them through successive splits | Not needed; not offered for `tree` |
 | $\log n$ as `init_score` | Changes the target scale, not a column | **Add** (Section 3.3) |
@@ -122,10 +124,10 @@ All 8 numeric columns (`ses`, `avg_household_size`, `median_age`,
 Two, matching the GLM candidates:
 
 - **linear:** raw `ses`;
-- **quadratic:** $[\,\text{ses}-m,\ (\text{ses}-m)^2\,]$, equivalent to
-  `PolynomialFeatures(degree=2, include_bias=False)` on centered SES.
+- **quadratic:** $[\,\text{ses},\ (\text{ses}-c)^2\,]$, raw `ses` plus its
+  squared deviation from the SES reference point $c = 0.0$.
 
-**Why centering, and how much it matters.** A tree gains nothing from a
+**Why the center matters.** A tree gains nothing from a
 monotone column, so the squared column earns its place only by being
 non-monotone: $(\text{ses}-c)^2$ ranks buildings by **distance from $c$**, and
 one split on it isolates both tails at once, where `ses` alone would need two
@@ -136,17 +138,37 @@ means.
 - If $c$ lies outside it, $x^2$ is monotone over the observed values and the
   trees can extract nothing from it. Squaring `median_age` (25–45) raw would be
   the clear example.
-- **For this SES it is nearly a no-op:** SES is simulated as $N(0,1)$ with mean
-  0.07, so 0 already sits mid-range. Centering moves the vertex by 0.07 SD.
 
-So centering here is a robustness choice for real SES data, whose zero point may
-be arbitrary or outside the observed range, not a correction of a present
-problem. If a substantive turning point is hypothesized, that value is a better
-$c$ than the mean.
+**The SES reference point: 0.0.** A substantive turning point is a better $c$
+than the mean, and here one is named:
+- **What it is.** 0.0 is the simulated population mean (`ses_mean` in
+  `configs/simulation.toml`, with `ses_sd = 1.0`): average SES, neither poor
+  nor rich. The squared column then reads as the squared distance from average
+  SES, in population SDs.
+- **Why not the fold mean.** `Center` would use the fold's mean, which moves
+  from sample to sample: 0.07 in the reference table above, but from −0.25 to
+  +0.26 across single runs of 60 neighborhoods (20 runs). A fixed reference gives the column the
+  same meaning in every fold, and it is the point the hypothesis below names.
+- **How it is declared.** `CenterByReferencePoint(reference_point=0.0)`
+  (§8.1). In this data, subtracting 0 changes no value, so the column is
+  $\text{ses}^2$. The declaration still matters: it states the reference, which
+  real SES data needs, since its zero point may be arbitrary or outside the
+  observed range.
 
-This is unlike the GLM case (Section 4.2), where centering before squaring
-changes what the coefficients mean: it makes $\beta_1$ the slope at average SES
-and decorrelates $z$ from $z^2$. Neither concern applies to trees.
+**The hypothesis, and what the simulator does.** The motivating hypothesis is
+that strong- and weak-SES populations have larger households than the middle:
+an effect in both tails, which is why the distance from average SES is the
+quantity to model. The simulator does not generate that. There, the SES
+U-shape is in the **number of children**: the total-children log-mean has a
+$0.05\,\text{ses}^2$ term with its vertex at 0 and no linear SES term
+(`ses_quadratic_coef` in `configs/simulation.toml`). `avg_household_size` is
+drawn from median age plus noise, independently of SES, so the r = −0.13 in the
+table above is sampling variation, not an effect. In this data, then, the
+squared deviation can pick up a U-shape in child counts; it says nothing about
+household size.
+
+The GLMs use the same reference for their squared term (Section 4.2), where the
+center also changes what the coefficients mean.
 
 ### 3.3 Exposure: add the offset **and** keep `n_apartments`
 
@@ -234,23 +256,37 @@ are active.
 
 ### 4.2 `ses`: two candidates (no spline)
 
-Both start from $z = (\text{ses} - m)/s$, with $m$ and $s$ from the fit
-partition.
+The linear column is $z = (\text{ses} - m)/s$, with $m$ and $s$ from the fit
+partition. The squared column is $(\text{ses} - 0)^2$, the squared deviation
+from the SES reference point 0.0 (Section 3.2).
 
 | Candidate | Columns | Reading |
 |---|---|---|
 | linear | $z$ | Log-rate change per SD of SES |
-| quadratic | $z,\ z^2$ | $\beta_1$: the slope at average SES; $\beta_2$: curvature, i.e. how the slope changes away from the mean. $z^2$ is the squared distance from the mean in SD units |
+| quadratic | $z,\ (\text{ses}-0)^2$ | $\beta_1$: the slope at the reference point, per SD, because the squared term is flat there, and standardizing the linear column only moves the intercept; $\beta_2$: the curvature around the reference, per population SD², directly comparable with the simulator's $0.05$ |
 
-**Scale once, before squaring.** Squaring the already scaled column is the
-right order, and it is what the code does today
+**Square the deviation from the reference, not $z$.** Both give the same
+fitted curve in an unpenalized model; they differ in what $\beta_2$ means and
+whether that meaning holds across folds.
+
+- $z^2$ puts the vertex at the fold mean and measures it in fold SDs, so both
+  move from fold to fold: a single run's mean ranges from −0.25 to +0.26 and
+  its SD from 0.82 to 1.14 (20 runs of 60 neighborhoods).
+- $(\text{ses}-0)^2$ fixes both. The vertex is average SES, the point the
+  hypothesis names, and the unit is the population SD (`ses_sd = 1.0`).
+- **Neither choice decorrelates the two columns** in a sample this small. The
+  sample's skew sets $\text{corr}(x, x^2)$: across the same 20 runs it ranges
+  from −0.55 to +0.27 for $\text{ses}$ and from −0.39 to +0.35 for $z$ (median
+  −0.09 for both). The correlation does not change the fitted curve, only how
+  precisely $\beta_1$ and $\beta_2$ are separated, and B's penalty and C's
+  priors keep them stable. The choice therefore rests on meaning.
+
+The old code squares $z$
 ([fitted_features.py:283-284](../src/age_group_prediction/fitted_features.py#L283-L284)).
-`PolynomialFeatures(degree=2, include_bias=False)` on $z$ is equivalent.
-Rescaling $z^2$ afterwards would only re-center it (a shift of about 1, which
-moves the intercept) and change its penalty weight, at the cost of a coefficient
-you can no longer read as curvature. Squaring *before* scaling is worse still:
-with uncentered SES, $\text{ses}^2$ correlates strongly with $\text{ses}$, and
-the linear coefficient becomes the slope at SES = 0 in raw units.
+Squaring works here without rescaling only because 0 lies near the centre of
+the SES data.
+Squaring a column whose centre is far from zero, relative to its spread, makes
+the two columns nearly collinear: raw `median_age` would be the clear example.
 
 **Why no spline candidate:**
 
@@ -425,7 +461,7 @@ outside, not inside `fit`.
 | Variation | What changes | Question it answers |
 |---|---|---|
 | **Base** | All 8 numeric columns raw, one-hot `school_status`, 3-room reference | Reference point for everything below |
-| SES quadratic | Adds $(\text{ses}-m)^2$, keeps `ses` | Does an explicit non-monotone column beat the splits the trees would make anyway? |
+| SES quadratic | Adds $(\text{ses}-0)^2$, the squared deviation from the SES reference point; keeps `ses` | Does an explicit non-monotone column beat the splits the trees would make anyway? |
 | **+ size offset** | `use_exposure=True`: $\log n + b$ as `init_score` (Poisson only); `n_apartments` stays a feature | Does modeling the per-apartment rate beat letting the trees learn size from scratch? It was expected to be the largest gain. An untuned smoke run over 10 simulated populations found only weak evidence: about 4% lower deviance for kindergarten and high school, and none for elementary ([plan, Step 2.4](MODEL_REIMPLEMENTATION_PLAN.md)) |
 | Objective: Poisson / regression | Poisson log-likelihood vs squared error | Does a count likelihood beat squared error? |
 
@@ -470,7 +506,7 @@ Both stages take the **same 7 non-exposure numeric columns plus
 | Variation | Columns | Reading | Why this stage |
 |---|---|---|---|
 | **Base** | $z_{\text{ses}}$, $z_{\text{hh}}$, $z_{\text{age}}$, $d/8$, 3 centered shares, 2 school dummies | Log children-per-apartment rate at an average building with no daycares | The parsimonious specification everything else is measured against |
-| **SES quadratic** | + $z_{\text{ses}}^2$ | $\beta_1$ is the slope at average SES, $\beta_2$ the curvature | Fertility–SES gradients are commonly non-monotone, so one extra parameter is cheap insurance when modeling **how many** children |
+| **SES quadratic** | + $(\text{ses}-0)^2$ | $\beta_1$ is the slope at the reference point (average SES), $\beta_2$ the curvature around it | Fertility–SES gradients are commonly non-monotone, so one extra parameter is cheap insurance when modeling **how many** children |
 | **Daycare centered log1p** | $d/8 \rightarrow \log\frac{1+d}{1+\bar d}$ | Elasticity: $\mu \propto (1+d)^\beta$ | Daycare count measures *access*, and access saturates — the first facility matters far more than the eighth |
 | **`room_share_x_household_size`** | + 3 columns | How the room-mix effect shifts per SD of household size | Capacity meets demand: the child-count payoff of a larger apartment depends on how large local households are (Section 6.2, first choice) |
 | `room_share_x_ses` | + 3 columns | How the room-mix effect shifts per SD of SES | Does extra space become more children, or more space per person? Section 6.2's second choice — needs the new interaction of Section 8 |
@@ -704,7 +740,7 @@ variable at once.
 
 | Feature | A (trees) | B and C (GLMs) | Motivation |
 |---|---|---|---|
-| `ses` | Raw; candidate: centered then squared. No spline | $z$; quadratic candidate in the **total stage only**, scaled once before squaring. No spline | Quadratic is nested and interpretable, and curvature has a mechanism for *how many* children but none for *which ages*; only about 60 distinct SES values, so a 5-column spline overfits and can't be read |
+| `ses` | Raw; candidate: the squared deviation from the SES reference point 0.0. No spline | $z$; quadratic candidate in the **total stage only**: $(\text{ses}-0)^2$ beside $z$. No spline | 0.0 is the population mean, average SES; a fixed vertex means the same in every fold, where the fold mean moves. Quadratic is nested and interpretable, and curvature has a mechanism for *how many* children but none for *which ages*; only about 60 distinct SES values, so a 5-column spline overfits and can't be read |
 | `avg_household_size` | Raw | $z$ (report $\beta/s$; fixed $(x-2.6)/0.5$ optional) | Scale sets only the unit; matches C's priors |
 | `median_age` | Raw | $z$ (report $\beta/s$; fixed $(x-37)/10$ optional) | Same |
 | `n_daycares_500m` | Raw; drop the `log1p` candidate | Candidate 1: $d/8$ (0 = none; 8 = 99th percentile, no clipping). Candidate 2: $\log\frac{1+d}{1+\bar d}$ | Fixed bounds are fold-stable where a learned min-max is not; the centered log1p keeps its unit across folds and reads as an elasticity |
@@ -727,10 +763,30 @@ supplied here, at the call site.
 
 ```python
 from age_group_prediction.feature_engineering import (
-    Center, ColumnPlan, DomainMinMax, DomainScale, FeatureTransformer,
-    Interaction, OneHot, Quadratic, RelativeSaturation, Standardize,
+    Center, CenterByReferencePoint, ColumnPlan, DomainMinMax, DomainScale,
+    FeatureTransformer, Interaction, OneHot, Quadratic, RelativeSaturation,
+    Standardize,
 )
 ```
+
+**The vocabulary.** What each transform emits, what it learns at fit, and
+when to choose it over its neighbour:
+
+| Transform | Emits | Learned at fit | Choose it when |
+|---|---|---|---|
+| `Standardize()` | $(x - m)/s$ | $m$, $s$ | A unit per SD is wanted, and the priors were set for it (§4.5) |
+| `Center()` | $x - m$ | $m$ | A linear column in its own units; the center only moves the intercept |
+| `CenterByReferencePoint(reference_point=c)` | $x - c$ | Nothing | The column will be squared, or the reference is a named substantive point (SES 0.0, §3.2); it means the same in every fold |
+| `DomainScale(scale=s)` | $x / s$ | Nothing | The unit comes from domain knowledge: per decade, per 10 pp of share |
+| `DomainMinMax(minimum, maximum)` | $(x - \min)/(\max - \min)$ | Nothing | Declared bounds, no clipping: daycares from 0 to 8 (§4.1) |
+| `Quadratic()` | $x^2$, as `<col>_squared` | Nothing | After a center; never on a raw column whose centre is far from zero |
+| `Log()`, `Log1p()` | $\log x$, $\log(1 + x)$ | Nothing | $x > 0$, or $x > -1$ for `Log1p`; never after a center |
+| `RelativeSaturation()` | $\log(1+x) - \log(1+\bar x)$, as `<col>_sat` | $\bar x$ | Diminishing returns on a count, read as an elasticity (§4.1); rather than `Center`, when the effect saturates |
+| `OneHot(categories, reference_category)` | Dummies, the reference dropped | Nothing | Declared levels keep the columns identical across folds |
+
+`Log1pRatioScaler` is the fitted scikit-learn estimator `RelativeSaturation`
+builds. Import it directly for a pipeline of your own or an `isinstance` check;
+inside a `ColumnPlan`, declare `RelativeSaturation()`.
 
 Four rules that the declarations depend on:
 
@@ -744,14 +800,15 @@ Four rules that the declarations depend on:
   `n_daycares_500m` fails at fit rather than quietly meaning something else.
 - **The same column may feed several plans.** That is how `ses` and
   `ses_squared` sit side by side.
-- **A log never follows centering or standardizing.** `Log`, `Log1p` and
-  `RelativeSaturation` may not come after `Center` or `Standardize` in a plan's
-  chain: a mean-zero column is negative somewhere, and a log of it is a
-  modeling mistake (for `Log` it is `-inf` or `nan` outright). The plan is
-  rejected when declared; take the log first (`Log() → Center()`). After a step
-  whose sign depends on the data (`DomainMinMax`, `Log`, `RelativeSaturation`)
-  or that clears negatives (`Quadratic`) the plan is accepted, and a bad value
-  is caught at fit or transform, by the step's own input check
+- **A log never follows centering, standardizing or relative saturation.**
+  `Log`, `Log1p` and `RelativeSaturation` may not come after `Center`,
+  `Standardize` or `RelativeSaturation` in a plan's chain: a column measured
+  from its mean is negative somewhere, and a log of it is a modeling mistake
+  (for `Log` it is `-inf` or `nan` outright). The plan is rejected when
+  declared; take the log first (`Log() → Center()`). After a step whose sign
+  depends on the data (`CenterByReferencePoint`, `DomainMinMax`, `Log`) or that
+  clears negatives (`Quadratic`) the plan is accepted, and a bad value is
+  caught at fit or transform, by the step's own input check
   (`RelativeSaturation`) or the finite-output check.
 
 ### 8.0 Shared column groups
@@ -816,10 +873,16 @@ For `objective="regression"` there is no log link, and the model refuses
 `use_exposure=True` (§3.3).
 
 **SES-quadratic variant.** Add one plan; `ses` itself stays, because the squared
-column earns its place only by being non-monotone (§3.2):
+column earns its place only by being non-monotone (§3.2). It squares the
+deviation from the SES reference point 0.0, average SES, not from the fold
+mean:
 
 ```python
-ColumnPlan(name="ses_sq", columns="ses", transforms=(Center(), Quadratic()))
+ColumnPlan(
+    name="ses_sq",
+    columns="ses",
+    transforms=(CenterByReferencePoint(reference_point=0.0), Quadratic()),
+)
 ```
 
 Not offered for Model A: the `log1p` daycare form (indistinguishable from linear
@@ -909,12 +972,17 @@ written out; the other is the base declaration above, unchanged.
 
 #### 8.5.1 SES quadratic (candidate 2)
 
-Scale once, then square: $\beta_1$ is then the slope at average SES and
-$\beta_2$ the curvature (§4.2). `ses` keeps its own plan; this one is added
-beside it.
+Square the deviation from the SES reference point 0.0, as in Model A: $\beta_1$,
+on the base plan's $z$, is then the slope at the reference point, and
+$\beta_2$ the curvature around it, per population SD² (§4.2). `ses` keeps its
+own plan; this one is added beside it.
 
 ```python
-ColumnPlan(name="ses_sq", columns="ses", transforms=(Standardize(), Quadratic()))
+ColumnPlan(
+    name="ses_sq",
+    columns="ses",
+    transforms=(CenterByReferencePoint(reference_point=0.0), Quadratic()),
+)
 ```
 
 #### 8.5.2 Daycare, centered `log1p` (candidates 3 and 5)
@@ -989,9 +1057,9 @@ offset_train = fold.log_exposure(train_df)
 What this section replaced was an implementation checklist. Some of its items
 are now satisfied by the package — the daycare, room-share and centering forms of
 its item 2 are expressed by `DomainMinMax`, `RelativeSaturation`,
-`Center`+`DomainScale` and `Standardize`+`Quadratic`; and its item 4, adding
-entries to a closed `_VALID_INTERACTIONS` literal, is replaced by open
-user-named `Interaction`s. **The rest still stand:**
+`Center`+`DomainScale` and `CenterByReferencePoint`+`Quadratic`; and its item
+4, adding entries to a closed `_VALID_INTERACTIONS` literal, is replaced by
+open user-named `Interaction`s. **The rest still stand:**
 
 1. **Room-share reference:** done for new code.
    `ShareTransformer(..., reference_column="3_rooms")` derives the 4-, 5- and
@@ -1014,6 +1082,11 @@ user-named `Interaction`s. **The rest still stand:**
 5. **Provenance:** every change above alters feature specs and therefore
    candidate fingerprints. Compare old and new forms as separate candidates on
    identical folds.
+6. **Non-finite constants in the fixed-anchor transforms:**
+   `DomainScale(scale=inf)` and `DomainMinMax(minimum=nan, maximum=nan)` are
+   accepted at declaration and fail at fit. `CenterByReferencePoint` already
+   rejects a non-finite reference (`Field(allow_inf_nan=False)`); apply the
+   same to both siblings.
 
 ## 9. Related Documents
 
