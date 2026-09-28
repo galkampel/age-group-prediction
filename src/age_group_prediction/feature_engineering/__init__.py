@@ -9,6 +9,7 @@ a failure deep inside a fold. :mod:`transforms` holds those transformations;
 from .transformer import ColumnPlan, FeatureTransformer, Interaction
 from .transforms import (
     Center,
+    CenterByReferencePoint,
     DomainMinMax,
     DomainScale,
     Log,
@@ -23,6 +24,7 @@ from .transforms import (
 
 __all__ = [
     "Center",
+    "CenterByReferencePoint",
     "ColumnPlan",
     "DomainMinMax",
     "DomainScale",

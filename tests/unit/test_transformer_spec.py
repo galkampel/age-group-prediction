@@ -19,6 +19,7 @@ from sklearn.preprocessing import StandardScaler
 
 from age_group_prediction.feature_engineering import (
     Center,
+    CenterByReferencePoint,
     ColumnPlan,
     DomainMinMax,
     DomainScale,
@@ -44,6 +45,7 @@ _ONE_OF_EACH_TRANSFORM = (
     Log1p(),
     DomainScale(scale=0.1),
     DomainMinMax(minimum=0.0, maximum=8.0),
+    CenterByReferencePoint(reference_point=0.0),
     RelativeSaturation(),
     OneHot(categories=("none", "existing", "planned"), reference_category="none"),
 )

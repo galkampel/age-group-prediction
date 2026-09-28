@@ -14,6 +14,7 @@ from sklearn.exceptions import NotFittedError
 
 from age_group_prediction.feature_engineering import (
     Center,
+    CenterByReferencePoint,
     ColumnPlan,
     DomainMinMax,
     DomainScale,
@@ -22,6 +23,7 @@ from age_group_prediction.feature_engineering import (
     Log,
     Log1p,
     OneHot,
+    Quadratic,
     RelativeSaturation,
     Standardize,
 )
@@ -111,6 +113,23 @@ def test_a_relative_saturation_centers_on_log1p_of_the_mean() -> None:
     out = transformer.fit_transform(df)
     expected = np.log1p([0.0, 4.0, 8.0]) - np.log1p(4.0)
     np.testing.assert_allclose(out["n_daycares_500m_sat"], expected, atol=1e-12)
+
+
+def test_ses_is_measured_from_the_reference_point_not_the_fold_mean() -> None:
+    # ses is [1, 2, 3] with fold mean 2. Measured from the reference 0, both
+    # terms keep their distance from 0; Center would give [-1, 0, 1] and
+    # [1, 0, 1], measured from the fold instead.
+    reference = CenterByReferencePoint(reference_point=0.0)
+    transformer = FeatureTransformer(
+        plans=(
+            _plan("ses", "ses", transforms=(reference,)),
+            _plan("ses_sq", "ses", transforms=(reference, Quadratic())),
+        ),
+    )
+    out = transformer.fit_transform(_frame())
+    assert list(out.columns) == ["ses", "ses_squared"]
+    np.testing.assert_allclose(out["ses"], [1.0, 2.0, 3.0], atol=1e-12)
+    np.testing.assert_allclose(out["ses_squared"], [1.0, 4.0, 9.0], atol=1e-12)
 
 
 # --- Structure ---------------------------------------------------------------

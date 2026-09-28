@@ -81,8 +81,10 @@ class Center(_TransformBase):
 class Quadratic(_TransformBase):
     """Square the column, renaming it so it cannot collide with its own input.
 
-    Meant to follow ``Center`` or ``Standardize``: squaring an uncentered
-    column makes the quadratic term nearly collinear with the linear one.
+    Meant to follow ``Center``, ``Standardize`` or ``CenterByReferencePoint``:
+    squaring a column whose centre is far from zero, relative to its spread,
+    makes the quadratic term nearly collinear with the linear one. A reference
+    point avoids that only when it lies near the centre of the data.
     """
 
     kind: Literal["quadratic"] = "quadratic"
@@ -194,6 +196,29 @@ class DomainMinMax(_TransformBase):
         )
 
 
+class CenterByReferencePoint(_TransformBase):
+    """Subtract a fixed reference point chosen from domain knowledge.
+
+    Unlike ``Center``, it learns nothing from the data, so the output is the
+    deviation from the declared reference and means the same in every fold.
+    Its sign depends on where the data lie relative to the reference.
+    """
+
+    kind: Literal["center_by_reference_point"] = "center_by_reference_point"
+    negative_output = "depends_on_data"
+    # A non-finite reference makes every output non-finite, whatever the data.
+    reference_point: float = Field(allow_inf_nan=False)
+
+    def build(self) -> TransformerMixin:
+        reference_point = self.reference_point
+        return FunctionTransformer(
+            lambda x: x - reference_point,
+            inverse_func=lambda x: x + reference_point,
+            validate=False,
+            feature_names_out="one-to-one",
+        )
+
+
 class RelativeSaturation(_TransformBase):
     """Diminishing returns on a count, measured against the fold's typical value.
 
@@ -269,6 +294,7 @@ Transform = Annotated[
     | Log1p
     | DomainScale
     | DomainMinMax
+    | CenterByReferencePoint
     | RelativeSaturation
     | OneHot,
     Field(discriminator="kind"),

@@ -86,12 +86,15 @@ In [transforms.py](src/age_group_prediction/feature_engineering/transforms.py), 
 class CenterByReferencePoint(_TransformBase):
     """Subtract a fixed reference point chosen from domain knowledge.
 
-    Unlike ``Center``, it learns nothing from the data, so the output means
-    "deviation from the reference" in every fold.
+    Unlike ``Center``, it learns nothing from the data, so the output is the
+    deviation from the declared reference and means the same in every fold.
+    Its sign depends on where the data lie relative to the reference.
     """
 
     kind: Literal["center_by_reference_point"] = "center_by_reference_point"
-    reference_point: float
+    negative_output = "depends_on_data"
+    # A non-finite reference makes every output non-finite, whatever the data.
+    reference_point: float = Field(allow_inf_nan=False)
 
     def build(self) -> TransformerMixin:
         reference_point = self.reference_point
@@ -104,21 +107,32 @@ class CenterByReferencePoint(_TransformBase):
 ```
 
 - `reference_point` has no default. Like every parameter in this package, it is a decision the call site states.
-- `feature_names_out="one-to-one"` keeps the column name, as `Center` does.
-- Add it to the `Transform` discriminated union (`transforms.py:230-241`) and to the package `__all__`.
-- Update the `Quadratic` docstring ("Meant to follow `Center` or `Standardize`") to also name `CenterByReferencePoint`.
-- Declare `negative_output = "depends_on_data"` on it (Task 0b): a column can lie entirely above the reference. Add `"center_by_reference_point": ("depends_on_data", False)` to `_SIGN_BEHAVIOR` in `test_feature_transforms.py`.
+- A `nan` or `inf` reference is rejected at declaration, because it fails for any data. Otherwise it would reach fit and fail there with a message about logs. The siblings have the same gap (`DomainScale(scale=inf)` and `DomainMinMax(minimum=nan, maximum=nan)` are accepted). That is left for a separate follow-up.
+- `negative_output = "depends_on_data"` (Task 0b): a column can lie entirely above the reference, so negatives are not certain.
+- `feature_names_out="one-to-one"` keeps the column name, as `Center` does. sklearn's `check_inverse` stays on: the inverse is exact.
+- Added to the `Transform` discriminated union and to the package `__all__`.
+- The `Quadratic` docstring names it and says what actually causes collinearity: a centre far from zero relative to the spread. A reference point avoids it only when it lies near the centre of the data.
 
-**Tests first** (hand-written expected values, following the existing style):
+**Tests** (written first, with hand-written expected values):
 - In `test_feature_transforms.py`:
-  - `[1.0, 2.0, 3.0]` with `reference_point=2.0` gives `[-1.0, 0.0, 1.0]`, and `inverse_transform` round-trips.
-  - It learns nothing: fit on one frame, transform another, and the output is `x - reference_point` regardless of what it was fitted on.
-  - Omitting `reference_point`, or a typo such as `reference=0.0`, raises a pydantic `ValidationError`.
-  - The column name is unchanged (`get_feature_names_out`).
-- Add it to `_EVERY_MEMBER` (`test_feature_transforms.py:32-42`, the serialization round-trip) and to `_ONE_OF_EACH_TRANSFORM` (`test_transformer_spec.py:39-49`).
-- The application, in `test_feature_transformer.py`: `ColumnPlan(name="ses", columns=("ses",), transforms=(CenterByReferencePoint(reference_point=0.0), Quadratic()))` on a hand-chosen frame emits `[ses, ses²]` measured from 0, not from the frame's mean.
+  - It joins the parametrized `test_domain_transforms_use_declared_constants_not_observed_ones`. On `[0, 0.5, 1]`, whose mean is 0.5, `reference_point=2.0` gives `[-2, -1.5, -1]`, and the same after fitting on `[100, 200]`. This is the difference from `Center`: the reference is declared and can be any value, while `Center`'s is always the data's mean.
+  - It joins `test_domain_transforms_invert_exactly`.
+  - Omitting `reference_point`, or a typo such as `reference=0.0`, raises a pydantic `ValidationError`. So does a `nan`, `inf` or `-inf` reference.
+  - It is added to `_EVERY_MEMBER` (the serialization round-trip), and `"center_by_reference_point": ("depends_on_data", False)` is added to `_SIGN_BEHAVIOR`.
+- It is added to `_ONE_OF_EACH_TRANSFORM` in `test_transformer_spec.py`.
+- The application, in `test_feature_transformer.py`, uses two plans, as in `FEATURE_TRANSFORMATIONS.md` §8:
+  - `ses` with `(CenterByReferencePoint(reference_point=0.0),)`, and `ses_sq` with `(CenterByReferencePoint(reference_point=0.0), Quadratic())`.
+  - On `ses = [1, 2, 3]` they emit `ses = [1, 2, 3]` and `ses_squared = [1, 4, 9]`. These are measured from 0, not from the frame's mean of 2.
+  - One chain would emit only `ses_squared`. The test also asserts the column names, which covers `feature_names_out`.
 
-Mutation check: change `x - reference_point` to `x + reference_point`, and replace `reference_point` with the fold mean. Tests must fail each time.
+Mutation check. Each of these must make a test fail:
+- `x - reference_point` becomes `x + reference_point`.
+- The fold mean replaces the reference.
+- The inverse is broken.
+- `negative_output = "always"`.
+- It is dropped from the union.
+- `allow_inf_nan=False` is removed.
+- `feature_names_out` is removed.
 
 ## Task 4 — docs(feature_engineering): the SES reference point
 

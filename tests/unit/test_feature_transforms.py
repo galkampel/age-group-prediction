@@ -20,6 +20,7 @@ from sklearn.utils.estimator_checks import estimator_checks_generator
 from age_group_prediction import feature_engineering
 from age_group_prediction.feature_engineering import (
     Center,
+    CenterByReferencePoint,
     DomainMinMax,
     DomainScale,
     Log,
@@ -42,6 +43,7 @@ _EVERY_MEMBER = (
     Log1p(),
     DomainScale(scale=0.1),
     DomainMinMax(minimum=0.0, maximum=8.0),
+    CenterByReferencePoint(reference_point=0.0),
     RelativeSaturation(),
     OneHot(categories=("none", "existing", "planned"), reference_category="none"),
 )
@@ -140,6 +142,7 @@ _SIGN_BEHAVIOR = {
     "log1p": ("as_input", True),
     "domain_scale": ("as_input", False),
     "domain_min_max": ("depends_on_data", False),
+    "center_by_reference_point": ("depends_on_data", False),
     "relative_saturation": ("depends_on_data", True),
     "ohe": ("never", False),
 }
@@ -195,8 +198,10 @@ def test_quadratic_renames_its_output_so_the_linear_term_survives() -> None:
     [
         (DomainScale(scale=0.1), [[0.0], [5.0], [10.0]]),
         (DomainMinMax(minimum=0.0, maximum=8.0), [[0.0], [0.0625], [0.125]]),
+        # The reference is declared, not the data's mean of 0.5.
+        (CenterByReferencePoint(reference_point=2.0), [[-2.0], [-1.5], [-1.0]]),
     ],
-    ids=["domain_scale", "domain_min_max"],
+    ids=["domain_scale", "domain_min_max", "center_by_reference_point"],
 )
 def test_domain_transforms_use_declared_constants_not_observed_ones(
     transform, expected
@@ -225,11 +230,27 @@ def test_domain_transforms_invert_exactly() -> None:
     for transform in (
         DomainScale(scale=0.1),
         DomainMinMax(minimum=0.0, maximum=8.0),
+        CenterByReferencePoint(reference_point=2.0),
     ):
         transformer = transform.build()
         np.testing.assert_allclose(
             transformer.inverse_transform(transformer.fit_transform(values)), values
         )
+
+
+def test_center_by_reference_point_requires_a_reference_point() -> None:
+    # The reference is a domain decision the call site states, never a default.
+    with pytest.raises(ValidationError):
+        CenterByReferencePoint()
+    with pytest.raises(ValidationError):
+        CenterByReferencePoint(reference=0.0)
+
+
+def test_center_by_reference_point_rejects_a_non_finite_reference() -> None:
+    # Every output would be non-finite, so the declaration cannot succeed.
+    for reference_point in (float("nan"), float("inf"), float("-inf")):
+        with pytest.raises(ValidationError):
+            CenterByReferencePoint(reference_point=reference_point)
 
 
 def test_relative_saturation_centers_by_log1p_of_the_mean() -> None:
