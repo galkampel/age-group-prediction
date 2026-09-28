@@ -6,7 +6,7 @@ from collections.abc import Sequence
 
 import numpy as np
 import pandas as pd
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from sklearn.base import BaseEstimator, TransformerMixin
 from sklearn.compose import ColumnTransformer
 from sklearn.pipeline import Pipeline
@@ -34,6 +34,26 @@ class ColumnPlan(BaseModel):
     def _accept_a_bare_column(cls, value: str | Sequence[str]) -> Sequence[str]:
         """Let a one-column plan pass the name itself rather than a list."""
         return (value,) if isinstance(value, str) else value
+
+    @model_validator(mode="after")
+    def _check_input_signs(self) -> ColumnPlan:
+        """Reject a step needing non-negative input once negatives are certain."""
+        # The step after which negatives are certain. Only then is the plan
+        # refused; otherwise a bad value is the data's, caught at fit or
+        # transform by the step's own input check or the finite-output check.
+        negative_since: str | None = None
+        for transform in self.transforms:
+            if transform.needs_nonnegative_input and negative_since is not None:
+                raise ValueError(
+                    f"Plan {self.name!r}: {transform.kind} needs non-negative "
+                    f"input, but {negative_since} before it always emits negative "
+                    f"values; apply {transform.kind} before {negative_since}"
+                )
+            if transform.negative_output == "always":
+                negative_since = transform.kind
+            elif transform.negative_output in ("depends_on_data", "never"):
+                negative_since = None
+        return self
 
     def build(self) -> TransformerMixin | Pipeline | str:
         """Return this plan's ``ColumnTransformer`` entry."""

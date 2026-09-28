@@ -7,7 +7,7 @@ nonsensical parameter is a construction-time error.
 from __future__ import annotations
 
 from collections.abc import Sequence
-from typing import Annotated, Literal
+from typing import Annotated, ClassVar, Literal
 
 import numpy as np
 import pandas as pd
@@ -41,6 +41,17 @@ class _TransformBase(BaseModel):
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
+    # The sign of the output. "always": negative somewhere (or all zero) whatever
+    # the data, as for a mean-zero column. "as_input": negative only where the
+    # input is. "depends_on_data": either, so only the data can tell. "never".
+    # ColumnPlan reads it to reject a log that cannot succeed.
+    negative_output: ClassVar[
+        Literal["always", "as_input", "depends_on_data", "never"]
+    ] = "as_input"
+    # Undefined on (some) negative input. Conservative: a declaration knows only
+    # the sign, not how far below zero a value goes (log1p is fine down to -1).
+    needs_nonnegative_input: ClassVar[bool] = False
+
     def build(self) -> TransformerMixin:
         """Return an unfitted scikit-learn transformer for this entry."""
         raise NotImplementedError
@@ -50,6 +61,7 @@ class Standardize(_TransformBase):
     """Subtract the fold mean and divide by the fold standard deviation."""
 
     kind: Literal["standardize"] = "standardize"
+    negative_output = "always"
 
     def build(self) -> TransformerMixin:
         return StandardScaler(with_mean=True, with_std=True)
@@ -59,6 +71,7 @@ class Center(_TransformBase):
     """Subtract the fold mean, leaving the original units intact."""
 
     kind: Literal["center"] = "center"
+    negative_output = "always"
 
     def build(self) -> TransformerMixin:
         return StandardScaler(with_mean=True, with_std=False)
@@ -72,6 +85,7 @@ class Quadratic(_TransformBase):
     """
 
     kind: Literal["quadratic"] = "quadratic"
+    negative_output = "never"
 
     def build(self) -> TransformerMixin:
         # sqrt inverts squaring only on non-negative input; the sign is lost.
@@ -85,9 +99,16 @@ class Quadratic(_TransformBase):
 
 
 class Log(_TransformBase):
-    """Natural log. Requires strictly positive input, checked at fit time."""
+    """Natural log. Needs strictly positive input.
+
+    A log after centering or standardizing is rejected when the plan is
+    declared: a mean-zero column is negative somewhere. Any other non-positive
+    value surfaces as a non-finite design-matrix column.
+    """
 
     kind: Literal["log"] = "log"
+    negative_output = "depends_on_data"
+    needs_nonnegative_input = True
 
     def build(self) -> TransformerMixin:
         return FunctionTransformer(
@@ -99,9 +120,16 @@ class Log(_TransformBase):
 
 
 class Log1p(_TransformBase):
-    """``log(1 + x)``, defined at zero and so usable on counts."""
+    """``log(1 + x)``, defined at zero and so usable on counts.
+
+    Needs input greater than -1. It is still rejected after centering or
+    standardizing: the rule is on sign, and a log of a mean-zero column is a
+    mistake even where it stays above -1. Any other value at or below -1
+    surfaces as a non-finite column.
+    """
 
     kind: Literal["log1p"] = "log1p"
+    needs_nonnegative_input = True
 
     def build(self) -> TransformerMixin:
         return FunctionTransformer(
@@ -141,6 +169,7 @@ class DomainMinMax(_TransformBase):
     """
 
     kind: Literal["domain_min_max"] = "domain_min_max"
+    negative_output = "depends_on_data"
     minimum: float
     maximum: float
 
@@ -173,6 +202,8 @@ class RelativeSaturation(_TransformBase):
     """
 
     kind: Literal["relative_saturation"] = "relative_saturation"
+    negative_output = "depends_on_data"
+    needs_nonnegative_input = True
 
     def build(self) -> TransformerMixin:
         return _Log1pRatioScaler()
@@ -187,6 +218,7 @@ class OneHot(_TransformBase):
     """
 
     kind: Literal["ohe"] = "ohe"
+    negative_output = "never"
     categories: tuple[str, ...]
     reference_category: str
     unknown_policy: UnknownCategoryPolicy = "error"

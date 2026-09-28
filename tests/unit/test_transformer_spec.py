@@ -121,6 +121,76 @@ def test_a_plan_rejects_an_empty_name_or_no_columns() -> None:
         ColumnPlan(name="empty", columns=())
 
 
+@pytest.mark.parametrize(
+    ("earlier", "log"),
+    [
+        (Center(), Log()),
+        (Standardize(), Log()),
+        (Standardize(), Log1p()),
+        (Center(), RelativeSaturation()),
+    ],
+    ids=lambda t: t.kind,
+)
+def test_a_log_after_centering_is_rejected_when_declared(earlier, log) -> None:
+    # A mean-zero column is negative somewhere, or all zeros, whatever the data.
+    # The rule is on sign: log1p would survive values in (-1, 0), but a log of
+    # a centered column is a modeling mistake either way.
+    with pytest.raises(
+        ValidationError,
+        match=rf"'c'.*{log.kind}.*{earlier.kind} .*always emits.*before {earlier.kind}",
+    ):
+        _plan("c", "ses", transforms=(earlier, log))
+
+
+def test_a_sign_preserving_step_does_not_clear_negatives() -> None:
+    with pytest.raises(ValidationError, match="log.*center"):
+        _plan("c", "ses", transforms=(Center(), DomainScale(scale=0.1), Log()))
+
+
+@pytest.mark.parametrize(
+    "earlier",
+    # Below the declared minimum, or below 1 for a log, the output is
+    # negative; above them it is not. Only the data can tell.
+    [
+        (DomainMinMax(minimum=0.0, maximum=8.0),),
+        (Log(),),
+        # The centering is certain, but a range that reaches below zero can map
+        # the whole column back above it, so the log is left to the data again.
+        (Center(), DomainMinMax(minimum=-10.0, maximum=10.0)),
+    ],
+    ids=lambda steps: "-".join(step.kind for step in steps),
+)
+def test_a_log_after_a_data_dependent_step_is_left_to_the_data(earlier) -> None:
+    plan = _plan("c", "ses", transforms=(*earlier, Log()))
+    # ses [2, 3, 4]: DomainMinMax gives [0.25, 0.375, 0.5], Log gives values
+    # above 0, and the centered chain gives [0.45, 0.5, 0.55]; either way the
+    # final log is finite.
+    df = pd.DataFrame({"ses": [2.0, 3.0, 4.0]})
+    transformed = FeatureTransformer(plans=(plan,)).fit_transform(df)
+    assert np.isfinite(transformed["ses"]).all()
+
+
+@pytest.mark.filterwarnings("ignore:.*encountered in log:RuntimeWarning")
+def test_a_data_dependent_bad_value_is_caught_by_the_output_check() -> None:
+    # The declared minimum maps to 0, and log 0 is -inf.
+    plan = _plan("c", "ses", transforms=(DomainMinMax(minimum=1.0, maximum=3.0), Log()))
+    with pytest.raises(ValueError, match="non-finite"):
+        FeatureTransformer(plans=(plan,)).fit_transform(_frame())
+
+
+def test_squaring_clears_negatives() -> None:
+    plan = _plan("c", "ses", transforms=(Center(), Quadratic(), Log1p()))
+    transformed = FeatureTransformer(plans=(plan,)).fit_transform(_frame())
+    # ses [1, 2, 3] centers to [-1, 0, 1] and squares to [1, 0, 1].
+    np.testing.assert_allclose(transformed["ses_squared"], np.log1p([1.0, 0.0, 1.0]))
+
+
+def test_centering_after_a_log_is_allowed() -> None:
+    plan = _plan("c", "ses", transforms=(Log(), Center()))
+    transformed = FeatureTransformer(plans=(plan,)).fit_transform(_frame())
+    assert transformed["ses"].mean() == pytest.approx(0.0)
+
+
 def test_a_plan_named_remainder_is_rejected_when_fitted() -> None:
     # Not checked here: "remainder" is ColumnTransformer's own entry name and
     # it refuses the clash itself. Pinned because the guarantee is now its.
@@ -191,16 +261,6 @@ def test_colliding_output_names_are_rejected_when_fitted() -> None:
                 _plan("ses_centered", "ses", transforms=(Center(),)),
             )
         ).fit(_frame())
-
-
-@pytest.mark.filterwarnings("ignore:.*encountered in log:RuntimeWarning")
-def test_a_log_after_another_transform_is_caught_by_the_output_check() -> None:
-    # Centering first makes values non-positive, so the log yields -inf. The
-    # chain is no longer forbidden outright; the output check catches it.
-    with pytest.raises(ValueError, match="non-finite"):
-        FeatureTransformer(
-            plans=(_plan("c", "ses", transforms=(Center(), Log())),)
-        ).fit_transform(_frame())
 
 
 def test_a_plan_round_trips_with_its_transform_subclasses_intact() -> None:

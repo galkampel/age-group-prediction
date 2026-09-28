@@ -732,7 +732,7 @@ from age_group_prediction.feature_engineering import (
 )
 ```
 
-Three rules that the declarations depend on:
+Four rules that the declarations depend on:
 
 - **A plan's chain is applied in order**, and only the last renaming step
   changes the column's name. `Center() → DomainScale(0.1)` leaves
@@ -744,6 +744,15 @@ Three rules that the declarations depend on:
   `n_daycares_500m` fails at fit rather than quietly meaning something else.
 - **The same column may feed several plans.** That is how `ses` and
   `ses_squared` sit side by side.
+- **A log never follows centering or standardizing.** `Log`, `Log1p` and
+  `RelativeSaturation` may not come after `Center` or `Standardize` in a plan's
+  chain: a mean-zero column is negative somewhere, and a log of it is a
+  modeling mistake (for `Log` it is `-inf` or `nan` outright). The plan is
+  rejected when declared; take the log first (`Log() → Center()`). After a step
+  whose sign depends on the data (`DomainMinMax`, `Log`, `RelativeSaturation`)
+  or that clears negatives (`Quadratic`) the plan is accepted, and a bad value
+  is caught at fit or transform, by the step's own input check
+  (`RelativeSaturation`) or the finite-output check.
 
 ### 8.0 Shared column groups
 

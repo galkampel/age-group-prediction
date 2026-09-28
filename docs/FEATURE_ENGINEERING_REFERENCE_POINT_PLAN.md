@@ -30,6 +30,15 @@ Gates: `uv run ruff check <changed files>` + `uv run ruff format <changed files>
 
 This plan is saved as `docs/FEATURE_ENGINEERING_REFERENCE_POINT_PLAN.md`, written untracked on `feat/hyperparameter-tuning`. `git switch -c` carries an untracked file onto the new branch, so after creating the branch the user commits the plan as its first commit: `docs(feature_engineering): plan for the reference-point branch`.
 
+## Task 0b — fix(feature_engineering): reject a log after centering or standardizing
+
+Added 2026-09-28, after Task 1's baseline gate failed before any edit. Under `-W error`, `test_a_log_after_another_transform_is_caught_by_the_output_check` failed. It fitted `Center() → Log()`, and sklearn's `check_inverse` warned about the resulting `nan` before the finite-output check ran. The user ruled that a log must be rejected only where an earlier step makes negative values certain, and left to the data otherwise.
+
+- **Rule:** each transform declares, as `ClassVar`s on `_TransformBase`, `negative_output` (`"always"` for `Center` and `Standardize`; `"as_input"` for `DomainScale`, `Log1p`; `"depends_on_data"` for `DomainMinMax`, `Log`, `RelativeSaturation`; `"never"` for `Quadratic`, `OneHot`) and `needs_nonnegative_input` (`Log`, `Log1p`, `RelativeSaturation`). Both are class-level, so dumped specs are unchanged.
+- **Where:** `ColumnPlan._check_input_signs` (`transformer.py`) walks the chain and rejects a step needing non-negative input once negatives are certain. `"always"` makes them certain, `"as_input"` keeps that, `"depends_on_data"` and `"never"` clear it. Nothing else changes at runtime: a data-dependent bad value still fails at fit or transform, by the step's own input check (`RelativeSaturation`) or the finite-output check. The rule is on sign, so `Center → Log1p` is rejected even though `log1p` survives values in (-1, 0): a log of a mean-zero column is a mistake either way.
+- **Tests:** rejection cases `center-log`, `standardize-log`, `standardize-log1p`, `center-relative_saturation`, plus `Center → DomainScale → Log`; accepted chains `DomainMinMax → Log`, `Log → Log`, `Center → DomainMinMax(-10, 10) → Log`, `Center → Quadratic → Log1p`, `Log → Center`; a bad value under `DomainMinMax → Log` fails with "non-finite"; and `_SIGN_BEHAVIOR` in `test_feature_transforms.py` pins every member's two facts, so a new transform must be classified.
+- **Docs:** the `Log` docstring no longer claims a fit-time check that never existed, and `FEATURE_TRANSFORMATIONS.md` §8 lists the rule.
+
 ## Task 1 — refactor(feature_engineering): explicit loops in the builders (no behavior change)
 
 In [transformer.py](src/age_group_prediction/feature_engineering/transformer.py):
@@ -82,6 +91,7 @@ class CenterByReferencePoint(_TransformBase):
 - `feature_names_out="one-to-one"` keeps the column name, as `Center` does.
 - Add it to the `Transform` discriminated union (`transforms.py:230-241`) and to the package `__all__`.
 - Update the `Quadratic` docstring ("Meant to follow `Center` or `Standardize`") to also name `CenterByReferencePoint`.
+- Declare `negative_output = "depends_on_data"` on it (Task 0b): a column can lie entirely above the reference. Add `"center_by_reference_point": ("depends_on_data", False)` to `_SIGN_BEHAVIOR` in `test_feature_transforms.py`.
 
 **Tests first** (hand-written expected values, following the existing style):
 - In `test_feature_transforms.py`:
@@ -115,4 +125,4 @@ In [docs/MODULE_REFERENCE.md:72](docs/MODULE_REFERENCE.md#L72), add `CenterByRef
 
 ## Sequencing
 
-Task 1 goes first: it is the smallest and touches only `transformer.py`. Tasks 2 and 3 both edit `transforms.py` and `__init__.py`, so do them one at a time. Docs go last, so they describe the finished API.
+Task 0b went first: it unblocked the `-W error` gate. Task 1 comes next: it is the smallest and touches only `transformer.py`. Tasks 2 and 3 both edit `transforms.py` and `__init__.py`, so do them one at a time. Docs go last, so they describe the finished API.

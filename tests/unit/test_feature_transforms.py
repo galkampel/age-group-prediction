@@ -6,6 +6,8 @@ construct, so most of these assert that something raises.
 
 from __future__ import annotations
 
+from typing import get_args
+
 import numpy as np
 import pandas as pd
 import pytest
@@ -123,6 +125,37 @@ def test_every_member_round_trips_as_its_own_subclass(transform) -> None:
     restored = _ADAPTER.validate_python(transform.model_dump())
     assert type(restored) is type(transform)
     assert restored == transform
+
+
+# (negative_output, needs_nonnegative_input), read off each formula. A member
+# missing here fails the test below, so a new one is classified deliberately.
+_SIGN_BEHAVIOR = {
+    "standardize": ("always", False),
+    "center": ("always", False),
+    "quadratic": ("never", False),
+    "log": ("depends_on_data", True),
+    "log1p": ("as_input", True),
+    "domain_scale": ("as_input", False),
+    "domain_min_max": ("depends_on_data", False),
+    "relative_saturation": ("depends_on_data", True),
+    "ohe": ("never", False),
+}
+
+
+def test_every_member_is_listed_once() -> None:
+    # The sign-behavior test can only pin what _EVERY_MEMBER lists, so a union
+    # member left out of it would inherit the base class's defaults unchecked.
+    union = get_args(Transform)[0]
+    assert {type(member) for member in _EVERY_MEMBER} == set(get_args(union))
+    assert len(_EVERY_MEMBER) == len(get_args(union))
+
+
+@pytest.mark.parametrize("transform", _EVERY_MEMBER, ids=lambda t: t.kind)
+def test_every_member_declares_its_sign_behavior(transform) -> None:
+    # ColumnPlan rejects a log of a column an earlier step may have made
+    # negative; it can only do so if every step states what it does to signs.
+    declared = (transform.negative_output, transform.needs_nonnegative_input)
+    assert declared == _SIGN_BEHAVIOR[transform.kind]
 
 
 def test_the_discriminator_names_the_intended_member_in_errors() -> None:
