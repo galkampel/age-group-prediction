@@ -15,13 +15,16 @@ from pydantic import TypeAdapter, ValidationError
 from sklearn.base import clone
 from sklearn.exceptions import NotFittedError
 from sklearn.preprocessing import OneHotEncoder, StandardScaler
+from sklearn.utils.estimator_checks import estimator_checks_generator
 
+from age_group_prediction import feature_engineering
 from age_group_prediction.feature_engineering import (
     Center,
     DomainMinMax,
     DomainScale,
     Log,
     Log1p,
+    Log1pRatioScaler,
     OneHot,
     Quadratic,
     RelativeSaturation,
@@ -272,6 +275,14 @@ def test_relative_saturation_rejects_values_at_or_below_minus_one() -> None:
         RelativeSaturation().build().fit(np.array([[-1.0], [2.0]]))
 
 
+def test_relative_saturation_accepts_values_above_minus_one() -> None:
+    # The domain is log1p's, x > -1, not the non-negative one its sklearn tag
+    # names (see the estimator checks below).
+    values = np.array([[-0.5], [2.0]])
+    transformed = RelativeSaturation().build().fit_transform(values)
+    np.testing.assert_allclose(transformed, np.log1p(values) - np.log1p(0.75))
+
+
 # --- scikit-learn estimator contract for the fitted scaler -------------------
 #
 # The scaler is the one member that learns from the fit fold, so it is the one
@@ -337,3 +348,47 @@ def test_relative_saturation_returns_a_named_frame_under_pandas_output() -> None
     assert isinstance(transformed, pd.DataFrame)
     assert list(transformed.columns) == ["n_daycares_500m_sat"]
     assert transformed.index.equals(df.index)
+
+
+def test_log1p_ratio_scaler_is_public() -> None:
+    # Importable for direct use and for isinstance checks on a built spec.
+    assert isinstance(RelativeSaturation().build(), Log1pRatioScaler)
+    assert "Log1pRatioScaler" in feature_engineering.__all__
+
+
+# scikit-learn's own estimator checks: cloning, fitted state, dtypes, pandas
+# input. A list rather than parametrize_with_checks, which hands pytest a
+# generator that pytest 9 deprecates. The scaler declares the positive_only
+# tag, the nearest sklearn has to its real domain (x > -1). The one check that
+# expects negatives refused with sklearn's own message is a strict expected
+# failure: the scaler refuses the values it feeds, but with its own message.
+_EXPECTED_FAILED_CHECKS = {
+    "check_positive_only_tag_during_fit": (
+        "refuses values <= -1 with its own message, not sklearn's 'Negative "
+        "values in data'; accepts (-1, 0)"
+    ),
+}
+_SKLEARN_CHECKS = list(
+    estimator_checks_generator(
+        Log1pRatioScaler(),
+        expected_failed_checks=_EXPECTED_FAILED_CHECKS,
+        mark="xfail",
+        xfail_strict=True,
+    )
+)
+
+
+def _check_name(item) -> str:
+    # The generator yields (estimator, check) tuples, and a pytest.param
+    # wrapping one for each expected failure.
+    _, check = getattr(item, "values", item)
+    return check.func.__name__
+
+
+@pytest.mark.parametrize(
+    ("estimator", "check"),
+    _SKLEARN_CHECKS,
+    ids=[_check_name(c) for c in _SKLEARN_CHECKS],
+)
+def test_log1p_ratio_scaler_is_a_compliant_sklearn_estimator(estimator, check) -> None:
+    check(estimator)

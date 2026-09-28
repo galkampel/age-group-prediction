@@ -14,6 +14,7 @@ import pandas as pd
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 from sklearn.base import BaseEstimator, TransformerMixin
 from sklearn.preprocessing import FunctionTransformer, OneHotEncoder, StandardScaler
+from sklearn.utils import Tags
 from sklearn.utils.validation import (
     _check_feature_names_in,
     check_is_fitted,
@@ -198,7 +199,8 @@ class RelativeSaturation(_TransformBase):
 
     Emits ``log1p(x) - log1p(mean(x))``. The reference is ``log1p`` of the
     mean, not the mean of ``log1p``: it keeps the reference expressed in the
-    original counts, so the output is not mean-zero.
+    original counts, so the output is not mean-zero. Needs input greater than
+    -1, checked at fit.
     """
 
     kind: Literal["relative_saturation"] = "relative_saturation"
@@ -206,7 +208,7 @@ class RelativeSaturation(_TransformBase):
     needs_nonnegative_input = True
 
     def build(self) -> TransformerMixin:
-        return _Log1pRatioScaler()
+        return Log1pRatioScaler()
 
 
 class OneHot(_TransformBase):
@@ -273,16 +275,42 @@ Transform = Annotated[
 ]
 
 
-class _Log1pRatioScaler(TransformerMixin, BaseEstimator):
-    """Fitted half of :class:`RelativeSaturation`; learns the fold mean."""
+class Log1pRatioScaler(TransformerMixin, BaseEstimator):
+    """Diminishing returns measured against the fit data's mean, per column.
 
-    def fit(self, X: pd.DataFrame | np.ndarray, y: object = None) -> _Log1pRatioScaler:
+    Emits ``log1p(x) - log1p(mean(x))``, where the mean is learned at fit. The
+    fitted estimator behind :class:`RelativeSaturation`, and usable on its own.
+
+    Input must be greater than -1, where ``log1p`` is defined; checked at fit.
+    ``transform`` does not re-check: a value at or below -1 there gives ``nan``.
+
+    Attributes
+    ----------
+    mean_ : ndarray of shape (n_features,)
+        The per-column mean of the fit data.
+    n_features_in_ : int
+        The number of columns seen at fit.
+    feature_names_in_ : ndarray of shape (n_features_in_,)
+        The column names seen at fit, when the input had string column names.
+    """
+
+    def __sklearn_tags__(self) -> Tags:
+        tags = super().__sklearn_tags__()
+        # sklearn has no tag for "greater than -1"; positive_only is the nearest,
+        # and data respecting it is always valid here. Only sklearn's estimator
+        # checks read it (no meta-estimator does): they then feed non-negative
+        # data. The one expecting sklearn's own "Negative values" error is an
+        # expected failure in the tests.
+        tags.input_tags.positive_only = True
+        return tags
+
+    def fit(self, X: pd.DataFrame | np.ndarray, y: object = None) -> Log1pRatioScaler:
         # Records feature_names_in_, which lets transform reject a later fold
         # whose columns moved.
         values = validate_data(self, X, dtype=np.float64, ensure_2d=True)
         if np.any(values <= -1.0):
             raise ValueError(
-                "relative_saturation needs values greater than -1; log1p is "
+                "Log1pRatioScaler needs values greater than -1; log1p is "
                 "undefined at or below it"
             )
         self.mean_ = values.mean(axis=0)

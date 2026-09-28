@@ -922,7 +922,9 @@ ColumnPlan(name="ses_sq", columns="ses", transforms=(Standardize(), Quadratic())
 Replaces the daycare plan rather than joining it. `RelativeSaturation` emits
 $\log(1+d) - \log(1 + \bar d)$ — `log1p` of the mean, not the mean of `log1p` —
 so the reference stays in the original counts and the coefficient is an
-elasticity (§4.1, candidate 2).
+elasticity (§4.1, candidate 2). Its input must be greater than −1, where
+`log1p` is defined; anything else is rejected at fit. The fitted estimator is
+the public `Log1pRatioScaler`.
 
 ```python
 ColumnPlan(

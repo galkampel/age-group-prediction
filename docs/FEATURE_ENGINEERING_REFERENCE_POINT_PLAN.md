@@ -57,17 +57,26 @@ Mutation check, each of which an existing test must catch:
 - skip the append in `_build`;
 - add the base entry after the interactions instead of first.
 
-## Task 2 — refactor(feature_engineering): make Log1pRatioScaler public
+## Task 2 — refactor(feature_engineering): a public, sklearn-checked Log1pRatioScaler
 
 **Why it was private.** Nothing records a reason; the only commit is 9e84279. The design treats the pydantic specs as the public API and the sklearn objects as build details. It is the only hand-written estimator, which is the only reason it has a class name at all.
 
 **Why make it public.** It is a real, reusable sklearn estimator with its own contract: it learns `mean_`, supports `inverse_transform`, and implements `get_feature_names_out`. Making it public lets it be imported for direct use and for `isinstance` checks. Nothing depends on it being private.
 
-- [transforms.py](src/age_group_prediction/feature_engineering/transforms.py): rename `_Log1pRatioScaler` to `Log1pRatioScaler` in all three places, lines 178, 244 and 247.
-- [feature_engineering/__init__.py](src/age_group_prediction/feature_engineering/__init__.py): import it and add it to `__all__`.
-- [docs/MODULE_REFERENCE.md:72](docs/MODULE_REFERENCE.md#L72): add it to the `transforms.py` API list.
-- Tests: add one test that `from age_group_prediction.feature_engineering import Log1pRatioScaler` works, and that `RelativeSaturation().build()` is an instance of it. The existing sklearn-contract block (`test_feature_transforms.py:242-306`) stays as is.
-- Check: `git grep -n "_Log1pRatioScaler"` returns nothing.
+No behavior change: the input domain stays `x > -1`, where `log1p` is defined.
+- [transforms.py](src/age_group_prediction/feature_engineering/transforms.py): renamed `_Log1pRatioScaler` to `Log1pRatioScaler` (the class, its use in `RelativeSaturation.build`, and `fit`'s return type). The error message now names the class. The docstring is written for a public reader: the formula, the input domain, and the fitted attributes.
+- **sklearn's estimator checks.** Before this task the scaler failed 9 of 47: sklearn's generic checks feed negative data, and it rejects values at or below −1 without declaring any restriction. After it: 48 checks (the tag adds `check_fit_non_negative`), 46 passed, 1 expected failure, 1 skipped.
+  - It now declares `positive_only` in `__sklearn_tags__`. sklearn has no tag for "greater than −1"; `positive_only` is the nearest, and data respecting it is always valid here. Only sklearn's estimator checks read the tag: no meta-estimator (Pipeline, ColumnTransformer, GridSearchCV) passes it on.
+  - A non-negative bound was tried and reverted: it passed every check but served sklearn's harness, not the math.
+  - `check_positive_only_tag_during_fit` is a strict expected failure through sklearn's `expected_failed_checks`. It feeds values down to −3.4 and expects them refused with sklearn's "Negative values in data" message; the scaler refuses them with its own. If the domain is ever tightened to non-negative *with sklearn's message*, that check passes and the strict xfail fails the test. A tightening with any other message is caught by `test_relative_saturation_accepts_values_above_minus_one` instead.
+  - `check_fit_non_negative` passes only because it probes exactly −1.0, which is out of the domain. If sklearn ever probes a value in (−1, 0), it will need its own expected-failure entry.
+- [feature_engineering/__init__.py](src/age_group_prediction/feature_engineering/__init__.py): imported and added to `__all__`.
+- Docs: added to the `transforms.py` API list in [docs/MODULE_REFERENCE.md](docs/MODULE_REFERENCE.md), and named in `FEATURE_TRANSFORMATIONS.md` §8.5.2 with its input domain.
+- Tests, in `test_feature_transforms.py`:
+  - `test_log1p_ratio_scaler_is_public`: `RelativeSaturation().build()` is a `Log1pRatioScaler`, and the name is in `__all__`.
+  - `test_relative_saturation_accepts_values_above_minus_one`: pins the domain as `> -1`, not `>= 0`.
+  - `test_log1p_ratio_scaler_is_a_compliant_sklearn_estimator`: one test per sklearn check, built from `estimator_checks_generator` as a list. `parametrize_with_checks` hands pytest 9 a generator, which it deprecates, and that fails `-W error`. One check, `check_array_api_input`, is skipped because it needs the `SCIPY_ARRAY_API` environment variable.
+- Check: `git grep -n "_Log1pRatioScaler" -- src tests` returns nothing. This plan names the old class as history, so the grep excludes `docs`.
 
 ## Task 3 — feat(feature_engineering): CenterByReferencePoint
 
@@ -118,7 +127,7 @@ In [docs/FEATURE_TRANSFORMATIONS.md](docs/FEATURE_TRANSFORMATIONS.md), re-read i
 - §8 (building each model's transformer): add `CenterByReferencePoint` to the import block, and switch the quadratic SES declaration(s) from `Center()` to `CenterByReferencePoint(reference_point=0.0)`, if §3.2's reasoning then recommends it for that model.
 - §7 summary table: update the `ses` row.
 - §1 "Prefer fixed anchors over learned scales": list the new transform alongside `DomainScale` and `DomainMinMax`.
-- Wherever the doc names `RelativeSaturation`'s estimator, use `Log1pRatioScaler`.
+- Wherever the doc names `RelativeSaturation`'s estimator, use `Log1pRatioScaler`. (Task 2 added the only such mention, in §8.5.2.)
 
 In [docs/MODULE_REFERENCE.md:72](docs/MODULE_REFERENCE.md#L72), add `CenterByReferencePoint` to the API list.
 
@@ -126,7 +135,7 @@ In [docs/MODULE_REFERENCE.md:72](docs/MODULE_REFERENCE.md#L72), add `CenterByRef
 
 - `uv run pytest -m "not slow"` (1007 passed on the base as of 2026-09-27, plus this branch's new tests).
 - ruff on the changed files · `uv run mypy`.
-- `git grep -n "_Log1pRatioScaler"` returns nothing.
+- `git grep -n "_Log1pRatioScaler" -- src tests` returns nothing.
 - Independent review of the docs against the code.
 - At the stop: the commit command, the draft PR description, and the push command.
 
