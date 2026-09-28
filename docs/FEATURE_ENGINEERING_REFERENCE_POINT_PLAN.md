@@ -39,16 +39,23 @@ Added 2026-09-28, after Task 1's baseline gate failed before any edit. Under `-W
 - **Tests:** rejection cases `center-log`, `standardize-log`, `standardize-log1p`, `center-relative_saturation`, plus `Center → DomainScale → Log`; accepted chains `DomainMinMax → Log`, `Log → Log`, `Center → DomainMinMax(-10, 10) → Log`, `Center → Quadratic → Log1p`, `Log → Center`; a bad value under `DomainMinMax → Log` fails with "non-finite"; and `_SIGN_BEHAVIOR` in `test_feature_transforms.py` pins every member's two facts, so a new transform must be classified.
 - **Docs:** the `Log` docstring no longer claims a fit-time check that never existed, and `FEATURE_TRANSFORMATIONS.md` §8 lists the rule.
 
-## Task 1 — refactor(feature_engineering): explicit loops in the builders (no behavior change)
+## Task 1 — refactor(feature_engineering): explicit loops and clearer names in the builders
 
-In [transformer.py](src/age_group_prediction/feature_engineering/transformer.py):
-- `_build` (lines 169-181): build the entry list with `for plan in self.plans: entries.append((plan.name, plan.build(), list(plan.columns)))`.
-- `_build_interactions` (lines 183-198): start `entries` with the `("base", "passthrough", _all_columns)` entry, then `for interaction in self.interactions: entries.append(...)`.
-- Keep both comment blocks. The one explaining why the base entry exists belongs above the base entry.
-- Annotate the list explicitly, e.g. `entries: list[tuple[str, Any, Any]]`. Without the annotation, mypy infers the element type from the first entry: `(str, str, Callable)` in `_build_interactions`. Appending a transformer then fails type checking.
+In [transformer.py](src/age_group_prediction/feature_engineering/transformer.py), `FeatureTransformer._build` and `_build_interactions`. The design matrix is unchanged.
+- **Explicit loops:** `for plan in self.plans` and `for interaction in self.interactions` append to the list, replacing the comprehensions. In `_build_interactions` the list starts with the `("base", "passthrough", _all_columns)` entry, and the comment explaining why the base entry exists sits directly above it.
+- **The list is named `transformers`**, which is sklearn's own `ColumnTransformer(transformers=...)` parameter. It is typed `list[_TransformerTuple]`, with a module-level alias:
+  `_TransformerTuple = tuple[str, TransformerMixin | Pipeline | str, list[str] | Callable[[pd.DataFrame], list[str]]]`.
+  - `Pipeline` is listed separately because it is not a `TransformerMixin` subclass, and `str` covers `"passthrough"`.
+  - The `Callable` is there because the base entry selects every column at fit time: the first step's output names aren't known until it has run.
+  - The annotation is also needed for type checking. Without it, mypy infers the element type from the base entry, and appending a transformer fails.
+- **Variables and step names:** the two `ColumnTransformer`s are `column_transformer` and `interaction_transformer`, and the Pipeline steps are named the same (formerly `columns` and `interactions`). Only three tests read the step names; nothing in `src` does, and nothing is pickled (bundles and tracking store JSON).
 
-Tests: none new. The interaction and structure tests in `tests/unit/test_transformer_spec.py:298-443` and `test_feature_transformer.py` cover both builders.
-Mutation check: drop the base entry, then any one interaction. Existing tests must fail each time.
+Tests: none new. The four step-name uses, in three tests in `tests/unit/test_transformer_spec.py`, are updated.
+Mutation check, each of which an existing test must catch:
+- drop the base entry;
+- stop after the first interaction;
+- skip the append in `_build`;
+- add the base entry after the interactions instead of first.
 
 ## Task 2 — refactor(feature_engineering): make Log1pRatioScaler public
 

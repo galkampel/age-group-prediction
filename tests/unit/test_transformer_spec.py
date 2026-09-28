@@ -396,12 +396,15 @@ def test_an_interaction_round_trips_with_its_columns_intact() -> None:
 
 def test_an_interaction_step_is_added_only_when_interactions_are_declared() -> None:
     assert [name for name, _ in _interacting_transformer()._build().steps] == [
-        "columns"
+        "column_transformer"
     ]
     built = _interacting_transformer(
         (Interaction(left="ses", right="3_rooms_share"),)
     )._build()
-    assert [name for name, _ in built.steps] == ["columns", "interactions"]
+    assert [name for name, _ in built.steps] == [
+        "column_transformer",
+        "interaction_transformer",
+    ]
 
 
 def test_the_interaction_step_passes_the_base_matrix_through() -> None:
@@ -411,7 +414,7 @@ def test_the_interaction_step_passes_the_base_matrix_through() -> None:
     built = _interacting_transformer(
         (Interaction(left="ses", right="3_rooms_share"),)
     )._build()
-    entries = built.named_steps["interactions"].transformers
+    entries = built.named_steps["interaction_transformer"].transformers
     assert [name for name, _, _ in entries] == ["base", "ses_x_3_rooms_share"]
     assert entries[1][2] == ["ses", "3_rooms_share"]
 
@@ -497,7 +500,7 @@ def test_build_returns_one_column_transformer_entry_per_plan() -> None:
             _plan("room_share", "3_rooms_share", "4_rooms_share"),
         )
     )
-    # _build() returns the whole pipeline; the plans are its "columns" step.
-    built = transformer._build().named_steps["columns"]
+    # _build() returns the whole pipeline; the "column_transformer" step has the plans.
+    built = transformer._build().named_steps["column_transformer"]
     assert [name for name, _, _ in built.transformers] == ["ses_z", "room_share"]
     assert built.transformers[1][2] == ["3_rooms_share", "4_rooms_share"]
