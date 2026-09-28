@@ -143,7 +143,7 @@ _SIGN_BEHAVIOR = {
     "domain_scale": ("as_input", False),
     "domain_min_max": ("depends_on_data", False),
     "center_by_reference_point": ("depends_on_data", False),
-    "relative_saturation": ("depends_on_data", True),
+    "relative_saturation": ("always", True),
     "ohe": ("never", False),
 }
 

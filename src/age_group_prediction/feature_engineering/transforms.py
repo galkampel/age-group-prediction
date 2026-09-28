@@ -104,9 +104,10 @@ class Quadratic(_TransformBase):
 class Log(_TransformBase):
     """Natural log. Needs strictly positive input.
 
-    A log after centering or standardizing is rejected when the plan is
-    declared: a mean-zero column is negative somewhere. Any other non-positive
-    value surfaces as a non-finite design-matrix column.
+    A log after centering, standardizing or relative saturation is rejected
+    when the plan is declared: a column measured from its mean is negative
+    somewhere. Any other non-positive value surfaces as a non-finite
+    design-matrix column.
     """
 
     kind: Literal["log"] = "log"
@@ -125,9 +126,9 @@ class Log(_TransformBase):
 class Log1p(_TransformBase):
     """``log(1 + x)``, defined at zero and so usable on counts.
 
-    Needs input greater than -1. It is still rejected after centering or
-    standardizing: the rule is on sign, and a log of a mean-zero column is a
-    mistake even where it stays above -1. Any other value at or below -1
+    Needs input greater than -1. It is still rejected after centering,
+    standardizing or relative saturation: the rule is on sign, and a log of a
+    column measured from its mean is a mistake even where it stays above -1. Any other value at or below -1
     surfaces as a non-finite column.
     """
 
@@ -224,12 +225,13 @@ class RelativeSaturation(_TransformBase):
 
     Emits ``log1p(x) - log1p(mean(x))``. The reference is ``log1p`` of the
     mean, not the mean of ``log1p``: it keeps the reference expressed in the
-    original counts, so the output is not mean-zero. Needs input greater than
-    -1, checked at fit.
+    original counts, so the output is not mean-zero, but it is negative wherever
+    ``x`` lies below the mean, which some value always does. Needs input greater
+    than -1, checked at fit.
     """
 
     kind: Literal["relative_saturation"] = "relative_saturation"
-    negative_output = "depends_on_data"
+    negative_output = "always"
     needs_nonnegative_input = True
 
     def build(self) -> TransformerMixin:

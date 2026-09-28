@@ -130,13 +130,15 @@ def test_a_plan_rejects_an_empty_name_or_no_columns() -> None:
         (Standardize(), Log()),
         (Standardize(), Log1p()),
         (Center(), RelativeSaturation()),
+        # Saturation measures from the mean too: negative wherever x < mean(x).
+        (RelativeSaturation(), Log()),
     ],
     ids=lambda t: t.kind,
 )
 def test_a_log_after_centering_is_rejected_when_declared(earlier, log) -> None:
-    # A mean-zero column is negative somewhere, or all zeros, whatever the data.
-    # The rule is on sign: log1p would survive values in (-1, 0), but a log of
-    # a centered column is a modeling mistake either way.
+    # A column measured from its mean is negative somewhere, or all zeros,
+    # whatever the data. The rule is on sign: log1p would survive values in
+    # (-1, 0), but a log of a centered column is a modeling mistake either way.
     with pytest.raises(
         ValidationError,
         match=rf"'c'.*{log.kind}.*{earlier.kind} .*always emits.*before {earlier.kind}",
