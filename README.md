@@ -16,6 +16,9 @@ building-level DataFrame:
   setup, run layout, searching, final-run semantics, and model loading.
 - [Feature engineering](docs/FEATURE_ENGINEERING.md) explains feature specs,
   fitted transformations, and how each model uses them.
+- [Feature transformations](docs/FEATURE_TRANSFORMATIONS.md): the typed
+  `feature_engineering` package, the per-feature decisions, and each model's
+  declaration.
 - Model descriptions:
   - [Direct cohort model (Model A)](docs/DIRECT_COHORT_MODEL.md): one tuned
     LightGBM regressor per cohort.
