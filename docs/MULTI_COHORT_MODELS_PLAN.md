@@ -4,9 +4,8 @@
 This file is self-contained: it assumes no memory of the planning conversation.
 This file is the source of truth: update its status line and checkboxes as steps finish.
 
-**Status (2026-09-29):** A0 in progress. The N5 names are approved, the doc is
-linked from the indexes, and it awaits the user's commit and the draft PR.
-Baseline non-slow suite: **1082 passed** (1 skipped, 1 xfailed). Next: A1.
+**Status (2026-09-29):** A0 done (draft PR #10). A1 done, awaiting the user's
+commit. Non-slow suite: **1082 passed** (1 skipped, 1 xfailed). Next: A2.
 
 ## Contents
 1. Context and goal
@@ -109,13 +108,13 @@ These are the user's standing rules. Follow them exactly.
 
 | File | What it gives |
 |---|---|
-| `src/age_group_prediction/modeling/base.py` | `BaseAgeGroupModel(BaseEstimator, ABC)`: abstract `fit(X, y: pd.Series, exposure=None) -> Self`, abstract `predict(X, exposure=None) -> np.ndarray`, concrete `evaluate(y_true, y_pred, metric) -> float` |
+| `src/age_group_prediction/modeling/base.py` | `BaseAgeGroupModel(BaseEstimator, ABC)`: abstract `fit(X, y: pd.Series, exposure=None) -> Self`, abstract `predict(X, exposure=None) -> np.ndarray`, concrete `evaluate(y_true, y_pred, metric) -> float`. *Since A1: `y: pd.Series \| pd.DataFrame`, `predict -> np.ndarray \| pd.DataFrame`* |
 | `src/age_group_prediction/modeling/direct_cohort.py` | `DirectCohortModel`: LightGBM for **one** cohort, on a finished design matrix; `use_exposure`; `_check_exposure` (lines 70–91) |
 | `src/age_group_prediction/scoring.py` | `Metric(name, function, greater_is_better=False)`, `POISSON_DEVIANCE`, `RMSE`, `MAE` |
 | `src/age_group_prediction/feature_engineering/transformer.py` | `FeatureTransformer(plans, *, interactions, exposure_column, remainder)`; `fit`, `transform -> DataFrame`, `log_exposure` |
 | `src/age_group_prediction/hyperparameter_tuning/evaluator.py` | `CVHyperparameterEvaluator`; `build_feature_transformer_and_model(params) -> (FeatureTransformer, BaseAgeGroupModel)`; `evaluate(..., y: pd.Series \| np.ndarray, ...)` at line 83 |
 | `src/age_group_prediction/utils.py` | `DesignMatrix`, `Target`, `Groups`, `Exposure`, `take_rows` |
-| `tests/unit/test_modeling_contract.py` | Discovers every concrete model in `modeling`, builds it with `model_class()`, runs 4 sklearn checks and a refit test that calls `fit(X, y)` with a Series and no exposure |
+| `tests/unit/test_modeling_contract.py` | Discovers every concrete model in `modeling`, builds it with `model_class()`, runs 4 sklearn checks and a refit test that calls `fit(X, y)` with a Series and no exposure. *Since A1: built from an `EXAMPLES` factory per class* |
 | `docs/FEATURE_TRANSFORMATIONS.md` §8.1–§8.3 | The transformer declarations `tree`, `total_base`, `composition_base` |
 | `docs/MODEL_REIMPLEMENTATION_PLAN.md` | Decisions M1–M12 for Model A; §5 roadmap (step 3 = this rebuild) |
 
@@ -277,7 +276,7 @@ fitted copy. Set it before `fit`.
 Done when:
 - [x] The user has approved the doc, names included (N5): approved 2026-09-29.
   The user also decided that the §8.3 transformer is renamed at B9.
-- [ ] The draft PR is open and its number is recorded here.
+- [x] The draft PR is open: [#10](https://github.com/galkampel/age-group-prediction/pull/10).
 
 ### A1. Base contract and contract test
 - **Files:** `modeling/base.py`, `tests/unit/test_modeling_contract.py`.
@@ -288,9 +287,31 @@ Done when:
   being skipped; (2) the four checks and refit-equals-fresh run on every example.
 
 Done when:
-- [ ] `DirectCohortModel` passes with no change to its code.
-- [ ] Mutation: deleting its example fails the suite.
-- [ ] mypy, ruff and the non-slow suite pass.
+- [x] `DirectCohortModel` passes with no change to its code.
+- [x] Mutation: deleting its example fails the suite.
+- [x] mypy, ruff and the non-slow suite pass (1082).
+
+**Record (2026-09-29).**
+- **Verified first:**
+  - mypy: pandas has no stubs here, so the widened base type-checks, and so do
+    subclasses that keep `y: pd.Series`.
+  - `check_parameters_default_constructible` rebuilds the class from its
+    required arguments only. So an example may set non-default settings or
+    need a nested estimator.
+- **Mutation checks**, each failing the named test:
+  - example deleted: the coverage test, plus a `KeyError` in all 5 parametrized cases;
+  - an attribute set in `__init__`: `check_no_attributes_set_in_init`;
+  - a refit that differs from a fresh fit: `test_a_refit_equals_a_fresh_fit`;
+  - an example that builds another class, and an example with no discovered
+    model: the coverage test.
+- **Review:**
+  - *Fixed.* An example whose factory built another class (a copied factory)
+    let that class skip every check. The coverage test now asserts each
+    example's class.
+  - *Fixed.* An extra example key failed with the message "add an example for []".
+    The message now lists both sides.
+  - *Not changed.* The refit test compares values, not DataFrame labels. It
+    targets leftover fitted state, and A3's test 5 covers columns and index.
 
 ### A2. Raw-table helpers
 - **Files:** new `modeling/utils.py`, new `tests/unit/test_modeling_utils.py`.

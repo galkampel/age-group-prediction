@@ -5,7 +5,8 @@ state in ``__init__``, or overrides ``set_params`` wrongly breaks the tuner's
 ``clone(model).set_params(**params)`` silently. Of sklearn's data-free
 checks, these four are the smallest set that caught each such mistake when
 tried on deliberately broken models. An ``__init__`` that copies a mutable
-argument passes them all when built with defaults.
+argument passes them all when built with defaults, so each model is checked on
+an example instance instead, which also lets a model have required arguments.
 """
 
 from __future__ import annotations
@@ -46,6 +47,22 @@ def _models(base: type) -> list[type[BaseAgeGroupModel]]:
 
 MODELS = _models(BaseAgeGroupModel)
 
+# An unfitted model and data it can be fitted on, in the shapes it takes.
+type Example = tuple[BaseAgeGroupModel, pd.DataFrame, pd.Series | pd.DataFrame]
+
+
+def _direct_cohort_example() -> Example:
+    rng = np.random.default_rng(0)
+    X = pd.DataFrame({"x": rng.normal(size=200)})
+    y = pd.Series(rng.poisson(np.exp(1 + 0.5 * X["x"])))
+    return DirectCohortModel(), X, y
+
+
+# Factories, so every test gets its own model and data and none is built at import.
+EXAMPLES: dict[type[BaseAgeGroupModel], Callable[[], Example]] = {
+    DirectCohortModel: _direct_cohort_example,
+}
+
 CHECKS: list[Callable[[str, BaseAgeGroupModel], None]] = [
     check_do_not_raise_errors_in_init_or_set_params,  # converts or validates in __init__
     check_parameters_default_constructible,  # replaces a default
@@ -54,9 +71,17 @@ CHECKS: list[Callable[[str, BaseAgeGroupModel], None]] = [
 ]
 
 
-def test_discovery_finds_the_shipped_models() -> None:
-    # An empty parameter list would make pytest skip the contract test, not fail.
-    assert DirectCohortModel in MODELS
+def test_every_shipped_model_has_an_example() -> None:
+    # A model without an example would go unchecked, and so would one whose
+    # example builds another class (a copied factory). Equality with a non-empty
+    # EXAMPLES also fails an empty discovery, which pytest would only skip.
+    assert set(MODELS) == set(EXAMPLES), (
+        f"discovered {sorted(c.__name__ for c in MODELS)}, "
+        f"but examples exist for {sorted(c.__name__ for c in EXAMPLES)}"
+    )
+    for model_class, example in EXAMPLES.items():
+        model, _, _ = example()
+        assert type(model) is model_class, f"{model_class.__name__}'s example"
 
 
 @pytest.mark.parametrize("model_class", MODELS, ids=lambda c: c.__name__)
@@ -65,20 +90,24 @@ def test_model_keeps_the_parameter_contract(
     model_class: type[BaseAgeGroupModel],
     check: Callable[[str, BaseAgeGroupModel], None],
 ) -> None:
-    check(model_class.__name__, model_class())
+    model, _, _ = EXAMPLES[model_class]()
+    check(model_class.__name__, model)
 
 
 @pytest.mark.parametrize("model_class", MODELS, ids=lambda c: c.__name__)
 def test_a_refit_equals_a_fresh_fit(model_class: type[BaseAgeGroupModel]) -> None:
     # The tuner reuses one copy across a trial's folds, so fit must replace
     # all fitted state rather than build on the previous fold's.
-    rng = np.random.default_rng(0)
-    X = pd.DataFrame({"x": rng.normal(size=200)})
-    y = pd.Series(rng.poisson(np.exp(1 + 0.5 * X["x"])))
-    first, second = slice(0, 100), slice(100, 200)
-    template = model_class()
+    template, X, y = EXAMPLES[model_class]()
+    half = len(X) // 2
+    # Positional, for a Series or a DataFrame y alike.
+    first, second = slice(0, half), slice(half, None)
 
-    refitted = clone(template).fit(X[first], y[first]).fit(X[second], y[second])
-    fresh = clone(template).fit(X[second], y[second])
+    refitted = (
+        clone(template)
+        .fit(X.iloc[first], y.iloc[first])
+        .fit(X.iloc[second], y.iloc[second])
+    )
+    fresh = clone(template).fit(X.iloc[second], y.iloc[second])
 
     np.testing.assert_array_equal(refitted.predict(X), fresh.predict(X))
