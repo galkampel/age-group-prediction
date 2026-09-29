@@ -5,10 +5,10 @@ This file is self-contained: it assumes no memory of the planning conversation.
 This file is the source of truth: update its status line and checkboxes as steps finish.
 
 **Status (2026-09-29):** A0 done (draft PR #10). A1 committed (`8fed394`).
-A2 committed (`2c38010`, `5b5ea4d`, `7204ec2`). **A3 implemented, awaiting the
-user's review and commits** (two: A3a, the exposure rule; A3b,
-`IndependentCohortModels`). **Next: A4** (§8).
-Non-slow suite: **1104 passed (1 skipped, 1 xfailed)**.
+A2 committed (`2c38010`, `5b5ea4d`, `7204ec2`). A3 committed (`6b234f0`,
+`3f46fbc`). The handoff edit to this doc follows them. **Next: A4** (§8),
+starting with its "Facts" and "Decisions to ask".
+Non-slow suite: **1104 passed** (1 skipped, 1 xfailed).
 
 ## Contents
 1. Context and goal
@@ -526,7 +526,9 @@ Done when:
   been deleted along with the removed test.
 
 ### A3. `IndependentCohortModels`
-*Revised by the user at the start of the step (N3 e, N21). Two commits.*
+*Revised by the user at the start of the step (N3 e, N21). Committed:
+`6b234f0` (the exposure rule; rows paired by position), `3f46fbc`
+(`IndependentCohortModels`).*
 
 **Decisions at the start (user, 2026-09-29):**
 - **Every model gets the same exposure.** A model applies it only if its
@@ -621,6 +623,40 @@ Done when:
 - **Ran:** no doc code block was edited.
 
 ### A4. Smoke run and docs
+
+**Facts from A3 that A4 builds on** (re-verify in plan mode):
+- The API: `IndependentCohortModels({cohort: ModelPipeline(transformer,
+  DirectCohortModel(...))})`, then `fit(table, Y, exposure=...)` and
+  `predict(table, exposure=...)`, which returns a DataFrame with `Y`'s columns
+  and the table's index. Import from `age_group_prediction.modeling`: the
+  package root exports the **old** classes (§11).
+- Every model gets the same exposure. `use_exposure=False` ignores it; a model
+  fitted with an offset raises without one (N3 e). `use_exposure=True` with
+  `"regression"` raises (kept by the user at the end of A3).
+- Rows are paired by position; there is no index check (N19).
+  `Splitter.train_test_split` splits `X`, `y` and `groups`, but **not the
+  exposure**: take it as `exposure.loc[X_train.index]`, or by the same positions.
+- Nested `set_params` names do not reach into the mapping (N21); each cohort is
+  tuned on its own.
+- `FEATURE_TRANSFORMATIONS.md` §8.1: `tree` keeps `n_apartments` as a feature
+  *and* uses it as the offset, on purpose. Its second code block passes the raw
+  `fit_df["n_apartments"]` as the exposure, bypassing `ExposureTransformer`;
+  update it to build the exposure with `ExposureTransformer` (N3 d), and run it.
+- `MODULE_REFERENCE.md` already has the `independent_cohorts.py` row and the
+  new names (A3); A4 only checks it.
+- For running doc blocks and the simulator, see A2's "Pitfalls met".
+
+**Decisions to ask the user at the start of A4:**
+- Smoke-run cohorts: `tree` for every cohort, with `use_exposure=True` for all,
+  or both with and without the offset? (Recommended: both. It feeds §5 step 2
+  of `MODEL_REIMPLEMENTATION_PLAN.md`, "re-check the exposure offset".)
+- A baseline in the table? (Recommended: the constant rate
+  `Σy / Σexposure × exposure` per cohort, so the deviances can be read.)
+- Split and settings: grouped 80/20 by `neighborhood_id`, seeds 0–9, default
+  (untuned) hyperparameters, as in §6?
+- After A4: mark PR #10 ready for review and draft its description, with the
+  PR #5 note from §2?
+
 - **Smoke run** (scratchpad script, outside the repo): 10 simulated
   populations; per-cohort held-out Poisson deviance of `IndependentCohortModels`,
   and the deviance of the summed prediction against `n_children_total`. Put the
@@ -629,7 +665,8 @@ Done when:
   `IndependentCohortModels`, and the data flow: `ShareTransformer` and
   `ExposureTransformer` on the full table, then the split);
   `FEATURE_TRANSFORMATIONS.md` §8.1 (combining the cohorts);
-  `MODULE_REFERENCE.md`; `MODEL_REIMPLEMENTATION_PLAN.md` §5.
+  `MODULE_REFERENCE.md` (check); `MODEL_REIMPLEMENTATION_PLAN.md` §5 step 3
+  (Model A completed).
 
 Done when:
 - [ ] Every edited code block has been run.
