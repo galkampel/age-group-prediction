@@ -525,8 +525,10 @@ In order. Each step has its own plan and gated phases.
    the evaluator to `BaseAgeGroupModel`, then tune `DirectCohortModel` per
    cohort. Re-check the exposure offset once tuned; Step 2.4 found only weak
    evidence, untuned.
-3. **Rebuild Model B** (`IndependentTotalProbabilityModel`) in `modeling/`,
-   with its own plan doc. Its feature declarations are already in
+3. **Complete Model A as `IndependentCohortModels`, then rebuild Model B**
+   (`IndependentTotalProbabilityModel`) in `modeling/`. Plan:
+   [MULTI_COHORT_MODELS_PLAN.md](MULTI_COHORT_MODELS_PLAN.md) (there, Model 1
+   and Model 2). B's feature declarations are already in
    [FEATURE_TRANSFORMATIONS.md §8.2–8.5](FEATURE_TRANSFORMATIONS.md).
 4. **Rebuild Model C** (`BayesianConditionalModel`). *Needs step 3*: C reuses
    B's frozen feature forms.

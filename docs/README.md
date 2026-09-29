@@ -15,6 +15,8 @@ implementation details conflict, the model specification controls behavior.
 - **In progress:**
   - the scikit-learn-style re-implementation of the models in `modeling/`
     (Model A done; see the [plan](MODEL_REIMPLEMENTATION_PLAN.md));
+  - the multi-cohort models: Model A's cohorts combined in one object, and
+    Model B rebuilt (see the [plan](MULTI_COHORT_MODELS_PLAN.md));
   - the `hyperparameter_tuning` package (the evaluator is done; see its
     [plan](HYPERPARAMETER_TUNING_PLAN.md));
   - the `splitting` package (built and tested, not yet wired).
@@ -55,6 +57,7 @@ implementation details conflict, the model specification controls behavior.
 | Document | Authority |
 |---|---|
 | [Model re-implementation plan](MODEL_REIMPLEMENTATION_PLAN.md) | Decisions and step-by-step record for the scikit-learn-style `modeling` package |
+| [Multi-cohort models plan](MULTI_COHORT_MODELS_PLAN.md) | Decisions and steps for `IndependentCohortModels` (Model A's cohorts in one object) and the rebuilt Model B in `modeling` |
 | [Hyperparameter tuning plan](HYPERPARAMETER_TUNING_PLAN.md) | Decisions, design and remaining work for the `hyperparameter_tuning` package |
 
 ## Extensions Beyond The Simplified Model (Not Implemented)
