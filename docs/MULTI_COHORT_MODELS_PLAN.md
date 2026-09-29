@@ -5,9 +5,9 @@ This file is self-contained: it assumes no memory of the planning conversation.
 This file is the source of truth: update its status line and checkboxes as steps finish.
 
 **Status (2026-09-29):** A0 done (draft PR #10). A1 committed (`8fed394`).
-A2 (revised twice; the second revision gives `ModelPipeline` an explicit
-exposure, N17) done, **awaiting the user's review and two commits** (§8 A2).
-**Next: A3.** Non-slow suite on the current tree: **1093 passed** (1 skipped, 1 xfailed).
+A2 committed (`2c38010`, `5b5ea4d`). Before A3, `ModelPipeline` also rejects
+a `y` whose index differs from `X`'s (N19), **awaiting the user's commit**.
+**Next: A3.** Non-slow suite on the current tree: **1094 passed** (1 skipped, 1 xfailed).
 
 ## Contents
 1. Context and goal
@@ -155,7 +155,7 @@ reference doc `docs/INDEPENDENT_TOTAL_PROBABILITY_MODEL.md`.
 | N16 | *Withdrawn by the user, 2026-09-29.* **No utils file in `modeling`; logic lives under a class.** The home of `minimize_lbfgs` is decided at B1 | User's rule. First version: shared helpers in a public `modeling/utils.py` |
 | N17 | *Revised by the user on 2026-09-29: the exposure is an explicit argument.* `ModelPipeline(feature_transformer, model)`, a `BaseAgeGroupModel`: a feature transformer, then a model, fitted and used on the raw table. `fit(X, y, exposure=None)` clones both; `predict(X, exposure=None)` uses the fitted copies `feature_transformer_` and `model_`. `exposure` is passed through to the model, whose own check decides whether one is needed; a Series whose index differs from `X`'s raises. `uses_exposure` returns the model's. The aggregators (`IndependentCohortModels`, `IndependentTotalProbabilityModel`) hold models that take the raw table, and only loop and combine | User's choice. scikit-learn's `Pipeline` pattern, by composition: each class does one thing. sklearn's own `Pipeline` was already rejected (`HYPERPARAMETER_TUNING_PLAN.md` D13): its `fit` and `predict` name the exposure differently, and it has no `evaluate`. The explicit exposure keeps the base contract `fit(X, y, exposure)` for every model, and lets the tuner's `exposure=` path take a pipeline. First version: the pipeline read `X[exposure_column]` and rejected an `exposure` argument |
 | N18 | `base_log_rate_` stays. It is the intercept `b` in `exposure × exp(b + F(x))`. No intercept option is added for a model without an exposure | User's decision after the evidence in §6. Given an `init_score`, LightGBM switches off its own starting average, so the model supplies `b`. Without an exposure LightGBM starts from `mean(y)` itself |
-| N19 | Multi-cohort classes **raise** when `X` and `y` have different indexes | User's decision. Otherwise a misaligned `y` is used by position, silently |
+| N19 | Multi-cohort classes **raise** when `X` and `y` have different indexes; so does `ModelPipeline` (user, 2026-09-29, after the A2 review), for `y` and for an exposure Series | User's decision. Otherwise a misaligned `y` is used by position, silently |
 | N20 | The tuner path is **documented, not changed**. `CVHyperparameterEvaluator.evaluate` passes its `exposure` straight to `model.fit`, so the documented way to build that argument is `ExposureTransformer(...).fit_transform(table)`. Switching the evaluator to a `ModelPipeline` is recorded for the tuning work | User's decision. It keeps PR A out of the tuning package, and the exposure still comes from the validating class |
 
 **One decision still to ask, at the step named:**
@@ -508,8 +508,9 @@ Done when:
     - *Documented.* `ModelPipeline.uses_exposure` reads the template, so after
       `set_params` it describes the next fit; `predict` then raises, never
       misuses the exposure. A3's aggregator routes by it at fit and predict.
-    - *For A3, open.* `ModelPipeline.fit` pairs a `y` with another index by
-      position (N19 covers only the multi-cohort classes).
+    - *Resolved before A3.* `ModelPipeline.fit` paired a `y` with another index
+      by position. It now raises (N19): `test_a_y_for_other_rows_raises_at_fit`,
+      whose mutation (skip the check) fails it and only it. Suite: 1094.
   - Suite: 1093 passed (1 skipped, 1 xfailed): 1092 after the redesign, +1 case.
 - **Also left:** `HYPERPARAMETER_TUNING_PLAN.md` §5 still builds
   `exposure_train = train_df["n_apartments"]`; its block cannot run until
@@ -533,7 +534,9 @@ Done when:
 - **Build:** the aggregator of N17. It holds one model per cohort, each taking
   the raw table (a `ModelPipeline`).
   - `fit(X, y, exposure=None)` checks that the mapping's keys equal `y`'s
-    columns and that `X.index.equals(y.index)` (N19, decided: raise).
+    columns and that `X.index.equals(y.index)` (N19, decided: raise). Each
+    `ModelPipeline` checks its cohort's `y` too; the aggregator's check stays
+    for models that are not pipelines, and fails before any cohort is fitted.
   - Each cohort is `clone(model).fit(X, y[cohort], exposure=...)`: the
     exposure goes to the cohorts whose `uses_exposure` is `True`, `None` to
     the rest; `predict` routes it the same way. `cohort_models_` is

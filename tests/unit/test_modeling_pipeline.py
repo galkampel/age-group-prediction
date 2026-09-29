@@ -97,14 +97,23 @@ def test_uses_exposure_follows_the_model(use_exposure: bool) -> None:
     assert _pipeline(use_exposure=use_exposure).uses_exposure is use_exposure
 
 
+def test_a_y_for_other_rows_raises_at_fit() -> None:
+    # The model reads y by position, so targets labelled for other rows would
+    # be paired with the wrong buildings silently.
+    X, y, exposure = _table()
+
+    with pytest.raises(ValueError, match="y's index differs"):
+        _pipeline().fit(X, y.sample(frac=1, random_state=0), exposure=exposure)
+
+
 def test_an_exposure_for_other_rows_raises_at_fit_and_at_predict() -> None:
     # The model reads the exposure by position, so one labelled for other rows
     # would be applied to the wrong buildings silently.
     X, y, exposure = _table()
     shuffled = exposure.sample(frac=1, random_state=0)
-    with pytest.raises(ValueError, match="index differs"):
+    with pytest.raises(ValueError, match="exposure's index differs"):
         _pipeline().fit(X, y, exposure=shuffled)
 
     pipeline = _pipeline().fit(X, y, exposure=exposure)
-    with pytest.raises(ValueError, match="index differs"):
+    with pytest.raises(ValueError, match="exposure's index differs"):
         pipeline.predict(X, exposure=shuffled)

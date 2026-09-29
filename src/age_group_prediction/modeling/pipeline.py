@@ -55,7 +55,8 @@ class ModelPipeline(BaseAgeGroupModel):
         exposure: ArrayLike | None = None,
     ) -> Self:
         """Fit copies of the transformer and the model on the raw table ``X``."""
-        self._check_exposure_index(X, exposure)
+        self._check_aligned(X, y, "y")
+        self._check_aligned(X, exposure, "exposure")
         # y as sklearn's Pipeline passes it, so a supervised transformer works too.
         feature_transformer = clone(self.feature_transformer).fit(X, y)
         model = clone(self.model).fit(
@@ -75,18 +76,20 @@ class ModelPipeline(BaseAgeGroupModel):
         refitted, so a row's prediction does not depend on the rows beside it.
         """
         check_is_fitted(self)
-        self._check_exposure_index(X, exposure)
+        self._check_aligned(X, exposure, "exposure")
         return self.model_.predict(
             self.feature_transformer_.transform(X), exposure=exposure
         )
 
     @staticmethod
-    def _check_exposure_index(X: pd.DataFrame, exposure: ArrayLike | None) -> None:
-        # The model reads the exposure by position, so a Series labelled for
-        # other rows would be applied to the wrong buildings silently. An array
-        # has no labels to check; whether one is needed is the model's check.
-        if isinstance(exposure, pd.Series) and not exposure.index.equals(X.index):
+    def _check_aligned(X: pd.DataFrame, values: object, name: str) -> None:
+        # The model reads y and the exposure by position, so values labelled for
+        # other rows would land on the wrong buildings silently. An array has
+        # no labels to check; whether an exposure is needed is the model's check.
+        if isinstance(values, pd.Series | pd.DataFrame) and not values.index.equals(
+            X.index
+        ):
             raise ValueError(
-                "exposure's index differs from X's; build both from the same "
-                "rows, e.g. with ExposureTransformer on the same table"
+                f"{name}'s index differs from X's; take both from the same rows "
+                "of the same table"
             )
