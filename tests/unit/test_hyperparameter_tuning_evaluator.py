@@ -348,7 +348,7 @@ def test_a_missing_exposure_raises_the_models_error() -> None:
         parameters=[IntParameter("n_estimators", 1, 5)],
     )
 
-    with pytest.raises(ValueError, match="pass `exposure` exactly when"):
+    with pytest.raises(ValueError, match="pass `exposure`"):
         evaluator.evaluate(FixedTrial({"n_estimators": 2}), X, Y, GROUPS)
 
 

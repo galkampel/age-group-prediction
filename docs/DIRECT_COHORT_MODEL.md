@@ -89,8 +89,8 @@ The output $\hat\mu_i$ is an expected **count**, not a rate.
 | Member | What it takes or gives |
 |---|---|
 | `DirectCohortModel(*, objective="poisson", use_exposure=False, n_estimators, learning_rate, num_leaves, max_depth, min_child_samples, reg_alpha, reg_lambda, min_split_gain, subsample, colsample_bytree, random_state=42, n_jobs=1)` | Settings only, stored verbatim. The 10 hyperparameters default to LightGBM's own. `n_jobs=1` avoids an OpenMP crash alongside torch on macOS |
-| `fit(X, y, exposure=None)` | `y` is the raw cohort count; `exposure` is the raw $n$ |
-| `predict(X, exposure=None)` | Expected counts, a 1-D array. It follows how the model was fitted: pass `exposure` exactly when it was fitted with one |
+| `fit(X, y, exposure=None)` | `y` is the raw cohort count; `exposure` is the raw $n$. With `use_exposure=False` a passed exposure is ignored, so one exposure can go to every model and a tuner can compare with and without |
+| `predict(X, exposure=None)` | Expected counts, a 1-D array. It follows how the model was fitted: an exposure is required if it was fitted with one, and ignored otherwise |
 | `evaluate(y_true, y_pred, metric)` | One `float`. `metric` is a `Metric`: `POISSON_DEVIANCE`, `RMSE`, `MAE`, or a custom `Metric(name, function, greater_is_better=False)` |
 | `regressor_`, `base_log_rate_` | Fitted state: the LightGBM model, and the intercept $b$ (`None` without the exposure) |
 
@@ -113,8 +113,10 @@ score = model.evaluate(test_df["n_kindergarten"], predictions, POISSON_DEVIANCE)
 The model checks only what would otherwise pass silently. Each of these raises
 `ValueError`:
 - `use_exposure=True` with `"regression"`, which has no log link;
-- `exposure` not passed exactly when the model uses one, whether it's missing
-  or unexpected.
+- `exposure` missing when the model uses one, which would drop the offset
+  silently (one passed to a model without the offset is ignored);
+- an exposure that is not one-dimensional, which would broadcast into an
+  $(n, n)$ prediction.
 
 The exposure's values are checked where the data is prepared, not here:
 `preprocessing.ExposureTransformer` returns the column as floats and raises

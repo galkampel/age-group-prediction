@@ -38,18 +38,28 @@ def test_clone_and_set_params_change_only_the_copy() -> None:
 
 
 @pytest.mark.parametrize(
-    ("use_exposure", "exposure"),
-    [(True, None), (False, EXPOSURE), (True, EXPOSURE[:, None])],
-    ids=["missing-while-on", "given-while-off", "two-dimensional"],
+    ("exposure", "message"),
+    [(None, "pass `exposure`"), (EXPOSURE[:, None], "one-dimensional")],
+    ids=["missing-while-on", "two-dimensional"],
 )
-def test_exposure_misuse_raises(
-    use_exposure: bool, exposure: np.ndarray | None
-) -> None:
-    # Each would otherwise pass silently: a dropped or an ignored offset, or a
-    # column that broadcasts into an (n, n) prediction. The values are checked
-    # by preprocessing.ExposureTransformer and its tests.
-    with pytest.raises(ValueError):
-        DirectCohortModel(use_exposure=use_exposure).fit(X, Y, exposure=exposure)
+def test_exposure_misuse_raises(exposure: np.ndarray | None, message: str) -> None:
+    # Each would otherwise pass silently: a dropped offset, or a column that
+    # broadcasts into an (n, n) prediction. The values are checked by
+    # preprocessing.ExposureTransformer and its tests.
+    with pytest.raises(ValueError, match=message):
+        DirectCohortModel(use_exposure=True).fit(X, Y, exposure=exposure)
+
+
+def test_an_unused_exposure_is_ignored() -> None:
+    # A caller passes one exposure to every model; with use_exposure=False it
+    # must not enter the fit or the prediction.
+    model = DirectCohortModel(n_estimators=20)
+    without = clone(model).fit(X, Y).predict(X)
+
+    with_exposure = clone(model).fit(X, Y, exposure=EXPOSURE)
+
+    np.testing.assert_array_equal(with_exposure.predict(X), without)
+    np.testing.assert_array_equal(with_exposure.predict(X, exposure=EXPOSURE), without)
 
 
 @pytest.mark.parametrize(

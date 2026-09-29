@@ -28,7 +28,9 @@ class DirectCohortModel(BaseAgeGroupModel):
     ``use_exposure`` (Poisson only) makes the raw exposure (apartments), passed
     to ``fit`` and ``predict``, enter as the offset ``log(exposure)``. The trees
     then learn the cohort's rate per apartment rather than per building, and
-    ``predict`` multiplies it back by the exposure to give a count.
+    ``predict`` multiplies it back by the exposure to give a count. With
+    ``use_exposure=False`` a passed exposure is ignored, so a caller can pass
+    one exposure to every model, and a tuner can compare with and without.
     """
 
     def __init__(
@@ -67,11 +69,6 @@ class DirectCohortModel(BaseAgeGroupModel):
         # 1 by default: more OpenMP threads crash alongside torch on macOS.
         self.n_jobs = n_jobs
 
-    @property
-    def uses_exposure(self) -> bool:
-        """The ``use_exposure`` setting."""
-        return self.use_exposure
-
     def _check_exposure(
         self, exposure: ArrayLike | None, *, expected: bool
     ) -> np.ndarray | None:
@@ -82,14 +79,13 @@ class DirectCohortModel(BaseAgeGroupModel):
         all-zero y. The values are validated where the data is prepared, by
         :class:`~age_group_prediction.preprocessing.ExposureTransformer`.
         """
-        # A forgotten exposure would silently drop the offset, and an unexpected
-        # one would be silently ignored.
-        if (exposure is None) == expected:
-            raise ValueError(
-                "pass `exposure` exactly when the model uses one (use_exposure=True)"
-            )
-        if exposure is None:
+        if not expected:
             return None
+        # A forgotten exposure would silently drop the offset.
+        if exposure is None:
+            raise ValueError(
+                "the model uses an exposure offset (use_exposure=True); pass `exposure`"
+            )
         exposure_values = np.asarray(exposure, dtype=float)
         # A column (n, 1), e.g. a one-column DataFrame, would broadcast against
         # the (n,) scores at predict into an (n, n) result.

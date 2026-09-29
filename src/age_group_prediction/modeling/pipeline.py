@@ -22,7 +22,10 @@ class ModelPipeline(BaseAgeGroupModel):
     ``exposure`` is passed through to the model. Build it on the full table,
     before splitting, with
     :class:`~age_group_prediction.preprocessing.ExposureTransformer`, which
-    rejects the values LightGBM would accept silently. ``fit`` fits copies, so
+    rejects the values LightGBM would accept silently. As in scikit-learn,
+    the rows of ``X``, ``y`` and the exposure are paired by position, not by
+    index: split them with the same row positions, or take the exposure's
+    rows as ``exposure.loc[X_train.index]``. ``fit`` fits copies, so
     the templates stay unfitted; ``predict`` uses the fitted copies
     ``feature_transformer_`` and ``model_``. A setting changed by
     ``set_params`` after ``fit`` therefore reaches only the next ``fit``.
@@ -38,16 +41,6 @@ class ModelPipeline(BaseAgeGroupModel):
         self.feature_transformer = feature_transformer
         self.model = model
 
-    @property
-    def uses_exposure(self) -> bool:
-        """The model's setting, so a caller knows whether to pass an exposure.
-
-        It is the template's, so it describes the next ``fit``: after
-        ``set_params`` a fitted pipeline may differ, and its ``predict`` then
-        raises on a missing or unexpected exposure rather than misusing one.
-        """
-        return self.model.uses_exposure
-
     def fit(
         self,
         X: pd.DataFrame,
@@ -55,8 +48,6 @@ class ModelPipeline(BaseAgeGroupModel):
         exposure: ArrayLike | None = None,
     ) -> Self:
         """Fit copies of the transformer and the model on the raw table ``X``."""
-        self._check_aligned(X, y, "y")
-        self._check_aligned(X, exposure, "exposure")
         # y as sklearn's Pipeline passes it, so a supervised transformer works too.
         feature_transformer = clone(self.feature_transformer).fit(X, y)
         model = clone(self.model).fit(
@@ -76,20 +67,6 @@ class ModelPipeline(BaseAgeGroupModel):
         refitted, so a row's prediction does not depend on the rows beside it.
         """
         check_is_fitted(self)
-        self._check_aligned(X, exposure, "exposure")
         return self.model_.predict(
             self.feature_transformer_.transform(X), exposure=exposure
         )
-
-    @staticmethod
-    def _check_aligned(X: pd.DataFrame, values: object, name: str) -> None:
-        # The model reads y and the exposure by position, so values labelled for
-        # other rows would land on the wrong buildings silently. An array has
-        # no labels to check; whether an exposure is needed is the model's check.
-        if isinstance(values, pd.Series | pd.DataFrame) and not values.index.equals(
-            X.index
-        ):
-            raise ValueError(
-                f"{name}'s index differs from X's; take both from the same rows "
-                "of the same table"
-            )
