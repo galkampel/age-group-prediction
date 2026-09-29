@@ -335,22 +335,6 @@ def test_an_empty_passthrough_transformer_is_meaningful() -> None:
     FeatureTransformer(plans=(), remainder="passthrough").validate()
 
 
-def test_an_exposure_may_also_be_a_predictor() -> None:
-    # Model A keeps n_apartments as a feature and passes log n as LightGBM's
-    # init_score (FEATURE_TRANSFORMATIONS.md 3.3): the offset asserts exact
-    # proportionality and the feature lets the trees learn departures from it.
-    # Whether that is wanted is the caller's modeling choice, not this class's.
-    transformer = FeatureTransformer(
-        plans=(_plan("apartments", "n_apartments"),),
-        exposure_column="n_apartments",
-    )
-    df = pd.DataFrame({"n_apartments": [12.0, 40.0, 80.0]})
-    assert list(transformer.fit_transform(df).columns) == ["n_apartments"]
-    offset = transformer.log_exposure(df)
-    assert offset.name == "log_n_apartments"
-    np.testing.assert_allclose(offset.to_numpy(), np.log([12.0, 40.0, 80.0]))
-
-
 # --- Interactions: what can be declared --------------------------------------
 #
 # An Interaction is to the interaction step what a ColumnPlan is to the base
@@ -490,10 +474,9 @@ def test_a_column_multiplied_by_itself_is_rejected_when_fitted() -> None:
 def test_cloning_preserves_the_declaration() -> None:
     # One declaration is fit once per fold, and clone() is how a fresh unfitted
     # copy is made -- so the parameters must survive it untouched.
-    original = _transformer(exposure_column="n_apartments")
+    original = _transformer(remainder="passthrough")
     copy = clone(original)
     assert copy.plans == original.plans
-    assert copy.exposure_column == "n_apartments"
     assert copy.remainder == original.remainder
 
 

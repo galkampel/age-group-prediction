@@ -120,6 +120,9 @@ class FeatureTransformer(TransformerMixin, BaseEstimator):
     Statistics are learned in :meth:`fit` and reused by every
     :meth:`transform`, so a validation fold is centered by the training fold's
     means. ``sklearn.base.clone`` gives a fresh unfitted copy per fold.
+
+    The exposure is not declared here: whether a model has an offset is the
+    model's setting, and it takes the raw column from the table itself.
     """
 
     def __init__(
@@ -127,14 +130,12 @@ class FeatureTransformer(TransformerMixin, BaseEstimator):
         plans: tuple[ColumnPlan, ...] = (),
         *,
         interactions: Sequence[Interaction] = (),
-        exposure_column: str | None = None,
         remainder: str = "drop",
     ) -> None:
         # Stored verbatim: set_params assigns attributes without re-entering
         # __init__, so validating here would be skipped by GridSearchCV.
         self.plans = plans
         self.interactions = interactions
-        self.exposure_column = exposure_column
         self.remainder = remainder
 
     def validate(self) -> None:
@@ -174,27 +175,6 @@ class FeatureTransformer(TransformerMixin, BaseEstimator):
         """The design matrix's columns, in order."""
         check_is_fitted(self)
         return np.asarray(self.feature_names_, dtype=object)
-
-    def log_exposure(self, X: pd.DataFrame) -> pd.Series | None:
-        """The offset column, or ``None`` when no exposure is declared.
-
-        Returned separately from :meth:`transform` so it cannot be mistaken for
-        a predictor: callers hand it to the model's ``offset``.
-        """
-        if self.exposure_column is None:
-            return None
-        values = X[self.exposure_column].astype(float)
-        if (values <= 0).any():
-            # The offset is a log, and log of a non-positive number is -inf.
-            raise ValueError(
-                f"Exposure column {self.exposure_column!r} must be strictly "
-                f"positive; it enters the model as its log"
-            )
-        return pd.Series(
-            np.log(values.to_numpy()),
-            index=X.index,
-            name=f"log_{self.exposure_column}",
-        )
 
     def _build(self) -> Pipeline:
         """Return the unfitted pipeline the plans and interactions describe."""

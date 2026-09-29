@@ -937,8 +937,8 @@ tree = FeatureTransformer(
 **`n_apartments` can be both a feature and the offset, on purpose.** Section
 3.3 keeps it as a column *and* uses $\log n$ as the offset. The offset asserts
 exact proportionality, and the feature lets the trees learn departures from
-it. The model takes the raw exposure itself, so the transformer declares no
-`exposure_column`:
+it. The exposure belongs to the model, not the transformer: `use_exposure=True`,
+with the raw column passed to `fit` and `predict`:
 
 ```python
 from sklearn.base import clone
@@ -998,7 +998,6 @@ total_base = FeatureTransformer(
         ),
         ColumnPlan(name="school", columns="school_status", transforms=(SCHOOL,)),
     ),
-    exposure_column="n_apartments",
 )
 ```
 
@@ -1009,23 +1008,20 @@ for the daycare term (§4.1); contrasts against `none` for the school dummies
 
 Unlike Model A, B and C do not list `n_apartments` among the plans, so building
 size enters **only** as the offset (§4.4). The package does not enforce that;
-the declaration is what expresses it. Hand the offset to the model separately,
-where it cannot be mistaken for a predictor:
-
-```python
-offset = total_base.fit(fit_df).log_exposure(fit_df)   # a Series, log n
-```
+the declaration is what expresses it. The exposure is not the transformer's:
+the model takes the raw `n_apartments` separately, where it cannot be mistaken
+for a predictor, and forms the offset $\log n$ itself.
 
 ### 8.3 Model B — composition stage
 
-**The same plans with no exposure** (§4.7): age-group shares do not depend on
-building size. In a multinomial logit every feature already gets a coefficient
-per cohort, so this stage is roughly twice as parameter-hungry for the same
-design matrix and parsimony binds harder (§6.3).
+**The same plans, and a model with no exposure** (§4.7): age-group shares do
+not depend on building size. In a multinomial logit every feature already gets
+a coefficient per cohort, so this stage is roughly twice as parameter-hungry
+for the same design matrix and parsimony binds harder (§6.3).
 
 ```python
 composition_base = FeatureTransformer(
-    plans=total_base.plans,      # identical; only the exposure differs
+    plans=total_base.plans,      # identical; only the model differs, taking no exposure
 )
 ```
 
@@ -1137,7 +1133,6 @@ from sklearn.base import clone
 
 fold = clone(total_base).fit(train_df)
 X_train, X_valid = fold.transform(train_df), fold.transform(valid_df)
-offset_train = fold.log_exposure(train_df)
 ```
 
 ### 8.7 Still Outstanding
