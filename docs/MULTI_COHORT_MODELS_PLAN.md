@@ -5,10 +5,10 @@ This file is self-contained: it assumes no memory of the planning conversation.
 This file is the source of truth: update its status line and checkboxes as steps finish.
 
 **Status (2026-09-29):** A0 done (draft PR #10). A1 committed (`8fed394`).
-A2 committed (`2c38010`, `5b5ea4d`). `ModelPipeline` also rejects a `y` whose
-index differs from `X`'s (N19), committed (`7204ec2`). The handoff edit to
-this doc follows it. **Next: A3** (§8), starting with its "Facts" and "Decisions to ask".
-Non-slow suite: **1094 passed** (1 skipped, 1 xfailed).
+A2 committed (`2c38010`, `5b5ea4d`, `7204ec2`). **A3 implemented, awaiting the
+user's review and commits** (two: A3a, the exposure rule; A3b,
+`IndependentCohortModels`). **Next: A4** (§8).
+Non-slow suite: **1104 passed (1 skipped, 1 xfailed)**.
 
 ## Contents
 1. Context and goal
@@ -114,7 +114,7 @@ These are the user's standing rules. Follow them exactly.
 
 | File | What it gives |
 |---|---|
-| `src/age_group_prediction/modeling/base.py` | `BaseAgeGroupModel(BaseEstimator, ABC)`: abstract `fit(X, y: pd.Series, exposure=None) -> Self`, abstract `predict(X, exposure=None) -> np.ndarray`, concrete `evaluate(y_true, y_pred, metric) -> float`. *Since A1: `y: pd.Series \| pd.DataFrame`, `predict -> np.ndarray \| pd.DataFrame`. In the working tree (A2): the property `uses_exposure`* |
+| `src/age_group_prediction/modeling/base.py` | `BaseAgeGroupModel(BaseEstimator, ABC)`: abstract `fit(X, y: pd.Series, exposure=None) -> Self`, abstract `predict(X, exposure=None) -> np.ndarray`, concrete `evaluate(y_true, y_pred, metric) -> float`. *Since A1: `y: pd.Series \| pd.DataFrame`, `predict -> np.ndarray \| pd.DataFrame`. A2 added the property `uses_exposure`; A3 removed it (N3)* |
 | `src/age_group_prediction/modeling/direct_cohort.py` | `DirectCohortModel`: LightGBM for **one** cohort, on a finished design matrix; `use_exposure`; `_check_exposure`; fitted `regressor_` and `base_log_rate_` |
 | `src/age_group_prediction/preprocessing.py` | `ShareTransformer`: fit-free, row-wise, run on the full table before splitting. *A2 adds `ExposureTransformer`* |
 | `src/age_group_prediction/scoring.py` | `Metric(name, function, greater_is_better=False)`, `POISSON_DEVIANCE`, `RMSE`, `MAE` |
@@ -140,32 +140,32 @@ reference doc `docs/INDEPENDENT_TOTAL_PROBABILITY_MODEL.md`.
 |---|---|---|
 | N1 | One class hierarchy. `BaseAgeGroupModel` is widened to `y: pd.Series \| pd.DataFrame` and `predict -> np.ndarray \| pd.DataFrame`; every new class subclasses it | The cohort-probability model needs a DataFrame `y` anyway. One contract keeps `evaluate`, `clone`/`set_params` and the contract test for all models. A second base or generics adds code that mypy cannot check (pandas is untyped here) |
 | N2 | Multi-cohort classes take the **raw table** and return a **DataFrame**: one column per cohort, named from `y`'s columns at fit, indexed like `X`. Each of their models is a `ModelPipeline`, which holds the feature transformer (N17) | User's choice. Named columns cannot be mixed up by position. M9 still holds for single models: they take a finished design matrix |
-| N3 | *Revised three times on 2026-09-29, each time by the user.* **The exposure is the model's, and its values are validated in preprocessing.** (a) Whether a model has an offset is its setting (`use_exposure`), reported by the base property `uses_exposure` (default `False`). (b) Which column holds it is a schema fact: `exposure_column="n_apartments"`. (c) `preprocessing.ExposureTransformer` reads that column and returns it as floats, or raises if a value is not strictly positive and finite. (d) The caller builds the exposure with it, on the full table before splitting, and passes it as `exposure=` to every model, `ModelPipeline` (N17) included. (e) The single models keep only the API check: an exposure is passed exactly when the model uses one. (f) The models take the **raw** exposure, not its log. (g) `FeatureTransformer.exposure_column` and `log_exposure` were removed | (a, b) statsmodels, R, glum, LightGBM and sklearn's examples all pass the exposure to the model, outside the feature matrix. (c) LightGBM accepts a zero, infinite or NaN exposure silently (§6), so the check is needed once. (e) It depends on the model's setting, so preprocessing cannot do it. (f) `DirectCohortModel` needs `Σ exposure` for its intercept, and `exposure=` is settled (M10), as in statsmodels. History: first a transformer's `exposure_column` declared the exposure; then helper functions read it; then the user asked for the validation in preprocessing and the logic under a class; then for an explicit exposure argument on `ModelPipeline` (d), which gives up the guarantee that the pipeline always validates it |
+| N3 | *Revised four times on 2026-09-29, each time by the user.* **The exposure is the model's, and its values are validated in preprocessing.** (a) Whether a model has an offset is its own constructor setting (`use_exposure`), on the models that can have one; the base declares no such setting or property. (b) Which column holds it is a schema fact: `exposure_column="n_apartments"`. (c) `preprocessing.ExposureTransformer` reads that column and returns it as floats, or raises if a value is not strictly positive and finite. (d) The caller builds the exposure with it, on the full table before splitting, and passes it as `exposure=` to every model, `ModelPipeline` (N17) included. (e) Every model takes the same exposure: one with an offset raises if it is missing; any other model **ignores** it (A3). (f) The models take the **raw** exposure, not its log. (g) `FeatureTransformer.exposure_column` and `log_exposure` were removed | (a, b) statsmodels, R, glum, LightGBM and sklearn's examples all pass the exposure to the model, outside the feature matrix. (c) LightGBM accepts a zero, infinite or NaN exposure silently (§6), so the check is needed once. (e) A missing exposure would drop the offset silently; an ignored one lets a caller pass one exposure to every model, and a tuner compare `use_exposure` with one fixed exposure (the evaluator passes the same exposure to every trial). As sklearn's metadata routing does for metadata a consumer declares not requested. Before A3 an unexpected exposure raised, and `uses_exposure` told an aggregator where to route it. (f) `DirectCohortModel` needs `Σ exposure` for its intercept, and `exposure=` is settled (M10), as in statsmodels. History: first a transformer's `exposure_column` declared the exposure; then helper functions read it; then the user asked for the validation in preprocessing and the logic under a class; then for an explicit exposure argument on `ModelPipeline` (d), which gives up the guarantee that the pipeline always validates it |
 | N4 | No scoring override. Per-cohort scores are a caller loop: `model.evaluate(Y[c], predictions[c], metric)` | `mean_poisson_deviance` rejects several columns, and how to average cohorts is the caller's choice |
 | N5 | Names: `IndependentCohortModels` (Model 1), `TotalChildrenModel`, `CohortProbabilityModel`, `IndependentTotalProbabilityModel` (Model 2), `TemperatureCalibrator` | User: the first model is named for total children, the second for cohort probabilities. The combined class keeps the old name, as `DirectCohortModel` did; new classes are imported from `age_group_prediction.modeling` only |
 | N6 | Fitting uses `scipy.optimize.minimize(method="L-BFGS-B")` on objectives built from **predefined library functions**: `scipy.stats.poisson.logpmf`, `scipy.stats.nbinom.logpmf`, `scipy.special.log_softmax` and `xlogy`. Gradients are analytic | User: scipy is fine if the objective is predefined or easy to validate. Every objective is pinned to a library fit in tests (N7), and every gradient to `scipy.optimize.check_grad` |
 | N7 | Test oracles: sklearn `PoissonRegressor` and `LogisticRegression` in `tests/unit`; statsmodels in `tests/validation` with `pytest.importorskip` | statsmodels is only in the `validation` dependency group |
 | N8 | One penalty meaning in both models: `l2_penalty` multiplies `½‖coefficients‖²` added to the **mean** negative log-likelihood (per building for totals, per child for probabilities). Intercepts are not penalized | Comparable across folds of different size. Conversions for the oracles are in §7 |
 | N9 | No clipping of the linear predictor and no floor on the mean. The optimizer runs under `np.errstate(over="raise", invalid="raise")`; a failure or non-finite result raises `RuntimeError` naming feature scale as the likely cause | Measured: clipping hid a failed fit (it returned `success=True` at a wrong point). `exp(·) > 0` already |
-| N10 | `TotalChildrenModel`: `family: Literal["poisson", "nb2"] = "poisson"`, `use_exposure: bool = True` (reported by `uses_exposure`, N3). **Poisson is built first (B2); NB2 is its own step (B8)** | User's choice. The offset is Model 2's specification, so a forgotten exposure raises. NB2 showed no gain in the means (§6), so it must be droppable |
+| N10 | `TotalChildrenModel`: `family: Literal["poisson", "nb2"] = "poisson"`, `use_exposure: bool = True` (N3). **Poisson is built first (B2); NB2 is its own step (B8)** | User's choice. The offset is Model 2's specification, so a forgotten exposure raises. NB2 showed no gain in the means (§6), so it must be droppable |
 | N11 | `CohortProbabilityModel` works for any number of cohorts ≥ 2, taken from `y`'s columns. Symmetric parameterization (one coefficient row per cohort), as sklearn uses | The old code hard-coded 3. With `l2_penalty=0` coefficients are not unique but probabilities are; tests compare probabilities |
 | N12 | Calibration is **temperature scaling**, fitted by a separate `TemperatureCalibrator` on **out-of-fold** logits. `CohortProbabilityModel` has an ordinary setting `temperature: float = 1.0`, applied in `predict` as `softmax(logits / temperature)`. No folds inside any model | User's choice. Best practice: it is sklearn's own multiclass method (`CalibratedClassifierCV(method="temperature")`, since 1.8), has one parameter, and measured best here (§6). Isotonic is not advised below ~1000 calibration rows |
 | N13 | **No likelihood-ratio gate** on the temperature: the fitted value is always used | Best practice and simpler: sklearn's implementation has none. On well-calibrated data the fitted temperature lands near 1 and changes little. The old gate guarded a threshold rule that no longer exists |
 | N14 | Out-of-fold logits come from a short documented loop (in the doc and one integration test), not a helper | One caller today. Promote it to a helper when a second caller exists |
 | N15 | Dropped from Model 2, as M12 did for Model A: tuning inside `fit`, bootstrap draws and intervals, pointwise log-probabilities, `PredictionResult`, state bundles, metadata, seed records | Means only. Tuning lives in `hyperparameter_tuning` |
 | N16 | *Withdrawn by the user, 2026-09-29.* **No utils file in `modeling`; logic lives under a class.** The home of `minimize_lbfgs` is decided at B1 | User's rule. First version: shared helpers in a public `modeling/utils.py` |
-| N17 | *Revised by the user on 2026-09-29: the exposure is an explicit argument.* `ModelPipeline(feature_transformer, model)`, a `BaseAgeGroupModel`: a feature transformer, then a model, fitted and used on the raw table. `fit(X, y, exposure=None)` clones both; `predict(X, exposure=None)` uses the fitted copies `feature_transformer_` and `model_`. `exposure` is passed through to the model, whose own check decides whether one is needed; a Series whose index differs from `X`'s raises. `uses_exposure` returns the model's. The aggregators (`IndependentCohortModels`, `IndependentTotalProbabilityModel`) hold models that take the raw table, and only loop and combine | User's choice. scikit-learn's `Pipeline` pattern, by composition: each class does one thing. sklearn's own `Pipeline` was already rejected (`HYPERPARAMETER_TUNING_PLAN.md` D13): its `fit` and `predict` name the exposure differently, and it has no `evaluate`. The explicit exposure keeps the base contract `fit(X, y, exposure)` for every model, and lets the tuner's `exposure=` path take a pipeline. First version: the pipeline read `X[exposure_column]` and rejected an `exposure` argument |
+| N17 | *Revised by the user on 2026-09-29: the exposure is an explicit argument.* `ModelPipeline(feature_transformer, model)`, a `BaseAgeGroupModel`: a feature transformer, then a model, fitted and used on the raw table. `fit(X, y, exposure=None)` clones both; `predict(X, exposure=None)` uses the fitted copies `feature_transformer_` and `model_`. `exposure` is passed through to the model, whose own check decides whether one is needed. Rows of `X`, `y` and the exposure are paired by position (N19). The aggregators (`IndependentCohortModels`, `IndependentTotalProbabilityModel`) hold models that take the raw table, and only loop and combine | User's choice. scikit-learn's `Pipeline` pattern, by composition: each class does one thing. sklearn's own `Pipeline` was already rejected (`HYPERPARAMETER_TUNING_PLAN.md` D13): its `fit` and `predict` name the exposure differently, and it has no `evaluate`. The explicit exposure keeps the base contract `fit(X, y, exposure)` for every model, and lets the tuner's `exposure=` path take a pipeline. First version: the pipeline read `X[exposure_column]` and rejected an `exposure` argument |
 | N18 | `base_log_rate_` stays. It is the intercept `b` in `exposure × exp(b + F(x))`. No intercept option is added for a model without an exposure | User's decision after the evidence in §6. Given an `init_score`, LightGBM switches off its own starting average, so the model supplies `b`. Without an exposure LightGBM starts from `mean(y)` itself |
-| N19 | Multi-cohort classes **raise** when `X` and `y` have different indexes; so does `ModelPipeline` (user, 2026-09-29, after the A2 review), for `y` and for an exposure Series | User's decision. Otherwise a misaligned `y` is used by position, silently |
+| N19 | *Reversed by the user at the end of A3, 2026-09-29.* **No index check.** `X`, `y` and the exposure are paired by position, as in scikit-learn; the docstrings say so, and to take the exposure's rows as `exposure.loc[X_train.index]` | The splitter (`Splitter.train_test_split`, `cv`) splits `X`, `y` and `groups` by the same positions, so they cannot be misaligned; sklearn pairs by position too (`PoissonRegressor().fit(X, y_shuffled)` runs silently); the check raised on position-correct data whose labels differ (e.g. `X` after `reset_index`). History: the check was added to the multi-cohort classes, then to `ModelPipeline` (`7204ec2`), then shared in the base, then removed |
 | N20 | The tuner path is **documented, not changed**. `CVHyperparameterEvaluator.evaluate` passes its `exposure` straight to `model.fit`, so the documented way to build that argument is `ExposureTransformer(...).fit_transform(table)`. Switching the evaluator to a `ModelPipeline` is recorded for the tuning work | User's decision. It keeps PR A out of the tuning package, and the exposure still comes from the validating class |
+| N21 | *User, 2026-09-29 (A3).* `IndependentCohortModels` takes a `Mapping[str, BaseAgeGroupModel]`. Nested `set_params` names do not reach into it: each cohort is tuned on its own, and the tuned models are assembled. Replace the mapping with `set_params(cohort_models=...)` | Measured: `get_params(deep=True)` lists only `cohort_models`, and a nested name raises `AttributeError`. The cohorts are independent, so no study tunes them together |
 
 **One decision still to ask, at the step named:**
 - **Exposure length (B1).** Should a model reject an exposure whose length
   differs from `X`'s? `DirectCohortModel.predict` accepts a length-1 exposure,
   which `MODEL_REIMPLEMENTATION_PLAN.md` Step 2.2 accepted as "all buildings
   have this n". In the GLMs numpy broadcasts a length-1 exposure silently at
-  fit. `ModelPipeline` checks a Series' index against `X`'s, but passes an
-  array as is. Re-examine at B0.
+  fit. Rows are paired by position (N19). Re-examine at B0.
 
 ## 6. Measured evidence (2026-09-29; sklearn 1.9.0, scipy 1.18.0, statsmodels 0.14.6)
 
@@ -200,10 +200,6 @@ def fit(self, X: pd.DataFrame, y: pd.Series | pd.DataFrame,
 def predict(self, X: pd.DataFrame,
             exposure: ArrayLike | None = None) -> np.ndarray | pd.DataFrame: ...
 
-# modeling/base.py  (A2)
-@property
-def uses_exposure(self) -> bool: ...   # False; a model with use_exposure returns it
-
 # preprocessing.py  (A2)
 class ExposureTransformer(TransformerMixin, BaseEstimator):
     def __init__(self, exposure_column: str = "n_apartments") -> None: ...
@@ -213,7 +209,7 @@ class ExposureTransformer(TransformerMixin, BaseEstimator):
 # modeling/pipeline.py  (A2)
 class ModelPipeline(BaseAgeGroupModel):
     def __init__(self, feature_transformer: FeatureTransformer, model: BaseAgeGroupModel) -> None: ...
-    # fit(X_raw, y, exposure=None) ; predict(X_raw, exposure=None) ; uses_exposure: the model's
+    # fit(X_raw, y, exposure=None) ; predict(X_raw, exposure=None)
     # fitted: feature_transformer_, model_
 
 # modeling/independent_cohorts.py  (A3)
@@ -221,7 +217,7 @@ CohortModels = Mapping[str, BaseAgeGroupModel]   # each takes the raw table: a M
 class IndependentCohortModels(BaseAgeGroupModel):
     def __init__(self, cohort_models: CohortModels) -> None: ...
     # fit(X_raw, y: DataFrame, exposure=None) ; predict(X_raw, exposure=None) -> DataFrame
-    # the exposure goes to each cohort whose uses_exposure is True ; fitted: cohort_models_
+    # the same exposure goes to every cohort; a model without an offset ignores it ; fitted: cohort_models_
 
 # modeling/total_children.py  (B2, B8)
 class TotalChildrenModel(BaseAgeGroupModel):
@@ -267,8 +263,8 @@ exposure = ExposureTransformer("n_apartments").fit_transform(table)
 
 # Model 1
 model_1 = IndependentCohortModels({
-    "n_kindergarten": ModelPipeline(tree, DirectCohortModel(use_exposure=True)),   # gets the exposure
-    "n_elementary":   ModelPipeline(tree, DirectCohortModel()),                    # gets none
+    "n_kindergarten": ModelPipeline(tree, DirectCohortModel(use_exposure=True)),   # applies the exposure
+    "n_elementary":   ModelPipeline(tree, DirectCohortModel()),                    # ignores it
     "n_highschool":   ModelPipeline(tree, DirectCohortModel(use_exposure=True)),
 }).fit(train_df, Y_train, exposure=exposure_train)
 predictions = model_1.predict(test_df, exposure=exposure_test)   # DataFrame, 3 columns
@@ -530,57 +526,99 @@ Done when:
   been deleted along with the removed test.
 
 ### A3. `IndependentCohortModels`
+*Revised by the user at the start of the step (N3 e, N21). Two commits.*
 
-**Facts from A2 that A3 builds on** (re-verify in plan mode):
-- `ModelPipeline(feature_transformer, model)` takes `exposure=` as an argument
-  in `fit` and `predict` and passes it to its model (N17, revision 2). It
-  raises when `y`'s index, or an exposure Series' index, differs from `X`'s.
-- `ModelPipeline.uses_exposure` returns its **template** model's setting. At
-  predict, route the exposure by the **fitted** cohort models
-  (`cohort_models_[c].uses_exposure`): `set_params` on the aggregator reaches
-  only the templates in `cohort_models`.
-- `DirectCohortModel` raises on a missing, unexpected or 2-D exposure, so a
-  misrouted exposure fails loudly.
-- The contract test's refit test calls `fit(X, y)` without an exposure, so the
-  `EXAMPLES` entry must use cohorts without one.
-- The exposure is built by the caller with
-  `ExposureTransformer("n_apartments").fit_transform(table)` (N3), on the full
-  table before splitting.
+**Decisions at the start (user, 2026-09-29):**
+- **Every model gets the same exposure.** A model applies it only if its
+  setting says so (`use_exposure=True`); any other model ignores it. A model
+  fitted with an offset still raises if it is missing. So the aggregator passes
+  the exposure to every cohort and routes nothing, and an exposure passed when
+  no cohort uses one is ignored too.
+- **`uses_exposure` is removed** (base, `DirectCohortModel`, `ModelPipeline`):
+  nothing reads it any more. No base `use_exposure` field either: sklearn's
+  `get_params` reads each model's own `__init__`, and a model without an offset
+  (`CohortProbabilityModel`) has no such setting.
+- **A mapping of cohort models; each cohort tuned on its own** (N21). The plan
+  had assumed nested `set_params` reaches the templates; it does not.
+- **No index check** (N19 reversed at the end of the step): rows are paired by
+  position, as in scikit-learn; `_check_aligned` removed from `ModelPipeline` too.
 
-**Decisions to ask the user at the start of A3:**
-- An `exposure` passed when no cohort uses one: raise? It would otherwise be
-  silently ignored.
-- Keep the aggregator's own `X`/`y` index check (N19) now that each pipeline
-  checks its `y`? It fails before any cohort is fitted, and covers models that
-  are not pipelines.
+**A3a. A model ignores an exposure it does not use.**
+- `modeling/direct_cohort.py`: `_check_exposure` returns `None` when no
+  exposure is expected; it raises only when one is expected and missing, and
+  checks that a used one is 1-D. `predict` still follows the fitted state.
+- `modeling/base.py`, `modeling/pipeline.py`: `uses_exposure` removed; the
+  `fit` docstring states the rule.
+- Tests: `test_exposure_misuse_raises` loses `given-while-off` and matches each
+  message; new `test_an_unused_exposure_is_ignored`; the 2 pipeline
+  `uses_exposure` tests removed; the evaluator test matches the new message.
+- Docs: `DIRECT_COHORT_MODEL.md` §0.2, §0.3; M10 note; `MODULE_REFERENCE.md`.
 
-- **Files:** new `modeling/independent_cohorts.py`, `modeling/__init__.py`, new
-  `tests/unit/test_modeling_independent_cohorts.py`, an example in the contract test.
-- **Build:** the aggregator of N17. It holds one model per cohort, each taking
-  the raw table (a `ModelPipeline`).
-  - `fit(X, y, exposure=None)` checks that the mapping's keys equal `y`'s
-    columns and that `X.index.equals(y.index)` (N19, decided: raise). Each
-    `ModelPipeline` checks its cohort's `y` too; the aggregator's check stays
-    for models that are not pipelines, and fails before any cohort is fitted.
-  - Each cohort is `clone(model).fit(X, y[cohort], exposure=...)`: the
-    exposure goes to the cohorts whose `uses_exposure` is `True`, `None` to
-    the rest; `predict` routes it the same way. `cohort_models_` is
-    assigned once every cohort has succeeded.
-  - `predict` returns the DataFrame of N2.
-- **Tests:**
-  1. each column equals that cohort's model fitted alone (a cohort fitted on the wrong target);
-  2. keys that differ from `y`'s columns raise;
-  3. cohorts with different feature transformers and different `use_exposure` fit under `-W error`;
-  4. a failing cohort leaves the previous fitted state intact;
-  5. columns and index are right on a non-default index;
-  6. `predict` works on a table without the target columns (targets leaking into features);
-  7. different indexes in `X` and `y` raise (a misaligned `y` used by position);
-  8. doubling the exposure doubles only the columns of cohorts with
-     `use_exposure=True` (the exposure routed to the wrong cohorts, or to none).
+**A3b. `IndependentCohortModels`** (`modeling/independent_cohorts.py`, exported
+from `modeling` only; a contract `EXAMPLES` entry).
+- `fit(X, y, exposure=None)`: the mapping's keys equal `y`'s columns,
+  duplicates counted (`Counter`); then
+  `clone(model).fit(X, y[cohort], exposure=exposure)` per column,
+  in `y`'s order; `cohort_models_` set once all succeeded.
+- `predict(X, exposure=None)`: a DataFrame with `y`'s columns and `X`'s
+  index; each prediction taken as an array.
+- `ModelPipeline`'s index check and its 2 tests removed (N19); its docstring
+  says rows are paired by position.
+
+**Tests** (`tests/unit/test_modeling_independent_cohorts.py`), each with its mutation:
+
+| Test | Mistake it catches | Mutation |
+|---|---|---|
+| each column equals that cohort's model fitted alone (under `filterwarnings("error")`) | a cohort fitted on another target | every cohort fitted on the first column; exposure dropped at predict |
+| models that do not match `y`'s columns raise: missing, extra, duplicated | a cohort dropped silently; a duplicate reaching its model as a DataFrame | check dropped; a set check |
+| a failing cohort leaves the previous fit intact | new and old cohorts paired | assigned cohort by cohort |
+| columns follow `y`, rows follow `X` | misnamed cohorts, misaligned rows | mapping order; `index=None` |
+| predict needs no target columns | reading a target from `X` | targets dropped from `X` at predict |
+| doubling the exposure doubles only the cohorts with an offset | the exposure lost, or applied without an offset | exposure dropped at predict |
+| predictions are placed by position, not by their own index | a Series prediction realigned into NaN | `np.asarray` dropped |
 
 Done when:
-- [ ] The contract test discovers the class.
-- [ ] Mutation checks, review, non-slow suite.
+- [x] The contract test discovers the class (mutation: its example deleted fails 6 cases).
+- [x] Mutation checks, review, non-slow suite: 1104 passed (1 skipped, 1 xfailed).
+
+**Record (2026-09-29).**
+- **Baseline** before the first edit: 1094 passed (1 skipped, 1 xfailed).
+- **Verified first** (sklearn 1.9.0): the 4 contract checks pass on an
+  aggregator whose parameter is a dict of `ModelPipeline`s; `clone` deep-copies
+  it (keys, order, settings); `get_params(deep=True)` lists only
+  `cohort_models`, and a nested name raises `AttributeError`; the tuner passes
+  one fixed exposure to every trial (`evaluator.py:104-122`), so before A3a a
+  trial with `use_exposure=False` raised.
+- **A3a mutations:** the exposure applied while off fails
+  `test_an_unused_exposure_is_ignored`; the missing-exposure check dropped fails
+  `missing-while-on` and the evaluator's test (without the `match`, the 1-D
+  check would have caught `None` with another message).
+- **Review** (independent subagent, 9 mutations of its own), each reproduced:
+  - *Fixed, then withdrawn.* An exposure Series for other rows was used by
+    position by cohort models that are not pipelines. A shared
+    `_check_aligned` checked it; the user then dropped every index check (N19).
+  - *Fixed.* `sorted` raised `TypeError` for mixed-type cohort names; now `Counter`.
+  - *Fixed.* A cohort model returning a Series with its own index gave 100
+    NaNs per column. Now taken as an array.
+  - *Fixed.* `MODULE_REFERENCE.md` lacked the new module and names.
+  - *Not changed.* `MODEL_REIMPLEMENTATION_PLAN.md` Steps 2.2 and 2.3 describe
+    the finished Phase 2 as built; M10 carries the dated note.
+  - *Not changed.* A nested `set_params` name raises `AttributeError`, not
+    sklearn's "Invalid parameter". It raises, and the docstring says to tune
+    each cohort on its own (N21).
+- **User's questions at the stop**, answered with probes:
+  - *Index check:* dropped (N19). −4 tests; suite 1104.
+  - *`use_exposure=True` with `"regression"` still raises:* sklearn raises for
+    settings that cannot be honored together (`LogisticRegression(penalty="l1",
+    solver="lbfgs")`) and ignores merely irrelevant ones (`SVC(kernel="linear",
+    gamma=...)`, silently; `l1_ratio`, with a warning). Ignoring it would fit
+    without the offset while `get_params` says `use_exposure=True`; `objective`
+    is not tuned, so the raise cannot end a study.
+  - *`_check_exposure` stays:* at fit it reads `use_exposure`, at predict the
+    fitted state (M10), so `expected` is an argument. Without its `None` check
+    an offset model's predict gives all-NaN (`np.asarray(None)` is `nan`) and
+    its fit a LightGBM `TypeError` about `init_score`.
+- **Ran:** no doc code block was edited.
 
 ### A4. Smoke run and docs
 - **Smoke run** (scratchpad script, outside the repo): 10 simulated
@@ -646,7 +684,7 @@ Done when:
 ### B4. `CohortProbabilityModel`
 - **Files:** new `modeling/cohort_probability.py`, `__init__.py`, tests, contract example.
 - **Build:** N6, N8, N11, N12. Raises when a cohort is never observed, when
-  there are no children, when `temperature ≤ 0`, when an exposure is passed.
+  there are no children, when `temperature ≤ 0`. A passed exposure is ignored (N3 e).
 - **Tests:**
   1. equals `LogisticRegression` on one row per child with `C = 1/(λM)`, across the penalty range, with a zero-total row;
   2. `check_grad`;
@@ -661,14 +699,14 @@ Done when:
 ### B5. `IndependentTotalProbabilityModel`
 - **Files:** new `modeling/independent_total_probability.py`, `__init__.py`, tests, contract example.
 - **Build:** an aggregator of two models that take the raw table
-  (`ModelPipeline`s, N17). It raises when `X` and `y` have different indexes (N19).
+  (`ModelPipeline`s, N17). Rows are paired by position (N19).
 - **Tests:**
   1. the output equals total × probabilities of the two models fitted separately, and rows sum to the total mean;
   2. the total target is `y.sum(axis=1)`; tables without target columns work;
   3. each pipeline uses its own transformer (swapped transformers);
   4. doubling `n_apartments` doubles every cohort;
   5. nested `set_params` reaches the next fit; a temperature set before `fit` is applied;
-  6. the exposure goes to the total model only (`uses_exposure` routes it).
+  6. the exposure changes the total model only (the probability model ignores it).
 
 ### B6. `TemperatureCalibrator`
 - **Files:** new `modeling/calibration.py`, tests.
