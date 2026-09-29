@@ -30,6 +30,18 @@ class BaseAgeGroupModel(BaseEstimator, ABC):
     reuses one copy across the folds of a trial.
     """
 
+    @property
+    def uses_exposure(self) -> bool:
+        """Whether the model's setting gives it an exposure offset.
+
+        The model owns this choice, not the feature transformer, so a caller
+        holding several models (an aggregator) reads it to know which ones to
+        pass the exposure to. A model that needs one but does not say so
+        still raises in its own exposure check, so this default is never
+        silently wrong.
+        """
+        return False
+
     @abstractmethod
     def fit(
         self,
@@ -39,9 +51,9 @@ class BaseAgeGroupModel(BaseEstimator, ABC):
     ) -> Self:
         """Learn from the rows of ``X`` and their targets ``y``.
 
-        ``exposure`` is each row's raw exposure ``n``, for a model with an
-        offset. A model raises if one is passed when it uses none, or missing
-        when it needs one, rather than silently ignoring or dropping it.
+        ``exposure`` is each row's raw exposure, not its log, for a model with
+        an offset. A model raises if one is passed when it uses none, or
+        missing when it needs one, rather than silently ignoring or dropping it.
         """
 
     @abstractmethod

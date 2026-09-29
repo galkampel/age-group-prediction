@@ -53,9 +53,13 @@ class CVHyperparameterEvaluator:
             cv=splitter.cv(n_splits=5, random_state=42),
             metric=POISSON_DEVIANCE, feature_transformer=tree,
         )
+        exposure_train = ExposureTransformer("n_apartments").fit_transform(train_df)
         study.optimize(lambda trial: evaluator.evaluate(
             trial, train_df, y_train, groups_train, exposure=exposure_train))
 
+    The exposure is passed to the model as given, so build it with
+    :class:`~age_group_prediction.preprocessing.ExposureTransformer`, which
+    rejects the values LightGBM would accept silently.
     A lower-is-better metric is negated, so the study always maximizes.
     ``feature_transformer`` turns the raw table into each fold's design
     matrix. ``aggregation`` combines the fold scores into the trial value.

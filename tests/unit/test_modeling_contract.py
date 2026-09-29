@@ -7,12 +7,17 @@ checks, these four are the smallest set that caught each such mistake when
 tried on deliberately broken models. An ``__init__`` that copies a mutable
 argument passes them all when built with defaults, so each model is checked on
 an example instance instead, which also lets a model have required arguments.
+
+The package must also stay independent of the old stack it replaces.
 """
 
 from __future__ import annotations
 
+import ast
 import inspect
 from collections.abc import Callable
+from importlib.util import resolve_name
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
@@ -25,7 +30,17 @@ from sklearn.utils.estimator_checks import (
     check_set_params,
 )
 
-from age_group_prediction.modeling import BaseAgeGroupModel, DirectCohortModel
+import age_group_prediction.modeling as modeling_package
+from age_group_prediction.feature_engineering import (
+    Center,
+    ColumnPlan,
+    FeatureTransformer,
+)
+from age_group_prediction.modeling import (
+    BaseAgeGroupModel,
+    DirectCohortModel,
+    ModelPipeline,
+)
 
 
 def _models(base: type) -> list[type[BaseAgeGroupModel]]:
@@ -58,9 +73,21 @@ def _direct_cohort_example() -> Example:
     return DirectCohortModel(), X, y
 
 
+def _model_pipeline_example() -> Example:
+    # No exposure: the refit test calls fit(X, y).
+    rng = np.random.default_rng(0)
+    X = pd.DataFrame({"x": rng.normal(size=200)})
+    y = pd.Series(rng.poisson(np.exp(1 + 0.5 * X["x"])))
+    features = FeatureTransformer(
+        (ColumnPlan(name="x", columns=("x",), transforms=(Center(),)),)
+    )
+    return ModelPipeline(features, DirectCohortModel()), X, y
+
+
 # Factories, so every test gets its own model and data and none is built at import.
 EXAMPLES: dict[type[BaseAgeGroupModel], Callable[[], Example]] = {
     DirectCohortModel: _direct_cohort_example,
+    ModelPipeline: _model_pipeline_example,
 }
 
 CHECKS: list[Callable[[str, BaseAgeGroupModel], None]] = [
@@ -111,3 +138,54 @@ def test_a_refit_equals_a_fresh_fit(model_class: type[BaseAgeGroupModel]) -> Non
     fresh = clone(template).fit(X.iloc[second], y.iloc[second])
 
     np.testing.assert_array_equal(refitted.predict(X), fresh.predict(X))
+
+
+# The old stack (MULTI_COHORT_MODELS_PLAN.md §4), deleted once every model is rebuilt.
+OLD_STACK = frozenset(
+    {
+        "data_splitting",
+        "distributions",
+        "evaluation",
+        "fitted_features",
+        "metrics",
+        "modeling_config",
+        "models",
+        "predictive",
+        "resampling",
+        "results",
+        "state_bundle",
+        "tuning",
+    }
+)
+
+
+def _imported_modules(path: Path, package: str) -> list[str]:
+    """Every absolute module name an import in ``path`` may reach."""
+    names: list[str] = []
+    for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
+        if isinstance(node, ast.Import):
+            names.extend(alias.name for alias in node.names)
+        elif isinstance(node, ast.ImportFrom):
+            relative = "." * node.level + (node.module or "")
+            module = resolve_name(relative, package) if node.level else relative
+            # `from .. import models` names the module among the imported names.
+            names.append(module)
+            names.extend(f"{module}.{alias.name}" for alias in node.names)
+    return names
+
+
+def test_modeling_never_imports_the_old_stack() -> None:
+    # Read from the source, not sys.modules: the package root imports the old
+    # stack, so at runtime every module would look dependent on it. Static
+    # imports only; an importlib call by name would pass unseen.
+    modeling_dir = Path(modeling_package.__file__).parent
+    offenders: list[str] = []
+    for path in sorted(modeling_dir.rglob("*.py")):
+        subpackages = path.parent.relative_to(modeling_dir.parent).parts
+        package = ".".join(("age_group_prediction", *subpackages))
+        for name in _imported_modules(path, package):
+            if name.startswith("age_group_prediction.") and (
+                name.split(".")[1] in OLD_STACK
+            ):
+                offenders.append(f"{path.name}: {name}")
+    assert offenders == []

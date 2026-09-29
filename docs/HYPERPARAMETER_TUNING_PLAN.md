@@ -264,6 +264,7 @@ choices asked), then §7's routine, then a stop for approval.
   Fixed: `evaluate`'s `y` is typed as one target (`pd.Series | np.ndarray`;
   a two-column `y` failed inside LightGBM), the package docstring, a numpy
   test on a path nothing uses, and a misplaced comment.
+- [ ] **Evaluator on the raw table** (from [MULTI_COHORT_MODELS_PLAN.md](MULTI_COHORT_MODELS_PLAN.md) N20). Switch `CVHyperparameterEvaluator` from a separate `feature_transformer` and model to one `modeling.ModelPipeline`, cloned per fold; its `exposure` argument is kept and passed through. Build that argument with `preprocessing.ExposureTransformer(...).fit_transform(table)`. *Done when:* the evaluator takes a pipeline, and a test shows it fits one per fold.
 - [ ] **3.1 Study constructor and defaults.** *Done when:* the default sampler is a seeded multivariate TPE and the default pruner `NopPruner`; invalid `n_trials`, timeout or `n_jobs` combinations are rejected.
 - [ ] **3.2 `optimize` and the best trial.** *Done when:* the same seed gives an identical `TuningResult`; a pruned trial never wins; ties go to the lowest number; no completed trial raises `RuntimeError`; `initial_params` run first.
 - [ ] **3.3 Records and results.** *Done when:* each `TrialRecord` carries the fold scores and sizes and the derived SE; `to_dict()` round-trips through `json`; `is_reproducible` is False with a timeout or `n_jobs > 1`.

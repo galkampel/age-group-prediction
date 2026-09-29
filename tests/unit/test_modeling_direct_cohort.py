@@ -17,12 +17,12 @@ def _data(rows: int = 300) -> tuple[pd.DataFrame, pd.Series, np.ndarray]:
     """Counts proportional to building size, with a rate that depends on ``ses``."""
     rng = np.random.default_rng(0)
     X = pd.DataFrame({"ses": rng.normal(size=rows), "noise": rng.normal(size=rows)})
-    n = rng.integers(12, 80, size=rows).astype(float)
-    y = pd.Series(rng.poisson(n * np.exp(-2 + 0.4 * X["ses"])))
-    return X, y, n
+    exposure = rng.integers(12, 80, size=rows).astype(float)
+    y = pd.Series(rng.poisson(exposure * np.exp(-2 + 0.4 * X["ses"])))
+    return X, y, exposure
 
 
-X, Y, N = _data()
+X, Y, EXPOSURE = _data()
 
 
 def test_clone_and_set_params_change_only_the_copy() -> None:
@@ -39,20 +39,15 @@ def test_clone_and_set_params_change_only_the_copy() -> None:
 
 @pytest.mark.parametrize(
     ("use_exposure", "exposure"),
-    [
-        (True, None),
-        (False, N),
-        (True, np.r_[0.0, N[1:]]),
-        (True, np.r_[-1.0, N[1:]]),
-        (True, np.r_[np.inf, N[1:]]),
-    ],
-    ids=["missing-while-on", "given-while-off", "zero", "negative", "infinite"],
+    [(True, None), (False, EXPOSURE), (True, EXPOSURE[:, None])],
+    ids=["missing-while-on", "given-while-off", "two-dimensional"],
 )
 def test_exposure_misuse_raises(
     use_exposure: bool, exposure: np.ndarray | None
 ) -> None:
-    # Each would otherwise pass silently: a dropped or ignored offset, or a
-    # -inf/nan init_score that LightGBM accepts.
+    # Each would otherwise pass silently: a dropped or an ignored offset, or a
+    # column that broadcasts into an (n, n) prediction. The values are checked
+    # by preprocessing.ExposureTransformer and its tests.
     with pytest.raises(ValueError):
         DirectCohortModel(use_exposure=use_exposure).fit(X, Y, exposure=exposure)
 
@@ -67,7 +62,7 @@ def test_training_mean_prediction_matches_the_target_mean(
     # Few trees, so a missing starting rate (base_log_rate_) or a broken offset
     # leaves the mean far off: 21.75 against 6.68 with 20 trees. The two cases
     # without exposure are the only cover of the plain predict path.
-    exposure = N if use_exposure else None
+    exposure = EXPOSURE if use_exposure else None
     model = DirectCohortModel(
         objective=objective, use_exposure=use_exposure, n_estimators=20
     ).fit(X, Y, exposure=exposure)
@@ -80,21 +75,29 @@ def test_training_mean_prediction_matches_the_target_mean(
 def test_predict_follows_how_the_model_was_fitted() -> None:
     # Turning use_exposure off after fitting must not silently return rates per
     # apartment instead of counts.
-    model = DirectCohortModel(use_exposure=True, n_estimators=5).fit(X, Y, exposure=N)
+    model = DirectCohortModel(use_exposure=True, n_estimators=5).fit(
+        X, Y, exposure=EXPOSURE
+    )
     model.set_params(use_exposure=False)
 
     with pytest.raises(ValueError):
         model.predict(X)
-    assert model.predict(X, exposure=N).mean() == pytest.approx(Y.mean(), rel=0.05)
+    assert model.predict(X, exposure=EXPOSURE).mean() == pytest.approx(
+        Y.mean(), rel=0.05
+    )
 
 
 def test_doubling_the_exposure_doubles_the_prediction() -> None:
     # Exact because the exposure is not a feature; fails if predict drops the
     # offset.
-    model = DirectCohortModel(use_exposure=True, n_estimators=20).fit(X, Y, exposure=N)
+    model = DirectCohortModel(use_exposure=True, n_estimators=20).fit(
+        X, Y, exposure=EXPOSURE
+    )
 
     np.testing.assert_allclose(
-        model.predict(X, exposure=2 * N), 2 * model.predict(X, exposure=N), rtol=1e-12
+        model.predict(X, exposure=2 * EXPOSURE),
+        2 * model.predict(X, exposure=EXPOSURE),
+        rtol=1e-12,
     )
 
 
@@ -110,11 +113,11 @@ def test_subsample_below_one_changes_the_model() -> None:
     "fit",
     [
         lambda: DirectCohortModel(objective="regression", use_exposure=True).fit(
-            X, Y, exposure=N
+            X, Y, exposure=EXPOSURE
         ),
         lambda: DirectCohortModel(objective="not_an_objective").fit(X, Y),  # type: ignore[arg-type]
-        lambda: DirectCohortModel(use_exposure=True).fit(X, Y, exposure=N[:10]),
-        lambda: DirectCohortModel(use_exposure=True).fit(X, Y * 0, exposure=N),
+        lambda: DirectCohortModel(use_exposure=True).fit(X, Y, exposure=EXPOSURE[:10]),
+        lambda: DirectCohortModel(use_exposure=True).fit(X, Y * 0, exposure=EXPOSURE),
     ],
     ids=["regression-with-exposure", "unknown-objective", "wrong-length", "all-zero-y"],
 )

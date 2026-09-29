@@ -114,9 +114,12 @@ The model checks only what would otherwise pass silently. Each of these raises
 `ValueError`:
 - `use_exposure=True` with `"regression"`, which has no log link;
 - `exposure` not passed exactly when the model uses one, whether it's missing
-  or unexpected;
-- an exposure that isn't strictly positive and finite. LightGBM would accept
-  the resulting `-inf` or `nan` offset.
+  or unexpected.
+
+The exposure's values are checked where the data is prepared, not here:
+`preprocessing.ExposureTransformer` returns the column as floats and raises
+unless every value is strictly positive and finite. LightGBM would accept the
+`-inf` or `nan` offset of a bad value silently, so build the exposure with it.
 
 LightGBM raises its own error for an unknown objective, a wrong-length exposure
 at fit, and an all-zero `y`. The unit tests pin these.

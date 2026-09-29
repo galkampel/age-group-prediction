@@ -10,9 +10,11 @@ rebuilt here.
 
 from .base import BaseAgeGroupModel
 from .direct_cohort import DirectCohortModel, Objective
+from .pipeline import ModelPipeline
 
 __all__ = [
     "BaseAgeGroupModel",
     "DirectCohortModel",
+    "ModelPipeline",
     "Objective",
 ]
