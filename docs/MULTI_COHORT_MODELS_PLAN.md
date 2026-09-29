@@ -5,9 +5,10 @@ This file is self-contained: it assumes no memory of the planning conversation.
 This file is the source of truth: update its status line and checkboxes as steps finish.
 
 **Status (2026-09-29):** A0 done (draft PR #10). A1 committed (`8fed394`).
-A2 committed (`2c38010`, `5b5ea4d`). Before A3, `ModelPipeline` also rejects
-a `y` whose index differs from `X`'s (N19), **awaiting the user's commit**.
-**Next: A3.** Non-slow suite on the current tree: **1094 passed** (1 skipped, 1 xfailed).
+A2 committed (`2c38010`, `5b5ea4d`). `ModelPipeline` also rejects a `y` whose
+index differs from `X`'s (N19), committed (`7204ec2`). The handoff edit to
+this doc follows it. **Next: A3** (§8), starting with its "Facts" and "Decisions to ask".
+Non-slow suite: **1094 passed** (1 skipped, 1 xfailed).
 
 ## Contents
 1. Context and goal
@@ -529,6 +530,30 @@ Done when:
   been deleted along with the removed test.
 
 ### A3. `IndependentCohortModels`
+
+**Facts from A2 that A3 builds on** (re-verify in plan mode):
+- `ModelPipeline(feature_transformer, model)` takes `exposure=` as an argument
+  in `fit` and `predict` and passes it to its model (N17, revision 2). It
+  raises when `y`'s index, or an exposure Series' index, differs from `X`'s.
+- `ModelPipeline.uses_exposure` returns its **template** model's setting. At
+  predict, route the exposure by the **fitted** cohort models
+  (`cohort_models_[c].uses_exposure`): `set_params` on the aggregator reaches
+  only the templates in `cohort_models`.
+- `DirectCohortModel` raises on a missing, unexpected or 2-D exposure, so a
+  misrouted exposure fails loudly.
+- The contract test's refit test calls `fit(X, y)` without an exposure, so the
+  `EXAMPLES` entry must use cohorts without one.
+- The exposure is built by the caller with
+  `ExposureTransformer("n_apartments").fit_transform(table)` (N3), on the full
+  table before splitting.
+
+**Decisions to ask the user at the start of A3:**
+- An `exposure` passed when no cohort uses one: raise? It would otherwise be
+  silently ignored.
+- Keep the aggregator's own `X`/`y` index check (N19) now that each pipeline
+  checks its `y`? It fails before any cohort is fitted, and covers models that
+  are not pipelines.
+
 - **Files:** new `modeling/independent_cohorts.py`, `modeling/__init__.py`, new
   `tests/unit/test_modeling_independent_cohorts.py`, an example in the contract test.
 - **Build:** the aggregator of N17. It holds one model per cohort, each taking
@@ -549,7 +574,9 @@ Done when:
   4. a failing cohort leaves the previous fitted state intact;
   5. columns and index are right on a non-default index;
   6. `predict` works on a table without the target columns (targets leaking into features);
-  7. different indexes in `X` and `y` raise (a misaligned `y` used by position).
+  7. different indexes in `X` and `y` raise (a misaligned `y` used by position);
+  8. doubling the exposure doubles only the columns of cohorts with
+     `use_exposure=True` (the exposure routed to the wrong cohorts, or to none).
 
 Done when:
 - [ ] The contract test discovers the class.
