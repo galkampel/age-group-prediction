@@ -34,28 +34,31 @@ Each method answers a different question:
 
 ```python
 from age_group_prediction.splitting import Splitter
+from age_group_prediction.utils import take_rows
 
 splitter = Splitter("stratified_by_group")
 
-X_train, X_test, y_train, y_test, groups_train, groups_test = (
-    splitter.train_test_split(X, y, groups, test_size=0.2, random_state=42)
+train_index, test_index = splitter.train_test_indices(
+    X, groups, test_size=0.2, random_state=42
 )
+X_train, y_train = take_rows(X, train_index), take_rows(y, train_index)
+groups_train = take_rows(groups, train_index)  # None for random without groups
 cross_validate(
     estimator, X_train, y_train,
     cv=splitter.cv(n_splits=5, random_state=42), groups=groups_train,
 )
 ```
 
-Two steps, not one `n_splits + 1` way split: `train_test_split` is drawn once
-and then fixed, while `cv` re-deals folds on every tuning pass. `train_test_split`
-splits `X`, `y` and `groups`, and returns two of each in scikit-learn's order.
-It splits nothing else, such as an exposure: take its rows as
-`exposure.loc[X_train.index]`. The groups come back because `cv` needs
-`groups_train`.
+Two steps, not one `n_splits + 1` way split: `train_test_indices` is drawn
+once and then fixed, while `cv` re-deals folds on every tuning pass.
+`train_test_indices` returns the **positions** of the training and test rows,
+as scikit-learn's splitters and `cv` do. Every array of the table's rows (`X`,
+`y`, `groups`, an exposure) is taken with `take_rows` by the same positions, so
+they stay paired whatever their index. Take `groups_train` too: `cv` needs it.
 
-`random` never reads groups, so it takes `groups=None` and returns `None` for
-both group pieces; pass that `None` on to `cv`, since `KFold` warns if given
-groups. `stratified_by_group` and `grouped` raise `ValueError` ("The 'groups'
+`random` never reads groups, so it takes `groups=None`. Then there are no
+groups to take (`take_rows` does not take `None`): pass `groups=None` to `cv`,
+since `KFold` warns if given groups. `stratified_by_group` and `grouped` raise `ValueError` ("The 'groups'
 parameter should not be None.") rather than split without them.
 
 No parameter has a default — sizing and seeding are decisions the call site
@@ -130,7 +133,7 @@ within groups. Canonical (min 4, median 10) is fine; the default config (10 of
 
 ## 5. Hazards
 
-- **Draw the split once.** `train_test_split` re-draws on every call, so calling
+- **Draw the split once.** `train_test_indices` re-draws on every call, so calling
   it again with a different `random_state` silently moves the test set. `cv` is
   the half meant to be re-derived freely. It requires an int `random_state`,
   so every `split()` call gives the same folds; tuning re-splits in every trial.
@@ -138,7 +141,8 @@ within groups. Canonical (min 4, median 10) is fine; the default config (10 of
   the whole table and the test set leaks into tuning.
 - **Fold indices are positions inside `X_train`.** With a DataFrame the pandas
   index still identifies the original row; with a bare numpy array that link is
-  gone.
+  gone. The holdout's positions index the full table instead, so take a fold's
+  exposure from `exposure_train`, never from the full `exposure`.
 - **Row order is an input to correctness, not just reproducibility.** Rows
   arrive sorted by neighborhood, so `KFold(shuffle=False)` would take contiguous
   blocks and `random` would behave as `grouped` — measured: 0-2 of ~13

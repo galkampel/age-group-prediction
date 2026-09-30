@@ -10,8 +10,10 @@ PR B's branch `feat/independent-total-probability-model` was created from
 `27459eb`, and its first commit is this handoff. **B0 is done** (2026-09-30),
 except the user's PR #5 note (§2):
 the branch is pushed, draft PR [#11](https://github.com/galkampel/age-group-prediction/pull/11)
-is open, and the facts from PR A are re-verified. **Next: B1**, starting with
-its "Decisions to ask" (§9 B0).
+is open, and the facts from PR A are re-verified. **B0a** (added by the user at
+the start of B1): `Splitter.train_test_indices` replaces `train_test_split`, so
+the exposure is split by the same positions as every other array. **Next: B1**,
+its decisions already made (§9 B1).
 Non-slow suite on the merged base: **1104 passed** (1 skipped, 1 xfailed).
 
 ## Contents
@@ -162,7 +164,7 @@ reference doc `docs/INDEPENDENT_TOTAL_PROBABILITY_MODEL.md`.
 | N16 | *Withdrawn by the user, 2026-09-29.* **No utils file in `modeling`; logic lives under a class.** The home of `minimize_lbfgs` is decided at B1 | User's rule. First version: shared helpers in a public `modeling/utils.py` |
 | N17 | *Revised by the user on 2026-09-29: the exposure is an explicit argument.* `ModelPipeline(feature_transformer, model)`, a `BaseAgeGroupModel`: a feature transformer, then a model, fitted and used on the raw table. `fit(X, y, exposure=None)` clones both; `predict(X, exposure=None)` uses the fitted copies `feature_transformer_` and `model_`. `exposure` is passed through to the model, whose own check decides whether one is needed. Rows of `X`, `y` and the exposure are paired by position (N19). The aggregators (`IndependentCohortModels`, `IndependentTotalProbabilityModel`) hold models that take the raw table, and only loop and combine | User's choice. scikit-learn's `Pipeline` pattern, by composition: each class does one thing. sklearn's own `Pipeline` was already rejected (`HYPERPARAMETER_TUNING_PLAN.md` D13): its `fit` and `predict` name the exposure differently, and it has no `evaluate`. The explicit exposure keeps the base contract `fit(X, y, exposure)` for every model, and lets the tuner's `exposure=` path take a pipeline. First version: the pipeline read `X[exposure_column]` and rejected an `exposure` argument |
 | N18 | `base_log_rate_` stays. It is the intercept `b` in `exposure × exp(b + F(x))`. No intercept option is added for a model without an exposure | User's decision after the evidence in §6. Given an `init_score`, LightGBM switches off its own starting average, so the model supplies `b`. Without an exposure LightGBM starts from `mean(y)` itself |
-| N19 | *Reversed by the user at the end of A3, 2026-09-29.* **No index check.** `X`, `y` and the exposure are paired by position, as in scikit-learn; the docstrings say so, and to take the exposure's rows as `exposure.loc[X_train.index]` | The splitter (`Splitter.train_test_split`, `cv`) splits `X`, `y` and `groups` by the same positions, so they cannot be misaligned; sklearn pairs by position too (`PoissonRegressor().fit(X, y_shuffled)` runs silently); the check raised on position-correct data whose labels differ (e.g. `X` after `reset_index`). History: the check was added to the multi-cohort classes, then to `ModelPipeline` (`7204ec2`), then shared in the base, then removed |
+| N19 | *Reversed by the user at the end of A3, 2026-09-29.* **No index check.** `X`, `y` and the exposure are paired by position, as in scikit-learn; the docstrings say so, and to take the exposure's rows as `exposure.loc[X_train.index]`. *Since B0a (2026-09-30): the splitter returns row positions (`Splitter.train_test_indices`), and every array, the exposure included, is taken by them with `take_rows`* | The splitter (then `Splitter.train_test_split`; since B0a `train_test_indices`, and `cv`) splits `X`, `y` and `groups` by the same positions, so they cannot be misaligned; sklearn pairs by position too (`PoissonRegressor().fit(X, y_shuffled)` runs silently); the check raised on position-correct data whose labels differ (e.g. `X` after `reset_index`). History: the check was added to the multi-cohort classes, then to `ModelPipeline` (`7204ec2`), then shared in the base, then removed |
 | N20 | The tuner path is **documented, not changed**. `CVHyperparameterEvaluator.evaluate` passes its `exposure` straight to `model.fit`, so the documented way to build that argument is `ExposureTransformer(...).fit_transform(table)`. Switching the evaluator to a `ModelPipeline` is recorded for the tuning work | User's decision. It keeps PR A out of the tuning package, and the exposure still comes from the validating class |
 | N21 | *User, 2026-09-29 (A3).* `IndependentCohortModels` takes a `Mapping[str, BaseAgeGroupModel]`. Nested `set_params` names do not reach into it: each cohort is tuned on its own, and the tuned models are assembled. Replace the mapping with `set_params(cohort_models=...)` | Measured: `get_params(deep=True)` lists only `cohort_models`, and a nested name raises `AttributeError`. The cohorts are independent, so no study tunes them together |
 
@@ -275,14 +277,16 @@ Start values: total intercept `log(Σy / Σexposure)`, everything else 0.
 **Usage, end to end:**
 
 ```python
-# The exposure, validated once on the full table; the splitter does not split
-# it, so its rows are taken by X's labels (N19)
+# The exposure, validated once on the full table; the split's row positions
+# take every array alike (N19, B0a)
 COHORTS = ["n_kindergarten", "n_elementary", "n_highschool"]
 exposure = ExposureTransformer("n_apartments").fit_transform(table)
-train_df, test_df, Y_train, Y_test, groups_train, groups_test = Splitter(
-    "grouped").train_test_split(table, table[COHORTS], table["neighborhood_id"],
-                                test_size=0.2, random_state=0)
-exposure_train, exposure_test = exposure.loc[train_df.index], exposure.loc[test_df.index]
+train_index, test_index = Splitter("grouped").train_test_indices(
+    table, table["neighborhood_id"], test_size=0.2, random_state=0)
+train_df, test_df = take_rows(table, train_index), take_rows(table, test_index)
+Y_train, Y_test = take_rows(table[COHORTS], train_index), take_rows(table[COHORTS], test_index)
+groups_train = take_rows(table["neighborhood_id"], train_index)
+exposure_train, exposure_test = take_rows(exposure, train_index), take_rows(exposure, test_index)
 cv = Splitter("grouped").cv(n_splits=5, random_state=0)
 
 # Model 1
@@ -296,9 +300,9 @@ predictions = model_1.predict(test_df, exposure=exposure_test)   # DataFrame, 3 
 # Model 2, with calibration
 probability_pipeline = ModelPipeline(cohort_probability_base, CohortProbabilityModel(l2_penalty=1e-3))
 logits_val, counts_val = [], []
-for train_index, val_index in cv.split(train_df, Y_train, groups_train):
+for fit_index, val_index in cv.split(train_df, Y_train, groups_train):
     fold = clone(probability_pipeline).fit(
-        take_rows(train_df, train_index), take_rows(Y_train, train_index))
+        take_rows(train_df, fit_index), take_rows(Y_train, fit_index))
     X_val = fold.feature_transformer_.transform(take_rows(train_df, val_index))
     logits_val.append(fold.model_.predict_logits(X_val))
     counts_val.append(take_rows(Y_train, val_index))
@@ -871,7 +875,8 @@ Done when:
   The rule is `DirectCohortModel._check_exposure(exposure, *, expected)` (B1).
 - **Rows are paired by position** (N19); no index check anywhere.
   `Splitter.train_test_split` splits `X`, `y` and `groups` only: take the
-  exposure as `exposure.loc[X_train.index]`.
+  exposure as `exposure.loc[X_train.index]`. *Superseded by B0a:
+  `train_test_indices` returns positions, and every array is taken by them.*
 - **Classes and fitted state:** `DirectCohortModel` (`regressor_`,
   `base_log_rate_`); `ModelPipeline(feature_transformer, model)`
   (`feature_transformer_`, `model_`; fits clones on the raw table);
@@ -939,6 +944,74 @@ Done when:
   `test_recovery.py`: a module-level `pytest.importorskip("statsmodels")`, its
   tests marked `slow`.
 - **Stale here, fixed:** the status line and §2 (the draft PR is #11).
+
+### B0a. The splitter returns row positions
+*Added by the user at the start of B1 (2026-09-30).*
+
+**Decision.** The exposure was the one array taken by label
+(`exposure.loc[X_train.index]`), against N19's by-position rule, because
+`Splitter.train_test_split` split only `X`, `y` and `groups`. The user chose,
+over an `exposure=` argument (8 return pieces) and keeping `.loc`: a method
+that returns the positions, as scikit-learn's splitters and `cv` do; then
+`train_test_split` is **removed**. Callers take every array with `take_rows`.
+
+**Build.** `Splitter.train_test_indices(X, groups, *, test_size, random_state)
+-> (train_index, test_index)`: the holdout logic `train_test_split` had,
+returning positions. `train_test_split` removed; no module in `src` called it.
+
+**Tests** (`tests/unit/test_splitters.py`): every `train_test_split` test moved
+to the indices; the two tests of the 6-tuple became:
+
+| Test | Mistake it catches | Mutation |
+|---|---|---|
+| every row lands on exactly one side | a row lost, or in both halves | `train_index[1:]` returned |
+| the indices are positions whatever the index (labels from 100 give the same indices as after `reset_index`) | labels returned as positions, which take other rows silently once in range | `X.index[...]` returned |
+
+**Docs.** `SPLITTING.md` §2 and §5; `DIRECT_COHORT_MODEL.md` §0.2 and §0.6
+(data flow, block, rules table); `HYPERPARAMETER_TUNING_PLAN.md` §5's block and
+the §6 task; this doc (status, N19, §7, B0, B7). Docstrings: `Splitter`,
+`ModelPipeline`, and the evaluator's (docstring only, since it named the
+removed method). Left: `FEATURE_TRANSFORMATIONS.md` §8.1 (it does not split;
+`.loc` by the reader's `fit_df` labels is right there); `SPLITTING_FIX_PLAN.md`
+(a finished plan, history).
+
+Done when:
+- [x] Mutations, review, doc blocks, non-slow suite: 1104 passed (1 skipped,
+  1 xfailed); the tests were replaced one for one.
+
+**Record (2026-09-30).**
+- **Baseline** before the first edit: 1104 passed (1 skipped, 1 xfailed).
+- **Mutations**, each failing its named test and restored: `train_index[1:]`
+  fails `every row lands on exactly one side` (3) and 3 others; `X.index[...]`
+  returned fails `the indices are positions whatever the index` (3) on its
+  assertion (113 vs 13).
+- **Checks:** ruff and ruff format on the 4 changed `.py` files; `uv run mypy`
+  clean. `test_splitters.py` has 13 mypy errors, all older kinds
+  (`method: str` for a `Literal`, an `np.int64` seed). HEAD's version had 25;
+  the new annotations removed 12. The changed tests pass under `-W error`.
+- **Ran** under `-W error`, one namespace, seed 0 (scratchpad
+  `run_doc_blocks_b0a.py`: `table` and `tree` from `FEATURE_TRANSFORMATIONS.md`
+  §8.0–§8.1). These were `DIRECT_COHORT_MODEL.md` §0.2 and §0.6, `SPLITTING.md`
+  §2 (a `DummyRegressor`), §7's Model 1 part, and the evaluator's docstring
+  example (3 trials). `HYPERPARAMETER_TUNING_PLAN.md` §5 cannot run until
+  `HyperparameterStudy` exists.
+- **Review** (independent subagent), each finding reproduced:
+  - *Verified, no change.* The splits are unchanged: HEAD's `train_test_split`
+    equals `take_rows` with the new indices, for 3 methods, 25 seeds and 2 test
+    sizes, on a shuffled index (0 mismatches).
+  - *Fixed.* `the indices are positions` caught the labels mutant only because
+    `take_rows` raised `IndexError` on 24 rows. Once the labels fall in range,
+    labels used as positions take other rows silently: reproduced on 180 rows,
+    where rows 200–202 were taken for positions 0–2. The test now compares the
+    indices with those after `reset_index`.
+  - *Fixed.* `SPLITTING.md` §2 took `take_rows(groups, …)` right after saying
+    `random` takes `groups=None`, but `take_rows(None, …)` raises `TypeError`
+    (reproduced). A new hazard in §5: a fold's exposure comes from
+    `exposure_train`.
+  - *Fixed.* N19's "Why" cell still named `train_test_split`. §0.6's step 2
+    listed groups that its block does not take. Wording in the `ModelPipeline`
+    and evaluator docstrings; three lines too long. The same-seed test now
+    compares both halves.
 
 ### B1. Shared numerics
 *Revised by N3 and N16: there is no shared `check_exposure` and no utils file.*
@@ -1042,7 +1115,8 @@ Ten populations. Per cohort: Model 2 (raw and calibrated) against Model 1; plus
 the total's deviance and the cohort log loss. Table in the plan doc. Reuse A4's
 recipe (A4's "Smoke run"; its script lived in a per-session scratchpad and
 may be gone): `ShareTransformer` and `ExposureTransformer` on the full table, `Splitter("grouped")` with
-`random_state=seed`, `exposure.loc[X.index]`, each model against its own start).
+`random_state=seed`, every array taken by `train_test_indices`'s positions
+(B0a; A4 used `exposure.loc[X.index]`), each model against its own start).
 Model 1's reference is A4's table (offset variant; total 4.215 ± 1.450).
 
 Done when:
