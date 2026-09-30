@@ -84,7 +84,8 @@ class DirectCohortModel(BaseAgeGroupModel):
         # A forgotten exposure would silently drop the offset.
         if exposure is None:
             raise ValueError(
-                "the model uses an exposure offset (use_exposure=True); pass `exposure`"
+                "the model uses an exposure offset (use_exposure=True at fit); "
+                "pass `exposure`"
             )
         exposure_values = np.asarray(exposure, dtype=float)
         # A column (n, 1), e.g. a one-column DataFrame, would broadcast against

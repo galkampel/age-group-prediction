@@ -15,8 +15,9 @@ implementation details conflict, the model specification controls behavior.
 - **In progress:**
   - the scikit-learn-style re-implementation of the models in `modeling/`
     (Model A done; see the [plan](MODEL_REIMPLEMENTATION_PLAN.md));
-  - the multi-cohort models: Model A's cohorts combined in one object, and
-    Model B rebuilt (see the [plan](MULTI_COHORT_MODELS_PLAN.md));
+  - the multi-cohort models: Model A's cohorts combined in one object (done in
+    PR #10, pending merge), then Model B rebuilt (see the
+    [plan](MULTI_COHORT_MODELS_PLAN.md));
   - the `hyperparameter_tuning` package (the evaluator is done; see its
     [plan](HYPERPARAMETER_TUNING_PLAN.md));
   - the `splitting` package (built and tested, not yet wired).
@@ -38,7 +39,7 @@ implementation details conflict, the model specification controls behavior.
 
 | Document | Authority |
 |---|---|
-| [Direct cohort model](DIRECT_COHORT_MODEL.md) | Model A. §0: the rebuilt `modeling.DirectCohortModel` (equations, exposure offset, API). §1–§10: the current per-cohort LightGBM families, tuning, marginal scoring, bootstrap uncertainty, persistence |
+| [Direct cohort model](DIRECT_COHORT_MODEL.md) | Model A. §0: the rebuilt `modeling.DirectCohortModel` (equations, exposure offset, API); §0.6: `ModelPipeline` and `IndependentCohortModels`, every cohort from the raw table. §1–§10: the current per-cohort LightGBM families, tuning, marginal scoring, bootstrap uncertainty, persistence |
 | [Independent total and probability model](INDEPENDENT_TOTAL_PROBABILITY_MODEL.md) | Model B: NB2/Poisson total with exposure offset, grouped multinomial composition, temperature calibration, joint scoring, bootstrap uncertainty |
 | [Bayesian conditional model overview](BAYESIAN_CONDITIONAL_MODEL_OVERVIEW.md) | Model C in brief: statistical model, fitting and diagnostics, prediction, selection, persistence, configuration |
 | [Bayesian NB2 + Dirichlet-Multinomial guide](BAYESIAN_CONDITIONAL_MODEL.md) | Model C: selection and comparison, persistence, configuration, metadata, and a technical explanation of the model's statistics, Pyro syntax, tensor shapes, estimator/component/inference ownership, prediction, diagnostics, and runtime workarounds |

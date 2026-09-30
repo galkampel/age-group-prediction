@@ -6,9 +6,10 @@ This file is the source of truth: update its status line and checkboxes as steps
 
 **Status (2026-09-30):** A0 done (draft PR #10). A1 committed (`8fed394`).
 A2 committed (`2c38010`, `5b5ea4d`, `7204ec2`). A3 committed (`6b234f0`,
-`3f46fbc`). A4 (smoke run and docs, no code) done, awaiting the user's review
-and commit. **Next:** the user marks PR #10 ready for review; after it is
-merged, Part B from B0 (§9).
+`3f46fbc`). A4 committed (`4f083c2`). PR A's close-out (stale docs and
+docstrings, Part B brought up to date, PR #10's title and body) done, awaiting
+the user's commit. **Next:** the user marks PR #10 ready for review; after it
+is merged, Part B from B0 (§9).
 Non-slow suite: **1104 passed** (1 skipped, 1 xfailed).
 
 ## Contents
@@ -120,7 +121,7 @@ These are the user's standing rules. Follow them exactly.
 | `src/age_group_prediction/preprocessing.py` | `ShareTransformer`: fit-free, row-wise, run on the full table before splitting. *A2 adds `ExposureTransformer`* |
 | `src/age_group_prediction/scoring.py` | `Metric(name, function, greater_is_better=False)`, `POISSON_DEVIANCE`, `RMSE`, `MAE` |
 | `src/age_group_prediction/feature_engineering/transformer.py` | `FeatureTransformer(plans, *, interactions, remainder)`; `fit`, `transform -> DataFrame`. *`exposure_column` and `log_exposure` were removed in A2 (N3)* |
-| `src/age_group_prediction/hyperparameter_tuning/evaluator.py` | `CVHyperparameterEvaluator`; `build_feature_transformer_and_model(params) -> (FeatureTransformer, BaseAgeGroupModel)`; `evaluate(..., y: pd.Series \| np.ndarray, ...)` at line 83 |
+| `src/age_group_prediction/hyperparameter_tuning/evaluator.py` | `CVHyperparameterEvaluator`; `build_feature_transformer_and_model(params) -> (FeatureTransformer, BaseAgeGroupModel)`; `evaluate(..., y: pd.Series \| np.ndarray, ...)` (at line 83 when written; refer to it by name, lines move) |
 | `src/age_group_prediction/utils.py` | `DesignMatrix`, `Target`, `Groups`, `Exposure`, `take_rows` |
 | `tests/unit/test_modeling_contract.py` | Discovers every concrete model in `modeling`, builds it with `model_class()`, runs 4 sklearn checks and a refit test that calls `fit(X, y)` with a Series and no exposure. *Since A1: built from an `EXAMPLES` factory per class* |
 | `docs/FEATURE_TRANSFORMATIONS.md` §8.1–§8.3 | The transformer declarations `tree`, `total_base`, `composition_base` |
@@ -167,6 +168,11 @@ reference doc `docs/INDEPENDENT_TOTAL_PROBABILITY_MODEL.md`.
   which `MODEL_REIMPLEMENTATION_PLAN.md` Step 2.2 accepted as "all buildings
   have this n". In the GLMs numpy broadcasts a length-1 exposure silently at
   fit. Rows are paired by position (N19). Re-examine at B0.
+  *Measured after PR A (2026-09-30):* `DirectCohortModel` with a length-1
+  exposure: `predict` broadcasts it silently, `fit` fails in LightGBM
+  ("Initial score size doesn't match data size"); another wrong length fails
+  in numpy at predict. The tuner already rejects any exposure whose shape is
+  not `(len(X),)` (`CVHyperparameterEvaluator._check_exposure`).
 
 ## 6. Measured evidence (2026-09-29; sklearn 1.9.0, scipy 1.18.0, statsmodels 0.14.6)
 
@@ -186,11 +192,11 @@ then `ShareTransformer(("3_rooms","4_rooms","5_rooms","6_rooms"), reference_colu
 | `clone` of `{cohort: (FeatureTransformer, model)}` | Unfitted deep copies, key order and settings kept |
 | sklearn's 4 contract checks on a class with required nested estimators | Pass, when given an instance |
 | LightGBM with different columns per cohort | No warning under `-W error` |
-| Tuner with a DataFrame `y` and a composition metric | Already runs; only the annotation at `evaluator.py:83` is narrow |
+| Tuner with a DataFrame `y` and a composition metric | Already runs; only the `y` annotation of `CVHyperparameterEvaluator.evaluate` is narrow |
 | A bad exposure given to LightGBM (2026-09-29) | A negative one raises. **Zero, inf and NaN pass silently**, in the `init_score` form and in the rate form |
 | Rate form (`y / exposure`, `sample_weight=exposure`) vs `init_score` + `base_log_rate_` | The same model: relative difference 3e-8 over 4 hyperparameter settings, the same held-out deviance to 6 decimals. Not adopted (N18) |
 | LightGBM's start without an exposure | With almost no learning every prediction is `mean(y)` (4.7733). With `boost_from_average=False` it is 1.0 |
-| `ModelPipeline` and `ExposureTransformer`, defined inline in a probe | sklearn's 4 checks pass; nested names such as `model__learning_rate` work; doubling the exposure column gives a ratio of exactly 2; a refit equals a fresh fit; `set_params(model__use_exposure=False)` after `fit` leaves predictions unchanged; a model without an exposure works on a table without the column; a zero, negative, infinite or NaN exposure raises at fit and at predict, naming the row; a missing column gives `KeyError`; pickling works |
+| `ModelPipeline` and `ExposureTransformer`, defined inline in a probe. *Historical: the first A2 version, whose pipeline read and validated the exposure column itself; the shipped pipeline takes `exposure=` and only `ExposureTransformer` validates* | sklearn's 4 checks pass; nested names such as `model__learning_rate` work; doubling the exposure column gives a ratio of exactly 2; a refit equals a fresh fit; `set_params(model__use_exposure=False)` after `fit` leaves predictions unchanged; a model without an exposure works on a table without the column; a zero, negative, infinite or NaN exposure raises at fit and at predict, naming the row; a missing column gives `KeyError`; pickling works |
 | mypy and pandas | pandas is untyped here, so `pd.Series` vs `pd.DataFrame` is not checked. Dropping the `exposure` parameter from an override does fail |
 
 ## 7. Target code shape
@@ -215,7 +221,7 @@ class ModelPipeline(BaseAgeGroupModel):
     # fitted: feature_transformer_, model_
 
 # modeling/independent_cohorts.py  (A3)
-CohortModels = Mapping[str, BaseAgeGroupModel]   # each takes the raw table: a ModelPipeline
+CohortModels = Mapping[str, BaseAgeGroupModel]   # each takes the raw table: usually a ModelPipeline
 class IndependentCohortModels(BaseAgeGroupModel):
     def __init__(self, cohort_models: CohortModels) -> None: ...
     # fit(X_raw, y: DataFrame, exposure=None) ; predict(X_raw, exposure=None) -> DataFrame
@@ -225,13 +231,17 @@ class IndependentCohortModels(BaseAgeGroupModel):
 class TotalChildrenModel(BaseAgeGroupModel):
     def __init__(self, *, family="poisson", use_exposure=True, l2_penalty=0.0,
                  max_iter=500, tol=...) -> None: ...
+    # fit(X, y: Series, exposure=None) ; predict(X, exposure=None) -> ndarray
+    # exposure rule as DirectCohortModel._check_exposure: raises if used and missing,
+    # ignored if not used, must be 1-D; predict follows the fitted state (A3)
     # fitted: intercept_, coef_, feature_names_in_ (, dispersion_ for nb2)
 
 # modeling/cohort_probability.py  (B4)
 class CohortProbabilityModel(BaseAgeGroupModel):
     def __init__(self, *, l2_penalty=0.0, temperature=1.0, max_iter=500, tol=...) -> None: ...
-    # fit(X, y: DataFrame of cohort counts) ; predict_logits(X) -> DataFrame
-    # predict(X) -> DataFrame of probabilities, rows sum to 1
+    # fit(X, y: DataFrame of cohort counts, exposure=None) ; predict_logits(X) -> DataFrame
+    # predict(X, exposure=None) -> DataFrame of probabilities, rows sum to 1
+    # the base signature is kept; a passed exposure is ignored (N3 e)
     # fitted: intercept_, coef_, cohorts_, feature_names_in_
 
 # modeling/calibration.py  (B6)
@@ -242,8 +252,9 @@ class TemperatureCalibrator(BaseEstimator):
 class IndependentTotalProbabilityModel(BaseAgeGroupModel):
     def __init__(self, *, total_children_model: BaseAgeGroupModel,
                  cohort_probability_model: BaseAgeGroupModel) -> None: ...   # two ModelPipelines
-    # fit(X_raw, y: DataFrame of cohort counts): total target = y.sum(axis=1)
-    # predict(X_raw) -> DataFrame = total_mean[:, None] * probabilities
+    # fit(X_raw, y: DataFrame of cohort counts, exposure=None): total target = y.sum(axis=1)
+    # predict(X_raw, exposure=None) -> DataFrame = total_mean[:, None] * probabilities
+    # the same exposure goes to both models; the probability model ignores it
 ```
 
 **The math.** `D = [1, X]`, `N` buildings, `M = Σ n_bk` children, `λ = l2_penalty`.
@@ -260,8 +271,15 @@ Start values: total intercept `log(Σy / Σexposure)`, everything else 0.
 **Usage, end to end:**
 
 ```python
-# The exposure, validated once on the full table, then split with it
+# The exposure, validated once on the full table; the splitter does not split
+# it, so its rows are taken by X's labels (N19)
+COHORTS = ["n_kindergarten", "n_elementary", "n_highschool"]
 exposure = ExposureTransformer("n_apartments").fit_transform(table)
+train_df, test_df, Y_train, Y_test, groups_train, groups_test = Splitter(
+    "grouped").train_test_split(table, table[COHORTS], table["neighborhood_id"],
+                                test_size=0.2, random_state=0)
+exposure_train, exposure_test = exposure.loc[train_df.index], exposure.loc[test_df.index]
+cv = Splitter("grouped").cv(n_splits=5, random_state=0)
 
 # Model 1
 model_1 = IndependentCohortModels({
@@ -625,6 +643,7 @@ Done when:
 - **Ran:** no doc code block was edited.
 
 ### A4. Smoke run and docs
+*Committed: `4f083c2`. The close-out that follows it is recorded at the end of this step.*
 
 **Facts from A3 that A4 builds on** (re-verify in plan mode):
 - The API: `IndependentCohortModels({cohort: ModelPipeline(transformer,
@@ -719,7 +738,8 @@ scores the summed prediction against `n_children_total`.
   errors. Still weak evidence, and still untuned: §5 step 2 of
   `MODEL_REIMPLEMENTATION_PLAN.md` re-checks it after tuning.
 - Calibration holds in both variants (1.00–1.06).
-- The script is `smoke_a4.py` in the session scratchpad, outside the repo. It
+- The script was `smoke_a4.py` in that session's scratchpad, outside the repo
+  (per-session, so it may be gone; the recipe above rebuilds it). It
   asserts the output's columns and index and that `exp(base_log_rate_)` equals
   the constant rate. It ran under `-W error`, silently.
 
@@ -768,19 +788,76 @@ scores the summed prediction against `n_children_total`.
     evaluator's docstring example builds the exposure on `train_df`, not the
     full table: harmless (row-wise), but unlike the documented flow.
 
+**Close-out of PR A (2026-09-30, user's request before marking PR #10 ready).**
+- **Stale statements fixed**, found by two read-only sweeps (code; docs), each spot-checked:
+  - Code (comments, docstrings and one message; no behavior change):
+    `FeatureTransformer`'s class docstring (the model "takes the raw column");
+    the evaluator's docstring example (the exposure built on the full table,
+    then `.loc[train_df.index]`; run as written, 3 trials, `-W error`) and its
+    stale `y` comment; `DirectCohortModel`'s missing-exposure message now says
+    `use_exposure=True` *at fit*, true at predict too; `IndependentCohortModels`'
+    alias comment says "usually a ModelPipeline". Leftover `.pyc` files of the
+    deleted `modeling/utils.py` and `modeling/metrics.py` removed.
+  - Docs: `FEATURE_TRANSFORMATIONS.md` §4.4, §4.7, §5 (the old `FeatureSpec`'s
+    checks marked as old), §8.1 ("negative"; measured through
+    `DirectCohortModel`, zero, negative and inf are accepted with only a numpy
+    warning and NaN silently, so "silently" became "at most a numpy warning",
+    also in `DIRECT_COHORT_MODEL.md` §0.6), §8.2 (the exposure built with
+    `ExposureTransformer`); `HYPERPARAMETER_TUNING_PLAN.md` (D13, §4.2, status,
+    the §6 task now also rewrites §5's raw-column example); `SPLITTING.md` §2;
+    `docs/README.md`; `MODULE_REFERENCE.md`; `MODEL_REIMPLEMENTATION_PLAN.md`
+    (the base-signature note).
+- **Part B brought up to date** with what PR A shipped: §5's length question
+  (measured evidence), §6 (the first-version probe marked historical), §7 (the
+  base signature on every Model 2 class; the usage block splits and takes the
+  exposure by labels; its Model 1 part run under `-W error`), B0 (what to
+  re-verify), B1 (the exposure rule to reuse), B2/B4/B5 (exposure tests,
+  contract examples with `use_exposure=False`, A3's aggregator lessons), B3
+  (no line numbers), B7 (A4's script and reference), B9 (§8.2/§8.3 blocks,
+  the §0.6 pattern), §11 (three pitfalls).
+- **Review** (independent subagent; the new message, the evaluator docstring
+  run, §5's evidence, nested `set_params` on two named estimators and the §7
+  Model 1 block reproduced), each finding reproduced, all fixed: a duplicated
+  sentence in `SPLITTING.md`; §4's "line 83"; §4.7 describing the not-yet-built
+  probability model in the present tense; "only" in §4.4; the per-session
+  scratchpad scripts named as if they persist (B7, B9, §11 now give the
+  recipe); an over-broad claim and "New classes" in the PR body; "silently"
+  (measured above); the evaluator's "the splitter"; the alias comment; an
+  indent; a leftover `metrics` `.pyc`.
+- **Checks:** ruff and mypy on the 4 changed `.py` files; their tests and the
+  `modeling` tests under `-W error` (178 passed); the evaluator docstring, the
+  §8/§0 doc blocks and §7's Model 1 part run under `-W error`; non-slow suite
+  1104 passed (1 skipped, 1 xfailed).
+
 ## 9. Steps, PR B: Model 2
 
 ### B0. Branch and draft PR
 Branch `feat/independent-total-probability-model` from `feat/hyperparameter-tuning`
 after PR A is merged. Re-verify Part B against the merged code, update the doc,
-open the draft PR.
+open the draft PR. Re-verify in particular what PR A settled (§8 A2–A4):
+- the base signature `fit(X, y, exposure=None)` / `predict(X, exposure=None)`;
+  every model keeps it, and one that does not use the exposure ignores it (N3 e);
+- `DirectCohortModel._check_exposure` as the exposure rule (B1);
+- the contract test's refit check calls `fit(X, y)` with **no exposure**, so a
+  model whose default is `use_exposure=True` needs an example with
+  `use_exposure=False` (§11);
+- rows paired by position, no index check (N19); `Splitter` does not split the
+  exposure;
+- `DIRECT_COHORT_MODEL.md` §0.6 is the documentation pattern (B9).
+Also add the note to PR #5's description (§2).
 
 ### B1. Shared numerics
 *Revised by N3 and N16: there is no shared `check_exposure` and no utils file.*
 - **Build:** `minimize_lbfgs` (N9), **under a class**. Propose its home at the
   start of B1 (for example a shared parent of the two GLMs) and ask the user.
-  Each GLM keeps its own presence check for the exposure; the values are
-  validated by `ExposureTransformer`. Ask about the length check (§5).
+- **The exposure rule** is the one PR A settled, in
+  `DirectCohortModel._check_exposure(exposure, *, expected)`: `None` when no
+  exposure is expected (a passed one is ignored); `ValueError` when one is
+  expected and missing; `ValueError` unless 1-D; returned as floats. At fit
+  `expected` is `use_exposure`, at predict the fitted state. The values are
+  validated by `ExposureTransformer`. `TotalChildrenModel` needs the same rule:
+  ask whether it is copied or moved to a shared parent with `minimize_lbfgs`
+  (no utils file, N16). Ask about the length check, with §5's evidence.
 - **Tests:** an iteration limit raises; an overflow raises instead of
   returning the start point.
 
@@ -804,10 +881,16 @@ Done when:
   4. doubling the exposure doubles the mean;
   5. `predict` follows the fitted state after `set_params(use_exposure=False)`;
   6. all-zero `y`, negative counts, reordered columns, unknown family raise;
-  7. beats the constant-rate baseline on informative data.
+  7. beats the constant-rate baseline on informative data;
+  8. the exposure rule (A3): a missing exposure raises at fit and at predict,
+     a 2-D one raises, and one passed with `use_exposure=False` is ignored
+     (the same predictions as without it).
+- **Contract example:** `TotalChildrenModel(use_exposure=False)`. The refit
+  test calls `fit(X, y)` without an exposure, so the default `True` would
+  raise there.
 
 ### B3. Cohort log loss and tuner typing
-- **Files:** `scoring.py`, `hyperparameter_tuning/evaluator.py` (line 83: `y: Target`), their tests.
+- **Files:** `scoring.py`, `hyperparameter_tuning/evaluator.py` (`evaluate`'s `y` annotation becomes `Target`), their tests.
 - **Build:** `COHORT_LOG_LOSS = Metric("cohort_log_loss", ...)`:
   `−Σ xlogy(n_bk, p_bk) / Σ n_bk` (a plain `0·log 0` gives nan).
 - **Tests:** equals a hand computation; a zero-total building adds nothing; the
@@ -827,19 +910,31 @@ Done when:
   6. an unobserved cohort raises;
   7. rows sum to 1; `temperature=1` is the plain softmax; a temperature set after `fit` is applied;
   8. non-convergence raises;
-  9. beats the marginal proportions on informative data.
+  9. beats the marginal proportions on informative data;
+  10. a passed exposure is ignored (the same fit and predictions).
+- **Contract example:** a `y` DataFrame of cohort counts; no exposure.
 
 ### B5. `IndependentTotalProbabilityModel`
 - **Files:** new `modeling/independent_total_probability.py`, `__init__.py`, tests, contract example.
 - **Build:** an aggregator of two models that take the raw table
-  (`ModelPipeline`s, N17). Rows are paired by position (N19).
+  (`ModelPipeline`s, N17). Rows are paired by position (N19). Follow
+  `IndependentCohortModels` (A3): clone both in `fit`, pass the same exposure
+  to both, assign the fitted copies together only after both succeed, and take
+  each prediction as an array before combining (a Series with its own index
+  would realign into NaN). The output has `y`'s columns at fit and `X`'s index;
+  the probability model's cohorts must equal `y`'s columns. Unlike N21's
+  mapping, two named estimators are ordinary parameters, so nested `set_params`
+  (`cohort_probability_model__model__temperature`) reaches them.
 - **Tests:**
   1. the output equals total × probabilities of the two models fitted separately, and rows sum to the total mean;
   2. the total target is `y.sum(axis=1)`; tables without target columns work;
   3. each pipeline uses its own transformer (swapped transformers);
-  4. doubling `n_apartments` doubles every cohort;
+  4. doubling the exposure doubles every cohort (`n_apartments` is not a feature of `total_base`);
   5. nested `set_params` reaches the next fit; a temperature set before `fit` is applied;
-  6. the exposure changes the total model only (the probability model ignores it).
+  6. the exposure changes the total model only (the probability model ignores it);
+  7. predictions returned with their own index are placed by position (A3's NaN finding).
+- **Contract example:** the total model with `use_exposure=False` (the refit
+  test passes no exposure).
 
 ### B6. `TemperatureCalibrator`
 - **Files:** new `modeling/calibration.py`, tests.
@@ -850,7 +945,11 @@ Done when:
 
 ### B7. Smoke run
 Ten populations. Per cohort: Model 2 (raw and calibrated) against Model 1; plus
-the total's deviance and the cohort log loss. Table in the plan doc.
+the total's deviance and the cohort log loss. Table in the plan doc. Reuse A4's
+recipe (A4's "Smoke run"; its script lived in a per-session scratchpad and
+may be gone): `ShareTransformer` and `ExposureTransformer` on the full table, `Splitter("grouped")` with
+`random_state=seed`, `exposure.loc[X.index]`, each model against its own start).
+Model 1's reference is A4's table (offset variant; total 4.215 ± 1.450).
 
 Done when:
 - [ ] The user has seen the numbers.
@@ -871,8 +970,14 @@ Done when:
   `cohort_probability_base`, as §7 uses, to match `CohortProbabilityModel`;
   user's decision, 2026-09-29), §8.7 item 7 (penalty ranges restated
   under N8: the old `C` range [0.01, 100] is about `l2_penalty` [2e-6, 2e-2] at
-  ~4,500 training children); `MODULE_REFERENCE.md`; `docs/README.md`;
-  `MODEL_REIMPLEMENTATION_PLAN.md` §5 (step 3 done).
+  ~4,500 training children); `FEATURE_TRANSFORMATIONS.md` §8.2 and §8.3 get
+  runnable `ModelPipeline` blocks with `ExposureTransformer`, as §8.1 has;
+  `MODULE_REFERENCE.md`; `docs/README.md`;
+  `MODEL_REIMPLEMENTATION_PLAN.md` §5 (step 3 done). Pattern:
+  `DIRECT_COHORT_MODEL.md` §0.6 (data flow, one runnable block, a table of
+  rules with their reasons). Run every block with a runner as in A4's record
+  (extract each section's `python` blocks, `exec` them in order in one
+  namespace, set `raw_table` and the split frames), extended to the new section.
 
 Done when:
 - [ ] The user has reviewed the docs; PR B is ready to merge.
@@ -912,6 +1017,13 @@ calibration metadata, seed provenance, state bundles.
 - **Tuning.** A convergence error inside a fold ends an Optuna study. Note it
   in `HYPERPARAMETER_TUNING_PLAN.md` §6 for Phase 3.
 - **pydantic/ruff.** The repo has no `[tool.ruff]`; do not add one.
+- **Contract test and the exposure.** The refit check calls `fit(X, y)`
+  without an exposure, so an example must not need one (`use_exposure=False`).
+- **Position, not index.** Rows are paired by position (N19). A sub-model
+  returning a Series with its own index realigns into NaN when combined: take
+  predictions as arrays (A3).
+- **Doc blocks.** `fit_df`, `train_df`, `valid_df`, `test_df` are left to the
+  reader; a doc-block runner sets them (A2's "Pitfalls met", A4's record).
 - **Stale editor buffers.** If a file "looks unchanged" to the user: "File: Revert File".
 
 ## 12. Verification

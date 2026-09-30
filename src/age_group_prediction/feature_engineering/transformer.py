@@ -122,7 +122,9 @@ class FeatureTransformer(TransformerMixin, BaseEstimator):
     means. ``sklearn.base.clone`` gives a fresh unfitted copy per fold.
 
     The exposure is not declared here: whether a model has an offset is the
-    model's setting, and it takes the raw column from the table itself.
+    model's setting, and the caller passes the exposure to the model as
+    ``exposure=``, built with
+    :class:`~age_group_prediction.preprocessing.ExposureTransformer`.
     """
 
     def __init__(

@@ -173,7 +173,8 @@ exports the **original** classes of §1–§10.
 1. **Row-wise preprocessing, on the full table, before the split.**
    `ShareTransformer` turns the room counts into shares.
    `ExposureTransformer` returns the exposure as floats. It raises for a zero,
-   negative, infinite or NaN value, which LightGBM would accept silently (§0.3).
+   negative, infinite or NaN value, which the model would otherwise accept, with
+   at most a numpy warning (none for NaN; §0.3).
    Neither learns anything, so nothing leaks from the test rows, and a bad
    test row fails before any model is fitted.
 2. **Split by neighborhood** with `Splitter`. It splits `X`, `y` and the

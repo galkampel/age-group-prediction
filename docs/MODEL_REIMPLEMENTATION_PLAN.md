@@ -132,7 +132,9 @@ there is one copy.
 ### Target code shape
 
 *As planned in this PR. Since then (PR #5), `Metric` lives in the top-level
-`scoring.py` (D16), and `fit`/`predict` take `exposure=None` (D14).*
+`scoring.py` (D16), and `fit`/`predict` take `exposure=None` (D14). Since
+[MULTI_COHORT_MODELS_PLAN.md](MULTI_COHORT_MODELS_PLAN.md) A1, `y` is
+`pd.Series | pd.DataFrame` and `predict` returns `np.ndarray | pd.DataFrame`.*
 
 ```python
 # modeling/metrics.py

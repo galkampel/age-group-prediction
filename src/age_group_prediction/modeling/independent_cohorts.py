@@ -16,8 +16,8 @@ from .base import BaseAgeGroupModel
 
 __all__ = ["CohortModels", "IndependentCohortModels"]
 
-# Each model takes the raw table, so each cohort keeps its own features: a
-# ModelPipeline.
+# Each model takes the raw table, so each cohort keeps its own features:
+# usually a ModelPipeline.
 type CohortModels = Mapping[str, BaseAgeGroupModel]
 
 

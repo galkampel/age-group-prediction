@@ -383,7 +383,9 @@ approximation, though a good one over the observed range.
 ### 4.4 Exposure: `log_n_apartments`
 
 **Confirmed: `n_apartments` is not a feature in B or C.** The spec refuses an
-exposure column that is also listed as an ordinary numeric feature, so building
+exposure column that is also listed as an ordinary numeric feature (the old
+`FeatureSpec`; in the rebuilt code nothing enforces it, and the declaration
+and the model's `use_exposure` express it, §8.2), so building
 size enters only as the offset
 
 $$
@@ -396,9 +398,9 @@ with the coefficient of $\log n_i$ **fixed at 1**. The linear predictor
 therefore models children per apartment, and every other coefficient is a
 multiplicative effect on that rate.
 
-Used by: B's total stage and C's total stage only. The composition stages use
-no exposure, because age-group shares do not depend on building size, and
-Model A uses none today (Section 3.3 proposes adding one).
+Used by: B's total stage and C's total stage, and optionally Model A
+(`use_exposure=True`, Section 3.3). The composition stages use no exposure,
+because age-group shares do not depend on building size.
 
 - **Never scale the offset.** Replacing $\log n$ by $(\log n - c)/s$ with the
   coefficient still fixed at 1 would assert $\mu \propto n^{1/s}$, a different
@@ -479,7 +481,10 @@ $$
 
 Building size belongs entirely to the first factor. `FeatureSpec` enforces this
 ("Only total-count features may define an exposure"), so a composition spec
-carrying an exposure is refused at construction.
+carrying an exposure is refused at construction. That is the old `FeatureSpec`;
+in the rebuild (planned: [multi-cohort plan](MULTI_COHORT_MODELS_PLAN.md) N3 e,
+B4) the probability model will have no exposure setting and will ignore a
+passed exposure.
 
 ### 4.8 Scale audit
 
@@ -569,7 +574,8 @@ Both stages take the **same 7 non-exposure numeric columns plus
 | Room-share interaction | `x_household_size` only | `x_median_age` only |
 
 - **Why `n_apartments` is not a feature in either stage:** it *is* the
-  exposure. `FeatureSpec` refuses a column that is both, and including it as a
+  exposure. The old `FeatureSpec` refuses a column that is both (the rebuilt
+  `FeatureTransformer` does not check it: §8.2), and including it as a
   predictor would let the model partly undo the offset by re-estimating the
   size elasticity — which is the optional diagnostic of Section 4.4, not the
   default specification.
@@ -940,7 +946,8 @@ exact proportionality, and the feature lets the trees learn departures from
 it. The exposure belongs to the model, not the transformer: `use_exposure=True`,
 with the raw count passed to `fit` and `predict`. Build it with
 `ExposureTransformer` on the full table, before splitting: it rejects a zero,
-infinite or NaN count, which LightGBM would accept silently.
+negative, infinite or NaN count, which the model would otherwise accept, with
+at most a numpy warning (none for NaN).
 
 ```python
 from sklearn.base import clone
@@ -1031,8 +1038,9 @@ for the daycare term (§4.1); contrasts against `none` for the school dummies
 Unlike Model A, B and C do not list `n_apartments` among the plans, so building
 size enters **only** as the offset (§4.4). The package does not enforce that;
 the declaration is what expresses it. The exposure is not the transformer's:
-the model takes the raw `n_apartments` separately, where it cannot be mistaken
-for a predictor, and forms the offset $\log n$ itself.
+the model takes it separately, as `exposure=`, where it cannot be mistaken for
+a predictor, and forms the offset $\log n$ itself. Build it with
+`ExposureTransformer` on the full table before splitting, as in §8.1.
 
 ### 8.3 Model B — composition stage
 

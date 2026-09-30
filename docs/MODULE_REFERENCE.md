@@ -2,7 +2,7 @@
 
 One entry per Python module in `src/`: what it owns, its main public API, what
 it depends on inside the project, and where to read more. Names come from the
-code as of 2026-09-24. A module's own docstring, when present, is the most
+code as of 2026-09-30. A module's own docstring, when present, is the most
 detailed and current description.
 
 Modules or names starting with `_` are internal: they can change without
@@ -92,7 +92,8 @@ These are scikit-learn-style models that replace `models/` and
 already transformed design matrix; `ModelPipeline` and `IndependentCohortModels`
 take the raw table. Nothing in `experiment/` or
 `tracking/` calls them yet; the old `models/` is deleted once all three models
-are rebuilt. Plan: [MODEL_REIMPLEMENTATION_PLAN.md](MODEL_REIMPLEMENTATION_PLAN.md).
+are rebuilt. Plans: [MODEL_REIMPLEMENTATION_PLAN.md](MODEL_REIMPLEMENTATION_PLAN.md),
+[MULTI_COHORT_MODELS_PLAN.md](MULTI_COHORT_MODELS_PLAN.md).
 
 | Module | Responsibility | Main public API | Depends on |
 |---|---|---|---|
@@ -100,7 +101,7 @@ are rebuilt. Plan: [MODEL_REIMPLEMENTATION_PLAN.md](MODEL_REIMPLEMENTATION_PLAN.
 | `base.py` | The shared contract: abstract `fit` and `predict` (one target or one per cohort), and `evaluate(y_true, y_pred, metric)`; `get_params`/`set_params`/`clone` come from scikit-learn's `BaseEstimator` | `BaseAgeGroupModel` | `scoring` (top level) |
 | `direct_cohort.py` | **Model A, rebuilt.** One LightGBM regressor for one cohort with fixed hyperparameters; `poisson` or `regression`; optional exposure offset | `DirectCohortModel`, `Objective` | `base` |
 | `pipeline.py` | A `FeatureTransformer`, then a model, fitted and used on the raw table; the exposure, built with `ExposureTransformer`, is passed through to the model | `ModelPipeline` | `base`, `feature_engineering` |
-| `independent_cohorts.py` | **Model 1.** One independent model per cohort (each a `ModelPipeline`, with its own features), fitted on its column of `y`; every cohort gets the same exposure; predicts a DataFrame, one column per cohort | `IndependentCohortModels`, `CohortModels` | `base` |
+| `independent_cohorts.py` | **Model 1.** One independent model per cohort (any `BaseAgeGroupModel`, usually a `ModelPipeline` with its own features), fitted on its column of `y`; every cohort gets the same exposure; predicts a DataFrame, one column per cohort | `IndependentCohortModels`, `CohortModels` | `base` |
 
 Model description: [DIRECT_COHORT_MODEL.md §0](DIRECT_COHORT_MODEL.md#0-the-rebuilt-model-modelingdirect_cohortpy);
 every cohort from the raw table: [§0.6](DIRECT_COHORT_MODEL.md#06-every-cohort-from-the-raw-table-modelpipeline-and-independentcohortmodels).
