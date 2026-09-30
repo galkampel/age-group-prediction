@@ -938,21 +938,43 @@ tree = FeatureTransformer(
 3.3 keeps it as a column *and* uses $\log n$ as the offset. The offset asserts
 exact proportionality, and the feature lets the trees learn departures from
 it. The exposure belongs to the model, not the transformer: `use_exposure=True`,
-with the raw column passed to `fit` and `predict`:
+with the raw count passed to `fit` and `predict`. Build it with
+`ExposureTransformer` on the full table, before splitting: it rejects a zero,
+infinite or NaN count, which LightGBM would accept silently.
 
 ```python
 from sklearn.base import clone
 from age_group_prediction.modeling import DirectCohortModel
+from age_group_prediction.preprocessing import ExposureTransformer
 
+exposure = ExposureTransformer("n_apartments").fit_transform(table)
 features = clone(tree).fit(fit_df)
 model = DirectCohortModel(use_exposure=True).fit(
     features.transform(fit_df), fit_df["n_kindergarten"],
-    exposure=fit_df["n_apartments"],
+    exposure=exposure.loc[fit_df.index],
 )
 ```
 
 For `objective="regression"` there is no log link, and the model refuses
 `use_exposure=True` (§3.3).
+
+**Combining the cohorts.** Each cohort gets its own model and its own copy of
+the transformer: a `ModelPipeline` per cohort, held by `IndependentCohortModels`,
+which fits and predicts on the raw table and returns one column per cohort.
+The same exposure goes to every cohort; a model without the offset ignores it.
+The data flow and the rules are in
+[Direct cohort model §0.6](DIRECT_COHORT_MODEL.md#06-every-cohort-from-the-raw-table-modelpipeline-and-independentcohortmodels).
+
+```python
+from age_group_prediction.modeling import IndependentCohortModels, ModelPipeline
+
+COHORTS = ["n_kindergarten", "n_elementary", "n_highschool"]
+cohort_models = IndependentCohortModels({
+    cohort: ModelPipeline(tree, DirectCohortModel(use_exposure=True))
+    for cohort in COHORTS
+}).fit(fit_df, fit_df[COHORTS], exposure=exposure.loc[fit_df.index])
+predictions = cohort_models.predict(valid_df, exposure=exposure.loc[valid_df.index])
+```
 
 **SES-quadratic variant.** Add one plan; `ses` itself stays, because the squared
 column earns its place only by being non-monotone (§3.2). It squares the

@@ -88,7 +88,9 @@ does not import `tracking`.
 
 These are scikit-learn-style models that replace `models/` and
 `modeling_config`: settings in the constructor, and `fit(X, y, exposure=None)` /
-`predict(X, exposure=None)` on an already transformed design matrix. Nothing in `experiment/` or
+`predict(X, exposure=None)`. A single model such as `DirectCohortModel` takes an
+already transformed design matrix; `ModelPipeline` and `IndependentCohortModels`
+take the raw table. Nothing in `experiment/` or
 `tracking/` calls them yet; the old `models/` is deleted once all three models
 are rebuilt. Plan: [MODEL_REIMPLEMENTATION_PLAN.md](MODEL_REIMPLEMENTATION_PLAN.md).
 
@@ -100,7 +102,8 @@ are rebuilt. Plan: [MODEL_REIMPLEMENTATION_PLAN.md](MODEL_REIMPLEMENTATION_PLAN.
 | `pipeline.py` | A `FeatureTransformer`, then a model, fitted and used on the raw table; the exposure, built with `ExposureTransformer`, is passed through to the model | `ModelPipeline` | `base`, `feature_engineering` |
 | `independent_cohorts.py` | **Model 1.** One independent model per cohort (each a `ModelPipeline`, with its own features), fitted on its column of `y`; every cohort gets the same exposure; predicts a DataFrame, one column per cohort | `IndependentCohortModels`, `CohortModels` | `base` |
 
-Model description: [DIRECT_COHORT_MODEL.md §0](DIRECT_COHORT_MODEL.md#0-the-rebuilt-model-modelingdirect_cohortpy).
+Model description: [DIRECT_COHORT_MODEL.md §0](DIRECT_COHORT_MODEL.md#0-the-rebuilt-model-modelingdirect_cohortpy);
+every cohort from the raw table: [§0.6](DIRECT_COHORT_MODEL.md#06-every-cohort-from-the-raw-table-modelpipeline-and-independentcohortmodels).
 
 ## `age_group_prediction.models` — Model Families
 

@@ -1,8 +1,9 @@
 # Direct Cohort Model (Model A)
 
 > **Two implementations.** §0 describes the rebuilt
-> `age_group_prediction.modeling.DirectCohortModel`. It is built and tested,
-> but nothing calls it yet. §1–§10 describe the original
+> `age_group_prediction.modeling.DirectCohortModel`, and §0.6 the classes that
+> fit every cohort from the raw table. They are built and tested, but nothing
+> calls them yet. §1–§10 describe the original
 > `models/direct_cohort.py`, which `experiment/` and `tracking/` still run.
 > That code is deleted once all three models are rebuilt
 > ([plan](MODEL_REIMPLEMENTATION_PLAN.md)).
@@ -97,14 +98,18 @@ The output $\hat\mu_i$ is an expected **count**, not a rate.
 ```python
 from sklearn.base import clone
 from age_group_prediction.modeling import DirectCohortModel
+from age_group_prediction.preprocessing import ExposureTransformer
 from age_group_prediction.scoring import POISSON_DEVIANCE
 
-features = clone(tree).fit(train_df)  # tree: a FeatureTransformer (§8.1)
+# table and tree: Feature transformations §8.0 and §8.1; train_df and test_df:
+# a split of that table. The exposure is built before the split (§0.6).
+exposure = ExposureTransformer("n_apartments").fit_transform(table)
+features = clone(tree).fit(train_df)
 X_train, X_test = features.transform(train_df), features.transform(test_df)
 model = DirectCohortModel(use_exposure=True).fit(
-    X_train, train_df["n_kindergarten"], exposure=train_df["n_apartments"]
+    X_train, train_df["n_kindergarten"], exposure=exposure.loc[train_df.index]
 )
-predictions = model.predict(X_test, exposure=test_df["n_apartments"])
+predictions = model.predict(X_test, exposure=exposure.loc[test_df.index])
 score = model.evaluate(test_df["n_kindergarten"], predictions, POISSON_DEVIANCE)
 ```
 
@@ -145,6 +150,85 @@ deviance by about 4% for kindergarten and high school, and not at all for
 elementary. That is weak evidence
 ([plan, Step 2.4](MODEL_REIMPLEMENTATION_PLAN.md)). Re-check it once the models
 are tuned.
+
+The same run through `IndependentCohortModels` (§0.6) gives identical
+per-cohort numbers. The summed prediction's deviance against
+`n_children_total` is 4% lower with the exposure, in 8 of 10 populations
+([multi-cohort plan, A4](MULTI_COHORT_MODELS_PLAN.md#a4-smoke-run-and-docs)).
+
+### 0.6 Every Cohort From The Raw Table: `ModelPipeline` And `IndependentCohortModels`
+
+`DirectCohortModel` fits one cohort on a finished design matrix. Two classes
+in `age_group_prediction.modeling` take the raw table instead:
+
+| Class | What it does | Fitted copies |
+|---|---|---|
+| `ModelPipeline(feature_transformer, model)` | A `FeatureTransformer`, then a model. `fit` fits copies of both on the raw table; `predict` transforms with the statistics learned at fit, never refitted | `feature_transformer_`, `model_` |
+| `IndependentCohortModels(cohort_models)` | A mapping from each cohort (a column of `y`) to its model, usually a `ModelPipeline`, so each cohort keeps its own features and hyperparameters. `fit` fits a copy of each on its column of `y`; `predict` returns a DataFrame with one column per cohort, in `y`'s order, indexed like `X` | `cohort_models_` |
+
+Import them from `age_group_prediction.modeling`: the package root still
+exports the **original** classes of §1–§10.
+
+**The data flow.**
+1. **Row-wise preprocessing, on the full table, before the split.**
+   `ShareTransformer` turns the room counts into shares.
+   `ExposureTransformer` returns the exposure as floats. It raises for a zero,
+   negative, infinite or NaN value, which LightGBM would accept silently (§0.3).
+   Neither learns anything, so nothing leaks from the test rows, and a bad
+   test row fails before any model is fitted.
+2. **Split by neighborhood** with `Splitter`. It splits `X`, `y` and the
+   groups, **not the exposure**: take its rows as `exposure.loc[X_train.index]`.
+3. **Fit on the training rows.** Each feature transformer is fitted inside
+   its pipeline, on those rows only.
+
+```python
+from age_group_prediction.modeling import (
+    DirectCohortModel, IndependentCohortModels, ModelPipeline,
+)
+from age_group_prediction.preprocessing import ExposureTransformer, ShareTransformer
+from age_group_prediction.scoring import POISSON_DEVIANCE
+from age_group_prediction.splitting import Splitter
+
+COHORTS = ["n_kindergarten", "n_elementary", "n_highschool"]
+
+# 1. On the full table: raw_table is the simulator's or the real data
+table = ShareTransformer(
+    ("3_rooms", "4_rooms", "5_rooms", "6_rooms"), reference_column="3_rooms"
+).fit_transform(raw_table)
+exposure = ExposureTransformer("n_apartments").fit_transform(table)
+
+# 2. The split; the exposure is taken by the same rows
+X_train, X_test, Y_train, Y_test, groups_train, groups_test = Splitter(
+    "grouped"
+).train_test_split(
+    table, table[COHORTS], table["neighborhood_id"], test_size=0.2, random_state=0
+)
+exposure_train, exposure_test = exposure.loc[X_train.index], exposure.loc[X_test.index]
+
+# 3. One pipeline per cohort; tree is Feature transformations §8.1
+model = IndependentCohortModels({
+    "n_kindergarten": ModelPipeline(tree, DirectCohortModel(use_exposure=True)),
+    "n_elementary": ModelPipeline(tree, DirectCohortModel()),  # ignores the exposure
+    "n_highschool": ModelPipeline(tree, DirectCohortModel(use_exposure=True)),
+}).fit(X_train, Y_train, exposure=exposure_train)
+predictions = model.predict(X_test, exposure=exposure_test)  # a DataFrame
+scores = {
+    cohort: model.evaluate(Y_test[cohort], predictions[cohort], POISSON_DEVIANCE)
+    for cohort in COHORTS
+}
+```
+
+**Rules.**
+
+| Rule | Why |
+|---|---|
+| **The same exposure goes to every cohort.** A model with `use_exposure=False` ignores it; one fitted with the offset raises without it | One exposure serves every model, and a tuner can compare with and without the offset on one fixed exposure. A forgotten exposure would drop the offset silently |
+| **Rows are paired by position**, not by index, as in scikit-learn. Nothing checks the index | The splitter splits `X`, `y` and the groups by the same positions. Take the exposure's rows by `X`'s labels, as above |
+| **The keys of `cohort_models` equal `y`'s columns**, each once, or `fit` raises `ValueError` | A cohort would otherwise be dropped silently, or a duplicated column would reach its model as a DataFrame |
+| **The targets come from `y` only.** With the default `remainder="drop"`, as in `tree`, `X` may keep the target columns: each transformer reads only its plans' columns, and `predict` needs none. With `remainder="passthrough"`, drop the targets from `X` first | Otherwise the targets become features, and `predict` fails on a table without them |
+| **Each cohort is tuned on its own.** A nested name such as `cohort_models__n_kindergarten__model__learning_rate` raises `AttributeError`; tune each cohort's `ModelPipeline` (whose nested names, e.g. `model__learning_rate`, work), then assemble the mapping, or replace it with `set_params(cohort_models=...)` | The cohorts are independent, so no study tunes them together |
+| **Set before `fit`.** Both classes fit copies, so a setting changed with `set_params` after `fit` reaches only the next `fit`; `predict` follows the fitted copies | The templates stay unfitted and can be reused |
+| **Per-cohort scores are a loop**, as above; how to combine the cohorts is the caller's choice | `mean_poisson_deviance` takes one column |
 
 ## 1. Statistical Model
 

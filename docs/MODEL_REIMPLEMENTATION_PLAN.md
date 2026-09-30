@@ -62,7 +62,10 @@ log rate per apartment (see "In equations" below).
   `fit(X, y, exposure=n)` and `predict(X, exposure=n)`.
 - **The input.** `exposure` is the raw count `n` (number of apartments), one
   strictly positive value per row of `X`, in the same order, e.g.
-  `exposure=df["n_apartments"]`. It is the raw count, not `log n`, because the
+  `exposure=df["n_apartments"]`. *(2026-09-30: build it instead with
+  `ExposureTransformer`, on the full table before splitting; see
+  [Direct cohort model §0.6](DIRECT_COHORT_MODEL.md#06-every-cohort-from-the-raw-table-modelpipeline-and-independentcohortmodels).)*
+  It is the raw count, not `log n`, because the
   model needs `Σn` for the starting rate below. statsmodels follows the same
   convention: `exposure=` is raw and logged internally, while `offset=` is
   already on the log scale.
@@ -171,7 +174,10 @@ class DirectCohortModel(BaseAgeGroupModel):
     # fitted: regressor_, base_log_rate_ (None without an exposure)
 ```
 
-Usage: transform first, then one instance per cohort.
+Usage: transform first, then one instance per cohort. *(2026-09-30: this is
+the Phase 2 form. The current one builds the exposure with
+`ExposureTransformer` and fits every cohort with `IndependentCohortModels`;
+see [Direct cohort model §0.6](DIRECT_COHORT_MODEL.md#06-every-cohort-from-the-raw-table-modelpipeline-and-independentcohortmodels).)*
 
 ```python
 features = clone(tree).fit(train_df)
@@ -441,8 +447,10 @@ Done when:
   variation in FEATURE_TRANSFORMATIONS §5.
 
 **Results (2026-09-24).**
-- **Data:** 10 simulated populations (RNG seeds 0–9) of 245 buildings each,
-  with a grouped split by neighborhood: 196 training and 49 test buildings.
+- **Data:** 10 simulated populations (RNG seeds 0–9) of 60 neighborhoods and
+  215–251 buildings, with a grouped 80/20 split by neighborhood: 179–206
+  training and 33–53 test buildings (seed 0: 245, 196 and 49). *Corrected
+  2026-09-30: this line first gave seed 0's sizes for every population.*
 - **Models:** Poisson with default hyperparameters (100 trees, untuned), and
   `n_apartments` kept in `X` in both variants.
 - **Score:** held-out mean Poisson deviance, lower is better, as mean ± SD over
@@ -466,7 +474,7 @@ Done when:
   effect themselves.
 - Calibration holds in all six cases: the mean test prediction over the mean
   test target is 1.00–1.06 on average across populations.
-- The models are untuned, and 196 training rows is small. Tuning (#5) is where
+- The models are untuned, and 179–206 training rows is small. Tuning (#5) is where
   the offset should be re-checked.
 
 The script is `smoke_exposure.py` in the session scratchpad, outside the repo.
@@ -524,11 +532,14 @@ In order. Each step has its own plan and gated phases.
    [HYPERPARAMETER_TUNING_PLAN.md §9](HYPERPARAMETER_TUNING_PLAN.md): switch
    the evaluator to `BaseAgeGroupModel`, then tune `DirectCohortModel` per
    cohort. Re-check the exposure offset once tuned; Step 2.4 found only weak
-   evidence, untuned.
+   evidence, untuned, and the multi-cohort plan's A4 re-run through
+   `IndependentCohortModels` found the same.
 3. **Complete Model A as `IndependentCohortModels`, then rebuild Model B**
    (`IndependentTotalProbabilityModel`) in `modeling/`. Plan:
    [MULTI_COHORT_MODELS_PLAN.md](MULTI_COHORT_MODELS_PLAN.md) (there, Model 1
-   and Model 2). B's feature declarations are already in
+   and Model 2). ✓ Model A is complete in PR #10, pending merge (steps A0–A4;
+   [Direct cohort model §0.6](DIRECT_COHORT_MODEL.md#06-every-cohort-from-the-raw-table-modelpipeline-and-independentcohortmodels)).
+   Model B is next. B's feature declarations are already in
    [FEATURE_TRANSFORMATIONS.md §8.2–8.5](FEATURE_TRANSFORMATIONS.md).
 4. **Rebuild Model C** (`BayesianConditionalModel`). *Needs step 3*: C reuses
    B's frozen feature forms.

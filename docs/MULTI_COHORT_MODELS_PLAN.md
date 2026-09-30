@@ -4,10 +4,11 @@
 This file is self-contained: it assumes no memory of the planning conversation.
 This file is the source of truth: update its status line and checkboxes as steps finish.
 
-**Status (2026-09-29):** A0 done (draft PR #10). A1 committed (`8fed394`).
+**Status (2026-09-30):** A0 done (draft PR #10). A1 committed (`8fed394`).
 A2 committed (`2c38010`, `5b5ea4d`, `7204ec2`). A3 committed (`6b234f0`,
-`3f46fbc`). The handoff edit to this doc follows them. **Next: A4** (§8),
-starting with its "Facts" and "Decisions to ask".
+`3f46fbc`). A4 (smoke run and docs, no code) done, awaiting the user's review
+and commit. **Next:** the user marks PR #10 ready for review; after it is
+merged, Part B from B0 (§9).
 Non-slow suite: **1104 passed** (1 skipped, 1 xfailed).
 
 ## Contents
@@ -171,7 +172,8 @@ reference doc `docs/INDEPENDENT_TOTAL_PROBABILITY_MODEL.md`.
 
 Re-run any figure you rely on. Simulated tables: `StudentPopulationSimulator(load_simulation_config("configs/simulation.toml")).run(rng=np.random.default_rng(seed))`,
 then `ShareTransformer(("3_rooms","4_rooms","5_rooms","6_rooms"), reference_column="3_rooms")`;
-245 buildings, 60 neighborhoods; grouped 80/20 split; seeds 0–9.
+60 neighborhoods and 215–251 buildings (seed 0: 245); grouped 80/20 split; seeds 0–9.
+*Corrected in A4: this line first gave seed 0's 245 buildings for every seed.*
 
 | Question | Result |
 |---|---|
@@ -669,8 +671,102 @@ Done when:
   (Model A completed).
 
 Done when:
-- [ ] Every edited code block has been run.
+- [x] Every edited code block has been run.
 - [ ] The user has seen the numbers and reviewed the docs; PR A is ready to merge.
+
+**Decisions at the start (user, 2026-09-30):**
+- Both variants: `tree` for every cohort, with `use_exposure=True` for all and
+  with `False` for all.
+- Each variant is read against **its own start**, the prediction before any
+  tree: the constant mean `mean(y_train)` without the offset (LightGBM's
+  `boost_from_average`), and the constant rate
+  `Σy_train / Σexposure_train × exposure_test` with it (`exp(base_log_rate_)`).
+  The total row has no baseline.
+- Grouped 80/20 split by `neighborhood_id`, `random_state=seed`, seeds 0–9,
+  default (untuned) hyperparameters.
+- PR #10: the description is drafted in the scratchpad; the user applies it and
+  marks the PR ready.
+
+**Smoke run (2026-09-30).** `IndependentCohortModels` of three
+`ModelPipeline(tree, DirectCohortModel(use_exposure=...))`, `tree` as in
+`FEATURE_TRANSFORMATIONS.md` §8.1 (`n_apartments` kept as a feature). Per
+population: simulate → `ShareTransformer` and `ExposureTransformer` on the full
+table → `Splitter("grouped")` → `exposure.loc[X.index]` → fit and predict.
+10 populations of 60 neighborhoods and 215–251 buildings; 179–206 training and
+33–53 test buildings. Held-out mean Poisson deviance, lower is better, mean ± SD
+over the populations. "Diff" is offset minus none, paired by population; "wins"
+counts populations where the offset is lower. Calibration is the mean
+prediction over the mean target, averaged over populations. The total row
+scores the summed prediction against `n_children_total`.
+
+| Target | No offset: constant mean | No offset: model | Offset: constant rate | Offset: model | Diff | Offset wins | Calibration none / offset |
+|---|---|---|---|---|---|---|---|
+| `n_kindergarten` | 3.394 ± 0.906 | 2.732 ± 0.911 | 2.739 ± 0.680 | 2.628 ± 0.877 | −0.105 ± 0.169 | 7 / 10 | 1.06 / 1.04 |
+| `n_elementary` | 3.039 ± 0.387 | 2.124 ± 0.515 | 2.532 ± 0.492 | 2.128 ± 0.499 | +0.004 ± 0.200 | 6 / 10 | 1.00 / 1.03 |
+| `n_highschool` | 3.349 ± 0.822 | 2.658 ± 0.703 | 2.936 ± 0.909 | 2.572 ± 0.710 | −0.086 ± 0.207 | 7 / 10 | 1.03 / 1.02 |
+| total (sum) | — | 4.382 ± 1.360 | — | 4.215 ± 1.450 | −0.166 ± 0.315 | 8 / 10 | 1.03 / 1.02 |
+
+**Reading.**
+- The per-cohort models equal `MODEL_REIMPLEMENTATION_PLAN.md` Step 2.4's to
+  the third decimal, diffs and wins included. The raw-table API
+  (`ModelPipeline`, `IndependentCohortModels`, `ExposureTransformer`) fits the
+  same models as the Phase 2 path, where the caller transformed the features.
+- On average each variant beats its own start in every cohort: by 20–30%
+  without the offset, and by 4–16% with it. The constant rate alone is already close to the
+  model for kindergarten (2.739 vs 2.628): building size carries most of what
+  the untuned trees find.
+- The offset lowers the total's deviance by 4% (8 of 10), about 1.7 standard
+  errors. Still weak evidence, and still untuned: §5 step 2 of
+  `MODEL_REIMPLEMENTATION_PLAN.md` re-checks it after tuning.
+- Calibration holds in both variants (1.00–1.06).
+- The script is `smoke_a4.py` in the session scratchpad, outside the repo. It
+  asserts the output's columns and index and that `exp(base_log_rate_)` equals
+  the constant rate. It ran under `-W error`, silently.
+
+**Record (2026-09-30).**
+- **Baseline** before the first edit: 1104 passed (1 skipped, 1 xfailed).
+- **Verified first:** the facts above hold. `train_test_split` returns 6
+  pieces and not the exposure. One seed end to end under `-W error` gave a
+  DataFrame with `Y`'s columns and the test index. A nested name
+  `cohort_models__a__model__learning_rate` raises `AttributeError` ('dict'
+  object has no attribute 'set_params'); `model__learning_rate` on a
+  `ModelPipeline` works.
+- **Found beyond the handoff, fixed:** `DIRECT_COHORT_MODEL.md` §0.2's block
+  also passed the raw `n_apartments` column; `MODULE_REFERENCE.md` said every
+  `modeling` class takes a transformed design matrix; the population size was
+  wrong in §6 and in Step 2.4's record (seed 0's for every seed); PR #10's
+  description still described `exposure_column` and `utils.py`.
+- **Docs:** `DIRECT_COHORT_MODEL.md` (top note, §0.2 block, §0.5 paragraph, new
+  §0.6); `FEATURE_TRANSFORMATIONS.md` §8.1 (the exposure block, and "Combining
+  the cohorts" with a block); `MODULE_REFERENCE.md` (the section intro, the
+  §0.6 link; rows checked, unchanged); `MODEL_REIMPLEMENTATION_PLAN.md` §5 steps
+  2 and 3, Step 2.4's data line.
+- **Ran:** all 13 python blocks of `FEATURE_TRANSFORMATIONS.md` §8 and both of
+  `DIRECT_COHORT_MODEL.md` §0, in order in one namespace, under `-W error`
+  (scratchpad `run_doc_blocks_a4.py`; `raw_table` from seed 0, `fit_df`/`train_df`
+  and `valid_df`/`test_df` from a grouped split).
+- **No `.py` file changed**, so no ruff, mypy or mutation checks.
+- **Review** (independent subagent; the smoke table, its reading and every §0.6
+  API claim reproduced by its own probes), each finding reproduced:
+  - *Fixed.* Step 2.4's reading still said "196 training rows".
+  - *Fixed.* §0.6's rule "`X` may keep the target columns" holds only with
+    `remainder="drop"`: with `"passthrough"` the targets became features, and
+    `predict` on a table without them raised "columns are missing". The rule
+    now says so.
+  - *Fixed.* §0.2's comment "§8.0 and §8.1" pointed at this doc's own §8
+    (Metadata); it now names Feature transformations, and says `train_df` and
+    `test_df` are a split of that table.
+  - *Fixed.* `MODEL_REIMPLEMENTATION_PLAN.md` M10's input line and the §3
+    usage block taught the raw column as the exposure; each now has a dated
+    pointer to §0.6. `HYPERPARAMETER_TUNING_PLAN.md` §5 is left: its §6 task
+    covers it (A2).
+  - *Fixed.* Wording: "Next" and "✓ complete" no longer read as if PR #10 were
+    merged.
+  - *Open, outside A4 (no `.py` change in a docs step).* `FeatureTransformer`'s
+    class docstring (`feature_engineering/transformer.py:124-125`) says the
+    model "takes the raw column from the table itself", stale since A2. The
+    evaluator's docstring example builds the exposure on `train_df`, not the
+    full table: harmless (row-wise), but unlike the documented flow.
 
 ## 9. Steps, PR B: Model 2
 
