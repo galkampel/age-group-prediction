@@ -12,7 +12,7 @@ import pytest
 from sklearn.base import clone
 from sklearn.exceptions import NotFittedError
 
-from age_group_prediction.preprocessing import ShareTransformer
+from age_group_prediction.preprocessing import ExposureTransformer, ShareTransformer
 
 ROOMS = ("3_rooms", "4_rooms", "5_rooms", "6_rooms")
 
@@ -214,3 +214,44 @@ def test_a_non_numeric_share_column_raises_a_value_error() -> None:
 
     with pytest.raises(ValueError, match="could not convert"):
         ShareTransformer(ROOMS).fit_transform(frame)
+
+
+# --- The exposure -----------------------------------------------------
+
+
+def test_the_exposure_is_returned_as_given_with_the_frame_index() -> None:
+    # A logged, rescaled or re-indexed exposure would be taken by the model as
+    # the raw one, or matched to the wrong rows.
+    exposure = ExposureTransformer("n_apartments").fit_transform(_frame())
+
+    pd.testing.assert_series_equal(
+        exposure,
+        pd.Series([10.0, 10.0, 99.0], index=[10, 11, 12], name="n_apartments"),
+    )
+
+
+@pytest.mark.parametrize(
+    "value", [0.0, -1.0, np.inf, np.nan], ids=["zero", "negative", "inf", "nan"]
+)
+def test_an_invalid_exposure_is_rejected(value: float) -> None:
+    # LightGBM accepts the -inf or nan offset of a zero, infinite or NaN
+    # exposure silently.
+    frame = _frame().astype({"n_apartments": float})
+    frame.loc[11, "n_apartments"] = value
+
+    with pytest.raises(ValueError, match="strictly positive and finite"):
+        ExposureTransformer("n_apartments").transform(frame)
+
+
+def test_the_exposure_error_names_the_invalid_rows() -> None:
+    # The labels, not the positions: after a split the index is not 0..n. The
+    # count gives the scale, and the first 5 labels keep the message short.
+    frame = pd.DataFrame(
+        {"n_apartments": [10.0, 0.0, -2.0, np.nan, np.inf, 0.0, 0.0]},
+        index=range(100, 107),
+    )
+
+    with pytest.raises(
+        ValueError, match=r"6 invalid, first at rows \[101, 102, 103, 104, 105\]$"
+    ):
+        ExposureTransformer("n_apartments").transform(frame)

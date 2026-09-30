@@ -1,0 +1,140 @@
+"""DirectCohortModel: each test names the mistake in our code it would catch."""
+
+from __future__ import annotations
+
+from collections.abc import Callable
+
+import numpy as np
+import pandas as pd
+import pytest
+from lightgbm.basic import LightGBMError
+from sklearn.base import clone
+
+from age_group_prediction.modeling import DirectCohortModel, Objective
+
+
+def _data(rows: int = 300) -> tuple[pd.DataFrame, pd.Series, np.ndarray]:
+    """Counts proportional to building size, with a rate that depends on ``ses``."""
+    rng = np.random.default_rng(0)
+    X = pd.DataFrame({"ses": rng.normal(size=rows), "noise": rng.normal(size=rows)})
+    exposure = rng.integers(12, 80, size=rows).astype(float)
+    y = pd.Series(rng.poisson(exposure * np.exp(-2 + 0.4 * X["ses"])))
+    return X, y, exposure
+
+
+X, Y, EXPOSURE = _data()
+
+
+def test_clone_and_set_params_change_only_the_copy() -> None:
+    # A tuner builds each trial's model this way; it breaks if __init__ alters
+    # or drops an argument.
+    model = DirectCohortModel(use_exposure=True, n_estimators=50)
+
+    trial = clone(model).set_params(n_estimators=5)
+
+    assert trial.get_params()["n_estimators"] == 5
+    assert trial.get_params()["use_exposure"] is True
+    assert model.get_params()["n_estimators"] == 50
+
+
+@pytest.mark.parametrize(
+    ("exposure", "message"),
+    [(None, "pass `exposure`"), (EXPOSURE[:, None], "one-dimensional")],
+    ids=["missing-while-on", "two-dimensional"],
+)
+def test_exposure_misuse_raises(exposure: np.ndarray | None, message: str) -> None:
+    # Each would otherwise pass silently: a dropped offset, or a column that
+    # broadcasts into an (n, n) prediction. The values are checked by
+    # preprocessing.ExposureTransformer and its tests.
+    with pytest.raises(ValueError, match=message):
+        DirectCohortModel(use_exposure=True).fit(X, Y, exposure=exposure)
+
+
+def test_an_unused_exposure_is_ignored() -> None:
+    # A caller passes one exposure to every model; with use_exposure=False it
+    # must not enter the fit or the prediction.
+    model = DirectCohortModel(n_estimators=20)
+    without = clone(model).fit(X, Y).predict(X)
+
+    with_exposure = clone(model).fit(X, Y, exposure=EXPOSURE)
+
+    np.testing.assert_array_equal(with_exposure.predict(X), without)
+    np.testing.assert_array_equal(with_exposure.predict(X, exposure=EXPOSURE), without)
+
+
+@pytest.mark.parametrize(
+    ("objective", "use_exposure"),
+    [("poisson", True), ("poisson", False), ("regression", False)],
+)
+def test_training_mean_prediction_matches_the_target_mean(
+    objective: Objective, use_exposure: bool
+) -> None:
+    # Few trees, so a missing starting rate (base_log_rate_) or a broken offset
+    # leaves the mean far off: 21.75 against 6.68 with 20 trees. The two cases
+    # without exposure are the only cover of the plain predict path.
+    exposure = EXPOSURE if use_exposure else None
+    model = DirectCohortModel(
+        objective=objective, use_exposure=use_exposure, n_estimators=20
+    ).fit(X, Y, exposure=exposure)
+
+    predictions = model.predict(X, exposure=exposure)
+
+    assert predictions.mean() == pytest.approx(Y.mean(), rel=0.01)
+
+
+def test_predict_follows_how_the_model_was_fitted() -> None:
+    # Turning use_exposure off after fitting must not silently return rates per
+    # apartment instead of counts.
+    model = DirectCohortModel(use_exposure=True, n_estimators=5).fit(
+        X, Y, exposure=EXPOSURE
+    )
+    model.set_params(use_exposure=False)
+
+    with pytest.raises(ValueError):
+        model.predict(X)
+    assert model.predict(X, exposure=EXPOSURE).mean() == pytest.approx(
+        Y.mean(), rel=0.05
+    )
+
+
+def test_doubling_the_exposure_doubles_the_prediction() -> None:
+    # Exact because the exposure is not a feature; fails if predict drops the
+    # offset.
+    model = DirectCohortModel(use_exposure=True, n_estimators=20).fit(
+        X, Y, exposure=EXPOSURE
+    )
+
+    np.testing.assert_allclose(
+        model.predict(X, exposure=2 * EXPOSURE),
+        2 * model.predict(X, exposure=EXPOSURE),
+        rtol=1e-12,
+    )
+
+
+def test_subsample_below_one_changes_the_model() -> None:
+    # LightGBM ignores subsample unless subsample_freq is set.
+    full = DirectCohortModel(n_estimators=20).fit(X, Y).predict(X)
+    bagged = DirectCohortModel(n_estimators=20, subsample=0.5).fit(X, Y).predict(X)
+
+    assert not np.allclose(full, bagged)
+
+
+@pytest.mark.parametrize(
+    "fit",
+    [
+        lambda: DirectCohortModel(objective="regression", use_exposure=True).fit(
+            X, Y, exposure=EXPOSURE
+        ),
+        lambda: DirectCohortModel(objective="not_an_objective").fit(X, Y),  # type: ignore[arg-type]
+        lambda: DirectCohortModel(use_exposure=True).fit(X, Y, exposure=EXPOSURE[:10]),
+        lambda: DirectCohortModel(use_exposure=True).fit(X, Y * 0, exposure=EXPOSURE),
+    ],
+    ids=["regression-with-exposure", "unknown-objective", "wrong-length", "all-zero-y"],
+)
+# log(sum y / sum n) = log 0 warns before LightGBM rejects the all-zero y.
+@pytest.mark.filterwarnings("ignore:divide by zero:RuntimeWarning")
+def test_invalid_input_surfaces_an_error(fit: Callable[[], DirectCohortModel]) -> None:
+    # Only the first is our own check; the rest are LightGBM's, pinned here
+    # because the model deliberately relies on them.
+    with pytest.raises((ValueError, LightGBMError)):
+        fit()

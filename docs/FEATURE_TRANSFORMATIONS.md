@@ -1,14 +1,17 @@
 # Feature Transformations: Decisions And Rationale
 
 The transformation each feature gets in each model, what the resulting
-coefficient means, and why the alternatives were rejected. This is a design
-note: none of it is implemented yet. Current behavior is in
-[FEATURE_ENGINEERING.md](FEATURE_ENGINEERING.md), and Section 8 lists the code
-changes needed.
+coefficient means, and why the alternatives were rejected.
+- **Quick answer:** the per-feature × per-model table is in §7.
+- **Implementation:** every transformation here is implemented in
+  [`feature_engineering/`](../src/age_group_prediction/feature_engineering/).
+- **Declarations:** §8 gives each model's declaration, built at the call site.
+- **The old models** still use the older `FeatureSpec` machinery, described in
+  [FEATURE_ENGINEERING.md](FEATURE_ENGINEERING.md).
 
 | Label | Class | Stages and feature use |
 |---|---|---|
-| **A** | `DirectCohortModel` | One LightGBM regressor per cohort (Poisson, NB2 or Normal objective); raw features |
+| **A** | `DirectCohortModel` | One LightGBM regressor per cohort (Poisson or regression objective); raw features; optional exposure offset |
 | **B** | `IndependentTotalProbabilityModel` | Penalized Poisson/NB2 total with a log-exposure offset, plus a grouped multinomial composition stage |
 | **C** | `BayesianConditionalModel` | Hierarchical NB2 total plus a composition stage; uses B's frozen specs; `Normal(0, 0.5)` coefficient priors |
 
@@ -50,12 +53,13 @@ most of the choices below.
 
 | | What it changes | What it does not change |
 |---|---|---|
-| Centering ($x - c$) | The intercept, and every main effect that appears inside an interaction | The slope; and in B, nothing about the fit, since the intercept is unpenalized |
+| Centering ($x - c$) | The intercept, every main effect that appears inside an interaction, and, before squaring, where the vertex lies | The slope of a linear column; and in B, nothing about a linear column's fit, since the intercept is unpenalized |
 | Scaling ($x/s$) | The coefficient's unit, and hence how hard B's L2 penalty and C's priors shrink it | The shape of the fitted relationship |
 
 **Consequence:** a scale learned per fold changes the unit from fold to fold,
-while a center learned per fold is harmless. This is the main argument in
-Sections 4.1 and 4.2.
+while a center learned per fold is harmless for a linear column. This is the
+main argument in Sections 4.1 and 4.2. Before squaring, the center fixes the
+vertex, so a declared reference point is better there (Section 3.2).
 
 **Trees see only ordering.** For Model A, any strictly monotone per-feature
 transform (scaling, `log1p`) leaves the splits unchanged. Only these matter:
@@ -64,10 +68,23 @@ offsets, which act on the target side.
 
 **Prefer fixed anchors over learned scales.** $\tilde x = (x-c)/s$, with $c$ and
 $s$ chosen from domain knowledge, keeps units the same across folds, cannot
-leak, and reads naturally ("per decade", "from no daycare to 8"). Choosing $s$
-near 2 SD follows Gelman (2008): a one-unit change is then comparable to
-switching a binary indicator, which is the scale the `Normal(0, 0.5)` priors
-were set for.
+leak, and reads naturally ("per decade", "per 2 daycares"). In the package,
+`CenterByReferencePoint` fixes $c$, `DomainScale` fixes $s$, and `DomainMinMax`
+fixes both ends of a declared range.
+
+**One scale for every penalized column: $s$ near 1 SD.** The z-scored columns
+have SD 1 by construction, so a fixed $s$ is chosen near the column's SD:
+0.10 for the room shares, 2 for the daycare count. A unit far from 1 SD acts
+as a hidden per-feature penalty: a column with standard deviation $\sigma$
+has the same real effect penalized $1/\sigma^2$ times as hard as a z-scored
+one. Section 4.8 measures every column against this rule.
+
+- **The school dummies are the known exception.** A 0-to-1 switch is about
+  2 SD, so they are shrunk 4 to 6 times harder than the z-scored columns.
+- **The alternative is Gelman's (2008) 2-SD convention:** halve every
+  continuous column so that all of them sit near SD 0.5 and match the dummies.
+  It is not used here, because every coefficient would then read "per 2 SD"
+  or "per 20 pp".
 
 ---
 
@@ -109,7 +126,7 @@ All 8 numeric columns (`ses`, `avg_household_size`, `median_age`,
 | Z-scoring, min-max, fixed anchors | None: monotone, identical splits | **Not used.** Keep raw |
 | One-hot `school_status` (reference `none` dropped) | Required, because LightGBM needs numeric input. `none` is the row with both dummies at 0, so isolating it takes two splits. Dropping a reference is unnecessary for trees but harmless. | **Keep.** This is the only required transform. Alternatives: an ordinal code `none`=0 < `planned`=1 < `existing`=2, or native categorical support; with 3 levels the difference is negligible |
 | `log1p` daycares | None: monotone, so the partition of the training rows is identical. Only the thresholds move, which can change predictions for counts falling between observed values. | **Drop the `tree__daycare_log1p` candidate:** it can't be distinguished from the linear form |
-| `ses` squared | Adds a **non-monotone** column while keeping `ses`: $(\text{ses}-c)^2$ orders buildings by their distance from $c$, so one split isolates both tails where `ses` alone needs two. Useless if $c$ lies outside the data range, since $x^2$ is then monotone | **Keep as a candidate.** Center at the mean for robustness; with this SES it barely matters (Section 3.2) |
+| `ses` squared | Adds a **non-monotone** column while keeping `ses`: $(\text{ses}-c)^2$ orders buildings by their distance from $c$, so one split isolates both tails where `ses` alone needs two. Useless if $c$ lies outside the data range, since $x^2$ is then monotone | **Keep as a candidate.** Center at the SES reference point 0.0 (Section 3.2) |
 | SES B-spline | **Removes `ses`** and replaces it with 5 overlapping basis columns ([fitted_features.py:285-290](../src/age_group_prediction/fitted_features.py#L285-L290)), so no column orders buildings by SES and a simple SES threshold has to be approximated across columns | **Rejected** |
 | Interactions | Trees build them through successive splits | Not needed; not offered for `tree` |
 | $\log n$ as `init_score` | Changes the target scale, not a column | **Add** (Section 3.3) |
@@ -119,10 +136,10 @@ All 8 numeric columns (`ses`, `avg_household_size`, `median_age`,
 Two, matching the GLM candidates:
 
 - **linear:** raw `ses`;
-- **quadratic:** $[\,\text{ses}-m,\ (\text{ses}-m)^2\,]$, equivalent to
-  `PolynomialFeatures(degree=2, include_bias=False)` on centered SES.
+- **quadratic:** $[\,\text{ses},\ (\text{ses}-c)^2\,]$, raw `ses` plus its
+  squared deviation from the SES reference point $c = 0.0$.
 
-**Why centering, and how much it matters.** A tree gains nothing from a
+**Why the center matters.** A tree gains nothing from a
 monotone column, so the squared column earns its place only by being
 non-monotone: $(\text{ses}-c)^2$ ranks buildings by **distance from $c$**, and
 one split on it isolates both tails at once, where `ses` alone would need two
@@ -133,27 +150,57 @@ means.
 - If $c$ lies outside it, $x^2$ is monotone over the observed values and the
   trees can extract nothing from it. Squaring `median_age` (25–45) raw would be
   the clear example.
-- **For this SES it is nearly a no-op:** SES is simulated as $N(0,1)$ with mean
-  0.07, so 0 already sits mid-range. Centering moves the vertex by 0.07 SD.
 
-So centering here is a robustness choice for real SES data, whose zero point may
-be arbitrary or outside the observed range, not a correction of a present
-problem. If a substantive turning point is hypothesized, that value is a better
-$c$ than the mean.
+**The SES reference point: 0.0.** A substantive turning point is a better $c$
+than the mean, and here one is named:
+- **What it is.** 0.0 is the simulated population mean (`ses_mean` in
+  `configs/simulation.toml`, with `ses_sd = 1.0`): average SES, neither poor
+  nor rich. The squared column then reads as the squared distance from average
+  SES, in population SDs.
+- **Why not the fold mean.** `Center` would use the fold's mean, which moves
+  from sample to sample: 0.07 in the reference table above, but from −0.25 to
+  +0.26 across single runs of 60 neighborhoods (20 runs). A fixed reference gives the column the
+  same meaning in every fold, and it is the point the hypothesis below names.
+- **How it is declared.** `CenterByReferencePoint(reference_point=0.0)`
+  (§8.1). In this data, subtracting 0 changes no value, so the column is
+  $\text{ses}^2$. The declaration still matters: it states the reference, which
+  real SES data needs, since its zero point may be arbitrary or outside the
+  observed range.
 
-This is unlike the GLM case (Section 4.2), where centering before squaring
-changes what the coefficients mean: it makes $\beta_1$ the slope at average SES
-and decorrelates $z$ from $z^2$. Neither concern applies to trees.
+**The hypothesis, and what the simulator does.** The motivating hypothesis is
+that strong- and weak-SES populations have larger households than the middle:
+an effect in both tails, which is why the distance from average SES is the
+quantity to model. The simulator does not generate that. There, the SES
+U-shape is in the **number of children**: the total-children log-mean has a
+$0.05\,\text{ses}^2$ term with its vertex at 0 and no linear SES term
+(`ses_quadratic_coef` in `configs/simulation.toml`). `avg_household_size` is
+drawn from median age plus noise, independently of SES, so the r = −0.13 in the
+table above is sampling variation, not an effect. In this data, then, the
+squared deviation can pick up a U-shape in child counts; it says nothing about
+household size.
+
+The GLMs use the same reference for their squared term (Section 4.2), where the
+center also changes what the coefficients mean.
 
 ### 3.3 Exposure: add the offset **and** keep `n_apartments`
 
-For the Poisson and NB2 objectives, pass $\log n_i$ as LightGBM's `init_score`:
+For the Poisson objective, `DirectCohortModel(use_exposure=True)` passes
+$\log n_i + b_c$ as LightGBM's `init_score`:
 
 $$
-\log \mu_{i,c} = \log n_i + f_c(\mathbf{x}_i),
+\log \mu_{i,c} = \log n_i + b_c + f_c(\mathbf{x}_i),
+\qquad b_c = \log \frac{\sum_i y_{i,c}}{\sum_i n_i},
 $$
 
 so each cohort's trees learn a **per-apartment rate**.
+- **Why $b_c$:** it is the intercept, the average log rate per apartment.
+  LightGBM skips its `boost_from_average` once given an `init_score`, so
+  without $b_c$ the trees would start at one child per apartment.
+- **Why the model adds the offset itself:** LightGBM's `predict` doesn't add
+  the `init_score` back, so the model returns
+  $\exp(\text{raw score} + \log n_i + b_c)$.
+- **Details:** the equations and the correct inputs are in
+  [DIRECT_COHORT_MODEL.md §0](DIRECT_COHORT_MODEL.md#0-the-rebuilt-model-modelingdirect_cohortpy).
 
 - **Why the offset:** child counts grow roughly in proportion to $n$. Trees
   approximate that with step functions, need many splits to do so, and cannot
@@ -162,8 +209,9 @@ so each cohort's trees learn a **per-apartment rate**.
 - **Why keep `n_apartments` as a feature too:** the offset asserts exact
   proportionality. Keeping the feature lets the trees learn departures from it,
   for example larger buildings having fewer children per apartment.
-- **Not for the Normal family:** it has no log link, so a log-scale offset does
-  not apply. (An alternative there is to model $y/n$ with weights $n$.)
+- **Not for `regression`:** it has no log link, so a log-scale offset does not
+  apply, and the model refuses the combination. (An alternative there is to
+  model $y/n$ with weights $n$.)
 
 ---
 
@@ -173,23 +221,28 @@ Both models share these specs; C uses B's selected specs frozen.
 
 ### 4.1 `n_daycares_500m`: two candidates
 
-**Candidate 1: linear with fixed domain bounds.**
+**Candidate 1: linear with a fixed domain unit.**
 
 $$
-\tilde d = \frac{d - 0}{8 - 0} = \frac{d}{8}
+\tilde d = \frac{d}{2}
 $$
 
-- The bounds are domain constants, not learned: $d \ge 0$ by definition, and 8
-  is the 99th percentile. Only 0.7% of buildings exceed it (maximum 12).
-- **Do not clip.** Values above 1 are fine in a GLM; clipping would discard
-  real variation.
-- **Reading:** $\beta$ is the log-rate change from no daycares to 8, and
-  $\tilde d = 0$ means "no daycare", the baseline you wanted.
+- The unit is a domain constant, not learned: 2 daycares, the round number
+  nearest the SD of 1.7 (1.4 to 2.2 across single runs). The column then has
+  SD 0.86, close to the z-scored columns and the room shares (Section 4.8).
+- **Reading:** $\beta$ is the log-rate change per 2 daycares, and
+  $\tilde d = 0$ means "no daycare", the baseline you wanted. The effect from
+  no daycares to 8, the 99th percentile, is $4\beta$.
+- **Why not $d/8$:** 8 is the *range*, about 4.7 SD, while every other column
+  is divided by about 1 SD. $d/8$ has SD 0.22, so the same real effect would
+  be penalized about 22 times harder than on a z-scored column, and harder
+  than candidate 2, which makes the comparison between the two candidates
+  unfair.
 - **Why not a learned min-max:** zeros occur in only about 6% of buildings, so
   a fold can contain none, and its learned minimum becomes 1, at which point 0
   no longer means "no daycare" and the baseline differs across folds. The
   learned maximum is also a single-neighborhood outlier that moves between
-  folds. A fixed bound keeps the interpretation without that instability.
+  folds. A fixed unit keeps the interpretation without that instability.
 
 **Candidate 2: centered `log1p` (option ii).**
 
@@ -211,6 +264,10 @@ This is preferred over option i, $\log(1+d)/\log(1+\bar d)$:
 - **Option i is acceptable only with a fixed $\bar d$** (e.g. 3, the
   simulator's saturation scale). Then it is a fixed anchor with a 0-daycare
   baseline, and the coefficient is the effect of going from 0 to 3 daycares.
+- **The column has SD 0.50**, so it is penalized about 4 times harder than a
+  z-scored column. That is kept on purpose. Dividing by $\ln 2$ ("per
+  doubling") raises the SD to 0.72 but did not improve held-out fit in either
+  stage (Section 4.8), and it gives up the elasticity reading.
 
 **Caveat when the daycare term is 0-anchored** (candidate 1): in
 `daycare_x_median_age`, the median-age main effect then describes a building
@@ -220,23 +277,37 @@ are active.
 
 ### 4.2 `ses`: two candidates (no spline)
 
-Both start from $z = (\text{ses} - m)/s$, with $m$ and $s$ from the fit
-partition.
+The linear column is $z = (\text{ses} - m)/s$, with $m$ and $s$ from the fit
+partition. The squared column is $(\text{ses} - 0)^2$, the squared deviation
+from the SES reference point 0.0 (Section 3.2).
 
 | Candidate | Columns | Reading |
 |---|---|---|
 | linear | $z$ | Log-rate change per SD of SES |
-| quadratic | $z,\ z^2$ | $\beta_1$: the slope at average SES; $\beta_2$: curvature, i.e. how the slope changes away from the mean. $z^2$ is the squared distance from the mean in SD units |
+| quadratic | $z,\ (\text{ses}-0)^2$ | $\beta_1$: the slope at the reference point, per SD, because the squared term is flat there, and standardizing the linear column only moves the intercept; $\beta_2$: the curvature around the reference, per population SD², directly comparable with the simulator's $0.05$ |
 
-**Scale once, before squaring.** Squaring the already scaled column is the
-right order, and it is what the code does today
+**Square the deviation from the reference, not $z$.** Both give the same
+fitted curve in an unpenalized model; they differ in what $\beta_2$ means and
+whether that meaning holds across folds.
+
+- $z^2$ puts the vertex at the fold mean and measures it in fold SDs, so both
+  move from fold to fold: a single run's mean ranges from −0.25 to +0.26 and
+  its SD from 0.82 to 1.14 (20 runs of 60 neighborhoods).
+- $(\text{ses}-0)^2$ fixes both. The vertex is average SES, the point the
+  hypothesis names, and the unit is the population SD (`ses_sd = 1.0`).
+- **Neither choice decorrelates the two columns** in a sample this small. The
+  sample's skew sets $\text{corr}(x, x^2)$: across the same 20 runs it ranges
+  from −0.55 to +0.27 for $\text{ses}$ and from −0.39 to +0.35 for $z$ (median
+  −0.09 for both). The correlation does not change the fitted curve, only how
+  precisely $\beta_1$ and $\beta_2$ are separated, and B's penalty and C's
+  priors keep them stable. The choice therefore rests on meaning.
+
+The old code squares $z$
 ([fitted_features.py:283-284](../src/age_group_prediction/fitted_features.py#L283-L284)).
-`PolynomialFeatures(degree=2, include_bias=False)` on $z$ is equivalent.
-Rescaling $z^2$ afterwards would only re-center it (a shift of about 1, which
-moves the intercept) and change its penalty weight, at the cost of a coefficient
-you can no longer read as curvature. Squaring *before* scaling is worse still:
-with uncentered SES, $\text{ses}^2$ correlates strongly with $\text{ses}$, and
-the linear coefficient becomes the slope at SES = 0 in raw units.
+Squaring works here without rescaling only because 0 lies near the centre of
+the SES data.
+Squaring a column whose centre is far from zero, relative to its spread, makes
+the two columns nearly collinear: raw `median_age` would be the clear example.
 
 **Why no spline candidate:**
 
@@ -285,10 +356,19 @@ z-scores or per-share min-max, "+1" would move a different number of apartments
 in each column, and the three coefficients would no longer be comparable or
 addable.
 
+**Why 0.10 and not 0.01.** The shares have SD 0.08 to 0.12, so dividing by
+0.10 gives columns with SD 0.77 to 1.18, the same scale as the z-scored
+columns. A unit of 1 pp would give SD 8 to 12: the coefficient becomes 10
+times smaller and its penalty 100 times smaller, so the shares would be almost
+unregularized beside everything else. To report per percentage point, divide
+the fitted coefficient: $\beta_{1\,\text{pp}} = \beta_{10\,\text{pp}} / 10$.
+
 **Rejected alternatives:**
 
 - **Raw shares:** a one-unit change means moving 100% of apartments into size
   $k$, roughly 8 SD away, and the intercept describes an all-3-room building.
+  The same real effect would also be penalized about 100 times harder than on
+  a z-scored column.
 - **Per-share z-score or min-max:** loses the substitution reading, as above;
   min-max additionally inherits the fold instability from Section 4.1.
 - **Log-ratio transforms (ALR/ILR):** the standard compositional approach, but
@@ -303,7 +383,9 @@ approximation, though a good one over the observed range.
 ### 4.4 Exposure: `log_n_apartments`
 
 **Confirmed: `n_apartments` is not a feature in B or C.** The spec refuses an
-exposure column that is also listed as an ordinary numeric feature, so building
+exposure column that is also listed as an ordinary numeric feature (the old
+`FeatureSpec`; in the rebuilt code nothing enforces it, and the declaration
+and the model's `use_exposure` express it, §8.2), so building
 size enters only as the offset
 
 $$
@@ -316,9 +398,9 @@ with the coefficient of $\log n_i$ **fixed at 1**. The linear predictor
 therefore models children per apartment, and every other coefficient is a
 multiplicative effect on that rate.
 
-Used by: B's total stage and C's total stage only. The composition stages use
-no exposure, because age-group shares do not depend on building size, and
-Model A uses none today (Section 3.3 proposes adding one).
+Used by: B's total stage and C's total stage, and optionally Model A
+(`use_exposure=True`, Section 3.3). The composition stages use no exposure,
+because age-group shares do not depend on building size.
 
 - **Never scale the offset.** Replacing $\log n$ by $(\log n - c)/s$ with the
   coefficient still fixed at 1 would assert $\mu \propto n^{1/s}$, a different
@@ -346,14 +428,17 @@ only sets the unit.
   "per person" and "per year" alongside "per SD".
 - Fixed anchors — $(x-2.6)/0.5$ persons and $(x-37)/10$ years — remain a nicer
   option for a final reported model, because the units don't move between
-  folds and both are close to 2 SD. Either choice is defensible; z-scoring is
+  folds. Both are close to 2 SD, so under the 1-SD convention of Section 1
+  they are for reporting only; a fitted column would use about 1 SD,
+  $(x-2.6)/0.25$ and $(x-37)/4$. Either choice is defensible; z-scoring is
   the pragmatic default.
 
 ### 4.6 `school_status`
 
 One-hot with the schema reference `none` dropped, unscaled. The dummies are
 already interpretable ("existing vs. no school"), and scaling them would only
-obscure that.
+obscure that. The cost is that they are shrunk 4 to 6 times harder than the
+z-scored columns (Section 4.8), which is accepted.
 
 ### 4.7 Why the composition stage carries no offset
 
@@ -396,7 +481,59 @@ $$
 
 Building size belongs entirely to the first factor. `FeatureSpec` enforces this
 ("Only total-count features may define an exposure"), so a composition spec
-carrying an exposure is refused at construction.
+carrying an exposure is refused at construction. That is the old `FeatureSpec`;
+in the rebuild (planned: [multi-cohort plan](MULTI_COHORT_MODELS_PLAN.md) N3 e,
+B4) the probability model will have no exposure setting and will ignore a
+passed exposure.
+
+### 4.8 Scale audit
+
+**The rule.** B's penalty and C's priors act on the coefficient, so a column
+with standard deviation $\sigma$ has the same real (per-SD) effect penalized
+$1/\sigma^2$ times as hard as a z-scored column.
+
+**Measured scales.** The declarations of Section 8, fitted on 20 simulated
+populations of 240 buildings; the range is across single runs.
+
+| Column | SD | Penalty vs. z-scored | Verdict |
+|---|---|---|---|
+| `ses`, `avg_household_size`, `median_age` ($z$) | 1.00 | 1.0× | Reference |
+| `4_rooms_share` | 1.18 (1.08 to 1.25) | 0.7× | Fine |
+| `5_rooms_share` | 1.04 (0.96 to 1.20) | 0.9× | Fine |
+| `6_rooms_share` | 0.77 (0.69 to 0.87) | 1.7× | Fine |
+| `ses_squared` | 1.27 (0.86 to 1.78) | 0.6× | Fine; it varies by run because a run has about 60 neighborhoods |
+| Room share × household size, SES or median age | 0.77 to 1.18 | 0.7× to 1.7× | Fine |
+| `n_daycares_500m` as $d/2$ | 0.86 (0.67 to 1.09) | 1.4× | Fine |
+| `n_daycares_500m_sat` | 0.50 (0.43 to 0.58) | 4× | Accepted (Section 4.1) |
+| `school_status_existing` | 0.49 | 4× | Accepted (Section 4.6) |
+| `school_status_planned` | 0.41 (0.34 to 0.49) | 6× | Accepted (Section 4.6) |
+| Former $d/8$, for comparison | 0.22 (0.17 to 0.27) | 22× | Replaced |
+
+**What rescaling buys.** Both of B's stages were fitted with each daycare
+form on 30 pairs of simulated populations, trained on one and scored on the
+other, across the tuned penalty range.
+
+- **It equalizes shrinkage.** Share of the unpenalized effect kept at the
+  strongest tuned penalty:
+
+  | Column | Total stage (`total_l2_penalty` = 1.0) | Composition stage (`probability_c` = 0.01) |
+  |---|---|---|
+  | $z$-scored columns | 97% | 91% |
+  | $d/8$ | 51% | 39% |
+  | $d/2$ | 100% | 94% |
+  | Saturation, natural log | 85% | 78% |
+  | Saturation, per doubling | 94% | 89% |
+
+- **It does not improve held-out fit.** At each form's best penalty, $d/8$
+  against $d/2$ differs by 0.027 in total-stage deviance (SE 0.018) and by
+  0.00013 in composition log loss (SE 0.00010), and the two saturation forms
+  by 0.008 (SE 0.004) and 0.00008 (SE 0.00003). The harder-shrunk form is the
+  slightly better one each time, because the daycare effect is small in this
+  data: about 1% of the rate per SD in the total stage.
+
+**Conclusion.** The common scale is a consistency rule, not an accuracy gain:
+it keeps a column's unit from acting as a hidden penalty, and it makes the two
+daycare candidates comparable. How hard to shrink is the tuned penalty's job.
 
 ---
 
@@ -405,14 +542,15 @@ carrying an exposure is refused at construction.
 ### Model A: `DirectCohortModel`
 
 One LightGBM regressor per cohort (`n_kindergarten`, `n_elementary`,
-`n_highschool`); Optuna tunes only capacity parameters.
+`n_highschool`). The hyperparameters are fixed per instance and tuned from
+outside, not inside `fit`.
 
 | Variation | What changes | Question it answers |
 |---|---|---|
 | **Base** | All 8 numeric columns raw, one-hot `school_status`, 3-room reference | Reference point for everything below |
-| SES quadratic | Adds $(\text{ses}-m)^2$, keeps `ses` | Does an explicit non-monotone column beat the splits the trees would make anyway? |
-| **+ size offset** | $\log n$ as `init_score` (Poisson/NB2 only); `n_apartments` stays a feature | Does modeling the per-apartment rate beat letting the trees learn size from scratch? Expected to be the largest gain |
-| Family: Poisson / NB2 / Normal | Objective and ancillary parameters | Is over-dispersion worth an extra parameter? |
+| SES quadratic | Adds $(\text{ses}-0)^2$, the squared deviation from the SES reference point; keeps `ses` | Does an explicit non-monotone column beat the splits the trees would make anyway? |
+| **+ size offset** | `use_exposure=True`: $\log n + b$ as `init_score` (Poisson only); `n_apartments` stays a feature | Does modeling the per-apartment rate beat letting the trees learn size from scratch? It was expected to be the largest gain. An untuned smoke run over 10 simulated populations found only weak evidence: about 4% lower deviance for kindergarten and high school, and none for elementary ([plan, Step 2.4](MODEL_REIMPLEMENTATION_PLAN.md)) |
+| Objective: Poisson / regression | Poisson log-likelihood vs squared error | Does a count likelihood beat squared error? |
 
 ### Model B: `IndependentTotalProbabilityModel`
 
@@ -436,7 +574,8 @@ Both stages take the **same 7 non-exposure numeric columns plus
 | Room-share interaction | `x_household_size` only | `x_median_age` only |
 
 - **Why `n_apartments` is not a feature in either stage:** it *is* the
-  exposure. `FeatureSpec` refuses a column that is both, and including it as a
+  exposure. The old `FeatureSpec` refuses a column that is both (the rebuilt
+  `FeatureTransformer` does not check it: §8.2), and including it as a
   predictor would let the model partly undo the offset by re-estimating the
   size elasticity — which is the optional diagnostic of Section 4.4, not the
   default specification.
@@ -454,9 +593,9 @@ Both stages take the **same 7 non-exposure numeric columns plus
 
 | Variation | Columns | Reading | Why this stage |
 |---|---|---|---|
-| **Base** | $z_{\text{ses}}$, $z_{\text{hh}}$, $z_{\text{age}}$, $d/8$, 3 centered shares, 2 school dummies | Log children-per-apartment rate at an average building with no daycares | The parsimonious specification everything else is measured against |
-| **SES quadratic** | + $z_{\text{ses}}^2$ | $\beta_1$ is the slope at average SES, $\beta_2$ the curvature | Fertility–SES gradients are commonly non-monotone, so one extra parameter is cheap insurance when modeling **how many** children |
-| **Daycare centered log1p** | $d/8 \rightarrow \log\frac{1+d}{1+\bar d}$ | Elasticity: $\mu \propto (1+d)^\beta$ | Daycare count measures *access*, and access saturates — the first facility matters far more than the eighth |
+| **Base** | $z_{\text{ses}}$, $z_{\text{hh}}$, $z_{\text{age}}$, $d/2$, 3 centered shares, 2 school dummies | Log children-per-apartment rate at an average building with no daycares | The parsimonious specification everything else is measured against |
+| **SES quadratic** | + $(\text{ses}-0)^2$ | $\beta_1$ is the slope at the reference point (average SES), $\beta_2$ the curvature around it | Fertility–SES gradients are commonly non-monotone, so one extra parameter is cheap insurance when modeling **how many** children |
+| **Daycare centered log1p** | $d/2 \rightarrow \log\frac{1+d}{1+\bar d}$ | Elasticity: $\mu \propto (1+d)^\beta$ | Daycare count measures *access*, and access saturates — the first facility matters far more than the eighth |
 | **`room_share_x_household_size`** | + 3 columns | How the room-mix effect shifts per SD of household size | Capacity meets demand: the child-count payoff of a larger apartment depends on how large local households are (Section 6.2, first choice) |
 | `room_share_x_ses` | + 3 columns | How the room-mix effect shifts per SD of SES | Does extra space become more children, or more space per person? Section 6.2's second choice — needs the new interaction of Section 8 |
 | Combined | the forms that won above | — | Only after the single-term candidates have established which ones earn their place |
@@ -468,7 +607,7 @@ Buildings are weighted by their observed child counts (Section 4.7).
 | Variation | Columns | Reading | Why this stage |
 |---|---|---|---|
 | **Base** | The same design matrix, no offset | Log-odds of each cohort against the reference cohort, for an average building | As above |
-| **Daycare centered log1p** | $d/8 \rightarrow \log\frac{1+d}{1+\bar d}$ | Elasticity on the cohort log-odds | Same saturating-access argument as the total stage — it is a property of the covariate, so it applies wherever daycare enters |
+| **Daycare centered log1p** | $d/2 \rightarrow \log\frac{1+d}{1+\bar d}$ | Elasticity on the cohort log-odds | Same saturating-access argument as the total stage — it is a property of the covariate, so it applies wherever daycare enters |
 | **`room_share_x_median_age`** | + 3 columns | How the room-mix effect on the age mix shifts per SD of neighborhood age | Apartment size and neighborhood age jointly mark family lifecycle stage (Section 6.3, first choice) |
 | `room_share_x_daycare` | + 3 columns | How the room-mix effect on the age mix shifts per unit of daycare access | Daycare marks young children specifically, targeting the kindergarten cohort. Section 6.3's second choice — needs the new interaction of Section 8 |
 | **SES quadratic** | — | — | **Not a candidate here.** Curvature has a mechanism for *how many* children but none for *which ages*; keep SES linear |
@@ -498,7 +637,7 @@ frozen specs, so it has no feature variations of its own. What differs:
 |---|---|
 | **Feature forms are frozen to Model B's winner** | `_validate_bayesian_feature_freeze` ([selection.py:271-295](../src/age_group_prediction/experiment/selection.py#L271-L295)) raises unless the selected Bayesian candidate's `total_count` and `composition` specs **equal** the selected independent candidate's. See the note below |
 | Hierarchical neighborhood effects (non-centered, `HalfNormal` scale) | Absorbs neighborhood-level variation the neighborhood-level features do not explain; the interpretation of building-level features (the room shares) is the most robust |
-| `Normal(0, 0.5)` coefficient priors | The feature's unit decides how strongly each coefficient is shrunk. A unit near 2 SD, as recommended, keeps that prior sensible; a unit spanning the whole range shrinks the per-daycare effect harder |
+| `Normal(0, 0.5)` coefficient priors | The feature's unit decides how strongly each coefficient is shrunk. A unit near 1 SD, as recommended (Section 1), shrinks every column about equally; a unit spanning the whole range, such as $d/8$, shrinks the daycare effect about 22 times harder (Section 4.8) |
 | `Normal(-2, 1)` total-intercept prior | Assumes a standardized design where 0 is an average building. Note the observed average log rate is about $\log(23.9/39.8) \approx -0.5$, 1.5 prior SDs above the prior's center; worth revisiting independently of any rescaling |
 | Prior-predictive checks | Must be rerun after any change of unit or baseline, since they test rates per apartment and cohort shares |
 
@@ -689,13 +828,13 @@ variable at once.
 
 | Feature | A (trees) | B and C (GLMs) | Motivation |
 |---|---|---|---|
-| `ses` | Raw; candidate: centered then squared. No spline | $z$; quadratic candidate in the **total stage only**, scaled once before squaring. No spline | Quadratic is nested and interpretable, and curvature has a mechanism for *how many* children but none for *which ages*; only about 60 distinct SES values, so a 5-column spline overfits and can't be read |
+| `ses` | Raw; candidate: the squared deviation from the SES reference point 0.0. No spline | $z$; quadratic candidate in the **total stage only**: $(\text{ses}-0)^2$ beside $z$. No spline | 0.0 is the population mean, average SES; a fixed vertex means the same in every fold, where the fold mean moves. Quadratic is nested and interpretable, and curvature has a mechanism for *how many* children but none for *which ages*; only about 60 distinct SES values, so a 5-column spline overfits and can't be read |
 | `avg_household_size` | Raw | $z$ (report $\beta/s$; fixed $(x-2.6)/0.5$ optional) | Scale sets only the unit; matches C's priors |
 | `median_age` | Raw | $z$ (report $\beta/s$; fixed $(x-37)/10$ optional) | Same |
-| `n_daycares_500m` | Raw; drop the `log1p` candidate | Candidate 1: $d/8$ (0 = none; 8 = 99th percentile, no clipping). Candidate 2: $\log\frac{1+d}{1+\bar d}$ | Fixed bounds are fold-stable where a learned min-max is not; the centered log1p keeps its unit across folds and reads as an elasticity |
+| `n_daycares_500m` | Raw; drop the `log1p` candidate | Candidate 1: $d/2$ (0 = none; per 2 daycares, about 1 SD). Candidate 2: $\log\frac{1+d}{1+\bar d}$ | A fixed unit is fold-stable where a learned min-max is not, and a unit near 1 SD is shrunk like the z-scored columns; the centered log1p keeps its unit across folds and reads as an elasticity |
 | Room shares (4, 5, 6; reference 3) | Raw | $(s_k-\bar s_k)/0.10$, one common unit | 10 pp substituted out of the 3-room reference; centering puts the baseline at the average mix |
-| `n_apartments` | Raw feature **and** $\log n$ as `init_score` (Poisson/NB2) | Not a feature | Trees cannot extrapolate proportional growth; the feature still captures departures from proportionality |
-| Exposure `log_n_apartments` | Via `init_score` (proposed) | $\log n$ offset, coefficient 1, unscaled | Models the per-apartment rate; `log1p` adds a size-dependent bias of about $1/n$ |
+| `n_apartments` | Raw feature, and optionally the exposure (`use_exposure=True`, Poisson) | Not a feature | Trees cannot extrapolate proportional growth; the feature still captures departures from proportionality |
+| Exposure | Raw $n$ passed as `fit(..., exposure=n)` / `predict(..., exposure=n)`; the model uses $\log n + b$ as `init_score` | $\log n$ offset, coefficient 1, unscaled | Models the per-apartment rate; `log1p` adds a size-dependent bias of about $1/n$ |
 | `school_status` | One-hot (the only required transform) | One-hot, reference `none`, unscaled | Already interpretable |
 | Interactions | None needed — splits represent them | **Total:** room share × household size, then × SES. **Composition:** room share × median age, then × daycare. One per candidate | Only room shares vary within a neighborhood, so every well-powered interaction is room share × a neighborhood feature. Each phase takes the moderator matching its question — household size for *how many*, neighborhood age for *which ages* (Section 6) |
 
@@ -712,12 +851,32 @@ supplied here, at the call site.
 
 ```python
 from age_group_prediction.feature_engineering import (
-    Center, ColumnPlan, DomainMinMax, DomainScale, FeatureTransformer,
-    Interaction, OneHot, Quadratic, RelativeSaturation, Standardize,
+    Center, CenterByReferencePoint, ColumnPlan, DomainMinMax, DomainScale,
+    FeatureTransformer, Interaction, OneHot, Quadratic, RelativeSaturation,
+    Standardize,
 )
 ```
 
-Three rules that the declarations depend on:
+**The vocabulary.** What each transform emits, what it learns at fit, and
+when to choose it over its neighbour:
+
+| Transform | Emits | Learned at fit | Choose it when |
+|---|---|---|---|
+| `Standardize()` | $(x - m)/s$ | $m$, $s$ | A unit per SD is wanted, and the priors were set for it (§4.5) |
+| `Center()` | $x - m$ | $m$ | A linear column in its own units; the center only moves the intercept |
+| `CenterByReferencePoint(reference_point=c)` | $x - c$ | Nothing | The column will be squared, or the reference is a named substantive point (SES 0.0, §3.2); it means the same in every fold |
+| `DomainScale(scale=s)` | $x / s$ | Nothing | The unit comes from domain knowledge, near 1 SD: per 10 pp of share (§4.3), per 2 daycares (§4.1) |
+| `DomainMinMax(minimum, maximum)` | $(x - \min)/(\max - \min)$ | Nothing | Declared bounds, no clipping. No declaration below uses it: a range is several SDs wide, so the column is shrunk harder than the rest (§4.8) |
+| `Quadratic()` | $x^2$, as `<col>_squared` | Nothing | After a center; never on a raw column whose centre is far from zero |
+| `Log()`, `Log1p()` | $\log x$, $\log(1 + x)$ | Nothing | $x > 0$, or $x > -1$ for `Log1p`; never after a center |
+| `RelativeSaturation()` | $\log(1+x) - \log(1+\bar x)$, as `<col>_sat` | $\bar x$ | Diminishing returns on a count, read as an elasticity (§4.1); rather than `Center`, when the effect saturates |
+| `OneHot(categories, reference_category)` | Dummies, the reference dropped | Nothing | Declared levels keep the columns identical across folds |
+
+`Log1pRatioScaler` is the fitted scikit-learn estimator `RelativeSaturation`
+builds. Import it directly for a pipeline of your own or an `isinstance` check;
+inside a `ColumnPlan`, declare `RelativeSaturation()`.
+
+Four rules that the declarations depend on:
 
 - **A plan's chain is applied in order**, and only the last renaming step
   changes the column's name. `Center() → DomainScale(0.1)` leaves
@@ -729,23 +888,33 @@ Three rules that the declarations depend on:
   `n_daycares_500m` fails at fit rather than quietly meaning something else.
 - **The same column may feed several plans.** That is how `ses` and
   `ses_squared` sit side by side.
+- **A log never follows centering, standardizing or relative saturation.**
+  `Log`, `Log1p` and `RelativeSaturation` may not come after `Center`,
+  `Standardize` or `RelativeSaturation` in a plan's chain: a column measured
+  from its mean is negative somewhere, and a log of it is a modeling mistake
+  (for `Log` it is `-inf` or `nan` outright). The plan is rejected when
+  declared; take the log first (`Log() → Center()`). After a step whose sign
+  depends on the data (`CenterByReferencePoint`, `DomainMinMax`, `Log`) or that
+  clears negatives (`Quadratic`) the plan is accepted, and a bad value is
+  caught at fit or transform, by the step's own input check
+  (`RelativeSaturation`) or the finite-output check.
 
 ### 8.0 Shared column groups
 
 ```python
-ROOM_SHARES = ("3_rooms_share", "4_rooms_share", "5_rooms_share")
+from age_group_prediction.preprocessing import ShareTransformer
+
+# Section 2: the 3-room share is the omitted reference.
+shares = ShareTransformer(
+    ("3_rooms", "4_rooms", "5_rooms", "6_rooms"), reference_column="3_rooms"
+)
+table = shares.fit_transform(raw_table)  # adds 4_, 5_ and 6_rooms_share
+
+ROOM_SHARES = ("4_rooms_share", "5_rooms_share", "6_rooms_share")
 SCHOOL = OneHot(
     categories=("none", "existing", "planned"), reference_category="none"
 )
 ```
-
-> **`ROOM_SHARES` is what exists today, not what Section 2 decides.**
-> `modeling_config.py` derives `3_`, `4_` and `5_rooms_share`. Section 2 makes
-> the 3-room share the omitted **reference**, so the modeled shares become
-> `4_`, `5_` and `6_rooms_share` — the `build_modeling_table` change listed as
-> outstanding item 1 below. When it lands, this one tuple changes and every
-> declaration follows. Until then the room-share coefficients are relative to
-> whatever the three listed shares leave out, not to the 3-room share.
 
 ### 8.1 Model A — `DirectCohortModel` (LightGBM)
 
@@ -768,29 +937,63 @@ tree = FeatureTransformer(
         ),
         ColumnPlan(name="school", columns="school_status", transforms=(SCHOOL,)),
     ),
-    exposure_column="n_apartments",
 )
 ```
 
-**`n_apartments` is both a feature and the offset, on purpose.** Section 3.3
-keeps it as a column *and* passes $\log n$ as LightGBM's `init_score`: the
-offset asserts exact proportionality, and the feature lets the trees learn
-departures from it. The package permits this — whether an exposure is also a
-predictor is a modeling choice, and it is a redundant one only for a GLM — so
-the offset comes from the transformer, named and checked for positivity:
+**`n_apartments` can be both a feature and the offset, on purpose.** Section
+3.3 keeps it as a column *and* uses $\log n$ as the offset. The offset asserts
+exact proportionality, and the feature lets the trees learn departures from
+it. The exposure belongs to the model, not the transformer: `use_exposure=True`,
+with the raw count passed to `fit` and `predict`. Build it with
+`ExposureTransformer` on the full table, before splitting: it rejects a zero,
+negative, infinite or NaN count, which the model would otherwise accept, with
+at most a numpy warning (none for NaN).
 
 ```python
-fitted = tree.fit(fit_df)
-init_score = fitted.log_exposure(fit_df).to_numpy()   # Poisson and NB2 only
+from sklearn.base import clone
+from age_group_prediction.modeling import DirectCohortModel
+from age_group_prediction.preprocessing import ExposureTransformer
+
+exposure = ExposureTransformer("n_apartments").fit_transform(table)
+features = clone(tree).fit(fit_df)
+model = DirectCohortModel(use_exposure=True).fit(
+    features.transform(fit_df), fit_df["n_kindergarten"],
+    exposure=exposure.loc[fit_df.index],
+)
 ```
 
-For the Normal family there is no log link and no offset applies (§3.3).
+For `objective="regression"` there is no log link, and the model refuses
+`use_exposure=True` (§3.3).
 
-**SES-quadratic variant.** Add one plan; `ses` itself stays, because the squared
-column earns its place only by being non-monotone (§3.2):
+**Combining the cohorts.** Each cohort gets its own model and its own copy of
+the transformer: a `ModelPipeline` per cohort, held by `IndependentCohortModels`,
+which fits and predicts on the raw table and returns one column per cohort.
+The same exposure goes to every cohort; a model without the offset ignores it.
+The data flow and the rules are in
+[Direct cohort model §0.6](DIRECT_COHORT_MODEL.md#06-every-cohort-from-the-raw-table-modelpipeline-and-independentcohortmodels).
 
 ```python
-ColumnPlan(name="ses_sq", columns="ses", transforms=(Center(), Quadratic()))
+from age_group_prediction.modeling import IndependentCohortModels, ModelPipeline
+
+COHORTS = ["n_kindergarten", "n_elementary", "n_highschool"]
+cohort_models = IndependentCohortModels({
+    cohort: ModelPipeline(tree, DirectCohortModel(use_exposure=True))
+    for cohort in COHORTS
+}).fit(fit_df, fit_df[COHORTS], exposure=exposure.loc[fit_df.index])
+predictions = cohort_models.predict(valid_df, exposure=exposure.loc[valid_df.index])
+```
+
+**SES-quadratic variant.** Add one plan; `ses` itself stays, because the squared
+column earns its place only by being non-monotone (§3.2). It squares the
+deviation from the SES reference point 0.0, average SES, not from the fold
+mean:
+
+```python
+ColumnPlan(
+    name="ses_sq",
+    columns="ses",
+    transforms=(CenterByReferencePoint(reference_point=0.0), Quadratic()),
+)
 ```
 
 Not offered for Model A: the `log1p` daycare form (indistinguishable from linear
@@ -820,38 +1023,35 @@ total_base = FeatureTransformer(
         ColumnPlan(
             name="daycare",
             columns="n_daycares_500m",
-            transforms=(DomainMinMax(minimum=0.0, maximum=8.0),),
+            transforms=(DomainScale(scale=2.0),),
         ),
         ColumnPlan(name="school", columns="school_status", transforms=(SCHOOL,)),
     ),
-    exposure_column="n_apartments",
 )
 ```
 
 Reading the coefficients: per SD for the z-scored neighborhood numerics (§4.5);
-per 10 percentage points of share for the room shares (§4.3); from no daycares
-to eight for the daycare term (§4.1); contrasts against `none` for the school
-dummies (§4.6).
+per 10 percentage points of share for the room shares (§4.3); per 2 daycares
+for the daycare term (§4.1); contrasts against `none` for the school dummies
+(§4.6).
 
 Unlike Model A, B and C do not list `n_apartments` among the plans, so building
 size enters **only** as the offset (§4.4). The package does not enforce that;
-the declaration is what expresses it. Hand the offset to the model separately,
-where it cannot be mistaken for a predictor:
-
-```python
-offset = total_base.fit(fit_df).log_exposure(fit_df)   # a Series, log n
-```
+the declaration is what expresses it. The exposure is not the transformer's:
+the model takes it separately, as `exposure=`, where it cannot be mistaken for
+a predictor, and forms the offset $\log n$ itself. Build it with
+`ExposureTransformer` on the full table before splitting, as in §8.1.
 
 ### 8.3 Model B — composition stage
 
-**The same plans with no exposure** (§4.7): age-group shares do not depend on
-building size. In a multinomial logit every feature already gets a coefficient
-per cohort, so this stage is roughly twice as parameter-hungry for the same
-design matrix and parsimony binds harder (§6.3).
+**The same plans, and a model with no exposure** (§4.7): age-group shares do
+not depend on building size. In a multinomial logit every feature already gets
+a coefficient per cohort, so this stage is roughly twice as parameter-hungry
+for the same design matrix and parsimony binds harder (§6.3).
 
 ```python
 composition_base = FeatureTransformer(
-    plans=total_base.plans,      # identical; only the exposure differs
+    plans=total_base.plans,      # identical; only the model differs, taking no exposure
 )
 ```
 
@@ -880,12 +1080,17 @@ written out; the other is the base declaration above, unchanged.
 
 #### 8.5.1 SES quadratic (candidate 2)
 
-Scale once, then square: $\beta_1$ is then the slope at average SES and
-$\beta_2$ the curvature (§4.2). `ses` keeps its own plan; this one is added
-beside it.
+Square the deviation from the SES reference point 0.0, as in Model A: $\beta_1$,
+on the base plan's $z$, is then the slope at the reference point, and
+$\beta_2$ the curvature around it, per population SD² (§4.2). `ses` keeps its
+own plan; this one is added beside it.
 
 ```python
-ColumnPlan(name="ses_sq", columns="ses", transforms=(Standardize(), Quadratic()))
+ColumnPlan(
+    name="ses_sq",
+    columns="ses",
+    transforms=(CenterByReferencePoint(reference_point=0.0), Quadratic()),
+)
 ```
 
 #### 8.5.2 Daycare, centered `log1p` (candidates 3 and 5)
@@ -893,7 +1098,9 @@ ColumnPlan(name="ses_sq", columns="ses", transforms=(Standardize(), Quadratic())
 Replaces the daycare plan rather than joining it. `RelativeSaturation` emits
 $\log(1+d) - \log(1 + \bar d)$ — `log1p` of the mean, not the mean of `log1p` —
 so the reference stays in the original counts and the coefficient is an
-elasticity (§4.1, candidate 2).
+elasticity (§4.1, candidate 2). Its input must be greater than −1, where
+`log1p` is defined; anything else is rejected at fit. The fitted estimator is
+the public `Log1pRatioScaler`.
 
 ```python
 ColumnPlan(
@@ -936,6 +1143,12 @@ The second choice is room shares × `n_daycares_500m`, which targets the
 kindergarten cohort directly; §6.5 measures that pair at 0.28 and 2.6. Under
 candidate 5 the operand is `n_daycares_500m_sat`.
 
+**Center the linear daycare column before using it as an operand.** $d/2$ has
+mean 1.4, so its product with a room share correlates 0.85 with that share's
+main effect and has SD 1.3 to 1.9. With `Center() → DomainScale(scale=2.0)`
+the correlation is about 0 and the SD 0.66 to 0.99. The cost is the
+"no daycare" baseline (§4.1). `n_daycares_500m_sat` is already centered.
+
 **Do not combine** room shares × `avg_household_size` with room shares ×
 `median_age`: the moderators correlate −0.44 and the blocks 0.52 (§6.5).
 
@@ -950,21 +1163,21 @@ from sklearn.base import clone
 
 fold = clone(total_base).fit(train_df)
 X_train, X_valid = fold.transform(train_df), fold.transform(valid_df)
-offset_train = fold.log_exposure(train_df)
 ```
 
 ### 8.7 Still Outstanding
 
-What this section replaced was an implementation checklist. Two of its items are
-now satisfied by the package — the daycare, room-share and centering forms of
+What this section replaced was an implementation checklist. Some of its items
+are now satisfied by the package — the daycare, room-share and centering forms of
 its item 2 are expressed by `DomainMinMax`, `RelativeSaturation`,
-`Center`+`DomainScale` and `Standardize`+`Quadratic`; and its item 4, adding
-entries to a closed `_VALID_INTERACTIONS` literal, is replaced by open
-user-named `Interaction`s. **The rest still stand:**
+`Center`+`DomainScale` and `CenterByReferencePoint`+`Quadratic`; and its item
+4, adding entries to a closed `_VALID_INTERACTIONS` literal, is replaced by
+open user-named `Interaction`s. **The rest still stand:**
 
-1. **Schema and `build_modeling_table`:** make 3 rooms the reference; derive and
-   validate the 4-, 5- and 6-room shares. Until this lands, `ROOM_SHARES` above
-   is `3/4/5` and the coefficients read against a different omitted share.
+1. **Room-share reference:** done for new code.
+   `ShareTransformer(..., reference_column="3_rooms")` derives the 4-, 5- and
+   6-room shares (§8.0). The old `build_modeling_table` keeps the 6-room
+   reference until it is deleted with `modeling_config`.
 2. **Candidate enumeration:** drop the spline candidates and
    `tree__daycare_log1p`; offer the two daycare forms; keep the composition
    stage's SES form **linear** (no `composition__ses_quadratic`); emit the
@@ -972,15 +1185,28 @@ user-named `Interaction`s. **The rest still stand:**
    `FeatureSpec` in
    [fitted_features.py](../src/age_group_prediction/fitted_features.py) rather
    than on the declarations above, and moves when that module is retired.
-3. **`DirectCohortModel`:** pass $\log n$ as `init_score` for Poisson and NB2 in
-   tuning, refit and prediction, and relax the rule forbidding an exposure on
-   the `tree` component.
+3. **`DirectCohortModel`:** done in the rebuilt
+   `modeling.DirectCohortModel`, which takes `use_exposure=True` and uses
+   $\log n + b$ as `init_score`
+   ([DIRECT_COHORT_MODEL.md §0](DIRECT_COHORT_MODEL.md#0-the-rebuilt-model-modelingdirect_cohortpy)).
 4. **Model C:** no candidate changes of its own. Rerun the prior-predictive
    checks after any unit or baseline change, and revisit
    `total_intercept_loc = -2` against the observed log rate of about −0.5.
 5. **Provenance:** every change above alters feature specs and therefore
    candidate fingerprints. Compare old and new forms as separate candidates on
    identical folds.
+6. **Non-finite constants in the fixed-anchor transforms:**
+   `DomainScale(scale=inf)` and `DomainMinMax(minimum=nan, maximum=nan)` are
+   accepted at declaration and fail at fit. `CenterByReferencePoint` already
+   rejects a non-finite reference (`Field(allow_inf_nan=False)`); apply the
+   same to both siblings.
+7. **Penalty ranges:** in the scale audit (§4.8) held-out fit was best at the
+   edge of both tuned ranges, `total_l2_penalty = 1.0` and
+   `probability_c = 0.01`, and total-stage deviance fell from 4.09 unpenalized
+   to about 4.00 there, more than any scaling choice moved it. The audit
+   scored on independent populations, not on the project's cross-validation,
+   so this is a prompt to check the ranges in the tuning work, not a
+   conclusion.
 
 ## 9. Related Documents
 

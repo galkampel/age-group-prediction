@@ -11,10 +11,9 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Literal, get_args
+from typing import Literal, assert_never, get_args
 
 import numpy as np
-import pandas as pd
 from sklearn.model_selection import (
     BaseCrossValidator,
     GroupKFold,
@@ -23,21 +22,12 @@ from sklearn.model_selection import (
     ShuffleSplit,
 )
 
+from ..utils import DesignMatrix, Groups, Target, take_rows
 from .stratified import StratifiedFolds, StratifiedHoldout
 
-__all__ = ["DesignMatrix", "Groups", "Method", "Splitter", "Target"]
+__all__ = ["Method", "Splitter"]
 
 Method = Literal["random", "stratified_by_group", "grouped"]
-
-type DesignMatrix = pd.DataFrame | np.ndarray  # the features, one row per unit
-type Target = pd.Series | pd.DataFrame | np.ndarray  # one column, or several
-type Groups = pd.Series | np.ndarray  # the split key, one label per row
-
-
-def _take[T](array: T, index: np.ndarray) -> T:
-    """The rows at ``index``: ``.iloc`` for pandas, plain indexing otherwise."""
-    rows: Any = array
-    return rows.iloc[index] if hasattr(array, "iloc") else rows[index]
 
 
 @dataclass(frozen=True)
@@ -63,7 +53,8 @@ class Splitter:
     method: Method
 
     def __post_init__(self) -> None:
-        # An unknown method would otherwise fall through to the grouped branch.
+        # A method read from a config is never type-checked: fail here, not at
+        # the first split.
         if self.method not in get_args(Method):
             raise ValueError(
                 f"unknown method {self.method!r}; expected {list(get_args(Method))}"
@@ -73,15 +64,19 @@ class Splitter:
         self,
         X: DesignMatrix,
         y: Target,
-        groups: Groups,
+        groups: Groups | None,
         *,
         test_size: float,
         random_state: int | None,
-    ) -> tuple[DesignMatrix, DesignMatrix, Target, Target, Groups, Groups]:
+    ) -> tuple[
+        DesignMatrix, DesignMatrix, Target, Target, Groups | None, Groups | None
+    ]:
         """Split ``X``, ``y`` and ``groups``, as scikit-learn's function does.
 
         Returns two per array in scikit-learn's order; the groups come back
-        because :meth:`cv` needs ``groups_train``.
+        because :meth:`cv` needs ``groups_train``. ``groups`` may be ``None``
+        only for ``random``, which then returns ``None`` for both group pieces;
+        the other methods split by groups and raise.
         """
         # ShuffleSplit ignores groups and warns if given them.
         keys = None if self.method == "random" else groups
@@ -92,25 +87,42 @@ class Splitter:
             )
         elif self.method == "stratified_by_group":
             holdout = StratifiedHoldout(test_size=test_size, random_state=random_state)
-        else:
+        elif self.method == "grouped":
             holdout = GroupShuffleSplit(
                 n_splits=1, test_size=test_size, random_state=random_state
             )
+        else:
+            # mypy flags this call if a new Method has no branch above.
+            assert_never(self.method)
         train_index, test_index = next(holdout.split(X, groups=keys))
-        # Arrays outermost gives scikit-learn's order. Unpacked into names
-        # because a comprehension is variadic and would not typecheck.
-        X_train, X_test, y_train, y_test, groups_train, groups_test = (
-            _take(array, index)
-            for array in (X, y, groups)
-            for index in (train_index, test_index)
+        X_train, X_test = take_rows(X, train_index), take_rows(X, test_index)
+        y_train, y_test = take_rows(y, train_index), take_rows(y, test_index)
+        groups_train, groups_test = (
+            (None, None)
+            if groups is None
+            else (take_rows(groups, train_index), take_rows(groups, test_index))
         )
         return X_train, X_test, y_train, y_test, groups_train, groups_test
 
-    def cv(self, *, n_splits: int, random_state: int | None) -> BaseCrossValidator:
-        """The validator for the training rows. Give it ``groups_train``."""
+    def cv(self, *, n_splits: int, random_state: int) -> BaseCrossValidator:
+        """The validator for the training rows. Give it ``groups_train``.
+
+        ``random_state`` must be an int: every ``split()`` call then returns the
+        same folds, which tuning relies on when it re-splits in every trial.
+        ``None`` or a ``RandomState`` would reshuffle on each call.
+        """
+        # Not numbers.Integral: typeshed's int isn't one, so mypy skips the rest.
+        if not isinstance(random_state, (int, np.integer)):
+            raise TypeError(
+                f"random_state must be an int, got {type(random_state).__name__}"
+            )
         # Rows arrive sorted by group, so unshuffled folds would be grouped ones.
         if self.method == "random":
             return KFold(n_splits=n_splits, shuffle=True, random_state=random_state)
         if self.method == "stratified_by_group":
             return StratifiedFolds(n_splits=n_splits, random_state=random_state)
-        return GroupKFold(n_splits=n_splits, shuffle=True, random_state=random_state)
+        if self.method == "grouped":
+            return GroupKFold(
+                n_splits=n_splits, shuffle=True, random_state=random_state
+            )
+        assert_never(self.method)

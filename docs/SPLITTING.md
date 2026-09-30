@@ -16,12 +16,13 @@ They differ in one thing: what a model may know about a test row's group.
 
 | method | train/test split | cross-validator | a test group is... |
 |---|---|---|---|
-| `random` (default) | `ShuffleSplit(n_splits=1)` | `KFold(shuffle=True)` | usually in training |
+| `random` | `ShuffleSplit(n_splits=1)` | `KFold(shuffle=True)` | usually in training |
 | `stratified_by_group` | `StratifiedHoldout` | `StratifiedFolds` | **always** in training |
 | `grouped` | `GroupShuffleSplit(n_splits=1)` | `GroupKFold(shuffle=True)` | **never** in training |
 
 `StratifiedHoldout` and `StratifiedFolds` are ours; nothing in scikit-learn
-splits *within* every group. The other four are scikit-learn's own.
+splits *within* every group. The other four (`ShuffleSplit`, `KFold`,
+`GroupShuffleSplit`, `GroupKFold`) are scikit-learn's own.
 
 Each method answers a different question:
 
@@ -47,8 +48,15 @@ cross_validate(
 
 Two steps, not one `n_splits + 1` way split: `train_test_split` is drawn once
 and then fixed, while `cv` re-deals folds on every tuning pass. `train_test_split`
-splits every array it is given and returns two per array in scikit-learn's
-order; the groups come back because `cv` needs `groups_train`.
+splits `X`, `y` and `groups`, and returns two of each in scikit-learn's order.
+It splits nothing else, such as an exposure: take its rows as
+`exposure.loc[X_train.index]`. The groups come back because `cv` needs
+`groups_train`.
+
+`random` never reads groups, so it takes `groups=None` and returns `None` for
+both group pieces; pass that `None` on to `cv`, since `KFold` warns if given
+groups. `stratified_by_group` and `grouped` raise `ValueError` ("The 'groups'
+parameter should not be None.") rather than split without them.
 
 No parameter has a default — sizing and seeding are decisions the call site
 states. `Splitter` is a frozen dataclass, so `repr` records the method.
@@ -86,7 +94,7 @@ the method exists to prevent.
 
 ## 4. Choosing a method
 
-`random` is the default because only one of the three models can tell it from
+`random` is the usual choice because only one of the three models can tell it from
 `stratified_by_group`.
 
 - **Only `BayesianConditionalModel` fits a per-group term** — a hierarchical
@@ -124,7 +132,8 @@ within groups. Canonical (min 4, median 10) is fine; the default config (10 of
 
 - **Draw the split once.** `train_test_split` re-draws on every call, so calling
   it again with a different `random_state` silently moves the test set. `cv` is
-  the half meant to be re-derived freely.
+  the half meant to be re-derived freely. It requires an int `random_state`,
+  so every `split()` call gives the same folds; tuning re-splits in every trial.
 - **Give `cv` the training rows only** — `groups_train`, never `groups`. Hand it
   the whole table and the test set leaks into tuning.
 - **Fold indices are positions inside `X_train`.** With a DataFrame the pandas
@@ -146,8 +155,12 @@ within groups. Canonical (min 4, median 10) is fine; the default config (10 of
 | file | contents |
 |---|---|
 | `splitting/__init__.py` | public API: `Splitter`, `Method`, `StratifiedHoldout`, `StratifiedFolds` |
-| `splitting/splitters.py` | `Splitter`, the `Method` literal, the type aliases, and the dispatch |
-| `splitting/stratified.py` | `StratifiedHoldout`, `StratifiedFolds`, and the shared `_strata` helper |
+| `splitting/splitters.py` | `Splitter`, the `Method` literal, and the exhaustive dispatch |
+| `splitting/stratified.py` | `StratifiedHoldout`, `StratifiedFolds`, and the private `_strata` and `_held_out_count` helpers |
+
+To add a method, extend `Method`: mypy then points at every dispatch still
+missing a branch (each ends in `assert_never`), and `__post_init__` rejects
+unknown names read from a config.
 
 Both custom classes implement `_iter_test_indices` and inherit `split` from
 `BaseCrossValidator`, so the training half is always the complement — fit and

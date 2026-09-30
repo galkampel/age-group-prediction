@@ -7,13 +7,14 @@ nonsensical parameter is a construction-time error.
 from __future__ import annotations
 
 from collections.abc import Sequence
-from typing import Annotated, Literal
+from typing import Annotated, ClassVar, Literal
 
 import numpy as np
 import pandas as pd
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 from sklearn.base import BaseEstimator, TransformerMixin
 from sklearn.preprocessing import FunctionTransformer, OneHotEncoder, StandardScaler
+from sklearn.utils import Tags
 from sklearn.utils.validation import (
     _check_feature_names_in,
     check_is_fitted,
@@ -41,6 +42,17 @@ class _TransformBase(BaseModel):
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
+    # The sign of the output. "always": negative somewhere (or all zero) whatever
+    # the data, as for a mean-zero column. "as_input": negative only where the
+    # input is. "depends_on_data": either, so only the data can tell. "never".
+    # ColumnPlan reads it to reject a log that cannot succeed.
+    negative_output: ClassVar[
+        Literal["always", "as_input", "depends_on_data", "never"]
+    ] = "as_input"
+    # Undefined on (some) negative input. Conservative: a declaration knows only
+    # the sign, not how far below zero a value goes (log1p is fine down to -1).
+    needs_nonnegative_input: ClassVar[bool] = False
+
     def build(self) -> TransformerMixin:
         """Return an unfitted scikit-learn transformer for this entry."""
         raise NotImplementedError
@@ -50,6 +62,7 @@ class Standardize(_TransformBase):
     """Subtract the fold mean and divide by the fold standard deviation."""
 
     kind: Literal["standardize"] = "standardize"
+    negative_output = "always"
 
     def build(self) -> TransformerMixin:
         return StandardScaler(with_mean=True, with_std=True)
@@ -59,6 +72,7 @@ class Center(_TransformBase):
     """Subtract the fold mean, leaving the original units intact."""
 
     kind: Literal["center"] = "center"
+    negative_output = "always"
 
     def build(self) -> TransformerMixin:
         return StandardScaler(with_mean=True, with_std=False)
@@ -67,11 +81,14 @@ class Center(_TransformBase):
 class Quadratic(_TransformBase):
     """Square the column, renaming it so it cannot collide with its own input.
 
-    Meant to follow ``Center`` or ``Standardize``: squaring an uncentered
-    column makes the quadratic term nearly collinear with the linear one.
+    Meant to follow ``Center``, ``Standardize`` or ``CenterByReferencePoint``:
+    squaring a column whose centre is far from zero, relative to its spread,
+    makes the quadratic term nearly collinear with the linear one. A reference
+    point avoids that only when it lies near the centre of the data.
     """
 
     kind: Literal["quadratic"] = "quadratic"
+    negative_output = "never"
 
     def build(self) -> TransformerMixin:
         # sqrt inverts squaring only on non-negative input; the sign is lost.
@@ -85,9 +102,17 @@ class Quadratic(_TransformBase):
 
 
 class Log(_TransformBase):
-    """Natural log. Requires strictly positive input, checked at fit time."""
+    """Natural log. Needs strictly positive input.
+
+    A log after centering, standardizing or relative saturation is rejected
+    when the plan is declared: a column measured from its mean is negative
+    somewhere. Any other non-positive value surfaces as a non-finite
+    design-matrix column.
+    """
 
     kind: Literal["log"] = "log"
+    negative_output = "depends_on_data"
+    needs_nonnegative_input = True
 
     def build(self) -> TransformerMixin:
         return FunctionTransformer(
@@ -99,9 +124,16 @@ class Log(_TransformBase):
 
 
 class Log1p(_TransformBase):
-    """``log(1 + x)``, defined at zero and so usable on counts."""
+    """``log(1 + x)``, defined at zero and so usable on counts.
+
+    Needs input greater than -1. It is still rejected after centering,
+    standardizing or relative saturation: the rule is on sign, and a log of a
+    column measured from its mean is a mistake even where it stays above -1. Any other value at or below -1
+    surfaces as a non-finite column.
+    """
 
     kind: Literal["log1p"] = "log1p"
+    needs_nonnegative_input = True
 
     def build(self) -> TransformerMixin:
         return FunctionTransformer(
@@ -141,6 +173,7 @@ class DomainMinMax(_TransformBase):
     """
 
     kind: Literal["domain_min_max"] = "domain_min_max"
+    negative_output = "depends_on_data"
     minimum: float
     maximum: float
 
@@ -164,18 +197,45 @@ class DomainMinMax(_TransformBase):
         )
 
 
+class CenterByReferencePoint(_TransformBase):
+    """Subtract a fixed reference point chosen from domain knowledge.
+
+    Unlike ``Center``, it learns nothing from the data, so the output is the
+    deviation from the declared reference and means the same in every fold.
+    Its sign depends on where the data lie relative to the reference.
+    """
+
+    kind: Literal["center_by_reference_point"] = "center_by_reference_point"
+    negative_output = "depends_on_data"
+    # A non-finite reference makes every output non-finite, whatever the data.
+    reference_point: float = Field(allow_inf_nan=False)
+
+    def build(self) -> TransformerMixin:
+        reference_point = self.reference_point
+        return FunctionTransformer(
+            lambda x: x - reference_point,
+            inverse_func=lambda x: x + reference_point,
+            validate=False,
+            feature_names_out="one-to-one",
+        )
+
+
 class RelativeSaturation(_TransformBase):
     """Diminishing returns on a count, measured against the fold's typical value.
 
     Emits ``log1p(x) - log1p(mean(x))``. The reference is ``log1p`` of the
     mean, not the mean of ``log1p``: it keeps the reference expressed in the
-    original counts, so the output is not mean-zero.
+    original counts, so the output is not mean-zero, but it is negative wherever
+    ``x`` lies below the mean, which some value always does. Needs input greater
+    than -1, checked at fit.
     """
 
     kind: Literal["relative_saturation"] = "relative_saturation"
+    negative_output = "always"
+    needs_nonnegative_input = True
 
     def build(self) -> TransformerMixin:
-        return _Log1pRatioScaler()
+        return Log1pRatioScaler()
 
 
 class OneHot(_TransformBase):
@@ -187,6 +247,7 @@ class OneHot(_TransformBase):
     """
 
     kind: Literal["ohe"] = "ohe"
+    negative_output = "never"
     categories: tuple[str, ...]
     reference_category: str
     unknown_policy: UnknownCategoryPolicy = "error"
@@ -235,22 +296,49 @@ Transform = Annotated[
     | Log1p
     | DomainScale
     | DomainMinMax
+    | CenterByReferencePoint
     | RelativeSaturation
     | OneHot,
     Field(discriminator="kind"),
 ]
 
 
-class _Log1pRatioScaler(TransformerMixin, BaseEstimator):
-    """Fitted half of :class:`RelativeSaturation`; learns the fold mean."""
+class Log1pRatioScaler(TransformerMixin, BaseEstimator):
+    """Diminishing returns measured against the fit data's mean, per column.
 
-    def fit(self, X: pd.DataFrame | np.ndarray, y: object = None) -> _Log1pRatioScaler:
+    Emits ``log1p(x) - log1p(mean(x))``, where the mean is learned at fit. The
+    fitted estimator behind :class:`RelativeSaturation`, and usable on its own.
+
+    Input must be greater than -1, where ``log1p`` is defined; checked at fit.
+    ``transform`` does not re-check: a value at or below -1 there gives ``nan``.
+
+    Attributes
+    ----------
+    mean_ : ndarray of shape (n_features,)
+        The per-column mean of the fit data.
+    n_features_in_ : int
+        The number of columns seen at fit.
+    feature_names_in_ : ndarray of shape (n_features_in_,)
+        The column names seen at fit, when the input had string column names.
+    """
+
+    def __sklearn_tags__(self) -> Tags:
+        tags = super().__sklearn_tags__()
+        # sklearn has no tag for "greater than -1"; positive_only is the nearest,
+        # and data respecting it is always valid here. Only sklearn's estimator
+        # checks read it (no meta-estimator does): they then feed non-negative
+        # data. The one expecting sklearn's own "Negative values" error is an
+        # expected failure in the tests.
+        tags.input_tags.positive_only = True
+        return tags
+
+    def fit(self, X: pd.DataFrame | np.ndarray, y: object = None) -> Log1pRatioScaler:
         # Records feature_names_in_, which lets transform reject a later fold
         # whose columns moved.
         values = validate_data(self, X, dtype=np.float64, ensure_2d=True)
         if np.any(values <= -1.0):
             raise ValueError(
-                "relative_saturation needs values greater than -1; log1p is "
+                "Log1pRatioScaler needs values greater than -1; log1p is "
                 "undefined at or below it"
             )
         self.mean_ = values.mean(axis=0)

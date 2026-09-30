@@ -2,10 +2,11 @@
 
 Issues found while writing the component documents (2026-09-15). None affects
 the canonical results: the canonical candidates declare no interval metrics,
-and the rest are comments, docstrings, or test gaps. Each item names the code
-to change, the fix, and how to verify it. Fixing any `src/` item requires the
-normal gated workflow (plan, independent review, full test suite) and must
-not touch `mlflow.db`, `mlartifacts/`, or `artifacts/lockbox/`.
+and the rest are comments, docstrings, or test gaps, plus one deferred analysis
+item at the end. Each item names the code to change, the fix, and how to
+verify it. Fixing any `src/` item requires the normal gated workflow (plan,
+independent review, full test suite) and must not touch `mlflow.db`,
+`mlartifacts/`, or `artifacts/lockbox/`.
 
 ## Correctness
 
@@ -74,6 +75,15 @@ not touch `mlflow.db`, `mlartifacts/`, or `artifacts/lockbox/`.
 - [ ] **Hashing functions.** `table_hash` and `column_schema_hash`
   (`hashing.py`) are only tested indirectly. *Verify:* row-order invariance,
   and sensitivity to column order and dtype.
+
+## Deferred analysis
+
+- [ ] **Model-based 2D partial dependence and ALE.** The EDA notebook
+  (`notebooks/01_eda.py`) shows 1D partial dependence and ICE, plus
+  two-dimensional *empirical* interaction views. Model-based 2D partial
+  dependence and ALE were deferred until a diagnostic pass establishes that
+  they add information beyond the supported-data views. (Carried over from the
+  removed EDA plan.)
 
 ## Related Documents
 
