@@ -7,8 +7,11 @@ This file is the source of truth: update its status line and checkboxes as steps
 **Status (2026-09-30):** **PR A is merged** (PR #10, merge commit `27459eb`
 into `feat/hyperparameter-tuning`; steps A0–A4 and the close-out `01837d4`).
 PR B's branch `feat/independent-total-probability-model` was created from
-`27459eb`, and its first commit is this handoff. **Next: B0** (push, draft PR),
-starting with its "Facts" and "Decisions to ask" (§9), then B1.
+`27459eb`, and its first commit is this handoff. **B0 is done** (2026-09-30),
+except the user's PR #5 note (§2):
+the branch is pushed, draft PR [#11](https://github.com/galkampel/age-group-prediction/pull/11)
+is open, and the facts from PR A are re-verified. **Next: B1**, starting with
+its "Decisions to ask" (§9 B0).
 Non-slow suite on the merged base: **1104 passed** (1 skipped, 1 xfailed).
 
 ## Contents
@@ -65,7 +68,8 @@ Model 1's single-cohort class exists; two things are missing:
 - One PR would mix a ~150-line change with a ~10-step rebuild, and a change
   requested in A's conventions would then be reworked inside B's code.
 - PR #5's diff will now also carry these models; note it in PR #5's description.
-  *PR A merged 2026-09-30 (`27459eb`); PR #5's note is still to be added (B0).*
+  *PR A merged 2026-09-30 (`27459eb`); PR #5's note is still to be added (B0).
+  PR B is draft [#11](https://github.com/galkampel/age-group-prediction/pull/11).*
 
 ## 3. How to work (rules for the implementer)
 
@@ -841,13 +845,19 @@ this handoff (status lines in this doc, `docs/README.md` and
 `MODEL_REIMPLEMENTATION_PLAN.md` §5).
 
 **Left for B0** (a docs-only step; no code):
-1. Confirm the branch, that its base is `27459eb`, that at most the handoff
+1. ✓ Confirm the branch, that its base is `27459eb`, that at most the handoff
    commit follows it, and a clean tree. Run the non-slow baseline (1104 passed,
    1 skipped, 1 xfailed).
-2. Re-verify the facts below against the code, and fix any that are stale here.
-3. The user pushes; then a **draft** PR `feat/independent-total-probability-model`
-   → `feat/hyperparameter-tuning`. Its body lists B0–B9 (unchecked).
+2. ✓ Re-verify the facts below against the code, and fix any that are stale here.
+3. ✓ The user pushes; then a **draft** PR `feat/independent-total-probability-model`
+   → `feat/hyperparameter-tuning`. Its body lists B0–B9 (unchecked):
+   [#11](https://github.com/galkampel/age-group-prediction/pull/11).
 4. The user adds the PR #10 note to PR #5's description (§2), if not done yet.
+   *Not done at B0's close (PR #5's body does not mention #10).*
+
+Done when:
+- [x] Branch, baseline and the facts below verified; draft PR #11 open.
+- [ ] PR #5's note (the user's).
 
 **Facts from PR A that Part B builds on** (re-verify; §8 A2–A4 hold the detail):
 - **The base contract** (`modeling/base.py`): abstract `fit(X, y, exposure=None)`
@@ -900,6 +910,35 @@ this handoff (status lines in this doc, `docs/README.md` and
   With §5's measured evidence.
 
 **Later:** before B8, confirm NB2 is still wanted (B8's note).
+
+**Record (2026-09-30).**
+- **Branch:** `27459eb` is an ancestor; only `0fd0fa1` (the handoff) follows;
+  the tree was clean at the start; the remote head is `0fd0fa1`.
+- **Baseline:** 1104 passed (1 skipped, 1 xfailed). Versions as in §6
+  (sklearn 1.9.0, scipy 1.18.0, statsmodels 0.14.6), and LightGBM 4.7.0.
+- **Verified**, every fact above, against the code (the docs facts against the docs): the base signatures
+  (`base.py`); `DirectCohortModel._check_exposure(exposure, *, expected)`;
+  `ModelPipeline` and `IndependentCohortModels` (clones, fitted copies, arrays,
+  `y`'s columns and `X`'s index, no index check); `ExposureTransformer`;
+  `Splitter.train_test_split` (6 pieces, no exposure); the contract test
+  (`EXAMPLES`, the refit test's `fit(X, y)` with `.iloc`, the old-stack guard);
+  the evaluator (`_check_exposure` rejects a given exposure whose shape is not `(len(X),)`;
+  `evaluate`'s `y` is `pd.Series | np.ndarray`); `utils.Target` exists for B3.
+- **§5's length evidence, re-measured:** `DirectCohortModel.predict` broadcasts
+  a length-1 exposure silently; a wrong length at fit fails in LightGBM
+  ("Initial score size doesn't match data size"), at predict in numpy; a GLM's
+  `exposure * exp(D @ b)` broadcasts a length-1 exposure silently.
+- **Also checked, unchanged:** §4's `total_base` and `composition_base`
+  (`FEATURE_TRANSFORMATIONS.md` §8.2, §8.3; no model and no pipeline block
+  yet, B9's work); §8.7 item 7 exists (B9); B9's conversion (C in
+  [0.01, 100] is `l2_penalty` in about [2e-6, 2e-2] at ~4,500 training
+  children); the
+  old total model's penalty is N8's (mean negative log-likelihood, intercept
+  unpenalized).
+- **For B2:** the statsmodels precedent in `tests/validation` is
+  `test_recovery.py`: a module-level `pytest.importorskip("statsmodels")`, its
+  tests marked `slow`.
+- **Stale here, fixed:** the status line and §2 (the draft PR is #11).
 
 ### B1. Shared numerics
 *Revised by N3 and N16: there is no shared `check_exposure` and no utils file.*
