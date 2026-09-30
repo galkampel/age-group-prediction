@@ -98,8 +98,9 @@ are rebuilt. Plans: [MODEL_REIMPLEMENTATION_PLAN.md](MODEL_REIMPLEMENTATION_PLAN
 | Module | Responsibility | Main public API | Depends on |
 |---|---|---|---|
 | `__init__.py` | Public surface of the rebuilt models | `BaseAgeGroupModel`, `CohortModels`, `DirectCohortModel`, `IndependentCohortModels`, `ModelPipeline`, `Objective` | `base`, `direct_cohort`, `independent_cohorts`, `pipeline` |
-| `base.py` | The shared contract: abstract `fit` and `predict` (one target or one per cohort), and `evaluate(y_true, y_pred, metric)`; `get_params`/`set_params`/`clone` come from scikit-learn's `BaseEstimator` | `BaseAgeGroupModel` | `scoring` (top level) |
+| `base.py` | The shared contract: abstract `fit` and `predict` (one target or one per cohort), and `evaluate(y_true, y_pred, metric)`; `get_params`/`set_params`/`clone` come from scikit-learn's `BaseEstimator`. The exposure rule for a model with an offset (`_check_exposure`: required, one-dimensional, `X`'s length; ignored when unused) | `BaseAgeGroupModel` | `scoring` (top level) |
 | `direct_cohort.py` | **Model A, rebuilt.** One LightGBM regressor for one cohort with fixed hyperparameters; `poisson` or `regression`; optional exposure offset | `DirectCohortModel`, `Objective` | `base` |
+| `optimization.py` | Internal: L-BFGS-B minimization for the models fitted by maximum likelihood, with scikit-learn's option mapping (`gtol=tol`); raises `RuntimeError` on non-convergence, overflow or a non-finite result, never clips. Not exported from `modeling` | `LBFGSMinimizer` | scipy |
 | `pipeline.py` | A `FeatureTransformer`, then a model, fitted and used on the raw table; the exposure, built with `ExposureTransformer`, is passed through to the model | `ModelPipeline` | `base`, `feature_engineering` |
 | `independent_cohorts.py` | **Model 1.** One independent model per cohort (any `BaseAgeGroupModel`, usually a `ModelPipeline` with its own features), fitted on its column of `y`; every cohort gets the same exposure; predicts a DataFrame, one column per cohort | `IndependentCohortModels`, `CohortModels` | `base` |
 

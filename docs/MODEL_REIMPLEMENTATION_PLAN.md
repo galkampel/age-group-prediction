@@ -348,6 +348,10 @@ what would otherwise pass silently:
 A wrong-length exposure and an all-zero `y` are left to LightGBM, which raises
 for both.
 
+*Superseded (2026-09-30, `MULTI_COHORT_MODELS_PLAN.md` B1): a wrong-length
+exposure, length 1 included, is now rejected at fit and at predict by
+`BaseAgeGroupModel._check_exposure`.*
+
 `fit`:
 1. Run `_check_exposure`.
 2. With the exposure on, set `base_log_rate_ = log(Σy / Σn)` and fit the
@@ -373,7 +377,7 @@ Done when:
 LightGBM or NumPy already raises for them, as a probe confirmed: an unknown
 objective, a wrong-length exposure at fit, and an all-zero `y`. At predict, a
 wrong length above 1 raises a NumPy broadcast error. A scalar or length-1
-exposure broadcasts to every row, meaning "all buildings have this `n`". The two presence checks were merged into one. Test
+exposure broadcasts to every row, meaning "all buildings have this `n`". *(Reversed in B1, 2026-09-30: rejected.)* The two presence checks were merged into one. Test
 6 pins the errors LightGBM raises. The class docstring and a comment in `fit`
 now say that the exposure gives a rate per apartment, and that
 `base_log_rate_` is the intercept.
@@ -399,6 +403,8 @@ cases) on a small synthetic frame. Each one names the mistake it catches:
    - an unknown objective, a wrong-length exposure at fit, and an all-zero `y`
      with the exposure on. These are LightGBM's errors. The test pins the
      behavior that the removed checks now rely on.
+   *Since B1 (2026-09-30) the wrong-length case is our check, tested in
+   `test_exposure_misuse_raises`.*
 7. **Predict follows the fitted model** (added after review): after
    `set_params(use_exposure=False)` on a model fitted with the exposure,
    `predict(X)` raises instead of returning rates per apartment.

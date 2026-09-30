@@ -9,6 +9,7 @@ import numpy as np
 import pandas as pd
 from numpy.typing import ArrayLike
 from sklearn.base import BaseEstimator
+from sklearn.utils.validation import check_consistent_length
 
 from ..scoring import Metric
 
@@ -61,3 +62,35 @@ class BaseAgeGroupModel(BaseEstimator, ABC):
         scored. The cast turns a custom metric's numpy scalar into a float.
         """
         return float(metric.function(y_true, y_pred))
+
+    @staticmethod
+    def _check_exposure(
+        X: pd.DataFrame, exposure: ArrayLike | None, *, expected: bool
+    ) -> np.ndarray | None:
+        """Return the exposure as floats, or ``None`` when none is ``expected``.
+
+        The rule of :meth:`fit`, for a model with an offset: ``expected`` is
+        its setting at fit and its fitted state at predict. Only what would
+        otherwise pass silently is checked; the values are validated where the
+        data is prepared, by
+        :class:`~age_group_prediction.preprocessing.ExposureTransformer`.
+        """
+        if not expected:
+            return None
+        # A forgotten exposure would silently drop the offset.
+        if exposure is None:
+            raise ValueError(
+                "the model uses an exposure offset (use_exposure=True at fit); "
+                "pass `exposure`"
+            )
+        exposure_values = np.asarray(exposure, dtype=float)
+        # A column (n, 1), e.g. a one-column DataFrame, would broadcast against
+        # the (n,) linear predictor into an (n, n) result.
+        if exposure_values.ndim != 1:
+            raise ValueError(
+                f"exposure must be one-dimensional, got shape {exposure_values.shape}"
+            )
+        # Rows are paired by position, and numpy broadcasts a length-1 exposure
+        # to every row silently.
+        check_consistent_length(X, exposure_values)
+        return exposure_values

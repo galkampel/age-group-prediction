@@ -124,15 +124,20 @@ The model checks only what would otherwise pass silently. Each of these raises
 - `exposure` missing when the model uses one, which would drop the offset
   silently (one passed to a model without the offset is ignored);
 - an exposure that is not one-dimensional, which would broadcast into an
-  $(n, n)$ prediction.
+  $(n, n)$ prediction;
+- an exposure whose length differs from `X`'s, at fit and at predict: numpy
+  would broadcast a length-1 exposure to every row at predict silently.
+
+The exposure checks are `BaseAgeGroupModel._check_exposure`, shared by every
+model with an offset.
 
 The exposure's values are checked where the data is prepared, not here:
 `preprocessing.ExposureTransformer` returns the column as floats and raises
 unless every value is strictly positive and finite. LightGBM would accept the
 `-inf` or `nan` offset of a bad value silently, so build the exposure with it.
 
-LightGBM raises its own error for an unknown objective, a wrong-length exposure
-at fit, and an all-zero `y`. The unit tests pin these.
+LightGBM raises its own error for an unknown objective and an all-zero `y`.
+The unit tests pin these.
 
 ### 0.4 What Changed From §1–§10
 

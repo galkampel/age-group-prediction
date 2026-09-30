@@ -13,10 +13,11 @@ the branch is pushed, draft PR [#11](https://github.com/galkampel/age-group-pred
 is open, and the facts from PR A are re-verified. **B0a** (added by the user at
 the start of B1): `Splitter.train_test_indices` replaces `train_test_split`, so
 the exposure is split by the same positions as every other array; committed
-`6970c8b`. **Next: B1** (handoff written 2026-09-30, end of session): its
-decisions are made and its facts measured (§9 B1); start in plan mode by
-re-verifying them. Non-slow suite at `6970c8b`: **1104 passed** (1 skipped,
-1 xfailed).
+`6970c8b`. **B1 is done** (2026-09-30, awaiting the user's commit):
+`LBFGSMinimizer` in `modeling/optimization.py`, and the exposure rule, with a
+length check, in `BaseAgeGroupModel._check_exposure`. **Next: B2**
+(`TotalChildrenModel`, Poisson). Non-slow suite after B1: **1115 passed**
+(1 skipped, 1 xfailed).
 
 ## Contents
 1. Context and goal
@@ -878,6 +879,8 @@ Done when:
   on the full table before splitting and passes `exposure=` to every model. One
   that does not use it ignores it; one fitted with the offset raises without it.
   The rule is `DirectCohortModel._check_exposure(exposure, *, expected)` (B1).
+  *Since B1: `BaseAgeGroupModel._check_exposure(X, exposure, *, expected)`,
+  which also rejects a length other than `X`'s.*
 - **Rows are paired by position** (N19); no index check anywhere.
   `Splitter.train_test_split` splits `X`, `y` and `groups` only: take the
   exposure as `exposure.loc[X_train.index]`. *Superseded by B0a:
@@ -1109,10 +1112,66 @@ non-model class is not discovered.
 states the length behavior; `MODULE_REFERENCE.md`. Run any edited block.
 
 Done when:
-- [ ] The default `tol` reproduces the sklearn oracle to 1e-6, and how `tol` maps
+- [x] The default `tol` reproduces the sklearn oracle to 1e-6, and how `tol` maps
   to scipy's options is recorded (measured above: `gtol=tol`, `ftol=64·eps`,
   `maxls=50`; `tol=1e-6` gives 6.1e-8). B2's oracle test pins it.
-- [ ] Mutations, review, non-slow suite.
+- [x] Mutations, review, non-slow suite: 1115 passed (1 skipped, 1 xfailed).
+
+**Record (2026-09-30).**
+- **Baseline** before the first edit: 1104 passed (1 skipped, 1 xfailed).
+  Versions: sklearn 1.9.0, scipy 1.18.0, LightGBM 4.7.0, numpy 2.5.1.
+- **Verified first**, every fact above: sklearn's options (`_glm/glm.py:282-291`,
+  `_logistic.py:587-594`); the oracle figures on seeds 0–9 exactly (1.5e-5,
+  5.8e-6, 4.7e-7, 6.1e-8); `check_grad` 6.4e-7 (4e-7 above: the same order);
+  the iteration-limit and overflow behavior; `check_consistent_length`.
+  **New:** a NaN or ±inf objective with a zero gradient returns `success=True`
+  ("CONVERGENCE"), so the finite-objective check is needed on its own.
+- **Built** as planned. `LBFGSMinimizer` has the aliases
+  `ObjectiveWithGradient` (not `Objective`, which `direct_cohort` exports) and
+  `Bounds`. `DirectCohortModel.fit`'s docstring keeps what LightGBM still
+  rejects (an unknown objective, an all-zero `y`).
+- **Tests.** `test_modeling_optimization.py` (8): the minimum is returned;
+  bounds are honored; the gradient at the minimum is within `tol`; an
+  iteration limit, a failed line search (without "raise max_iter"), an
+  overflow, an invalid value and a non-finite objective each raise.
+  `test_modeling_direct_cohort.py`: `test_exposure_misuse_raises` gains
+  `length-one` and `one-row-short`; new `test_a_wrong_length_exposure_raises_at_predict`
+  (2); the `wrong-length` case of `test_invalid_input_surfaces_an_error` moved
+  out (it is our check now, not LightGBM's).
+- **Mutations**, each failing its named test and restored: the `success` check
+  dropped; `errstate` dropped; `invalid="raise"` dropped; the finite check
+  dropped; the start returned; `bounds` dropped; `gtol` dropped and `ftol`
+  dropped (each stops at a gradient of 6.4e-6); the advice always "raise
+  max_iter"; `check_consistent_length` dropped (4 cases, fit and predict).
+- **Checks:** ruff and ruff format on the 5 changed `.py` files; `uv run mypy`
+  and mypy on `modeling` plus both test files clean; the `modeling` tests
+  under `-W error` (126 passed).
+- **Review** (independent subagent, its own mutations and probes), each
+  finding reproduced:
+  - *Fixed.* Nothing pinned `tol → gtol`: dropping `gtol` or `ftol` passed.
+    New test: the gradient at the returned point is within `tol`.
+  - *Fixed.* An abnormal stop (status 2, e.g. a NaN gradient) advised "raise
+    max_iter"; the advice now depends on the status.
+  - *Fixed.* An invalid value was reported as an overflow, and was untested;
+    the message names both, and a test covers it.
+  - *Fixed (dropped).* The `isfinite(x)` half was unreachable: an all-zero
+    Poisson `y` stops at an intercept of −14 with `success=True`, not −inf.
+    B2's own check on `y` covers that case.
+  - *Fixed.* The test comments claimed a wrong length passes silently at fit;
+    LightGBM rejects it there. They now give the reason (scikit-learn checks
+    every per-row array; numpy broadcasts a length-1 exposure at predict).
+  - *Fixed.* `MODEL_REIMPLEMENTATION_PLAN.md` Step 2.2, its review note and
+    test 6 left the wrong length to LightGBM: dated notes added.
+  - *Not changed.* The length error is sklearn's own message ("Found input
+    variables with inconsistent numbers of samples: [50, 1]"), capitalized and
+    without the word exposure: `check_consistent_length` was the user's choice.
+  - *Noted for B2/B4.* `scipy.special` functions (`xlogy`, `gammaln`) ignore
+    `np.errstate`, so a NaN from them is not raised; a NaN objective at the end
+    is still caught. A wrong analytic gradient can return `success=True` at a
+    wrong point: only the `check_grad` tests (N6) catch it.
+- **Docs:** `DIRECT_COHORT_MODEL.md` §0.3; `MODULE_REFERENCE.md` (`base.py`
+  row, new `optimization.py` row); `MODEL_REIMPLEMENTATION_PLAN.md` (notes).
+  No code block was edited.
 
 ### B2. `TotalChildrenModel`, Poisson
 - **Files:** new `modeling/total_children.py`, `__init__.py`, new
