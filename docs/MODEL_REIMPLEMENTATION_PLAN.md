@@ -62,7 +62,10 @@ log rate per apartment (see "In equations" below).
   `fit(X, y, exposure=n)` and `predict(X, exposure=n)`.
 - **The input.** `exposure` is the raw count `n` (number of apartments), one
   strictly positive value per row of `X`, in the same order, e.g.
-  `exposure=df["n_apartments"]`. It is the raw count, not `log n`, because the
+  `exposure=df["n_apartments"]`. *(2026-09-30: build it instead with
+  `ExposureTransformer`, on the full table before splitting; see
+  [Direct cohort model §0.6](DIRECT_COHORT_MODEL.md#06-every-cohort-from-the-raw-table-modelpipeline-and-independentcohortmodels).)*
+  It is the raw count, not `log n`, because the
   model needs `Σn` for the starting rate below. statsmodels follows the same
   convention: `exposure=` is raw and logged internally, while `offset=` is
   already on the log scale.
@@ -115,7 +118,7 @@ there is one copy.
 | M7 | Only the built-in objectives `"poisson"` and `"regression"`. No NB2, no `custom_nb2_gradient` and no dispersion | Requirement. The old `nb2_gradient_hessian` stays in `distributions.py` until the old stack is deleted (M1) |
 | M8 | Fixed hyperparameters are explicit keyword arguments with LightGBM's defaults: `n_estimators`, `learning_rate`, `num_leaves`, `max_depth`, `min_child_samples`, `reg_alpha`, `reg_lambda`, `min_split_gain`, `subsample` and `colsample_bytree`, plus `random_state=42` and `n_jobs=1`. No Optuna runs inside `fit` | `set_params(**trial_params)` needs explicit arguments. `n_jobs=1` avoids the OpenMP crash alongside torch on macOS. See the note below for the fixed internals |
 | M9 | The model takes a finished design matrix `X`. Preprocessing (e.g. a `FeatureTransformer` fitted per fold) happens before the model, which holds no transformer | Your requirement. It keeps the model to one job, fitting trees, and whoever builds the folds decides how the features are made |
-| M10 | `use_exposure: bool = False` in the constructor, with the raw exposure passed as `fit(X, y, exposure=n)` and `predict(X, exposure=n)`. When on, `fit` learns `base_log_rate_ = log(Σy / Σn)` and passes `log n + base_log_rate_` as `init_score`, and `predict` returns `exp(raw + log n + base_log_rate_)`. `ValueError`, only for what would otherwise pass silently: `use_exposure` with `"regression"`; `exposure` not passed exactly when `use_exposure` is on (a forgotten one would drop the offset, an unexpected one would be ignored); an exposure that is not strictly positive and finite (LightGBM accepts a `-inf`/`nan` `init_score`). LightGBM already raises for an unknown objective, a wrong-length exposure and an all-zero `y`, so the model doesn't repeat those checks | See §2. The indicator makes "with or without the offset" a declared setting, so it survives `clone`/`set_params` and a tuner can compare both. It also turns a forgotten `exposure` at predict time into an error rather than silent per-apartment rates. The starting rate replaces the `boost_from_average` that LightGBM switches off when given an `init_score`. `use_exposure` with `"regression"` raises rather than being ignored: like sklearn, a pair of settings that can't be honored together is an error, whereas a merely irrelevant setting is only ignored with a warning. Ignoring it would silently fit a model without the offset and discard the exposure passed in |
+| M10 | `use_exposure: bool = False` in the constructor, with the raw exposure passed as `fit(X, y, exposure=n)` and `predict(X, exposure=n)`. When on, `fit` learns `base_log_rate_ = log(Σy / Σn)` and passes `log n + base_log_rate_` as `init_score`, and `predict` returns `exp(raw + log n + base_log_rate_)`. `ValueError`, only for what would otherwise pass silently: `use_exposure` with `"regression"`; `exposure` not passed exactly when `use_exposure` is on (a forgotten one would drop the offset, an unexpected one would be ignored; *since 2026-09-29 an unexpected one is ignored by design, so one exposure can go to every model, see [MULTI_COHORT_MODELS_PLAN.md](MULTI_COHORT_MODELS_PLAN.md) N3*); an exposure that is not strictly positive and finite (LightGBM accepts a `-inf`/`nan` `init_score`; *since 2026-09-29 this check is in `preprocessing.ExposureTransformer`, see [MULTI_COHORT_MODELS_PLAN.md](MULTI_COHORT_MODELS_PLAN.md) N3*). LightGBM already raises for an unknown objective, a wrong-length exposure and an all-zero `y`, so the model doesn't repeat those checks | See §2. The indicator makes "with or without the offset" a declared setting, so it survives `clone`/`set_params` and a tuner can compare both. It also turns a forgotten `exposure` at predict time into an error rather than silent per-apartment rates. The starting rate replaces the `boost_from_average` that LightGBM switches off when given an `init_score`. `use_exposure` with `"regression"` raises rather than being ignored: like sklearn, a pair of settings that can't be honored together is an error, whereas a merely irrelevant setting is only ignored with a warning. Ignoring it would silently fit a model without the offset and discard the exposure passed in |
 | M11 | Validation happens in `fit`, not in `__init__` | `set_params` bypasses `__init__` |
 | M12 | Dropped from Model A: bootstrap draws, intervals, pointwise log probabilities, `PredictionResult`, state bundles, `configuration_record`, seed records, timers and `minimum_mean` clipping | Out of scope ("means only for now") or not needed. Poisson means are `exp(·) > 0`, and regression output is returned as is. A regression model can predict negative values, and scoring it with `POISSON_DEVIANCE` then raises. That is correct, because the metric is undefined there |
 
@@ -129,7 +132,9 @@ there is one copy.
 ### Target code shape
 
 *As planned in this PR. Since then (PR #5), `Metric` lives in the top-level
-`scoring.py` (D16), and `fit`/`predict` take `exposure=None` (D14).*
+`scoring.py` (D16), and `fit`/`predict` take `exposure=None` (D14). Since
+[MULTI_COHORT_MODELS_PLAN.md](MULTI_COHORT_MODELS_PLAN.md) A1, `y` is
+`pd.Series | pd.DataFrame` and `predict` returns `np.ndarray | pd.DataFrame`.*
 
 ```python
 # modeling/metrics.py
@@ -171,7 +176,10 @@ class DirectCohortModel(BaseAgeGroupModel):
     # fitted: regressor_, base_log_rate_ (None without an exposure)
 ```
 
-Usage: transform first, then one instance per cohort.
+Usage: transform first, then one instance per cohort. *(2026-09-30: this is
+the Phase 2 form. The current one builds the exposure with
+`ExposureTransformer` and fits every cohort with `IndependentCohortModels`;
+see [Direct cohort model §0.6](DIRECT_COHORT_MODEL.md#06-every-cohort-from-the-raw-table-modelpipeline-and-independentcohortmodels).)*
 
 ```python
 features = clone(tree).fit(train_df)
@@ -441,8 +449,10 @@ Done when:
   variation in FEATURE_TRANSFORMATIONS §5.
 
 **Results (2026-09-24).**
-- **Data:** 10 simulated populations (RNG seeds 0–9) of 245 buildings each,
-  with a grouped split by neighborhood: 196 training and 49 test buildings.
+- **Data:** 10 simulated populations (RNG seeds 0–9) of 60 neighborhoods and
+  215–251 buildings, with a grouped 80/20 split by neighborhood: 179–206
+  training and 33–53 test buildings (seed 0: 245, 196 and 49). *Corrected
+  2026-09-30: this line first gave seed 0's sizes for every population.*
 - **Models:** Poisson with default hyperparameters (100 trees, untuned), and
   `n_apartments` kept in `X` in both variants.
 - **Score:** held-out mean Poisson deviance, lower is better, as mean ± SD over
@@ -466,7 +476,7 @@ Done when:
   effect themselves.
 - Calibration holds in all six cases: the mean test prediction over the mean
   test target is 1.00–1.06 on average across populations.
-- The models are untuned, and 196 training rows is small. Tuning (#5) is where
+- The models are untuned, and 179–206 training rows is small. Tuning (#5) is where
   the offset should be re-checked.
 
 The script is `smoke_exposure.py` in the session scratchpad, outside the repo.
@@ -524,9 +534,14 @@ In order. Each step has its own plan and gated phases.
    [HYPERPARAMETER_TUNING_PLAN.md §9](HYPERPARAMETER_TUNING_PLAN.md): switch
    the evaluator to `BaseAgeGroupModel`, then tune `DirectCohortModel` per
    cohort. Re-check the exposure offset once tuned; Step 2.4 found only weak
-   evidence, untuned.
-3. **Rebuild Model B** (`IndependentTotalProbabilityModel`) in `modeling/`,
-   with its own plan doc. Its feature declarations are already in
+   evidence, untuned, and the multi-cohort plan's A4 re-run through
+   `IndependentCohortModels` found the same.
+3. **Complete Model A as `IndependentCohortModels`, then rebuild Model B**
+   (`IndependentTotalProbabilityModel`) in `modeling/`. Plan:
+   [MULTI_COHORT_MODELS_PLAN.md](MULTI_COHORT_MODELS_PLAN.md) (there, Model 1
+   and Model 2). ✓ Model A is complete in PR #10, pending merge (steps A0–A4;
+   [Direct cohort model §0.6](DIRECT_COHORT_MODEL.md#06-every-cohort-from-the-raw-table-modelpipeline-and-independentcohortmodels)).
+   Model B is next. B's feature declarations are already in
    [FEATURE_TRANSFORMATIONS.md §8.2–8.5](FEATURE_TRANSFORMATIONS.md).
 4. **Rebuild Model C** (`BayesianConditionalModel`). *Needs step 3*: C reuses
    B's frozen feature forms.

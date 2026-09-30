@@ -3,7 +3,7 @@
 **Branch:** `feat/hyperparameter-tuning` · draft PR #5.
 **Status:** Phases 1 (parameters) and 2 (evaluator, aggregations) are done
 and committed through `0bf1562`. Non-slow suite: 1002 passed, 8 warnings.
-**Next: 3.1** (the study), then the rest of Phase 3 and Phase 4 (docs).
+**Next:** the §6 task "Evaluator on the raw table", then **3.1** (the study), then the rest of Phase 3 and Phase 4 (docs).
 The history of each step is in the git log and the commit messages.
 **To resume:** read this doc (§2 decisions, §4 design, §6 remaining work, §7
 working notes), then the package code and its tests; start the next sub-task
@@ -40,7 +40,7 @@ experiment runner.
 | D10 | Settings in the constructor; data (`X, y, groups, exposure`) as arguments of the named method `evaluate` | the sklearn convention; one evaluator scores many targets; Optuna's one-argument objective is a lambda |
 | D11 | The evaluator tunes a `BaseAgeGroupModel`: per trial, `build_feature_transformer_and_model(params)` makes copies (`clone`, `set_params`); each fold refits them, predicts, and scores with `model.evaluate(y, y_pred, metric)` | the repo's models get `clone`/`set_params` from `BaseEstimator`; a misspelled parameter raises at `set_params` |
 | D12 | One direction: the score is the metric's value if `greater_is_better`, else its negation; the study always maximizes | no sign to get wrong |
-| D13 | A required `feature_transformer: FeatureTransformer`, fitted per fold on the training rows and targets | a transformer fitted on all rows would leak validation statistics; a `Pipeline` was rejected (its `fit` and `predict` name the exposure differently, and it has no `evaluate`) |
+| D13 | A required `feature_transformer: FeatureTransformer`, fitted per fold on the training rows and targets | a transformer fitted on all rows would leak validation statistics; a `Pipeline` was rejected (its `fit` and `predict` name the exposure differently, and it has no `evaluate`). *To be superseded by `modeling.ModelPipeline`, which has neither problem: §6 "Evaluator on the raw table"* |
 | D14 | `exposure=None` is part of `BaseAgeGroupModel.fit`/`predict`; the evaluator slices it per fold and always passes it | typed calls (mypy); the model decides whether it needs one |
 | D15 | `evaluate(trial, X, y, groups=None, *, exposure=None)`; `X` is the raw table | the exposure is data (D10) |
 | D16 | `Metric` and the ready-made metrics live in the top-level `scoring.py` | models and tuning both use them |
@@ -152,7 +152,9 @@ and return `aggregation.aggregate(scores, fold_sizes)`.
   sqlite storage accepts and returns). A pruned trial's scores are its
   intermediate values.
 - `groups=None` for the `random` method: `KFold` warns when given groups.
-- `exposure` is the raw count the model expects, not its log.
+- `exposure` is the raw count the model expects, not its log. Build it with
+  `ExposureTransformer` on the full table: the evaluator checks only its shape,
+  and only `ExposureTransformer` checks its values.
 - Leakage is still possible if `X` was already fitted on all rows and a
   pass-through transformer is used.
 
@@ -264,6 +266,7 @@ choices asked), then §7's routine, then a stop for approval.
   Fixed: `evaluate`'s `y` is typed as one target (`pd.Series | np.ndarray`;
   a two-column `y` failed inside LightGBM), the package docstring, a numpy
   test on a path nothing uses, and a misplaced comment.
+- [ ] **Evaluator on the raw table** (from [MULTI_COHORT_MODELS_PLAN.md](MULTI_COHORT_MODELS_PLAN.md) N20). Switch `CVHyperparameterEvaluator` from a separate `feature_transformer` and model to one `modeling.ModelPipeline`, cloned per fold; its `exposure` argument is kept and passed through. Build that argument with `preprocessing.ExposureTransformer(...).fit_transform(table)`. *Done when:* the evaluator takes a pipeline, and a test shows it fits one per fold; §5's example builds `exposure = ExposureTransformer("n_apartments").fit_transform(df)` before the split and passes `exposure.loc[train_df.index]`, not `train_df["n_apartments"]`.
 - [ ] **3.1 Study constructor and defaults.** *Done when:* the default sampler is a seeded multivariate TPE and the default pruner `NopPruner`; invalid `n_trials`, timeout or `n_jobs` combinations are rejected.
 - [ ] **3.2 `optimize` and the best trial.** *Done when:* the same seed gives an identical `TuningResult`; a pruned trial never wins; ties go to the lowest number; no completed trial raises `RuntimeError`; `initial_params` run first.
 - [ ] **3.3 Records and results.** *Done when:* each `TrialRecord` carries the fold scores and sizes and the derived SE; `to_dict()` round-trips through `json`; `is_reproducible` is False with a timeout or `n_jobs > 1`.

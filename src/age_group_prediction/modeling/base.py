@@ -16,7 +16,10 @@ __all__ = ["BaseAgeGroupModel"]
 
 
 class BaseAgeGroupModel(BaseEstimator, ABC):
-    """A scikit-learn-style model of one count target.
+    """A scikit-learn-style model of count targets.
+
+    ``y`` is one count target (a Series) or one per cohort (a DataFrame, one
+    column each).
 
     Subclasses take their settings in ``__init__`` and store them verbatim, so
     ``get_params`` and ``set_params`` (inherited from ``BaseEstimator``) and
@@ -29,18 +32,27 @@ class BaseAgeGroupModel(BaseEstimator, ABC):
 
     @abstractmethod
     def fit(
-        self, X: pd.DataFrame, y: pd.Series, exposure: ArrayLike | None = None
+        self,
+        X: pd.DataFrame,
+        y: pd.Series | pd.DataFrame,
+        exposure: ArrayLike | None = None,
     ) -> Self:
         """Learn from the rows of ``X`` and their targets ``y``.
 
-        ``exposure`` is each row's raw exposure ``n``, for a model with an
-        offset. A model raises if one is passed when it uses none, or missing
-        when it needs one, rather than silently ignoring or dropping it.
+        ``exposure`` is each row's raw exposure, not its log. A model whose
+        setting gives it an offset raises if it is missing, rather than
+        silently dropping the offset; any other model ignores it. So a caller
+        holding several models passes the same exposure to each.
         """
 
     @abstractmethod
-    def predict(self, X: pd.DataFrame, exposure: ArrayLike | None = None) -> np.ndarray:
-        """The predicted mean for each row of ``X``; ``exposure`` as in :meth:`fit`."""
+    def predict(
+        self, X: pd.DataFrame, exposure: ArrayLike | None = None
+    ) -> np.ndarray | pd.DataFrame:
+        """The predicted mean for each row of ``X``; ``exposure`` as in :meth:`fit`.
+
+        An array for one target; a DataFrame with ``y``'s columns for several.
+        """
 
     def evaluate(self, y_true: ArrayLike, y_pred: ArrayLike, metric: Metric) -> float:
         """Score ``y_pred`` against ``y_true`` with one metric.

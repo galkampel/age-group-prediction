@@ -25,10 +25,12 @@ class DirectCohortModel(BaseAgeGroupModel):
     hyperparameters. These default to LightGBM's own and are tuned from outside
     through ``set_params``; nothing is searched in ``fit``.
 
-    ``use_exposure`` (Poisson only) makes the raw exposure ``n`` (apartments),
-    passed to ``fit`` and ``predict``, enter as the offset ``log n``. The trees
+    ``use_exposure`` (Poisson only) makes the raw exposure (apartments), passed
+    to ``fit`` and ``predict``, enter as the offset ``log(exposure)``. The trees
     then learn the cohort's rate per apartment rather than per building, and
-    ``predict`` multiplies it back by ``n`` to give a count.
+    ``predict`` multiplies it back by the exposure to give a count. With
+    ``use_exposure=False`` a passed exposure is ignored, so a caller can pass
+    one exposure to every model, and a tuner can compare with and without.
     """
 
     def __init__(
@@ -74,40 +76,45 @@ class DirectCohortModel(BaseAgeGroupModel):
 
         Only what would otherwise pass silently is checked here; LightGBM itself
         rejects an unknown objective, a wrong-length exposure at fit and an
-        all-zero y.
+        all-zero y. The values are validated where the data is prepared, by
+        :class:`~age_group_prediction.preprocessing.ExposureTransformer`.
         """
-        # A forgotten exposure would silently drop the offset, and an unexpected
-        # one would be silently ignored.
-        if (exposure is None) == expected:
-            raise ValueError(
-                "pass `exposure` exactly when the model uses one (use_exposure=True)"
-            )
-        if exposure is None:
+        if not expected:
             return None
-        n = np.asarray(exposure, dtype=float)
-        # log n of a non-positive value is -inf or nan, which LightGBM accepts.
-        if not (np.isfinite(n) & (n > 0)).all():
-            raise ValueError("exposure must be strictly positive and finite")
-        return n
+        # A forgotten exposure would silently drop the offset.
+        if exposure is None:
+            raise ValueError(
+                "the model uses an exposure offset (use_exposure=True at fit); "
+                "pass `exposure`"
+            )
+        exposure_values = np.asarray(exposure, dtype=float)
+        # A column (n, 1), e.g. a one-column DataFrame, would broadcast against
+        # the (n,) scores at predict into an (n, n) result.
+        if exposure_values.ndim != 1:
+            raise ValueError(
+                f"exposure must be one-dimensional, got shape {exposure_values.shape}"
+            )
+        return exposure_values
 
     def fit(
         self, X: pd.DataFrame, y: pd.Series, exposure: ArrayLike | None = None
     ) -> Self:
-        """Fit the trees on ``X`` and ``y``; ``exposure`` is the raw count ``n``."""
+        """Fit the trees on ``X`` and ``y``; ``exposure`` is raw, not its log."""
         if self.use_exposure and self.objective == "regression":
             raise ValueError(
                 "an exposure offset needs a log link, which 'regression' lacks; "
                 "set use_exposure=False or use objective='poisson'"
             )
-        n = self._check_exposure(exposure, expected=self.use_exposure)
+        exposure_values = self._check_exposure(exposure, expected=self.use_exposure)
         init_score = None
         base_log_rate = None
-        if n is not None:
+        if exposure_values is not None:
             # The intercept in log space: the average log rate per apartment,
-            # log(sum y / sum n). LightGBM skips boost_from_average once given an
-            # init_score, so without it the trees would start at 1 per apartment.
-            base_log_rate = float(np.log(np.sum(y) / n.sum()))
-            init_score = np.log(n) + base_log_rate
+            # log(sum y / sum exposure). LightGBM skips boost_from_average once
+            # given an init_score, so without it the trees would start at 1 per
+            # apartment.
+            base_log_rate = float(np.log(np.sum(y) / exposure_values.sum()))
+            init_score = np.log(exposure_values) + base_log_rate
         regressor = LGBMRegressor(
             objective=self.objective,
             n_estimators=self.n_estimators,
@@ -140,9 +147,11 @@ class DirectCohortModel(BaseAgeGroupModel):
         check_is_fitted(self)
         # Follows how the model was fitted, not the current use_exposure, which
         # set_params may have changed since.
-        n = self._check_exposure(exposure, expected=self.base_log_rate_ is not None)
-        if n is None or self.base_log_rate_ is None:
+        exposure_values = self._check_exposure(
+            exposure, expected=self.base_log_rate_ is not None
+        )
+        if exposure_values is None or self.base_log_rate_ is None:
             return np.asarray(self.regressor_.predict(X))
         # LightGBM's predict never adds the init_score back; the offset is ours.
         raw = self.regressor_.predict(X, raw_score=True)
-        return np.asarray(np.exp(raw + np.log(n) + self.base_log_rate_))
+        return np.asarray(np.exp(raw + np.log(exposure_values) + self.base_log_rate_))

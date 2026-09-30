@@ -48,8 +48,10 @@ cross_validate(
 
 Two steps, not one `n_splits + 1` way split: `train_test_split` is drawn once
 and then fixed, while `cv` re-deals folds on every tuning pass. `train_test_split`
-splits every array it is given and returns two per array in scikit-learn's
-order; the groups come back because `cv` needs `groups_train`.
+splits `X`, `y` and `groups`, and returns two of each in scikit-learn's order.
+It splits nothing else, such as an exposure: take its rows as
+`exposure.loc[X_train.index]`. The groups come back because `cv` needs
+`groups_train`.
 
 `random` never reads groups, so it takes `groups=None` and returns `None` for
 both group pieces; pass that `None` on to `cv`, since `KFold` warns if given

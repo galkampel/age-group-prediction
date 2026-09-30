@@ -383,7 +383,9 @@ approximation, though a good one over the observed range.
 ### 4.4 Exposure: `log_n_apartments`
 
 **Confirmed: `n_apartments` is not a feature in B or C.** The spec refuses an
-exposure column that is also listed as an ordinary numeric feature, so building
+exposure column that is also listed as an ordinary numeric feature (the old
+`FeatureSpec`; in the rebuilt code nothing enforces it, and the declaration
+and the model's `use_exposure` express it, §8.2), so building
 size enters only as the offset
 
 $$
@@ -396,9 +398,9 @@ with the coefficient of $\log n_i$ **fixed at 1**. The linear predictor
 therefore models children per apartment, and every other coefficient is a
 multiplicative effect on that rate.
 
-Used by: B's total stage and C's total stage only. The composition stages use
-no exposure, because age-group shares do not depend on building size, and
-Model A uses none today (Section 3.3 proposes adding one).
+Used by: B's total stage and C's total stage, and optionally Model A
+(`use_exposure=True`, Section 3.3). The composition stages use no exposure,
+because age-group shares do not depend on building size.
 
 - **Never scale the offset.** Replacing $\log n$ by $(\log n - c)/s$ with the
   coefficient still fixed at 1 would assert $\mu \propto n^{1/s}$, a different
@@ -479,7 +481,10 @@ $$
 
 Building size belongs entirely to the first factor. `FeatureSpec` enforces this
 ("Only total-count features may define an exposure"), so a composition spec
-carrying an exposure is refused at construction.
+carrying an exposure is refused at construction. That is the old `FeatureSpec`;
+in the rebuild (planned: [multi-cohort plan](MULTI_COHORT_MODELS_PLAN.md) N3 e,
+B4) the probability model will have no exposure setting and will ignore a
+passed exposure.
 
 ### 4.8 Scale audit
 
@@ -569,7 +574,8 @@ Both stages take the **same 7 non-exposure numeric columns plus
 | Room-share interaction | `x_household_size` only | `x_median_age` only |
 
 - **Why `n_apartments` is not a feature in either stage:** it *is* the
-  exposure. `FeatureSpec` refuses a column that is both, and including it as a
+  exposure. The old `FeatureSpec` refuses a column that is both (the rebuilt
+  `FeatureTransformer` does not check it: §8.2), and including it as a
   predictor would let the model partly undo the offset by re-estimating the
   size elasticity — which is the optional diagnostic of Section 4.4, not the
   default specification.
@@ -937,22 +943,45 @@ tree = FeatureTransformer(
 **`n_apartments` can be both a feature and the offset, on purpose.** Section
 3.3 keeps it as a column *and* uses $\log n$ as the offset. The offset asserts
 exact proportionality, and the feature lets the trees learn departures from
-it. The model takes the raw exposure itself, so the transformer declares no
-`exposure_column`:
+it. The exposure belongs to the model, not the transformer: `use_exposure=True`,
+with the raw count passed to `fit` and `predict`. Build it with
+`ExposureTransformer` on the full table, before splitting: it rejects a zero,
+negative, infinite or NaN count, which the model would otherwise accept, with
+at most a numpy warning (none for NaN).
 
 ```python
 from sklearn.base import clone
 from age_group_prediction.modeling import DirectCohortModel
+from age_group_prediction.preprocessing import ExposureTransformer
 
+exposure = ExposureTransformer("n_apartments").fit_transform(table)
 features = clone(tree).fit(fit_df)
 model = DirectCohortModel(use_exposure=True).fit(
     features.transform(fit_df), fit_df["n_kindergarten"],
-    exposure=fit_df["n_apartments"],
+    exposure=exposure.loc[fit_df.index],
 )
 ```
 
 For `objective="regression"` there is no log link, and the model refuses
 `use_exposure=True` (§3.3).
+
+**Combining the cohorts.** Each cohort gets its own model and its own copy of
+the transformer: a `ModelPipeline` per cohort, held by `IndependentCohortModels`,
+which fits and predicts on the raw table and returns one column per cohort.
+The same exposure goes to every cohort; a model without the offset ignores it.
+The data flow and the rules are in
+[Direct cohort model §0.6](DIRECT_COHORT_MODEL.md#06-every-cohort-from-the-raw-table-modelpipeline-and-independentcohortmodels).
+
+```python
+from age_group_prediction.modeling import IndependentCohortModels, ModelPipeline
+
+COHORTS = ["n_kindergarten", "n_elementary", "n_highschool"]
+cohort_models = IndependentCohortModels({
+    cohort: ModelPipeline(tree, DirectCohortModel(use_exposure=True))
+    for cohort in COHORTS
+}).fit(fit_df, fit_df[COHORTS], exposure=exposure.loc[fit_df.index])
+predictions = cohort_models.predict(valid_df, exposure=exposure.loc[valid_df.index])
+```
 
 **SES-quadratic variant.** Add one plan; `ses` itself stays, because the squared
 column earns its place only by being non-monotone (§3.2). It squares the
@@ -998,7 +1027,6 @@ total_base = FeatureTransformer(
         ),
         ColumnPlan(name="school", columns="school_status", transforms=(SCHOOL,)),
     ),
-    exposure_column="n_apartments",
 )
 ```
 
@@ -1009,23 +1037,21 @@ for the daycare term (§4.1); contrasts against `none` for the school dummies
 
 Unlike Model A, B and C do not list `n_apartments` among the plans, so building
 size enters **only** as the offset (§4.4). The package does not enforce that;
-the declaration is what expresses it. Hand the offset to the model separately,
-where it cannot be mistaken for a predictor:
-
-```python
-offset = total_base.fit(fit_df).log_exposure(fit_df)   # a Series, log n
-```
+the declaration is what expresses it. The exposure is not the transformer's:
+the model takes it separately, as `exposure=`, where it cannot be mistaken for
+a predictor, and forms the offset $\log n$ itself. Build it with
+`ExposureTransformer` on the full table before splitting, as in §8.1.
 
 ### 8.3 Model B — composition stage
 
-**The same plans with no exposure** (§4.7): age-group shares do not depend on
-building size. In a multinomial logit every feature already gets a coefficient
-per cohort, so this stage is roughly twice as parameter-hungry for the same
-design matrix and parsimony binds harder (§6.3).
+**The same plans, and a model with no exposure** (§4.7): age-group shares do
+not depend on building size. In a multinomial logit every feature already gets
+a coefficient per cohort, so this stage is roughly twice as parameter-hungry
+for the same design matrix and parsimony binds harder (§6.3).
 
 ```python
 composition_base = FeatureTransformer(
-    plans=total_base.plans,      # identical; only the exposure differs
+    plans=total_base.plans,      # identical; only the model differs, taking no exposure
 )
 ```
 
@@ -1137,7 +1163,6 @@ from sklearn.base import clone
 
 fold = clone(total_base).fit(train_df)
 X_train, X_valid = fold.transform(train_df), fold.transform(valid_df)
-offset_train = fold.log_exposure(train_df)
 ```
 
 ### 8.7 Still Outstanding
