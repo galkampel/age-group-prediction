@@ -16,7 +16,7 @@ implementation details conflict, the model specification controls behavior.
   - the scikit-learn-style re-implementation of the models in `modeling/`
     (Model A done; see the [plan](MODEL_REIMPLEMENTATION_PLAN.md));
   - the multi-cohort models: Model A's cohorts combined in one object (done in
-    PR #10, pending merge), then Model B rebuilt (see the
+    PR #10, merged), then Model B rebuilt (in progress; see the
     [plan](MULTI_COHORT_MODELS_PLAN.md));
   - the `hyperparameter_tuning` package (the evaluator is done; see its
     [plan](HYPERPARAMETER_TUNING_PLAN.md));

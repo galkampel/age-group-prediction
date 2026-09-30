@@ -539,7 +539,7 @@ In order. Each step has its own plan and gated phases.
 3. **Complete Model A as `IndependentCohortModels`, then rebuild Model B**
    (`IndependentTotalProbabilityModel`) in `modeling/`. Plan:
    [MULTI_COHORT_MODELS_PLAN.md](MULTI_COHORT_MODELS_PLAN.md) (there, Model 1
-   and Model 2). ✓ Model A is complete in PR #10, pending merge (steps A0–A4;
+   and Model 2). ✓ Model A is complete: PR #10, merged as `27459eb` (steps A0–A4;
    [Direct cohort model §0.6](DIRECT_COHORT_MODEL.md#06-every-cohort-from-the-raw-table-modelpipeline-and-independentcohortmodels)).
    Model B is next. B's feature declarations are already in
    [FEATURE_TRANSFORMATIONS.md §8.2–8.5](FEATURE_TRANSFORMATIONS.md).

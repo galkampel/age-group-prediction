@@ -4,13 +4,12 @@
 This file is self-contained: it assumes no memory of the planning conversation.
 This file is the source of truth: update its status line and checkboxes as steps finish.
 
-**Status (2026-09-30):** A0 done (draft PR #10). A1 committed (`8fed394`).
-A2 committed (`2c38010`, `5b5ea4d`, `7204ec2`). A3 committed (`6b234f0`,
-`3f46fbc`). A4 committed (`4f083c2`). PR A's close-out (stale docs and
-docstrings, Part B brought up to date, PR #10's title and body) done, awaiting
-the user's commit. **Next:** the user marks PR #10 ready for review; after it
-is merged, Part B from B0 (§9).
-Non-slow suite: **1104 passed** (1 skipped, 1 xfailed).
+**Status (2026-09-30):** **PR A is merged** (PR #10, merge commit `27459eb`
+into `feat/hyperparameter-tuning`; steps A0–A4 and the close-out `01837d4`).
+PR B's branch `feat/independent-total-probability-model` was created from
+`27459eb`, and its first commit is this handoff. **Next: B0** (push, draft PR),
+starting with its "Facts" and "Decisions to ask" (§9), then B1.
+Non-slow suite on the merged base: **1104 passed** (1 skipped, 1 xfailed).
 
 ## Contents
 1. Context and goal
@@ -66,6 +65,7 @@ Model 1's single-cohort class exists; two things are missing:
 - One PR would mix a ~150-line change with a ~10-step rebuild, and a change
   requested in A's conventions would then be reworked inside B's code.
 - PR #5's diff will now also carry these models; note it in PR #5's description.
+  *PR A merged 2026-09-30 (`27459eb`); PR #5's note is still to be added (B0).*
 
 ## 3. How to work (rules for the implementer)
 
@@ -691,7 +691,8 @@ Done when:
 
 Done when:
 - [x] Every edited code block has been run.
-- [ ] The user has seen the numbers and reviewed the docs; PR A is ready to merge.
+- [x] The user has seen the numbers and reviewed the docs; PR A is ready to merge.
+  Merged 2026-09-30 as `27459eb` (PR #10, a merge commit; branch deleted).
 
 **Decisions at the start (user, 2026-09-30):**
 - Both variants: `tree` for every cohort, with `use_exposure=True` for all and
@@ -832,19 +833,73 @@ scores the summed prediction against `n_children_total`.
 ## 9. Steps, PR B: Model 2
 
 ### B0. Branch and draft PR
-Branch `feat/independent-total-probability-model` from `feat/hyperparameter-tuning`
-after PR A is merged. Re-verify Part B against the merged code, update the doc,
-open the draft PR. Re-verify in particular what PR A settled (§8 A2–A4):
-- the base signature `fit(X, y, exposure=None)` / `predict(X, exposure=None)`;
-  every model keeps it, and one that does not use the exposure ignores it (N3 e);
-- `DirectCohortModel._check_exposure` as the exposure rule (B1);
-- the contract test's refit check calls `fit(X, y)` with **no exposure**, so a
-  model whose default is `use_exposure=True` needs an example with
-  `use_exposure=False` (§11);
-- rows paired by position, no index check (N19); `Splitter` does not split the
-  exposure;
-- `DIRECT_COHORT_MODEL.md` §0.6 is the documentation pattern (B9).
-Also add the note to PR #5's description (§2).
+*Handoff written 2026-09-30, at the end of the PR A session.*
+
+**Already done:** the branch `feat/independent-total-probability-model`, from
+`feat/hyperparameter-tuning` at `27459eb` (PR A merged); its first commit is
+this handoff (status lines in this doc, `docs/README.md` and
+`MODEL_REIMPLEMENTATION_PLAN.md` §5).
+
+**Left for B0** (a docs-only step; no code):
+1. Confirm the branch, that its base is `27459eb`, that at most the handoff
+   commit follows it, and a clean tree. Run the non-slow baseline (1104 passed,
+   1 skipped, 1 xfailed).
+2. Re-verify the facts below against the code, and fix any that are stale here.
+3. The user pushes; then a **draft** PR `feat/independent-total-probability-model`
+   → `feat/hyperparameter-tuning`. Its body lists B0–B9 (unchecked).
+4. The user adds the PR #10 note to PR #5's description (§2), if not done yet.
+
+**Facts from PR A that Part B builds on** (re-verify; §8 A2–A4 hold the detail):
+- **The base contract** (`modeling/base.py`): abstract `fit(X, y, exposure=None)`
+  with `y: pd.Series | pd.DataFrame`, and `predict(X, exposure=None) -> np.ndarray
+  | pd.DataFrame`; concrete `evaluate(y_true, y_pred, metric)`. Every Model 2
+  class keeps the signature, even one that never uses an exposure.
+- **The exposure** (N3): a model's own setting (`use_exposure`); the caller builds
+  it with `preprocessing.ExposureTransformer("n_apartments").fit_transform(table)`
+  on the full table before splitting and passes `exposure=` to every model. One
+  that does not use it ignores it; one fitted with the offset raises without it.
+  The rule is `DirectCohortModel._check_exposure(exposure, *, expected)` (B1).
+- **Rows are paired by position** (N19); no index check anywhere.
+  `Splitter.train_test_split` splits `X`, `y` and `groups` only: take the
+  exposure as `exposure.loc[X_train.index]`.
+- **Classes and fitted state:** `DirectCohortModel` (`regressor_`,
+  `base_log_rate_`); `ModelPipeline(feature_transformer, model)`
+  (`feature_transformer_`, `model_`; fits clones on the raw table);
+  `IndependentCohortModels(cohort_models)` (`cohort_models_`; a mapping, nested
+  `set_params` does not reach into it, N21). Exported from
+  `age_group_prediction.modeling` only; the package root exports the **old**
+  classes (§11).
+- **The contract test** (`tests/unit/test_modeling_contract.py`) discovers every
+  concrete `BaseAgeGroupModel` in `modeling` and fails without an `EXAMPLES`
+  entry (a factory returning `(model, X, y)`). It runs 4 sklearn checks and a
+  refit test that calls `fit(X, y)` **without an exposure**, slicing `y` with
+  `.iloc`. So `TotalChildrenModel`'s and Model 2's examples set
+  `use_exposure=False`. `test_modeling_never_imports_the_old_stack` checks the
+  forbidden imports (§4).
+- **Aggregator lessons (A3):** clone in `fit`; assign fitted copies together
+  only after all succeed; take sub-model predictions as arrays (a Series with
+  its own index realigns into NaN); output columns from `y` at fit, index from `X`.
+- **Docs pattern:** `DIRECT_COHORT_MODEL.md` §0.6 (data flow, one runnable block,
+  a table of rules with reasons). Doc blocks are run by extracting a section's
+  `python` blocks and `exec`-ing them in order in one namespace, with `raw_table`
+  from the simulator and the split frames set by the runner (A2's "Pitfalls
+  met", A4's record). Scratchpads are per session: rebuild scripts from the
+  recipes, never write them in the repo.
+- **Smoke-run recipe and reference** (B7): A4's "Smoke run"; Model 1's offset
+  variant is the reference (total 4.215 ± 1.450).
+- **Open in the tuning package, not PR B's:** `HYPERPARAMETER_TUNING_PLAN.md` §6
+  "Evaluator on the raw table" (also rewrites its §5 example).
+
+**Decisions to ask the user at the start of B1** (none are needed for B0):
+- **Home of `minimize_lbfgs`** (N9, under a class; no utils file, N16), e.g. a
+  shared abstract parent of the two GLMs.
+- **Home of the exposure rule** for `TotalChildrenModel`: a copy of
+  `DirectCohortModel._check_exposure`, or moved to a shared parent (which would
+  touch `DirectCohortModel`).
+- **Exposure length** (§5): reject an exposure whose length differs from `X`'s?
+  With §5's measured evidence.
+
+**Later:** before B8, confirm NB2 is still wanted (B8's note).
 
 ### B1. Shared numerics
 *Revised by N3 and N16: there is no shared `check_exposure` and no utils file.*
