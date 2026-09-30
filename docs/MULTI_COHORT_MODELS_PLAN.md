@@ -12,9 +12,11 @@ except the user's PR #5 note (§2):
 the branch is pushed, draft PR [#11](https://github.com/galkampel/age-group-prediction/pull/11)
 is open, and the facts from PR A are re-verified. **B0a** (added by the user at
 the start of B1): `Splitter.train_test_indices` replaces `train_test_split`, so
-the exposure is split by the same positions as every other array. **Next: B1**,
-its decisions already made (§9 B1).
-Non-slow suite on the merged base: **1104 passed** (1 skipped, 1 xfailed).
+the exposure is split by the same positions as every other array; committed
+`6970c8b`. **Next: B1** (handoff written 2026-09-30, end of session): its
+decisions are made and its facts measured (§9 B1); start in plan mode by
+re-verifying them. Non-slow suite at `6970c8b`: **1104 passed** (1 skipped,
+1 xfailed).
 
 ## Contents
 1. Context and goal
@@ -161,14 +163,16 @@ reference doc `docs/INDEPENDENT_TOTAL_PROBABILITY_MODEL.md`.
 | N13 | **No likelihood-ratio gate** on the temperature: the fitted value is always used | Best practice and simpler: sklearn's implementation has none. On well-calibrated data the fitted temperature lands near 1 and changes little. The old gate guarded a threshold rule that no longer exists |
 | N14 | Out-of-fold logits come from a short documented loop (in the doc and one integration test), not a helper | One caller today. Promote it to a helper when a second caller exists |
 | N15 | Dropped from Model 2, as M12 did for Model A: tuning inside `fit`, bootstrap draws and intervals, pointwise log-probabilities, `PredictionResult`, state bundles, metadata, seed records | Means only. Tuning lives in `hyperparameter_tuning` |
-| N16 | *Withdrawn by the user, 2026-09-29.* **No utils file in `modeling`; logic lives under a class.** The home of `minimize_lbfgs` is decided at B1 | User's rule. First version: shared helpers in a public `modeling/utils.py` |
+| N16 | *Withdrawn by the user, 2026-09-29.* **No utils file in `modeling`; logic lives under a class.** The home of `minimize_lbfgs` is decided at B1. *Decided (user, B1): a component class, `LBFGSMinimizer` in `modeling/optimization.py`* | User's rule. First version: shared helpers in a public `modeling/utils.py` |
 | N17 | *Revised by the user on 2026-09-29: the exposure is an explicit argument.* `ModelPipeline(feature_transformer, model)`, a `BaseAgeGroupModel`: a feature transformer, then a model, fitted and used on the raw table. `fit(X, y, exposure=None)` clones both; `predict(X, exposure=None)` uses the fitted copies `feature_transformer_` and `model_`. `exposure` is passed through to the model, whose own check decides whether one is needed. Rows of `X`, `y` and the exposure are paired by position (N19). The aggregators (`IndependentCohortModels`, `IndependentTotalProbabilityModel`) hold models that take the raw table, and only loop and combine | User's choice. scikit-learn's `Pipeline` pattern, by composition: each class does one thing. sklearn's own `Pipeline` was already rejected (`HYPERPARAMETER_TUNING_PLAN.md` D13): its `fit` and `predict` name the exposure differently, and it has no `evaluate`. The explicit exposure keeps the base contract `fit(X, y, exposure)` for every model, and lets the tuner's `exposure=` path take a pipeline. First version: the pipeline read `X[exposure_column]` and rejected an `exposure` argument |
 | N18 | `base_log_rate_` stays. It is the intercept `b` in `exposure × exp(b + F(x))`. No intercept option is added for a model without an exposure | User's decision after the evidence in §6. Given an `init_score`, LightGBM switches off its own starting average, so the model supplies `b`. Without an exposure LightGBM starts from `mean(y)` itself |
 | N19 | *Reversed by the user at the end of A3, 2026-09-29.* **No index check.** `X`, `y` and the exposure are paired by position, as in scikit-learn; the docstrings say so, and to take the exposure's rows as `exposure.loc[X_train.index]`. *Since B0a (2026-09-30): the splitter returns row positions (`Splitter.train_test_indices`), and every array, the exposure included, is taken by them with `take_rows`* | The splitter (then `Splitter.train_test_split`; since B0a `train_test_indices`, and `cv`) splits `X`, `y` and `groups` by the same positions, so they cannot be misaligned; sklearn pairs by position too (`PoissonRegressor().fit(X, y_shuffled)` runs silently); the check raised on position-correct data whose labels differ (e.g. `X` after `reset_index`). History: the check was added to the multi-cohort classes, then to `ModelPipeline` (`7204ec2`), then shared in the base, then removed |
 | N20 | The tuner path is **documented, not changed**. `CVHyperparameterEvaluator.evaluate` passes its `exposure` straight to `model.fit`, so the documented way to build that argument is `ExposureTransformer(...).fit_transform(table)`. Switching the evaluator to a `ModelPipeline` is recorded for the tuning work | User's decision. It keeps PR A out of the tuning package, and the exposure still comes from the validating class |
 | N21 | *User, 2026-09-29 (A3).* `IndependentCohortModels` takes a `Mapping[str, BaseAgeGroupModel]`. Nested `set_params` names do not reach into it: each cohort is tuned on its own, and the tuned models are assembled. Replace the mapping with `set_params(cohort_models=...)` | Measured: `get_params(deep=True)` lists only `cohort_models`, and a nested name raises `AttributeError`. The cohorts are independent, so no study tunes them together |
 
-**One decision still to ask, at the step named:**
+**Decided at the start of B1 (user, 2026-09-30):** see §9 B1. A model with an
+offset rejects an exposure whose length differs from `X`'s, with sklearn's
+`check_consistent_length`. The question as it was asked:
 - **Exposure length (B1).** Should a model reject an exposure whose length
   differs from `X`'s? `DirectCohortModel.predict` accepts a length-1 exposure,
   which `MODEL_REIMPLEMENTATION_PLAN.md` Step 2.2 accepted as "all buildings
@@ -238,8 +242,9 @@ class TotalChildrenModel(BaseAgeGroupModel):
     def __init__(self, *, family="poisson", use_exposure=True, l2_penalty=0.0,
                  max_iter=500, tol=...) -> None: ...
     # fit(X, y: Series, exposure=None) ; predict(X, exposure=None) -> ndarray
-    # exposure rule as DirectCohortModel._check_exposure: raises if used and missing,
-    # ignored if not used, must be 1-D; predict follows the fitted state (A3)
+    # exposure rule: BaseAgeGroupModel._check_exposure (B1): raises if used and
+    # missing, ignored if not used, must be 1-D and len(X) long; predict follows
+    # the fitted state (A3); fitting via LBFGSMinimizer (B1)
     # fitted: intercept_, coef_, feature_names_in_ (, dispersion_ for nb2)
 
 # modeling/cohort_probability.py  (B4)
@@ -1014,24 +1019,100 @@ Done when:
     compares both halves.
 
 ### B1. Shared numerics
-*Revised by N3 and N16: there is no shared `check_exposure` and no utils file.*
-- **Build:** `minimize_lbfgs` (N9), **under a class**. Propose its home at the
-  start of B1 (for example a shared parent of the two GLMs) and ask the user.
-- **The exposure rule** is the one PR A settled, in
-  `DirectCohortModel._check_exposure(exposure, *, expected)`: `None` when no
-  exposure is expected (a passed one is ignored); `ValueError` when one is
-  expected and missing; `ValueError` unless 1-D; returned as floats. At fit
-  `expected` is `use_exposure`, at predict the fitted state. The values are
-  validated by `ExposureTransformer`. `TotalChildrenModel` needs the same rule:
-  ask whether it is copied or moved to a shared parent with `minimize_lbfgs`
-  (no utils file, N16). Ask about the length check, with §5's evidence.
-- **Tests:** an iteration limit raises; an overflow raises instead of
-  returning the start point.
+*Handoff written 2026-09-30, at the end of the B0/B0a session. The decisions
+below were made by the user at the start of B1; the facts were measured then.
+Re-verify them in plan mode, write a short summary, ask for approval.*
+
+**Decisions at the start (user, 2026-09-30):**
+- **The minimizer is a component, not a model**, so it is its own class:
+  `LBFGSMinimizer`, not a model parent. (User: a base class if the shared thing
+  is a model; a new class if it is a component.) A GLM model base is added only
+  if B2/B4 show model logic both GLMs share.
+- **The exposure rule moves to the base**, with only the relevant checks:
+  `BaseAgeGroupModel._check_exposure`. `DirectCohortModel` drops its own copy.
+- **The length check** (the user asked for the best practice): a model with an
+  offset rejects an exposure whose length differs from `X`'s. sklearn checks
+  every per-row array's length at runtime in `fit` (`check_consistent_length`,
+  `_check_sample_weight`); a test only shows the check exists. Positions from
+  `train_test_indices` (B0a) remove the usual source of a mismatch, not a
+  caller's mistake. `X` against `y` needs no new check: LightGBM checks it for
+  `DirectCohortModel`, and `validate_data(X, y)` for the GLMs (B2, B4).
+- The splitter change came first, as B0a.
+
+**Facts measured at the start** (read-only probes; re-verify):
+- sklearn's own L-BFGS-B mapping, in `PoissonRegressor` (`sklearn/linear_model/_glm/glm.py`,
+  the `minimize` call) and `LogisticRegression` (`_logistic.py`):
+  `maxiter=max_iter`, `gtol=tol`, `ftol=64 * np.finfo(float).eps`, `maxls=50`.
+- Against a tight `PoissonRegressor(tol=1e-12)` (simulated seeds 0–9; 7
+  standardized features: `ses`, `avg_household_size`, `median_age`,
+  `n_daycares_500m`, the 4/5/6-room shares; `y = n_children_total`,
+  exposure `n_apartments`; λ in {0, 0.01, 1}; oracle `alpha = λ / mean(exposure)`,
+  `fit(X, y / exposure, sample_weight=exposure)`), worst max coefficient
+  difference: scipy defaults 1.5e-5 (the old 9e-6: the same order); sklearn's
+  mapping with `gtol` 1e-4: 5.8e-6, 1e-5: 4.7e-7, **1e-6: 6.1e-8**. So the
+  GLMs' default is `tol=1e-6`. `check_grad` on the Poisson objective: 4e-7.
+- An iteration limit: `success=False`, status 1,
+  "STOP: TOTAL NO. OF ITERATIONS REACHED LIMIT".
+- An overflow (features × 1e3): without `errstate`, scipy returns
+  `success=False`, "ABNORMAL", `fun=nan` and `x` = the start point. Under
+  `np.errstate(over="raise", invalid="raise")` a `FloatingPointError` escapes
+  `minimize`.
+- `sklearn.utils.validation.check_consistent_length(X, exposure)` ignores
+  `None` and rejects a length-1 or any other wrong-length exposure
+  ("Found input variables with inconsistent numbers of samples: [5, 1]").
+  `validate_data(estimator, X, y)` rejects a wrong-length `y` the same way.
+- Elsewhere: sklearn rejects a wrong-length `sample_weight` array (length 1
+  included; a scalar is accepted); statsmodels `GLM` rejects a wrong-length
+  exposure at fit and broadcasts a length-1 one at predict.
+
+**Build:**
+1. **`modeling/optimization.py` (new): `LBFGSMinimizer`**, a frozen dataclass
+   `LBFGSMinimizer(max_iter: int, tol: float)`, not an estimator.
+   - `minimize(objective, start, bounds=None) -> np.ndarray`; `objective`
+     returns `(value, gradient)` (`jac=True`); `bounds` for B8's `log α`.
+   - Options: sklearn's mapping above, with the reason in a comment.
+   - Under `np.errstate(over="raise", invalid="raise")`; a `FloatingPointError`
+     becomes `RuntimeError` naming feature scale as the likely cause (N9).
+   - `RuntimeError` when `not result.success` (quote scipy's message, suggest a
+     larger `max_iter`), and when the value or `x` is not finite. No clipping.
+   - No defaults: the GLMs own `max_iter=500`, `tol=1e-6` and build a minimizer
+     in `fit`. Not exported from `modeling/__init__.py` (an internal component);
+     `__all__` in the module; a row in `MODULE_REFERENCE.md`.
+2. **`BaseAgeGroupModel._check_exposure(X, exposure, *, expected) -> np.ndarray | None`**
+   (`modeling/base.py`), a protected static method; the rule PR A settled, plus
+   the length:
+   - `None` when not `expected` (a passed exposure is ignored, N3 e);
+   - `ValueError` when expected and missing (the offset would drop silently);
+   - floats; `ValueError` unless 1-D (an (n, 1) broadcasts to (n, n));
+   - `check_consistent_length(X, exposure_values)`.
+   `DirectCohortModel` (`modeling/direct_cohort.py`) deletes its
+   `_check_exposure` and calls the base's with `X`, at fit (`expected` =
+   `use_exposure`) and at predict (`expected` = fitted state). Its docstring's
+   "LightGBM itself rejects ... a wrong-length exposure at fit" is updated.
+   **Behavior change:** `predict` rejects a length-1 exposure.
+
+**Tests** (each names its mistake; one mutation each):
+
+| File | Test | Mistake it catches | Mutation |
+|---|---|---|---|
+| `test_modeling_optimization.py` (new) | an iteration limit raises `RuntimeError` | a non-converged fit used silently | drop the `success` check |
+| | an overflow raises `RuntimeError` naming feature scale | the start point returned as a fit (N9) | drop `errstate` |
+| | a non-finite objective raises | a nan fit returned | drop the `isfinite` check |
+| `test_modeling_direct_cohort.py` | `test_exposure_misuse_raises` + `wrong-length` cases: length 1 and n−1, at fit and at predict | an exposure broadcast, or paired wrongly | drop the length check |
+| | the existing `missing-while-on`, `two-dimensional` and `test_an_unused_exposure_is_ignored` pass unchanged | the move changed the rule | (existing) |
+
+The contract test is unchanged: no new model class, and an abstract or
+non-model class is not discovered.
+
+**Docs:** this doc (B1 record, the `tol` mapping, Done-when); §7's
+`TotalChildrenModel` comment (the base rule); `DIRECT_COHORT_MODEL.md` §0.3 if it
+states the length behavior; `MODULE_REFERENCE.md`. Run any edited block.
 
 Done when:
-- [ ] The default `tol` reproduces the sklearn oracle to 1e-6 (measured: scipy
-  defaults gave 9e-6; `ftol=1e-12, gtol=1e-8` gave 1e-7). Record how `tol` maps
-  to scipy's options.
+- [ ] The default `tol` reproduces the sklearn oracle to 1e-6, and how `tol` maps
+  to scipy's options is recorded (measured above: `gtol=tol`, `ftol=64·eps`,
+  `maxls=50`; `tol=1e-6` gives 6.1e-8). B2's oracle test pins it.
+- [ ] Mutations, review, non-slow suite.
 
 ### B2. `TotalChildrenModel`, Poisson
 - **Files:** new `modeling/total_children.py`, `__init__.py`, new
@@ -1049,9 +1130,9 @@ Done when:
   5. `predict` follows the fitted state after `set_params(use_exposure=False)`;
   6. all-zero `y`, negative counts, reordered columns, unknown family raise;
   7. beats the constant-rate baseline on informative data;
-  8. the exposure rule (A3): a missing exposure raises at fit and at predict,
-     a 2-D one raises, and one passed with `use_exposure=False` is ignored
-     (the same predictions as without it).
+  8. the exposure rule (A3, B1): a missing exposure raises at fit and at
+     predict, a 2-D or wrong-length one raises, and one passed with
+     `use_exposure=False` is ignored (the same predictions as without it).
 - **Contract example:** `TotalChildrenModel(use_exposure=False)`. The refit
   test calls `fit(X, y)` without an exposure, so the default `True` would
   raise there.
