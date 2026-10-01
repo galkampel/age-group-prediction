@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Literal, Self
+from typing import Self
 
 import numpy as np
 import pandas as pd
@@ -11,13 +11,9 @@ from scipy.stats import poisson
 from sklearn.utils.validation import check_is_fitted, check_X_y, validate_data
 
 from .base import BaseAgeGroupModel
-from .optimization import Method, Minimizer
+from .optimization import Minimizer, Solver
 
-__all__ = ["Solver", "TotalChildrenModel"]
-
-# scikit-learn's names for the scipy methods; see optimization.Method.
-Solver = Literal["lbfgs", "bfgs"]
-_METHODS: dict[Solver, Method] = {"lbfgs": "L-BFGS-B", "bfgs": "BFGS"}
+__all__ = ["TotalChildrenModel"]
 
 
 class TotalChildrenModel(BaseAgeGroupModel):
@@ -80,10 +76,6 @@ class TotalChildrenModel(BaseAgeGroupModel):
         self, X: pd.DataFrame, y: pd.Series, exposure: ArrayLike | None = None
     ) -> Self:
         """Fit ``b`` and ``β`` on ``X`` and the totals ``y``."""
-        if self.solver not in _METHODS:
-            raise ValueError(
-                f"unknown solver {self.solver!r}; use one of {sorted(_METHODS)}"
-            )
         # A negative penalty rewards large coefficients, and the fit still
         # converges, so nothing else would notice.
         if self.l2_penalty < 0:
@@ -104,7 +96,7 @@ class TotalChildrenModel(BaseAgeGroupModel):
             offset = np.log(exposure_values)
             start_intercept = np.log(y_values.sum() / exposure_values.sum())
         start = np.concatenate([[start_intercept], np.zeros(X_values.shape[1])])
-        parameters = Minimizer(_METHODS[self.solver], self.max_iter, self.tol).minimize(
+        parameters = Minimizer(self.solver, self.max_iter, self.tol).minimize(
             lambda candidate: self._objective(
                 candidate, X_values, y_values, offset, self.l2_penalty
             ),

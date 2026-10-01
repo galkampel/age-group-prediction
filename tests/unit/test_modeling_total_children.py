@@ -13,7 +13,7 @@ from sklearn.linear_model import PoissonRegressor
 from sklearn.metrics import mean_poisson_deviance
 
 from age_group_prediction.modeling import TotalChildrenModel
-from age_group_prediction.modeling.total_children import Solver
+from age_group_prediction.modeling.optimization import Solver
 
 
 def _data(rows: int = 400, seed: int = 0) -> tuple[pd.DataFrame, pd.Series, np.ndarray]:

@@ -11,8 +11,9 @@ rebuilt here.
 from .base import BaseAgeGroupModel
 from .direct_cohort import DirectCohortModel, Objective
 from .independent_cohorts import CohortModels, IndependentCohortModels
+from .optimization import Solver
 from .pipeline import ModelPipeline
-from .total_children import Solver, TotalChildrenModel
+from .total_children import TotalChildrenModel
 
 __all__ = [
     "BaseAgeGroupModel",

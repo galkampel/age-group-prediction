@@ -9,15 +9,16 @@ from typing import Literal
 import numpy as np
 from scipy.optimize import minimize
 
-__all__ = ["Bounds", "Method", "Minimizer", "ObjectiveWithGradient"]
+__all__ = ["Bounds", "Minimizer", "ObjectiveWithGradient", "Solver"]
 
 # The value and its gradient at a point, as scipy's jac=True expects.
 type ObjectiveWithGradient = Callable[[np.ndarray], tuple[float, np.ndarray]]
 # One (lower, upper) pair per parameter; None leaves that side open.
 type Bounds = Sequence[tuple[float | None, float | None]]
-# The scipy methods that reached the scikit-learn oracle (1e-7) on the Poisson
-# objective with an analytic gradient and no Hessian. Only L-BFGS-B takes bounds.
-type Method = Literal["L-BFGS-B", "BFGS"]
+# scikit-learn's names for the scipy methods that reached its oracles with an
+# analytic gradient and no Hessian: L-BFGS-B and BFGS, on the Poisson (1e-7)
+# and the multinomial (1e-6) objectives. Only lbfgs takes bounds.
+type Solver = Literal["lbfgs", "bfgs"]
 
 # Line-search steps per iteration, as scikit-learn uses (scipy's default is 20).
 _MAX_LINE_SEARCH_STEPS = 50
@@ -43,12 +44,12 @@ def _bfgs_options(max_iter: int, tol: float) -> dict[str, float]:
     return {"maxiter": max_iter, "gtol": tol}
 
 
-# How a model's max_iter and tol become each method's own options: scipy's
-# one-size tol= argument also sets L-BFGS-B's ftol, which stops the search
-# early (2.7e-4 from the oracle instead of 6e-8).
-_OPTIONS: dict[Method, Callable[[int, float], dict[str, float]]] = {
-    "L-BFGS-B": _lbfgsb_options,
-    "BFGS": _bfgs_options,
+# Each solver's scipy method, and how a model's max_iter and tol become that
+# method's own options: scipy's one-size tol= argument also sets L-BFGS-B's
+# ftol, which stops the search early (2.7e-4 from the oracle instead of 6e-8).
+_METHODS: dict[Solver, tuple[str, Callable[[int, float], dict[str, float]]]] = {
+    "lbfgs": ("L-BFGS-B", _lbfgsb_options),
+    "bfgs": ("BFGS", _bfgs_options),
 }
 
 
@@ -57,8 +58,9 @@ class Minimizer:
     """Minimize a smooth objective with an analytic gradient, or raise.
 
     A component the models build in ``fit`` from their own ``solver``,
-    ``max_iter`` and ``tol``, not an estimator. ``tol`` bounds the gradient's
-    largest component at the returned point, for every method.
+    ``max_iter`` and ``tol``, not an estimator. ``solver`` is scikit-learn's
+    name for the scipy method. ``tol`` bounds the gradient's largest component
+    at the returned point, for every solver.
 
     Nothing is clipped. A fit that overflows, stops early or ends at a
     non-finite objective raises ``RuntimeError`` instead of returning a wrong
@@ -66,7 +68,7 @@ class Minimizer:
     NaN objective with a zero gradient as converged.
     """
 
-    method: Method
+    solver: Solver
     max_iter: int
     tol: float
 
@@ -77,22 +79,23 @@ class Minimizer:
         bounds: Bounds | None = None,
     ) -> np.ndarray:
         """The point where ``objective`` is smallest, searched from ``start``."""
-        if self.method not in _OPTIONS:
+        if self.solver not in _METHODS:
             raise ValueError(
-                f"unknown method {self.method!r}; use one of {sorted(_OPTIONS)}"
+                f"unknown solver {self.solver!r}; use one of {sorted(_METHODS)}"
             )
         # scipy only warns and then ignores bounds a method cannot handle.
-        if bounds is not None and self.method != "L-BFGS-B":
-            raise ValueError(f"{self.method} takes no bounds; use L-BFGS-B")
+        if bounds is not None and self.solver != "lbfgs":
+            raise ValueError(f"solver {self.solver!r} takes no bounds; use 'lbfgs'")
+        method, options = _METHODS[self.solver]
         try:
             with np.errstate(over="raise", invalid="raise"):
                 result = minimize(
                     objective,
                     start,
-                    method=self.method,
+                    method=method,
                     jac=True,
                     bounds=bounds,
-                    options=_OPTIONS[self.method](self.max_iter, self.tol),
+                    options=options(self.max_iter, self.tol),
                 )
         except FloatingPointError as error:
             raise RuntimeError(
