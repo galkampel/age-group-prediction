@@ -38,6 +38,7 @@ from age_group_prediction.feature_engineering import (
 )
 from age_group_prediction.modeling import (
     BaseAgeGroupModel,
+    CohortProbabilityModel,
     DirectCohortModel,
     IndependentCohortModels,
     ModelPipeline,
@@ -113,12 +114,26 @@ def _total_children_example() -> Example:
     return TotalChildrenModel(use_exposure=False), X, y
 
 
+def _cohort_probability_example() -> Example:
+    # Every building needs a child: the shares are the observation.
+    rng = np.random.default_rng(0)
+    X = pd.DataFrame({"x": rng.normal(size=200)})
+    y = pd.DataFrame(
+        {
+            "a": 1 + rng.poisson(np.exp(1 + 0.5 * X["x"])),
+            "b": rng.poisson(np.exp(0.5 - 0.3 * X["x"])),
+        }
+    )
+    return CohortProbabilityModel(), X, y
+
+
 # Factories, so every test gets its own model and data and none is built at import.
 EXAMPLES: dict[type[BaseAgeGroupModel], Callable[[], Example]] = {
     DirectCohortModel: _direct_cohort_example,
     ModelPipeline: _model_pipeline_example,
     IndependentCohortModels: _independent_cohorts_example,
     TotalChildrenModel: _total_children_example,
+    CohortProbabilityModel: _cohort_probability_example,
 }
 
 CHECKS: list[Callable[[str, BaseAgeGroupModel], None]] = [

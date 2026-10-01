@@ -9,6 +9,7 @@ rebuilt here.
 """
 
 from .base import BaseAgeGroupModel
+from .cohort_probability import CohortProbabilityModel
 from .direct_cohort import DirectCohortModel, Objective
 from .independent_cohorts import CohortModels, IndependentCohortModels
 from .optimization import Solver
@@ -18,6 +19,7 @@ from .total_children import TotalChildrenModel
 __all__ = [
     "BaseAgeGroupModel",
     "CohortModels",
+    "CohortProbabilityModel",
     "DirectCohortModel",
     "IndependentCohortModels",
     "ModelPipeline",
