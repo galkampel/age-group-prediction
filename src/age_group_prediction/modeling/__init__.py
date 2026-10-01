@@ -9,6 +9,7 @@ rebuilt here.
 """
 
 from .base import BaseAgeGroupModel
+from .calibration import TemperatureCalibrator
 from .cohort_probability import CohortProbabilityModel
 from .direct_cohort import DirectCohortModel, Objective
 from .independent_cohorts import CohortModels, IndependentCohortModels
@@ -25,5 +26,6 @@ __all__ = [
     "ModelPipeline",
     "Objective",
     "Solver",
+    "TemperatureCalibrator",
     "TotalChildrenModel",
 ]

@@ -105,6 +105,12 @@ state, but carry zero composition weight.
 
 ### Temperature calibration
 
+*Rebuilt (2026-10-01, `modeling/calibration.py`, `TemperatureCalibrator`):
+the calibrator is post-hoc, fitted by the caller on out-of-fold logits, with no
+likelihood-ratio gate and a per-building objective. Its formula is in
+[MULTI_COHORT_MODELS_PLAN.md §7](MULTI_COHORT_MODELS_PLAN.md#7-target-code-shape),
+"The calibration objective". The paragraph below describes the old model.*
+
 After `probability_c` is selected, the model fits the composition component on
 each tuning fold's fit rows and collects out-of-fold logits for the validation
 rows. A single temperature $T \in [0.25, 4]$ minimizes the child-weighted

@@ -37,10 +37,14 @@ before B5**, whose Model 2 takes an optional calibrator. **B8 is done**
 single-threaded, because LightGBM's and torch's OpenMP runtimes crash together
 (B8's record; committed `5a27727`, `68b72c2`). **B4 is done** (2026-10-01;
 committed `4c02f8b`): `CohortProbabilityModel`'s tests rewritten for the
-Dirichlet build, its `fit` single-threaded like B8's. **Next: B6
-(`TemperatureCalibrator`)**, then B5, B7, B9, in a new session: start from
-the handoff block before B6 in §9. Non-slow suite after B4, the whole
-suite: **1189 passed** (1 skipped, 1 xfailed).
+Dirichlet build, its `fit` single-threaded like B8's. **B6 is done**
+(2026-10-01; the user commits it): `TemperatureCalibrator` in
+`modeling/calibration.py`, post-hoc temperature scaling in log space, pinned
+to scikit-learn's own temperature scaling (sklearn 1.9). **Next: B5**
+(`IndependentTotalProbabilityModel`), then B7, B9, one step per stop; the
+handoff block before B6 in §9 still holds (B5's decisions: clone the two
+models, use the calibrator as given; ask once about `FrozenEstimator`).
+Non-slow suite after B6: **1203 passed** (1 skipped, 1 xfailed).
 
 ## Contents
 1. Context and goal
@@ -179,7 +183,7 @@ reference doc `docs/INDEPENDENT_TOTAL_PROBABILITY_MODEL.md`.
 | N5 | Names: `IndependentCohortModels` (Model 1), `TotalChildrenModel`, `CohortProbabilityModel`, `IndependentTotalProbabilityModel` (Model 2), `TemperatureCalibrator` | User: the first model is named for total children, the second for cohort probabilities. The combined class keeps the old name, as `DirectCohortModel` did; new classes are imported from `age_group_prediction.modeling` only |
 | N6 | Fitting uses `scipy.optimize.minimize(method="L-BFGS-B")` on objectives built from **predefined library functions**: `scipy.stats.poisson.logpmf`, `scipy.stats.nbinom.logpmf`, `scipy.special.log_softmax` and `xlogy`. Gradients are analytic. *B2 (user, 2026-10-01): the method is the model's `solver` setting, `"lbfgs"` (default) or `"bfgs"`, the two gradient-only methods that reach the oracle; see B2's revision. B4 (user): the solver is the optimizer's own setting, `Minimizer(solver, max_iter, tol)`, which maps it to scipy's method. **B4 (user, 2026-10-01): the cohort model is a Dirichlet regression of the shares**, its objective **torch's `Dirichlet(α).log_prob(shares)` with autograd** (torch is a project dependency): vectorized over buildings and an exact gradient, no written density or gradient (the user's choice; measured equal to the `gammaln`/`digamma` formulas to 1e-15, 13–44 ms per fit; scipy's `dirichlet.logpdf` takes one `α` and has no gradient, so a row loop with finite differences cost 1.8–31 s per fit), minimized by `Minimizer` (scipy L-BFGS-B/BFGS: the standard for a smooth 12–30-parameter problem, as `DirichletReg`). **The total model's objective was moved to torch the same way** (`Poisson(μ).log_prob(y)`, autograd; the `PoissonRegressor` oracles and the statsmodels check pass unchanged; ~4 ms per fit at 400 rows). B8's NB2 is then `NegativeBinomial` from torch (B8: in its logits form, `log α + log μ`, with the floor `α ≥ 1e-6`; a model's `fit` runs its torch calls under `optimization.single_threaded_torch()`, since LightGBM's, scikit-learn's and torch's own OpenMP runtimes share one process and torch's threaded kernels then crash, see B8's record). No library offers the regression itself (not sklearn, not statsmodels). A scikit-learn `LogisticRegression` build (multinomial on the counts) was rejected because it models the counts, not the composition* | User: scipy is fine if the objective is predefined or easy to validate. Every objective is pinned to a library fit in tests (N7), and every gradient to `scipy.optimize.check_grad` |
 | N7 | Test oracles: sklearn `PoissonRegressor` and `LogisticRegression` in `tests/unit`; statsmodels in `tests/validation` with `pytest.importorskip`. *B4: the Dirichlet regression has no library oracle; its tests pin the objective to `scipy.stats.dirichlet.logpdf`, the gradient to `check_grad`, and recover known parameters from Dirichlet-drawn data* | statsmodels is only in the `validation` dependency group |
-| N8 | One penalty meaning in both models: `l2_penalty` multiplies `½‖coefficients‖²` added to the **mean** negative log-likelihood, per building for both models (*B4: the Dirichlet observation is a building's composition; before B4 the probability model's was per child*). Intercepts are not penalized | Comparable across folds of different size. Conversions for the oracles are in §7 |
+| N8 | One penalty meaning in both models: `l2_penalty` multiplies `½‖coefficients‖²` added to the **mean** negative log-likelihood, per building for both models (*B4: the Dirichlet observation is a building's composition; before B4 the probability model's was per child*). Intercepts are not penalized. *B6 (user): the temperature objective is per building too* | Comparable across folds of different size. Conversions for the oracles are in §7 |
 | N9 | No clipping of the linear predictor and no floor on the mean. The optimizer runs under `np.errstate(over="raise", invalid="raise")`; a failure or non-finite result raises `RuntimeError` naming feature scale as the likely cause | Measured: clipping hid a failed fit (it returned `success=True` at a wrong point). `exp(·) > 0` already |
 | N10 | `TotalChildrenModel`: `family: Literal["poisson", "nb2"] = "poisson"`, `use_exposure: bool = True` (N3). **Poisson is built first (B2); NB2 is its own step (B8)**. *User, 2026-10-01: NB2 wanted; B8 moved before B4's tests. B8: NB2 is torch's `NegativeBinomial`, its dispersion `α` fitted as `log α` from `log 0.1` with a floor `α ≥ 1e-6` (the Poisson limit; without it `log α` runs to −16…−23 on data without overdispersion and BFGS fails), so `nb2` takes `solver="lbfgs"` only; fitted `dispersion_`* | User's choice. The offset is Model 2's specification, so a forgotten exposure raises. NB2 showed no gain in the means (§6), so it must be droppable |
 | N11 | `CohortProbabilityModel` works for any number of cohorts ≥ 2, taken from `y`'s columns. *B4 (user): a **Dirichlet regression** of the shares `y_b / Σ_k y_bk` in the common parameterization, `α_bk = exp(a_k + x_b β_k)` (one intercept and coefficient column per cohort, as `DirichletReg`); the prediction is the Dirichlet mean `α/Σα`; shares with a zero are compressed toward the centre (Smithson & Verkuilen); every building needs a child. B4's tests: a one-column `y` fits the share 1, trivially right, so it is not checked* | The old code hard-coded 3. The common parameterization is identified: a shift of all intercepts changes the precision `Σα`, not the mean, so the coefficients are unique and tests can recover them. *Before B4: a softmax of the counts (symmetric, coefficients not unique)* |
@@ -318,9 +322,35 @@ class IndependentTotalProbabilityModel(BaseAgeGroupModel):
 | Total, Poisson | `−mean(log Poisson(y \| μ)) + ½λ‖β‖²`, `μ = exposure·exp(b + Xβ)`; in code torch's `Poisson(μ).log_prob` (since B4; B2 wrote `poisson.logpmf` and the gradient) | torch autograd (exact); intercept unpenalized | `PoissonRegressor(alpha=λ / mean(exposure)).fit(X, y/exposure, sample_weight=exposure)`; mean = `exposure · predict(X)` |
 | Total, NB2 (B8) | `−mean log NB2(y \| μ, α) + ½λ‖β‖²` over `(b, β, log α)`, `μ = exposure·exp(b + Xβ)`, variance `μ(1+αμ)`; in code torch's `NegativeBinomial(total_count=1/α, logits=log α + log μ).log_prob` (equals `nbinom.logpmf(y, 1/α, 1/(1+αμ))` to 1e-13; the logits form never saturates, `probs` rounds to 1 at αμ ≳ 1e16); `log α ≥ log 1e-6`, start `log 0.1` | torch autograd (exact); `b` and `α` unpenalized | statsmodels `NegativeBinomial(y, D, exposure=exposure, loglike_method="nb2")`, λ = 0, within 1e-7 |
 | Cohort probability (B4: Dirichlet regression) | `−mean_b log Dirichlet(s'_b \| α_b) + ½λ‖W‖²`, `α_b = exp(a + x_b W)`, `s'_b` the building's shares compressed `(s(N−1) + 1/K)/N`; in code, torch's `Dirichlet(α).log_prob`. Prediction: the mean `α/Σα = softmax(a + XW)`. `COHORT_LOG_LOSS` (B3) scores it against the counts, per child | torch autograd (exact); intercepts unpenalized | none in a library: `scipy.stats.dirichlet.logpdf` row by row pins the objective, `check_grad` the gradient, and Dirichlet-drawn data with known `(a, W)` the fit. *The earlier softmax-on-counts builds' oracle was `LogisticRegression(C=1/(λM))`, `2/(λM)` for 2 cohorts* |
-| Temperature (B6) | `cohort_log_loss(counts, softmax(logits/T))` over `log(1/T)` in (−10, 10), `minimize_scalar(method="bounded")` | — | `sklearn.calibration` `_TemperatureScaling` uses the same form |
+| Temperature (B6) | `−mean_b Σ_k s_bk · log softmax(logits_b / T)_k`, `s_bk = n_bk / n_b` the building's observed composition (per building, as the Dirichlet fit; user's decision at B6), in log space (`log_softmax`), over `log(1/T)` in (−10, 10), `minimize_scalar(method="bounded", xatol=64·eps)`. *Before the stop: `cohort_log_loss(counts, …)`, per child* | — | `sklearn.calibration._TemperatureScaling` on one row per (building, cohort) with `sample_weight = s_bk`, the same form, T to 0.0 |
 
 Start values: total intercept `log(Σy / Σexposure)`, everything else 0.
+
+**The calibration objective (B6, per building; the user's decision at B6's
+stop).** For building $b = 1,\dots,N$ and cohort $k = 1,\dots,K$, with counts
+$n_{bk}$, total $n_b = \sum_k n_{bk}$ and the probability model's logits
+$\ell_{bk} = \log \alpha_{bk}$ (`predict_logits`), the calibrated distribution at
+temperature $T$ is
+
+$$
+p_{bk}(T) = \frac{\exp(\ell_{bk}/T)}{\sum_{j=1}^{K} \exp(\ell_{bj}/T)},
+$$
+
+the model's own prediction at $T = 1$ (the Dirichlet mean). With the observed
+composition $s_{bk} = n_{bk}/n_b$, `TemperatureCalibrator.fit` minimizes the
+cross-entropy of each building's composition under $p_b(T)$, averaged over
+buildings:
+
+$$
+L(T) = -\frac{1}{N} \sum_{b=1}^{N} \sum_{k=1}^{K} s_{bk} \log p_{bk}(T),
+\qquad
+\hat T = \arg\min_{\log(1/T) \in (-10,\,10)} L(T).
+$$
+
+Every building counts once, as in the Dirichlet fit. $\log p_{bk}(T)$ is
+computed as `log_softmax`, so a sharp logit never underflows to $\log 0$.
+The earlier per-child form weighted each term by $n_{bk}$ instead of
+$s_{bk}$ (one row per child, `cohort_log_loss`'s weighting).
 
 **Usage, end to end:**
 
@@ -1958,6 +1988,8 @@ relying on it. Order: **B6 → B5 → B7 → B9**, one step per stop.*
   one 1600. **Decided: the log-space objective** (sklearn's
   `_TemperatureScaling` form). It needs only scipy (`log_softmax`), no torch.
   `cohort_log_loss` still scores the result in tests (it normalizes rows).
+  *At B6's stop the user made it per building (each building's observed
+  composition, averaged over buildings), see B6's record.*
 - **Facts measured for B5:** `sklearn.base.clone` of a fitted calibrator
   drops `temperature_`; `sklearn.frozen.FrozenEstimator` (sklearn 1.9) keeps
   it through `clone`. **Decided: Model 2 clones its two models in `fit`
@@ -1984,11 +2016,139 @@ relying on it. Order: **B6 → B5 → B7 → B9**, one step per stop.*
   `cohort_log_loss` infinite; sklearn's `_TemperatureScaling` works from
   `log_softmax`. *Decided in the handoff above: the objective is
   `−Σ n·log_softmax(logits / T) / Σn` over `log(1/T)` in (−10, 10),
-  `minimize_scalar(method="bounded")`; no torch.*
+  `minimize_scalar(method="bounded")`; no torch. Revised by the user at the
+  stop: per building, `−mean_b Σ_k s_bk · log_softmax(logits_b / T)_k` with
+  `s_b` the observed composition (the record).*
 - **Tests:** logits scaled by a known factor recover it; calibrated data gives a
   temperature near 1; uninformative logits flatten instead of failing;
   `temperature_ = 1` is the plain softmax (moved from B4); the out-of-fold
   loop of §7 as an integration test (with B5, or a `ModelPipeline` alone).
+
+Done when:
+- [x] The fit equals scikit-learn's temperature scaling (`_TemperatureScaling`
+  on one row per (building, cohort), weighted by the building's observed
+  share): T to 0.0 with sklearn's `xatol`.
+- [x] Mutations, review, non-slow suite: 1203 passed (1 skipped, 1 xfailed).
+
+**Record (2026-10-01).**
+- **Baseline** before the first edit: 1189 passed (1 skipped, 1 xfailed).
+  HEAD was `86749d6`, one docs-only commit (this doc's B6–B9 handoff) on
+  `4c02f8b`; no code differed from the handoff's state; the tree was clean.
+- **Verified first** (sklearn 1.9.0, scipy 1.18.0; probes with torch
+  imported first): the plain objective `cohort_log_loss(counts,
+  softmax(logits/T))` and the log-space one give the same T (2.484 on
+  `2.5 · log p`, 400 rows; 15 evaluations); calibrated logits give T in
+  0.986–1.023 over seeds; at logits `[800, 0, 0]` the plain loss is `inf`
+  and scipy's bounded search then multiplies `inf − inf`, a
+  `RuntimeWarning` (an error under `-W error`), where the log-space fit
+  succeeds; sklearn's `_TemperatureScaling` (`sklearn/calibration.py`,
+  class at line 1068) is the decided form: `minimize_scalar(log_loss,
+  bounds=(-10, 10), options={"xatol": 64·eps})` over `log β`, a log-space
+  multinomial loss, `RuntimeError` on `not success`, `predict =
+  softmax(β · logits)`; fitted on one row per (building, cohort) with
+  `sample_weight = count` it reproduces our T to 1.4e-6 with scipy's
+  default `xatol` and to **0.0 with sklearn's** (17 evaluations), so that
+  option is kept. Noise logits land at a large T (373, or the bound 2.2e4)
+  and the probabilities flatten to within 7e-3 of uniform; all-zero logits
+  give a flat objective (any T; the search ends at a bound). `clone` of a
+  fitted calibrator drops `temperature_` (B5 uses it as given). The §7
+  out-of-fold loop with `CohortProbabilityModel` alone: T = 1.019, held-out
+  loss 0.9411 raw and calibrated.
+- **Built:** `TemperatureCalibrator(BaseEstimator)`, no settings;
+  `fit(logits, counts)`: arrays as floats, paired by position; the two
+  checks for what passes silently (equal shapes, since numpy broadcasts a
+  column; equal columns when both are DataFrames, since a cohort order
+  mismatch is silent); the objective `−mean_b Σ_k s_bk · log_softmax(logits_b · β)_k`
+  over `log β` (`s_b` the building's observed composition; per child until
+  the user's decision at the stop, below); one `RuntimeError` when the search did not succeed or ended
+  (scipy reports a nan objective the same way: nan logits, and all-zero
+  counts, whose 0/0 is numpy's warning under `-W error`, else a nan
+  objective); `temperature_ = 1/β`. `predict(logits)`:
+  `check_is_fitted`, `softmax(logits / T)` with the logits' columns and
+  index (`getattr`, as `predict_logits`). Exported from `modeling` only; not
+  a `BaseAgeGroupModel` (its `fit` takes logits, not `X`), so the contract
+  test does not discover it.
+- **Tests** (`test_modeling_calibration.py`, 14; data: Dirichlet(2, 2, 2)
+  shares, totals `2 + Poisson(17)`, multinomial counts, logits `factor ·
+  log p`): the sklearn oracle, weighted by the shares (T within 1e-7,
+  measured 0.0; predictions 1e-6); a factor of 2.5 recovered within 0.1
+  (seeds 0–4: 2.47–2.59); calibrated logits within 0.05 of 1 (0.99–1.04); extreme logits fitted in log space under
+  `filterwarnings("error")`; noise logits flatten (T > 10, within 0.05 of
+  uniform; measured 373 and 7e-3); `temperature_ = 1` is the plain softmax;
+  columns, index and row sums; frames and arrays agree (positional); a
+  one-column `counts` and reordered cohorts raise; predict before fit
+  raises `NotFittedError`; a failed search (monkeypatched `success=False`)
+  and nan logits raise; the §7 out-of-fold loop with a
+  `ModelPipeline(FeatureTransformer, CohortProbabilityModel)` and `KFold`
+  runs as documented under `filterwarnings("error")`.
+- **Mutations** (17), each failing its named test and restored by copy with
+  md5 confirmed: the weight per child (the counts summed over buildings,
+  where each building's composition belongs; T moves 0.014; the oracle
+  test), `xatol` dropped (T moves 9.4e-7; the oracle
+  test at 1e-7), `β` stored as T, the start returned, the normalization
+  dropped, `log(softmax)` for `log_softmax`, `log β` bounded at 0 (T ≤ 1)
+  and the range narrowed to (−5, 5), softmax over the buildings, T
+  multiplied at predict, `columns=None`, `index=None`, the frames multiplied
+  by label, the shape check and the columns check each dropped, the search
+  check dropped (2), `check_is_fitted` dropped.
+  *Pitfall:* a first weighting mutant, `/ len(counts)` for `/ Σ counts`,
+  survived rightly: a constant factor on the objective cannot move its
+  minimum. And the real one survived until the test data's totals varied:
+  with 20 children in every building the two weights coincide.
+- **Checks:** ruff and ruff format on the 3 changed `.py` files; `uv run
+  mypy` and mypy on `modeling` plus the test file clean; the new tests and
+  the contract test under `-W error` (14 and 27 passed).
+- **Review** (independent subagent; its own oracle run at K = 2 and 3 with
+  totals 1–60, T equal to 4e-16; 14 edge inputs; 6 mutations, all caught),
+  each finding reproduced:
+  - *Fixed.* The `isfinite(result.fun)` half of the search check was dead:
+    scipy's bounded search already returns `success=False` ("NaN result
+    encountered") on a nan objective, so dropping that half survived every
+    test. Now `if not result.success` alone, and the comment says scipy
+    reports a nan this way.
+  - *Fixed.* The flatten test asserted only `T > 10` and 0.05 of uniform; a
+    range narrowed to (−5, 5) survived (T = 148). It now pins the bound
+    (`T == e^10`, rel 1e-3) and 1e-3 of uniform (measured 1.2e-4).
+  - *Fixed.* The oracle test's `abs=1e-6` let a dropped `xatol` survive
+    (9.4e-7); now 1e-7 (the gap on the test data is 3.4e-8, not the
+    reviewer's 0.0 on its own data, so not the suggested 1e-9).
+  - *Fixed.* The comment "(no child at all)" described a path that under
+    `-W error` is numpy's warning; reworded. `test_predict_before_fit_raises`
+    gained its comment (without the call it is an `AttributeError`, not the
+    error callers test for), and its mutation.
+  - *Documented.* Negative counts fit silently (a negative share just
+    reweights); the docstring now says the counts are nonnegative, with at
+    least one child per building, validated where the data is prepared (N3). The columns check runs only when both inputs are
+    DataFrames (by design; the shape check always runs).
+  - *Fine.* Integer counts, permuted indexes (positional), a single
+    building, `predict` on an ndarray, Series inputs (numpy's `AxisError`),
+    `clone` unfitted. A zero-count row among others added nothing in the
+    per-child form; with the shares it is 0/0 and raises (numpy's warning
+    under `-W error`, else the search's nan), never silent.
+  - *Re-review of the per-building delta* (its own argmin on a 20k grid and
+    sklearn's class weighted by the shares, K = 2 and 3, mixed totals: gaps
+    ≤ 8e-8 and ≤ 5e-9, 0.0 on the test data; the per-child form differs by
+    0.014–0.23): no bug; the three wording nits above and in the docstring
+    fixed.
+- **Decision at the stop (user, 2026-10-01): the objective is per building.**
+  The user asked what is minimized and why the counts: the answer was the
+  negative log probability of the observed children (one row per child, as
+  `cohort_log_loss` weighs it), and the user chose instead each building's
+  observed composition `s_b = n_b / Σ_k n_bk`, its cross-entropy averaged
+  over buildings: the calibrator returns a probability distribution per
+  building, so it is calibrated per building, as the Dirichlet fit weighs
+  its observations. One line in `fit` (`shares`, then `.sum(axis=1).mean()`);
+  the oracle test weights sklearn's rows by the shares (T to 0.0; the
+  per-child form differs by 0.014 on the test data and is now the mutant);
+  the margins re-measured on the test's own data (above); the 17 mutants
+  rerun, all caught; the delta reviewed; suite 1203. The docs here, §7's
+  math row, N8 and the handoff note updated.
+- **Docs:** `MODULE_REFERENCE.md` (`__init__.py` row; new `calibration.py`
+  row); this doc (status, N8, §7's math row and the LaTeX block "The
+  calibration objective" after it, the handoff note, B6);
+  `INDEPENDENT_TOTAL_PROBABILITY_MODEL.md` (a dated pointer at "Temperature
+  calibration" to that block; its §0 is B9's). No code block was edited (§7's block needs
+  B5).
 
 ### B5. `IndependentTotalProbabilityModel`
 - **Files:** new `modeling/independent_total_probability.py`, `__init__.py`, tests, contract example.
