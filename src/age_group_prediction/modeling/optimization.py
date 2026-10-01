@@ -2,14 +2,22 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Iterator, Sequence
+from contextlib import contextmanager
 from dataclasses import dataclass
 from typing import Literal
 
 import numpy as np
+import torch
 from scipy.optimize import minimize
 
-__all__ = ["Bounds", "Minimizer", "ObjectiveWithGradient", "Solver"]
+__all__ = [
+    "Bounds",
+    "Minimizer",
+    "ObjectiveWithGradient",
+    "Solver",
+    "single_threaded_torch",
+]
 
 # The value and its gradient at a point, as scipy's jac=True expects.
 type ObjectiveWithGradient = Callable[[np.ndarray], tuple[float, np.ndarray]]
@@ -22,6 +30,23 @@ type Solver = Literal["lbfgs", "bfgs"]
 
 # Line-search steps per iteration, as scikit-learn uses (scipy's default is 20).
 _MAX_LINE_SEARCH_STEPS = 50
+
+
+@contextmanager
+def single_threaded_torch() -> Iterator[None]:
+    """Run torch on one thread, then restore the count.
+
+    LightGBM, scikit-learn and torch each load their own OpenMP runtime, and
+    torch's threaded kernels then crash. A model's ``fit`` wraps every torch
+    call in this, the tensors' construction included; one thread is also the
+    faster setting at the sizes fitted here.
+    """
+    threads = torch.get_num_threads()
+    torch.set_num_threads(1)
+    try:
+        yield
+    finally:
+        torch.set_num_threads(threads)
 
 
 def _lbfgsb_options(max_iter: int, tol: float) -> dict[str, float]:

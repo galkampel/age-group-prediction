@@ -19,10 +19,25 @@ the exposure is split by the same positions as every other array; committed
 2026-10-01 on the user's notes; the user commits it): `TotalChildrenModel`,
 Poisson, without a `family` setting (B8 adds it), with a `solver` setting over
 `Minimizer`; committed `31ebdd1`. **B3 is done** (2026-10-01; the user commits
-it): `COHORT_LOG_LOSS` in `scoring.py` and the evaluator's `y: Target`.
-**Next: B4** (`CohortProbabilityModel`): start in plan mode by confirming B3's
-commit and re-verifying B3's facts (its "Facts from B2" list). Non-slow suite
-after B3: **1155 passed** (1 skipped, 1 xfailed).
+it; committed `316aabf`): `COHORT_LOG_LOSS` in `scoring.py` and the
+evaluator's `y: Target`. **B4 is half done** (2026-10-01): the user specified the cohort model as a
+**Dirichlet regression of the cohort shares** (after a hand-coded multinomial
+logit and a scikit-learn `LogisticRegression` build were rejected);
+`CohortProbabilityModel` is implemented (uncommitted; its likelihood and
+gradient from torch's `Dirichlet.log_prob` with autograd, the user's choice
+over written formulas) and the docs updated; **its tests, checks, mutations,
+review and the stop are left to the next session** (B4 §5–§7).
+`TotalChildrenModel` moved to torch's `Poisson.log_prob` the same way (its
+tests pass) and lost its all-zero-`y` check. The solver of the scipy GLM
+moved into `Minimizer` (`Minimizer(solver, ...)`; its own commit). **Calibration is post-hoc** (N12
+revised): the model has no temperature; **B6 (`TemperatureCalibrator`) comes
+before B5**, whose Model 2 takes an optional calibrator. **B8 is done**
+(2026-10-01; the user commits it): `family="nb2"` on `TotalChildrenModel`
+(torch's `NegativeBinomial`, a floor on `α`), and `Minimizer` runs torch
+single-threaded, because LightGBM's and torch's OpenMP runtimes crash together
+(B8's record). **Next: finish B4 (§5–§7)**, then B6, B5, B7, B9. Non-slow
+suite at HEAD (`316aabf`): 1155 passed; after B8, with the stale cohort test
+ignored: **1169 passed** (1 skipped, 1 xfailed).
 
 ## Contents
 1. Context and goal
@@ -159,17 +174,17 @@ reference doc `docs/INDEPENDENT_TOTAL_PROBABILITY_MODEL.md`.
 | N3 | *Revised four times on 2026-09-29, each time by the user.* **The exposure is the model's, and its values are validated in preprocessing.** (a) Whether a model has an offset is its own constructor setting (`use_exposure`), on the models that can have one; the base declares no such setting or property. (b) Which column holds it is a schema fact: `exposure_column="n_apartments"`. (c) `preprocessing.ExposureTransformer` reads that column and returns it as floats, or raises if a value is not strictly positive and finite. (d) The caller builds the exposure with it, on the full table before splitting, and passes it as `exposure=` to every model, `ModelPipeline` (N17) included. (e) Every model takes the same exposure: one with an offset raises if it is missing; any other model **ignores** it (A3). (f) The models take the **raw** exposure, not its log. (g) `FeatureTransformer.exposure_column` and `log_exposure` were removed | (a, b) statsmodels, R, glum, LightGBM and sklearn's examples all pass the exposure to the model, outside the feature matrix. (c) LightGBM accepts a zero, infinite or NaN exposure silently (§6), so the check is needed once. (e) A missing exposure would drop the offset silently; an ignored one lets a caller pass one exposure to every model, and a tuner compare `use_exposure` with one fixed exposure (the evaluator passes the same exposure to every trial). As sklearn's metadata routing does for metadata a consumer declares not requested. Before A3 an unexpected exposure raised, and `uses_exposure` told an aggregator where to route it. (f) `DirectCohortModel` needs `Σ exposure` for its intercept, and `exposure=` is settled (M10), as in statsmodels. History: first a transformer's `exposure_column` declared the exposure; then helper functions read it; then the user asked for the validation in preprocessing and the logic under a class; then for an explicit exposure argument on `ModelPipeline` (d), which gives up the guarantee that the pipeline always validates it |
 | N4 | No scoring override. Per-cohort scores are a caller loop: `model.evaluate(Y[c], predictions[c], metric)` | `mean_poisson_deviance` rejects several columns, and how to average cohorts is the caller's choice |
 | N5 | Names: `IndependentCohortModels` (Model 1), `TotalChildrenModel`, `CohortProbabilityModel`, `IndependentTotalProbabilityModel` (Model 2), `TemperatureCalibrator` | User: the first model is named for total children, the second for cohort probabilities. The combined class keeps the old name, as `DirectCohortModel` did; new classes are imported from `age_group_prediction.modeling` only |
-| N6 | Fitting uses `scipy.optimize.minimize(method="L-BFGS-B")` on objectives built from **predefined library functions**: `scipy.stats.poisson.logpmf`, `scipy.stats.nbinom.logpmf`, `scipy.special.log_softmax` and `xlogy`. Gradients are analytic. *B2 (user, 2026-10-01): the method is the model's `solver` setting, `"lbfgs"` (default) or `"bfgs"`, the two gradient-only methods that reach the oracle; see B2's revision* | User: scipy is fine if the objective is predefined or easy to validate. Every objective is pinned to a library fit in tests (N7), and every gradient to `scipy.optimize.check_grad` |
-| N7 | Test oracles: sklearn `PoissonRegressor` and `LogisticRegression` in `tests/unit`; statsmodels in `tests/validation` with `pytest.importorskip` | statsmodels is only in the `validation` dependency group |
+| N6 | Fitting uses `scipy.optimize.minimize(method="L-BFGS-B")` on objectives built from **predefined library functions**: `scipy.stats.poisson.logpmf`, `scipy.stats.nbinom.logpmf`, `scipy.special.log_softmax` and `xlogy`. Gradients are analytic. *B2 (user, 2026-10-01): the method is the model's `solver` setting, `"lbfgs"` (default) or `"bfgs"`, the two gradient-only methods that reach the oracle; see B2's revision. B4 (user): the solver is the optimizer's own setting, `Minimizer(solver, max_iter, tol)`, which maps it to scipy's method. **B4 (user, 2026-10-01): the cohort model is a Dirichlet regression of the shares**, its objective **torch's `Dirichlet(α).log_prob(shares)` with autograd** (torch is a project dependency): vectorized over buildings and an exact gradient, no written density or gradient (the user's choice; measured equal to the `gammaln`/`digamma` formulas to 1e-15, 13–44 ms per fit; scipy's `dirichlet.logpdf` takes one `α` and has no gradient, so a row loop with finite differences cost 1.8–31 s per fit), minimized by `Minimizer` (scipy L-BFGS-B/BFGS: the standard for a smooth 12–30-parameter problem, as `DirichletReg`). **The total model's objective was moved to torch the same way** (`Poisson(μ).log_prob(y)`, autograd; the `PoissonRegressor` oracles and the statsmodels check pass unchanged; ~4 ms per fit at 400 rows). B8's NB2 is then `NegativeBinomial` from torch (B8: in its logits form, `log α + log μ`, with the floor `α ≥ 1e-6`; a model's `fit` runs its torch calls under `optimization.single_threaded_torch()`, since LightGBM's, scikit-learn's and torch's own OpenMP runtimes share one process and torch's threaded kernels then crash, see B8's record). No library offers the regression itself (not sklearn, not statsmodels). A scikit-learn `LogisticRegression` build (multinomial on the counts) was rejected because it models the counts, not the composition* | User: scipy is fine if the objective is predefined or easy to validate. Every objective is pinned to a library fit in tests (N7), and every gradient to `scipy.optimize.check_grad` |
+| N7 | Test oracles: sklearn `PoissonRegressor` and `LogisticRegression` in `tests/unit`; statsmodels in `tests/validation` with `pytest.importorskip`. *B4: the Dirichlet regression has no library oracle; its tests pin the objective to `scipy.stats.dirichlet.logpdf`, the gradient to `check_grad`, and recover known parameters from Dirichlet-drawn data* | statsmodels is only in the `validation` dependency group |
 | N8 | One penalty meaning in both models: `l2_penalty` multiplies `½‖coefficients‖²` added to the **mean** negative log-likelihood (per building for totals, per child for probabilities). Intercepts are not penalized | Comparable across folds of different size. Conversions for the oracles are in §7 |
 | N9 | No clipping of the linear predictor and no floor on the mean. The optimizer runs under `np.errstate(over="raise", invalid="raise")`; a failure or non-finite result raises `RuntimeError` naming feature scale as the likely cause | Measured: clipping hid a failed fit (it returned `success=True` at a wrong point). `exp(·) > 0` already |
-| N10 | `TotalChildrenModel`: `family: Literal["poisson", "nb2"] = "poisson"`, `use_exposure: bool = True` (N3). **Poisson is built first (B2); NB2 is its own step (B8)** | User's choice. The offset is Model 2's specification, so a forgotten exposure raises. NB2 showed no gain in the means (§6), so it must be droppable |
-| N11 | `CohortProbabilityModel` works for any number of cohorts ≥ 2, taken from `y`'s columns. Symmetric parameterization (one coefficient row per cohort), as sklearn uses | The old code hard-coded 3. With `l2_penalty=0` coefficients are not unique but probabilities are; tests compare probabilities |
-| N12 | Calibration is **temperature scaling**, fitted by a separate `TemperatureCalibrator` on **out-of-fold** logits. `CohortProbabilityModel` has an ordinary setting `temperature: float = 1.0`, applied in `predict` as `softmax(logits / temperature)`. No folds inside any model | User's choice. Best practice: it is sklearn's own multiclass method (`CalibratedClassifierCV(method="temperature")`, since 1.8), has one parameter, and measured best here (§6). Isotonic is not advised below ~1000 calibration rows |
+| N10 | `TotalChildrenModel`: `family: Literal["poisson", "nb2"] = "poisson"`, `use_exposure: bool = True` (N3). **Poisson is built first (B2); NB2 is its own step (B8)**. *User, 2026-10-01: NB2 wanted; B8 moved before B4's tests. B8: NB2 is torch's `NegativeBinomial`, its dispersion `α` fitted as `log α` from `log 0.1` with a floor `α ≥ 1e-6` (the Poisson limit; without it `log α` runs to −16…−23 on data without overdispersion and BFGS fails), so `nb2` takes `solver="lbfgs"` only; fitted `dispersion_`* | User's choice. The offset is Model 2's specification, so a forgotten exposure raises. NB2 showed no gain in the means (§6), so it must be droppable |
+| N11 | `CohortProbabilityModel` works for any number of cohorts ≥ 2, taken from `y`'s columns. *B4 (user): a **Dirichlet regression** of the shares `y_b / Σ_k y_bk` in the common parameterization, `α_bk = exp(a_k + x_b β_k)` (one intercept and coefficient column per cohort, as `DirichletReg`); the prediction is the Dirichlet mean `α/Σα`; shares with a zero are compressed toward the centre (Smithson & Verkuilen); every building needs a child* | The old code hard-coded 3. The common parameterization is identified: a shift of all intercepts changes the precision `Σα`, not the mean, so the coefficients are unique and tests can recover them. *Before B4: a softmax of the counts (symmetric, coefficients not unique)* |
+| N12 | Calibration is **temperature scaling**, fitted by a separate `TemperatureCalibrator` on **out-of-fold** logits. ~~`CohortProbabilityModel` has an ordinary setting `temperature: float = 1.0`, applied in `predict` as `softmax(logits / temperature)`.~~ *Revised by the user at B4 (2026-10-01): calibration is post-hoc, as `CalibratedClassifierCV(method="temperature")` and Guo et al. (2017) do it: the model is fitted and left as is, and the fitted calibrator maps its logits to `softmax(logits / T)`. `CohortProbabilityModel` has no temperature (`predict_logits`, `predict` = softmax); `IndependentTotalProbabilityModel` takes an optional `temperature_calibrator=None`, fitted by the caller. The setting had also broken rule 7 (predict read a current setting)* No folds inside any model | User's choice. Best practice: it is sklearn's own multiclass method (`CalibratedClassifierCV(method="temperature")`, since 1.8), has one parameter, and measured best here (§6). Isotonic is not advised below ~1000 calibration rows |
 | N13 | **No likelihood-ratio gate** on the temperature: the fitted value is always used | Best practice and simpler: sklearn's implementation has none. On well-calibrated data the fitted temperature lands near 1 and changes little. The old gate guarded a threshold rule that no longer exists |
 | N14 | Out-of-fold logits come from a short documented loop (in the doc and one integration test), not a helper | One caller today. Promote it to a helper when a second caller exists |
 | N15 | Dropped from Model 2, as M12 did for Model A: tuning inside `fit`, bootstrap draws and intervals, pointwise log-probabilities, `PredictionResult`, state bundles, metadata, seed records | Means only. Tuning lives in `hyperparameter_tuning` |
-| N16 | *Withdrawn by the user, 2026-09-29.* **No utils file in `modeling`; logic lives under a class.** The home of `minimize_lbfgs` is decided at B1. *Decided (user, B1): a component class, `LBFGSMinimizer` in `modeling/optimization.py`* | User's rule. First version: shared helpers in a public `modeling/utils.py` |
+| N16 | *Withdrawn by the user, 2026-09-29.* **No utils file in `modeling`; logic lives under a class.** The home of `minimize_lbfgs` is decided at B1. *Decided (user, B1): a component class, `LBFGSMinimizer` in `modeling/optimization.py`. B2: `Minimizer`; B4: it owns the solver names (`Solver`). No GLM base (user, B4): the GLMs repeat only scikit-learn's per-estimator calls* | User's rule. First version: shared helpers in a public `modeling/utils.py` |
 | N17 | *Revised by the user on 2026-09-29: the exposure is an explicit argument.* `ModelPipeline(feature_transformer, model)`, a `BaseAgeGroupModel`: a feature transformer, then a model, fitted and used on the raw table. `fit(X, y, exposure=None)` clones both; `predict(X, exposure=None)` uses the fitted copies `feature_transformer_` and `model_`. `exposure` is passed through to the model, whose own check decides whether one is needed. Rows of `X`, `y` and the exposure are paired by position (N19). The aggregators (`IndependentCohortModels`, `IndependentTotalProbabilityModel`) hold models that take the raw table, and only loop and combine | User's choice. scikit-learn's `Pipeline` pattern, by composition: each class does one thing. sklearn's own `Pipeline` was already rejected (`HYPERPARAMETER_TUNING_PLAN.md` D13): its `fit` and `predict` name the exposure differently, and it has no `evaluate`. The explicit exposure keeps the base contract `fit(X, y, exposure)` for every model, and lets the tuner's `exposure=` path take a pipeline. First version: the pipeline read `X[exposure_column]` and rejected an `exposure` argument |
 | N18 | `base_log_rate_` stays. It is the intercept `b` in `exposure × exp(b + F(x))`. No intercept option is added for a model without an exposure | User's decision after the evidence in §6. Given an `init_score`, LightGBM switches off its own starting average, so the model supplies `b`. Without an exposure LightGBM starts from `mean(y)` itself |
 | N19 | *Reversed by the user at the end of A3, 2026-09-29.* **No index check.** `X`, `y` and the exposure are paired by position, as in scikit-learn; the docstrings say so, and to take the exposure's rows as `exposure.loc[X_train.index]`. *Since B0a (2026-09-30): the splitter returns row positions (`Splitter.train_test_indices`), and every array, the exposure included, is taken by them with `take_rows`* | The splitter (then `Splitter.train_test_split`; since B0a `train_test_indices`, and `cv`) splits `X`, `y` and `groups` by the same positions, so they cannot be misaligned; sklearn pairs by position too (`PoissonRegressor().fit(X, y_shuffled)` runs silently); the check raised on position-correct data whose labels differ (e.g. `X` after `reset_index`). History: the check was added to the multi-cohort classes, then to `ModelPipeline` (`7204ec2`), then shared in the base, then removed |
@@ -245,34 +260,51 @@ class IndependentCohortModels(BaseAgeGroupModel):
 
 # modeling/total_children.py  (B2, B8)
 class TotalChildrenModel(BaseAgeGroupModel):
-    def __init__(self, *, solver="lbfgs", use_exposure=True, l2_penalty=0.0,
-                 max_iter=500, tol=1e-6) -> None: ...   # B8 adds family="poisson" 
+    def __init__(self, *, family="poisson", solver="lbfgs", use_exposure=True,
+                 l2_penalty=0.0, max_iter=500, tol=1e-6) -> None: ...   # family: "poisson" | "nb2" (B8)
     # fit(X, y: Series, exposure=None) ; predict(X, exposure=None) -> ndarray
     # exposure rule: BaseAgeGroupModel._check_exposure (B1): raises if used and
     # missing, ignored if not used, must be 1-D and len(X) long; predict follows
     # the fitted state (A3); fitting via Minimizer (B1; solver added in B2)
     # fitted: intercept_, coef_, use_exposure_, feature_names_in_,
-    # n_features_in_ (, dispersion_ for nb2)
+    # n_features_in_, and dispersion_ (α) for nb2 only; α ≥ 1e-6 by an L-BFGS-B
+    # bound, so nb2 takes solver="lbfgs" only
 
-# modeling/cohort_probability.py  (B4)
+# modeling/optimization.py  (B1; solver names since B4)
+Solver = Literal["lbfgs", "bfgs"]
+@dataclass(frozen=True)
+class Minimizer:                                     # a component, not an estimator
+    solver: Solver; max_iter: int; tol: float
+    def minimize(self, objective, start, bounds=None) -> np.ndarray: ...
+
+@contextmanager
+def single_threaded_torch() -> Iterator[None]: ...   # B8: a fit wraps its torch calls in it
+
+# modeling/cohort_probability.py  (B4: a Dirichlet regression of the shares)
 class CohortProbabilityModel(BaseAgeGroupModel):
-    def __init__(self, *, solver="lbfgs", l2_penalty=0.0, temperature=1.0,
-                 max_iter=500, tol=1e-6) -> None: ...
-    # fit(X, y: DataFrame of cohort counts, exposure=None) ; predict_logits(X) -> DataFrame
-    # predict(X, exposure=None) -> DataFrame of probabilities, rows sum to 1
+    def __init__(self, *, solver="lbfgs", l2_penalty=0.0,      # solver: Minimizer's ("lbfgs" | "bfgs")
+                 max_iter=500, tol=1e-6) -> None: ...          # no temperature (N12, B4)
+    # fit(X, y: DataFrame of cohort counts, exposure=None): shares y_b / Σy_b, compressed
+    #   (Smithson–Verkuilen), Dirichlet(α_b) with α_b = exp(a + x_b W), fitted by Minimizer;
+    #   a building without children raises
+    # predict_logits(X) -> DataFrame of log α (what a calibrator is fitted on)
+    # predict(X, exposure=None) -> DataFrame of the Dirichlet mean α/Σα = softmax(log α), rows sum to 1
     # the base signature is kept; a passed exposure is ignored (N3 e)
-    # fitted: intercept_, coef_, cohorts_, feature_names_in_
+    # fitted: intercept_ (K), coef_ (d×K), cohorts_, feature_names_in_, n_features_in_
 
-# modeling/calibration.py  (B6)
+# modeling/calibration.py  (B6, built before B5)
 class TemperatureCalibrator(BaseEstimator):
     def fit(self, logits, counts) -> Self: ...      # fitted: temperature_
+    def predict(self, logits) -> DataFrame: ...     # softmax(logits / temperature_)
 
 # modeling/independent_total_probability.py  (B5)
 class IndependentTotalProbabilityModel(BaseAgeGroupModel):
     def __init__(self, *, total_children_model: BaseAgeGroupModel,
-                 cohort_probability_model: BaseAgeGroupModel) -> None: ...   # two ModelPipelines
+                 cohort_probability_model: BaseAgeGroupModel,   # two ModelPipelines
+                 temperature_calibrator: TemperatureCalibrator | None = None) -> None: ...
     # fit(X_raw, y: DataFrame of cohort counts, exposure=None): total target = y.sum(axis=1)
-    # predict(X_raw, exposure=None) -> DataFrame = total_mean[:, None] * probabilities
+    # predict(X_raw, exposure=None) -> DataFrame = total_mean[:, None] * probabilities,
+    #   the probabilities calibrated by the (already fitted) calibrator when given
     # the same exposure goes to both models; the probability model ignores it
 ```
 
@@ -280,10 +312,10 @@ class IndependentTotalProbabilityModel(BaseAgeGroupModel):
 
 | Model | Objective (minimized) | Gradient | Oracle conversion |
 |---|---|---|---|
-| Total, Poisson | `−mean(poisson.logpmf(y, μ)) + ½λ‖β[1:]‖²`, `μ = exposure·exp(Dβ)` | `Dᵀ(μ − y)/N`, plus `λβ` on non-intercepts | `PoissonRegressor(alpha=λ / mean(exposure)).fit(X, y/exposure, sample_weight=exposure)`; mean = `exposure · predict(X)` |
-| Total, NB2 | `−mean(nbinom.logpmf(y, 1/α, 1/(1+αμ))) + ½λ‖β[1:]‖²`, over `(β, log α)` | `−Dᵀ((y−μ)/(1+αμ))/N`; for `log α` see the probe in §6 | statsmodels `NegativeBinomial(y, D, exposure=exposure)`, λ = 0 |
-| Cohort probability | `−Σ xlogy(n_bk, p_bk)/M + ½λ‖W‖²`, `p = softmax(a + XW)`. Its unpenalized part is `COHORT_LOG_LOSS` (B3), which also divides each row of `y_pred` by its sum, so predicted counts score as proportions | `Xᵀ(n_b·p_bk − n_bk)/M`, plus `λW`; intercepts unpenalized | `LogisticRegression(C=1/(λM))` on one row per (building, cohort) with `sample_weight = n_bk > 0` |
-| Temperature | `cohort_log_loss(counts, softmax(logits/T))` over `log(1/T)` in (−10, 10), `minimize_scalar(method="bounded")` | — | `sklearn.calibration` `_TemperatureScaling` uses the same form |
+| Total, Poisson | `−mean(log Poisson(y \| μ)) + ½λ‖β‖²`, `μ = exposure·exp(b + Xβ)`; in code torch's `Poisson(μ).log_prob` (since B4; B2 wrote `poisson.logpmf` and the gradient) | torch autograd (exact); intercept unpenalized | `PoissonRegressor(alpha=λ / mean(exposure)).fit(X, y/exposure, sample_weight=exposure)`; mean = `exposure · predict(X)` |
+| Total, NB2 (B8) | `−mean log NB2(y \| μ, α) + ½λ‖β‖²` over `(b, β, log α)`, `μ = exposure·exp(b + Xβ)`, variance `μ(1+αμ)`; in code torch's `NegativeBinomial(total_count=1/α, logits=log α + log μ).log_prob` (equals `nbinom.logpmf(y, 1/α, 1/(1+αμ))` to 1e-13; the logits form never saturates, `probs` rounds to 1 at αμ ≳ 1e16); `log α ≥ log 1e-6`, start `log 0.1` | torch autograd (exact); `b` and `α` unpenalized | statsmodels `NegativeBinomial(y, D, exposure=exposure, loglike_method="nb2")`, λ = 0, within 1e-7 |
+| Cohort probability (B4: Dirichlet regression) | `−mean_b log Dirichlet(s'_b \| α_b) + ½λ‖W‖²`, `α_b = exp(a + x_b W)`, `s'_b` the building's shares compressed `(s(N−1) + 1/K)/N`; in code, torch's `Dirichlet(α).log_prob`. Prediction: the mean `α/Σα = softmax(a + XW)`. `COHORT_LOG_LOSS` (B3) scores it against the counts, per child | torch autograd (exact); intercepts unpenalized | none in a library: `scipy.stats.dirichlet.logpdf` row by row pins the objective, `check_grad` the gradient, and Dirichlet-drawn data with known `(a, W)` the fit. *The earlier softmax-on-counts builds' oracle was `LogisticRegression(C=1/(λM))`, `2/(λM)` for 2 cohorts* |
+| Temperature (B6) | `cohort_log_loss(counts, softmax(logits/T))` over `log(1/T)` in (−10, 10), `minimize_scalar(method="bounded")` | — | `sklearn.calibration` `_TemperatureScaling` uses the same form |
 
 Start values: total intercept `log(Σy / Σexposure)`, everything else 0.
 
@@ -319,20 +351,21 @@ for fit_index, val_index in cv.split(train_df, Y_train, groups_train):
     X_val = fold.feature_transformer_.transform(take_rows(train_df, val_index))
     logits_val.append(fold.model_.predict_logits(X_val))
     counts_val.append(take_rows(Y_train, val_index))
-temperature = TemperatureCalibrator().fit(pd.concat(logits_val), pd.concat(counts_val)).temperature_
+calibrator = TemperatureCalibrator().fit(pd.concat(logits_val), pd.concat(counts_val))
 
 model_2 = IndependentTotalProbabilityModel(
     total_children_model=ModelPipeline(total_base, TotalChildrenModel(l2_penalty=0.1)),   # use_exposure=True
     cohort_probability_model=ModelPipeline(                                               # no exposure
-        cohort_probability_base,
-        CohortProbabilityModel(l2_penalty=1e-3, temperature=temperature)),
+        cohort_probability_base, CohortProbabilityModel(l2_penalty=1e-3)),
+    temperature_calibrator=calibrator,                                                    # fitted above
 ).fit(train_df, Y_train, exposure=exposure_train)
 predictions = model_2.predict(test_df, exposure=exposure_test)
 ```
 
 **Hazard to document:** `ModelPipeline` and the multi-cohort classes clone in
-`fit`, so `set_params(cohort_probability_model__model__temperature=T)` after
-`fit` does not reach the fitted copy. Set it before `fit`.
+`fit`, so a nested `set_params(...)` after `fit` does not reach the fitted
+copy. Set it before `fit`. *(Since B4 the temperature is the calibrator's,
+not a setting; whether Model 2 clones the fitted calibrator is B5's to settle.)*
 
 ## 8. Steps, PR A: Model 1 completion
 
@@ -1213,7 +1246,12 @@ Done when:
   objective infinite, and `LBFGSMinimizer` raises ("non-finite objective").
   Nothing passes silently, and data values are validated in preprocessing.
   Only the all-zero `y` is checked: it "converges" silently to an intercept of
-  −17.6 (not `−inf`, as written above).
+  −17.6 (not `−inf`, as written above). *Dropped at B4 (user, 2026-10-01):
+  without the check an all-zero `y` predicts 0, the right limit; the test
+  case went with it, and the failed-refit test uses `max_iter=1`. Also at
+  B4: the objective moved from `poisson.logpmf` + a written gradient to
+  torch's `Poisson.log_prob` with autograd (N6); `_objective` takes tensors,
+  and the gradient test builds them.*
 - **`maxfun` fixed here** (open from B1): scipy's evaluation cap also ends with
   status 1, where "raise max_iter" would mislead.
 
@@ -1440,22 +1478,395 @@ tree is clean; otherwise stop and report. Baseline: 1147 passed (1 skipped,
   package root. `MODULE_REFERENCE.md` has the `optimization.py` and
   `total_children.py` rows.
 
-### B4. `CohortProbabilityModel`
-- **Files:** new `modeling/cohort_probability.py`, `__init__.py`, tests, contract example.
-- **Build:** N6, N8, N11, N12. Raises when a cohort is never observed, when
-  there are no children, when `temperature ≤ 0`. A passed exposure is ignored (N3 e).
-- **Tests:**
-  1. equals `LogisticRegression` on one row per child with `C = 1/(λM)`, across the penalty range, with a zero-total row;
-  2. `check_grad`;
-  3. adding a zero-total building leaves the fit unchanged;
-  4. doubling every count leaves the fit unchanged (summed instead of mean loss);
-  5. 2 and 4 cohorts work (hard-coded 3);
-  6. an unobserved cohort raises;
-  7. rows sum to 1; `temperature=1` is the plain softmax; a temperature set after `fit` is applied;
-  8. non-convergence raises;
-  9. beats the marginal proportions on informative data;
-  10. a passed exposure is ignored (the same fit and predictions).
-- **Contract example:** a `y` DataFrame of cohort counts; no exposure.
+### B8. NB2 family (moved before B4's tests; user, 2026-10-01)
+*Handoff written 2026-10-01. The user wants NB2 now: "like Poisson, with the
+NB2 adjustments". Start in plan mode, re-verify the facts, summarize, ask for
+approval. Order of the remaining steps: **B8 → finish B4 (§5–§7) → B6 → B5 →
+B7 → B9.** `cohort_probability.py` and its stale tests stay uncommitted in
+the tree during B8; B8's baseline is the non-slow suite with
+`--ignore=tests/unit/test_modeling_cohort_probability.py` (1159 passed,
+1 skipped, 1 xfailed).*
+
+- **Files:** `modeling/total_children.py`, `tests/unit/test_modeling_total_children.py`,
+  `tests/validation/test_total_children.py`, docs.
+- **Build** (N10): a setting `family: Literal["poisson", "nb2"] = "poisson"`;
+  an unknown family raises at `fit` (a `set_params` value is read only there).
+  `_objective` takes the family. For `"nb2"` the point is `[b, β, log α]` and
+  the likelihood is torch's
+  `NegativeBinomial(total_count=1/α, probs=αμ/(1+αμ)).log_prob(y)`, `μ =
+  exp(offset + b + Xβ)` — verified against
+  `scipy.stats.nbinom.logpmf(y, 1/α, 1/(1+αμ))` (3e-8) and torch's own mean
+  and variance (`μ`, `μ(1+αμ)`): the NB2 of §6. For `"poisson"` the objective
+  is unchanged. Start `log α = log 0.1` (§6's fitted dispersion ≈ 0.105).
+  **Bounds on `log α`: decide by probe.** The old code bounded `α` in
+  `(1e-4, 5)`. Fit near-Poisson data (simulated totals with Poisson draws)
+  without bounds: if `log α` runs away or the fit fails, pass `Minimizer`'s
+  `bounds` on `log α` (only `lbfgs` takes them; `Minimizer` raises for
+  `bfgs`, so say so in the docstring); otherwise no bounds. Fitted
+  `dispersion_` (α) only for `"nb2"`; `predict` unchanged (the mean). The
+  docstring gains one paragraph on the family.
+- **Tests** (one mutation each): `family="poisson"` leaves every existing
+  test untouched; NB2 agrees with statsmodels `NegativeBinomial(y, D,
+  exposure=exposure)` at λ = 0 in `tests/validation/test_total_children.py`
+  (coefficients and α within 1e-5; §6 measured ≤ 1e-5); the gradient test
+  (autograd vs `check_grad`) runs for both families; `dispersion_` exists
+  only for NB2 (`hasattr`); near-Poisson data converges (and, with bounds,
+  does not sit at one); an unknown family raises; NB2's mean doubles with
+  the exposure; the contract example stays Poisson.
+- **Docs:** §7 shape (`family`, `dispersion_`) and the math row (torch
+  `NegativeBinomial`); N10; `MODULE_REFERENCE.md` row; the B8 record (the
+  bounds decision with its probe).
+- **Commit** (after the solver-move commit from B4 §7):
+  `feat(modeling): TotalChildrenModel on torch, with an NB2 family` —
+  `total_children.py`, its two test files, the docs. The cohort model is
+  committed when B4 finishes.
+
+Done when:
+- [x] NB2 matches statsmodels (1.0e-7); mutations, review, suite (with the
+  `--ignore`): 1169 passed (1 skipped, 1 xfailed).
+
+**Record (2026-10-01).**
+- **Baseline** before the first edit: 1159 passed (1 skipped, 1 xfailed), with
+  the `--ignore`; HEAD `316aabf`, the tree as B4 §2.
+- **Verified first** (torch 2.14, scipy 1.18, statsmodels 0.14.6; 10 simulated
+  tables, seeds 0–9): torch's `NegativeBinomial(total_count=1/α, logits=log α
+  + log μ).log_prob` equals `nbinom.logpmf(y, 1/α, 1/(1+αμ))` to ≤ 3.5e-13
+  (relative) for α in 1e-4…50, 2.4e-7 at α = 1e-8, mean μ and variance
+  μ(1+αμ); the `probs` form is equal but raises torch's own `ValueError` once
+  αμ rounds `probs` to 1 (≳ 1e16; the largest αμ any of 60 fits evaluated was
+  3.1e2). The objective over `[b, β, log α]` from `log α = log 0.1`, fitted by
+  `Minimizer`: within 2.6e-7 of statsmodels' NB2 on every table (both
+  solvers; 17–24 evaluations, ~10 ms; α 0.09–0.13).
+- **Bounds, decided by probe** (the open question): on near-Poisson draws
+  (Poisson draws from the fitted Poisson means, var/mean 0.8–1.06) unbounded
+  `log α` runs to −16…−23: lbfgs still converges (13/13, 57–150 evaluations),
+  bfgs raises "precision loss" in 10/13, statsmodels warns in 5/10. With a
+  floor `α ≥ 1e-6` (lbfgs): 10/10 converge in 27–51 evaluations at the floor,
+  coefficients equal to the Poisson's (≤ 2.8e-4); on the real, overdispersed
+  totals the floor changes nothing (7.6e-13). Nothing ran upward, so no upper
+  bound (the old stack had (1e-4, 5)). The user asked for the rule of thumb:
+  α → 0 is the Poisson boundary, where the likelihood has no finite maximum
+  on such data; a floor where NB2 is numerically Poisson is the practice.
+- **Built:** `family: Family = "poisson"`; `_objective(..., family)` with
+  NB2's point `[b, β, log α]`; the one new check (an unknown family would fit
+  the Poisson silently); `bounds` on `log α` for nb2; `dispersion_` for nb2
+  only (a Poisson refit removes it). `predict` unchanged.
+- **The OpenMP clash** (found by the validation test, which segfaulted):
+  Homebrew's `libomp` (LightGBM 4.7), scikit-learn's bundled one and torch's
+  own all load; with LightGBM first (the package's order: the root imports
+  the old stack's LightGBM model before its torch model) torch's threaded
+  kernels crash (`logsigmoid` at 10 elements; `exp`, `lgamma`, `sum`, `xlogy`
+  at 100k), torch-first after the first LightGBM fit. The unit tests had
+  passed only because the test module imports torch first; the Poisson
+  objective survived by size (its kernels parallelize above ~32k elements).
+  Measured: `threadpoolctl.threadpool_limits(1, user_api="openmp")` lists all
+  three runtimes but leaves torch's count at 6 (it crashes);
+  `torch.set_num_threads(1)` before the tensors are built and during the fit
+  is safe in both import orders, interleaved with LightGBM fits, up to 100k
+  rows. Speed, one thread against torch's six (5 fits, 7 features): 245
+  rows Poisson 3.0 vs 2.7 ms, NB2 12 vs 17 ms; 2,000 rows 3.5 vs 4.4 and
+  29 vs 31 ms; 20,000 rows 13 vs 10 and 134 vs 76 ms. So no cost at this
+  data's sizes; from ~20k rows the threads would win. The projects' guidance (LightGBM FAQ, PyTorch forums)
+  is one runtime per process, by environment (symlinks; `KMP_DUPLICATE_LIB_OK`
+  is called unsafe), which is neither portable nor the library's to do.
+  **Decided (user: "use best practices"): the fit runs torch at one thread
+  and restores the count in `finally`**; the fits are 12–30 parameters on
+  hundreds of rows, where threads gain nothing. First built inside
+  `Minimizer.minimize`; the review showed that scope misses the tensors
+  built in `fit` (a tensor above torch's grain size, ~32k elements, 4,700 ×
+  7, crashes on construction), so it is now `optimization.single_threaded_torch()`,
+  a context manager that `fit` wraps its torch calls in, tensors included,
+  and `Minimizer` is torch-free again. A module-level function, not a
+  class (§3 rule 8): a context manager is what the `with` needs, and it has
+  no state; the user may ask for another home. **B4's cohort `fit` must
+  wrap its torch calls the same way.** The full suite then still crashed, in the
+  NB2 gradient test: it calls `_objective` directly, outside `Minimizer`,
+  after an earlier module loaded LightGBM (the file alone passed because it
+  imports torch first). So `test_modeling_total_children.py` has a
+  module-level autouse fixture that sets one thread and restores it;
+  **B4's cohort tests need the same fixture.** The subprocess test is
+  outside the fixture's reach, so it still exercises the crash path, on
+  40,000 rows, above the grain size, so a scope that misses the tensors
+  fails it too.
+- **Tests** (`test_modeling_total_children.py`, 29; one mutation each, every
+  one failing its named test and restored by copy, md5 confirmed): the
+  gradient test over both families (penalty added after `backward`); the
+  NB2 objective pinned to `nbinom.logpmf` (1/α and α swapped); a known
+  dispersion 0.5 recovered (nb2 fitted as Poisson); Poisson draws end at the
+  floor with the Poisson's coefficients (bounds dropped: α lands at ~1e-8);
+  `dispersion_` only for nb2 (set for Poisson too); an unknown family and
+  `nb2` with `bfgs` raise (check dropped); doubling for both families
+  (offset dropped); an NB2 fit survives LightGBM loaded first, in a
+  subprocess with `PYTHONPATH=src` (`set_num_threads(1)` dropped, and the
+  scope moved to cover only the minimize: segfault, each); the thread count
+  is restored after a fit and after a failed one (restore not in
+  `finally`). `tests/validation/test_total_children.py`: NB2 vs statsmodels
+  `NegativeBinomial(..., loglike_method="nb2").fit(method="newton",
+  tol=1e-12)` (converges without a warning; `bfgs` reports non-convergence on
+  seed 0) within 1e-5, measured 1.0e-7 (nb2 branch dropped: fails).
+- **Checks:** ruff and ruff format on the 5 changed `.py` files; `uv run mypy`
+  and mypy on `modeling` plus the 3 test files; the modeling tests under
+  `-W error` (72 passed); the validation tests under `-W error` (2 passed);
+  the non-slow suite with the `--ignore`: 1169 passed (+10: 9 cases in
+  `test_modeling_total_children.py`, 1 in `test_modeling_optimization.py`).
+- **Review** (independent subagent; its own NB2 density by `gammaln` and a
+  40-digit `mpmath` derivative of `log α` down to the floor: value within
+  1.4e-11, gradient 1.1e-9 at α = 1e-6; 8 mutations of its own), each
+  finding reproduced:
+  - *Fixed.* The single-thread scope in `Minimizer` did not cover the
+    tensors `fit` builds: above ~32k elements (4,700 × 7 rows) the
+    construction itself segfaulted with LightGBM loaded first, and this
+    record's "safe up to 100k rows" had been measured with the thread set
+    before the tensors. Now `single_threaded_torch()` around the whole fit;
+    the subprocess test runs 40,000 rows.
+  - *Fixed.* The restore under an exception was untested (a restore after
+    the `try` survived every test). The thread test now also fits features
+    on a huge scale, which raises, and checks the count after.
+  - *Noted.* A non-integer or negative `y` is rejected by torch's own
+    argument validation (`IntegerGreaterThan(0)`), which is off under
+    `python -O`; data values are preprocessing's (N3), so no check is added.
+    An all-zero `y` ends in "non-finite objective" with the scale hint
+    (since B2). Under torch an overflow is not numpy's `FloatingPointError`
+    (torch ignores `np.errstate`; `inf` ends as "did not converge:
+    ABNORMAL"), so N9's wording describes the scipy version: it still
+    raises, with the other message (since B4's torch move).
+  - *Fine.* The parameterization, the floor, the start (not load-bearing:
+    fits converge from it for α in 1e-6…20), `coef_`'s slicing, the
+    `dispersion_` handling across `set_params` refits, the penalty on `β`
+    only, the subprocess test's path and cleared environment, the
+    tolerances.
+- **Docs:** `MODULE_REFERENCE.md` (`optimization.py`, `total_children.py`
+  rows); this doc (status, N6, N10, §7 shape and math row, §11, this record).
+  No code block was edited.
+
+### B4. `CohortProbabilityModel`: a Dirichlet regression of the cohort shares
+*Finish after B8 (user, 2026-10-01): the B8 session's commits leave
+`cohort_probability.py` and its stale tests uncommitted.*
+*Specified by the user on 2026-10-01 after two builds were rejected. Handoff
+written at the end of that session: the model is implemented (§4 below);
+**the tests, checks, mutations, review, suite and the stop are left to the
+next session** (§5–§7). Re-verify §2–§3 in plan mode, summarize, ask for
+approval, then do §5–§7.*
+
+- **Files:** `modeling/cohort_probability.py` (implemented, untracked),
+  `__init__.py` (exports it; done), `tests/unit/test_modeling_cohort_probability.py`
+  (**the previous build's tests; must be rewritten per §5**), the contract
+  example (present; see §5's last line).
+- **Build:** N6, N8, N11 (all revised at B4). A passed exposure is ignored (N3 e).
+
+Done when:
+- [ ] The objective equals `scipy.stats.dirichlet.logpdf`; known parameters
+  are recovered; mutations, review, non-slow suite pass (record the count).
+
+**§1. The user's specification and decisions (2026-10-01).**
+- Model 2 predicts `μ_b · p_bk`: `μ_b` from `TotalChildrenModel`, `p_b` the
+  building's cohort **shares**. **The shares come from a Dirichlet
+  distribution whose concentration depends on the features**: a Dirichlet
+  regression of the observed composition `n_bk / n_b` ("normalize the cohort
+  counts by the building's total to get a probability distribution"),
+  prediction = the Dirichlet mean. Not Dirichlet-multinomial: that is the
+  third, Bayesian model. "There should be no building without children."
+  Boundary treatment: best practice, explained, not overcomplicated.
+- Rejected builds, for the record: (1) a hand-coded multinomial logit
+  (softmax, `log_softmax` objective, analytic gradient, `Minimizer`), verified
+  against `LogisticRegression` to 1e-6 — the user asked why not a library;
+  (2) sklearn's `LogisticRegression` on one row per (building, cohort) with
+  `sample_weight = count`, `C = 1/(λM)` (`2/(λM)` for 2 cohorts), verified to
+  5e-6 — the user then specified the Dirichlet. Both predicted
+  `softmax(a + xW)` fitted on the **counts**; the Dirichlet fits the
+  **composition** and also models its precision.
+- Kept from earlier in B4 (user): the solver is `Minimizer`'s own setting
+  (`optimization.py`: `Solver = Literal["lbfgs", "bfgs"]`,
+  `Minimizer(solver, max_iter, tol)`; `total_children.py` uses it; its own
+  table and check removed); no GLM base (the GLMs repeat only
+  scikit-learn's per-estimator calls); calibration is post-hoc (N12
+  revised): no `temperature` on the model, `predict_logits` for the
+  calibrator, B6 before B5.
+
+**§2. State of the tree at the handoff** (verify; stop and report if different):
+branch `feat/independent-total-probability-model`, HEAD `316aabf` (B3).
+Modified: `modeling/{__init__,optimization,total_children}.py`,
+`tests/unit/test_modeling_{contract,optimization,total_children}.py`,
+`docs/MODULE_REFERENCE.md`, this doc. Untracked: `modeling/cohort_probability.py`
+(the Dirichlet model) and `tests/unit/test_modeling_cohort_probability.py`
+(the sklearn build's tests, stale). The non-slow suite fails in that test
+file until it is rewritten (everything else: 1159 passed with
+`--ignore=tests/unit/test_modeling_cohort_probability.py`); at HEAD it gives
+1155 passed (1 skipped, 1 xfailed). `total_children.py` and its tests are
+also modified (torch objective; the all-zero check dropped; the failed-refit
+test uses `max_iter=1`; the gradient test builds tensors), and all pass.
+
+**§3. Measured facts** (scipy 1.18.0; re-run any you rely on; the probes
+lived in the session scratchpad, so rebuild them from these recipes):
+- Simulated tables (`StudentPopulationSimulator(load_simulation_config(
+  "configs/simulation.toml")).run(rng=np.random.default_rng(seed))`, seeds
+  0–9): **no building without children** (min total 2, median 19); 16 of 245
+  buildings (seed 0) have a zero count in one cohort. So the boundary
+  matters; empty buildings do not occur and are rejected.
+- `scipy.stats.dirichlet.logpdf` of a share with a zero is `-inf`.
+- Dirichlet regression with `α = exp(a + XW)`, objective
+  `−mean_b log Dirichlet(s'_b | α_b) + ½λ‖W‖²` (measured first with the
+  written `gammaln`/`digamma` form, `check_grad` 5e-8; the shipped torch
+  objective equals it to 1e-15), fitted by `Minimizer("lbfgs", 500, 1e-6)` from zeros:
+  5–17 ms; on Dirichlet-drawn shares (N = 2000, 3 features, K = 3,
+  `a0 = [1, 1.5, 0.5]`, `W0 ~ N(0, 0.5²)`) recovers `W` within 0.035 and the
+  mean within 0.019; the `gammaln` form equals `dirichlet.logpdf` exactly (0.0).
+- **Boundary transforms**, synthetic data at this data's totals (shares
+  Dirichlet-drawn, totals `2 + Poisson(17)`, counts multinomial, N = 200,
+  K = 3, 5 seeds; ~66 of 200 buildings with a zero share), mean absolute
+  error of the predicted mean on 200 new buildings:
+
+  | Transform | Error |
+  |---|---|
+  | Smithson–Verkuilen dataset compression `s' = (s·(N−1) + 1/K)/N` | **0.019 ± 0.002** |
+  | per-building pseudo-count 1/K: `(n_bk + 1/K)/(n_b + 1)` | 0.026 ± 0.003 |
+  | Jeffreys 0.5: `(n_bk + ½)/(n_b + K/2)` | 0.031 ± 0.004 |
+  | per-building S&V with `n_b` | 0.027 ± 0.003 |
+  | multinomial logit on the counts (reference, not a Dirichlet) | 0.015 ± 0.002 |
+
+  **Chosen: S&V dataset compression.** It is the standard in Dirichlet
+  regression (Smithson & Verkuilen 2006; R's `DirichletReg::DR_data` applies
+  it), parameter-free, one line, vanishes as N grows, and measured best of
+  the Dirichlet options.
+- The "common" parameterization (one `α_k = exp(a_k + x β_k)` per cohort,
+  `DirichletReg`'s default) is identified: shifting every intercept changes
+  the precision `Σα`, not the mean, so the coefficients are unique (unlike
+  the softmax of the rejected builds). The fit is unweighted by `n_b`: the
+  observation is a building's composition (`DirichletReg`'s default).
+
+**§4. Build** (`modeling/cohort_probability.py`, implemented; simplified
+on the user's notes, 2026-10-01: fewer comments, fewer checks, a short
+implementation over the explicit formula):
+`CohortProbabilityModel(*, solver: Solver = "lbfgs", l2_penalty=0.0,
+max_iter=500, tol=1e-6)`.
+- `_objective(parameters, X: Tensor, shares: Tensor, l2_penalty)` (static):
+  `parameters = [a (K), W (d×K, row-major)]` as a numpy point from scipy;
+  `α = exp(a + XW)` in torch; value `−Dirichlet(α).log_prob(shares).mean()
+  + ½λ‖W‖²`; `backward()`; returns `(value.item(), params.grad.numpy())`.
+  No written density or gradient (user): torch's density is vectorized
+  over buildings and autograd exact. `fit` builds the two float64 tensors
+  once.
+- `fit(X, y, exposure=None)`: `l2_penalty < 0` raises; `check_X_y(X, y,
+  multi_output=True, y_numeric=True)`; a cohort with no child raises (it
+  would fit the compressed floor silently); `shares = counts / totals`
+  compressed `(s(N−1) + 1/K)/N` inline; start zeros (`α = 1`, `W = 0`);
+  `Minimizer(self.solver, self.max_iter, self.tol)`; fitted `intercept_`
+  (K), `coef_` (d×K), `cohorts_` (`y`'s columns, or 0..K−1 for an array),
+  then `validate_data(self, X, reset=True, skip_check_array=True)`.
+  **Dropped checks** (measured without them): a one-column `y` fits a share
+  of 1 (trivially right); a Series `y` raises on its own; a negative count
+  and a building without children each raise from the minimizer (a NaN
+  objective). The docstring states both requirements (N3: data values are
+  preprocessing's).
+- `predict_logits(X) -> DataFrame`: `log α = a + XW` (columns `cohorts_`,
+  `X`'s index; `validate_data(reset=False)` first). `predict(X,
+  exposure=None) -> DataFrame`: `softmax(log α)` = the Dirichlet mean
+  `α/Σα`, rows sum to 1.
+
+**Smoke of the implementation (this session, not the tests):** ruff and
+`uv run mypy` clean (the IDE's own checker flags the `y: pd.DataFrame`
+override, as it would `total_children.py`'s `y: pd.Series`; mypy, the
+project's check, does not). On Dirichlet-drawn data (N = 2000, totals 1000)
+`coef_` is within 0.025 of `W0` and the mean within 0.017, intercepts
+`[1.01, 1.51, 0.49]` for `[1, 1.5, 0.5]`; on totals `2 + Poisson(17)` (583
+rows with a zero share) the fit runs and its `cohort_log_loss` is 0.957
+against 1.042 for the marginal shares; `check_grad` 7e-8 on the formula version; the torch version equals the
+looped `dirichlet.logpdf` to 6e-17 and the formula gradient to 2e-15, fits
+in 13 ms at 245 buildings and 44 ms at 2,000 (coefficients within 0.029 of
+`W0`); the
+checks raise their messages (unobserved cohort, `max_iter=1`, reordered
+columns); an array `y` gives `cohorts_ == [0, 1, 2]`.
+
+**§5. Tests** (`tests/unit/test_modeling_cohort_probability.py`, rewrite;
+each names its mistake; one mutation each). Data: `_data(rows, n_cohorts,
+seed)`: 3 features (`ses`, `size`, `noise`); true `α = exp(a0 + X W0)`;
+shares `rng.dirichlet(α_b)`; totals `2 + rng.poisson(17)`; counts
+`rng.multinomial(total, share)` → DataFrame named `n_kindergarten`,
+`n_elementary`, `n_highschool` (or `c0..`). A large-count variant (totals
+1000) for parameter recovery.
+
+| Test | Mistake it catches | Mutation |
+|---|---|---|
+| the objective is the Dirichlet log-density: `_objective` at random parameters (tensors in) equals `−mean_b scipy.stats.dirichlet.logpdf(s'_b, α_b) + ½λ‖W‖²` (loop over rows) | the wrong distribution, or a sum for the mean | `.sum()` for `.mean()` |
+| *(optional)* the autograd gradient matches `scipy.optimize.approx_fprime` (1e-5) | a value that is not what is differentiated (e.g. the penalty added after `backward`) | penalty added after `backward()` |
+| known parameters are recovered (totals 1000, N = 2000: `coef_` within 0.1 of `W0`, the mean within 0.02) | shares not normalized, or `exp` missing | fit on the counts |
+| shares on the boundary are compressed (data with zero counts fits; a raw `log 0` would end in `RuntimeError`) | the compression dropped | the compression line removed |
+| scaling every count leaves the fit unchanged (`10·Y`, 1e-6) | counts where shares should be | fit on the counts |
+| a huge penalty leaves the intercept-only fit (λ = 1e8 equals the fit on `X·0`, rtol 1e-6) | intercepts penalized | penalize `a` |
+| probabilities are named like `y`, indexed like `X`, rows sum to 1, `predict == softmax(predict_logits)` | misnamed/misaligned; logits out of step | `index=None`; `columns=None` |
+| any number of cohorts works (K = 2, 4 recover `W0` within 0.15 on totals 1000) | 3 hard-coded | reshape with a literal 3 |
+| cohorts from an array are numbered (`cohorts_ == [0, 1, 2]`) | `.columns` on an array | `list(y.columns)` |
+| input that would fit silently raises: unobserved cohort (`cohorts \['n_highschool'\]`), a negative penalty, reordered columns at predict ("feature names") | each silent | each check → `if False:` |
+| non-convergence raises (`max_iter=1` → `RuntimeError` "did not converge") | a non-converged fit used | (Minimizer's; one case) |
+| a failed refit leaves the previous fit intact (`set_params(max_iter=1)` on renamed columns raises `RuntimeError`; old predictions unchanged; renamed columns then raise) | mixed fitted state | names recorded before the fit |
+| the solver setting picks the scipy method (monkeypatch `optimization.minimize`; `solver="bfgs"` → `"BFGS"`; as in `test_modeling_total_children.py`) | solvers mapped alike | map both to L-BFGS-B |
+| the model beats the marginal shares on new buildings (`cohort_log_loss` < 0.95 × the marginal) | a fit stuck at its start | return the start |
+| a passed exposure is ignored (same fit and predictions) | — | — |
+
+Contract example (`test_modeling_contract.py`): done, `1 + rng.poisson(...)`
+for one cohort so that no row is empty.
+
+**§6. Docs** (done in this session unless marked): `MODULE_REFERENCE.md`
+`cohort_probability.py` row; this doc: status, N6, N7, N11, §7 shape and
+math row, §10, this section. *Left to the next session:* the B4 record
+(baseline, checks, mutations, review, suite count) and the status line's
+count. No doc code block runs yet (§7's block needs B5/B6).
+
+**§7. Checks and the stop.** Baseline first (`uv run pytest -m "not slow"`:
+expect failures only in the stale test file; record the count after the
+rewrite); `uv run ruff check <files>` and `uv run ruff format <files>`
+(explicit paths; zsh does not split `$VAR`); `uv run mypy`; `uv run mypy
+src/age_group_prediction/modeling tests/unit/test_modeling_cohort_probability.py
+tests/unit/test_modeling_contract.py`; `uv run pytest tests/unit/test_modeling_*.py
+-q -W error -p no:cacheprovider`; the mutations (back the file up to the
+scratchpad, restore by copy, confirm with md5 and `git diff --stat`); an
+independent review subagent (verify the log-density and gradient
+independently, the compression, K = 2/4, edge inputs, 4–6 mutations of its
+own); reproduce each finding before fixing or rejecting it; the non-slow
+suite; this doc. Stop with a file-by-file summary, the check results, and
+two suggested commits:
+1. `refactor(modeling): the solver is Minimizer's own setting` —
+   `optimization.py`, `total_children.py`, `test_modeling_optimization.py`,
+   `test_modeling_total_children.py`.
+2. `feat(modeling): CohortProbabilityModel, a Dirichlet regression of the cohort shares` —
+   `cohort_probability.py`, `__init__.py`, its tests, the contract test, both docs.
+
+**§8. Pitfalls.** `_objective` takes torch tensors (float64), not arrays:
+tests build them with `torch.tensor(..., dtype=torch.float64)`; `fit` does
+it once. Scratch scripts only in the scratchpad, run as
+`PYTHONPATH=src uv run --group test python <script>`. Import the model from
+`age_group_prediction.modeling` (the root exports the old stack).
+`check_X_y` keeps integer dtypes; the division to shares is true division.
+A negative count or an empty building ends in the Minimizer's NaN-objective
+error (not checked: data values are preprocessing's, N3). The import guard forbids `models`, `metrics`, `tuning`, …
+in `modeling/`.
+
+**Facts for B6 and B5** (verify in plan mode):
+- `CohortProbabilityModel.predict_logits(X)` returns `log α` as a DataFrame
+  (columns `cohorts_`, `X`'s index); `predict` is its row softmax, the
+  Dirichlet mean. Temperature scaling acts on `log α` like on any logits
+  (`softmax(log α / T)`). A fold's logits come from
+  `fold.model_.predict_logits(fold.feature_transformer_.transform(X_val))`
+  (§7 loop).
+- B3's review: `softmax(logits / T)` underflows to an exact 0 at a small `T`
+  (logits `[800, 0, 0]`), where a positive count makes `cohort_log_loss`
+  infinite; a log-space objective (`log_softmax`) avoids it.
+- `cohort_log_loss` normalizes `y_pred`'s rows, so it scores probabilities and
+  counts alike; it is per child, so it weighs buildings by their children
+  even though the Dirichlet fit does not.
+
+### B6. `TemperatureCalibrator` (built before B5, since B4)
+- **Files:** new `modeling/calibration.py`, tests.
+- **Build:** N12–N14; no settings. `fit(logits, counts)` sets `temperature_`;
+  `predict(logits)` returns `softmax(logits / temperature_)` as a DataFrame
+  (the logits' columns and index). B3's review: `softmax(logits / T)` can
+  underflow to an exact 0 at a small `T`, where a positive count makes
+  `cohort_log_loss` infinite; sklearn's `_TemperatureScaling` works from
+  `log_softmax`. Decide at B6 (a log-space objective, or accept `inf` as worse).
+- **Tests:** logits scaled by a known factor recover it; calibrated data gives a
+  temperature near 1; uninformative logits flatten instead of failing;
+  `temperature_ = 1` is the plain softmax (moved from B4); the out-of-fold
+  loop of §7 as an integration test (with B5, or a `ModelPipeline` alone).
 
 ### B5. `IndependentTotalProbabilityModel`
 - **Files:** new `modeling/independent_total_probability.py`, `__init__.py`, tests, contract example.
@@ -1467,27 +1878,17 @@ tree is clean; otherwise stop and report. Baseline: 1147 passed (1 skipped,
   would realign into NaN). The output has `y`'s columns at fit and `X`'s index;
   the probability model's cohorts must equal `y`'s columns. Unlike N21's
   mapping, two named estimators are ordinary parameters, so nested `set_params`
-  (`cohort_probability_model__model__temperature`) reaches them.
+  (`cohort_probability_model__model__l2_penalty`) reaches them.
 - **Tests:**
   1. the output equals total × probabilities of the two models fitted separately, and rows sum to the total mean;
   2. the total target is `y.sum(axis=1)`; tables without target columns work;
   3. each pipeline uses its own transformer (swapped transformers);
   4. doubling the exposure doubles every cohort (`n_apartments` is not a feature of `total_base`);
-  5. nested `set_params` reaches the next fit; a temperature set before `fit` is applied;
+  5. nested `set_params` reaches the next fit; a given `temperature_calibrator` is applied to the probabilities (and without one they are the model's own);
   6. the exposure changes the total model only (the probability model ignores it);
   7. predictions returned with their own index are placed by position (A3's NaN finding).
 - **Contract example:** the total model with `use_exposure=False` (the refit
   test passes no exposure).
-
-### B6. `TemperatureCalibrator`
-- **Files:** new `modeling/calibration.py`, tests.
-- **Build:** N12–N14; no settings. B3's review: `softmax(logits / T)` can
-  underflow to an exact 0 at a small `T`, where a positive count makes
-  `cohort_log_loss` infinite; sklearn's `_TemperatureScaling` works from
-  `log_softmax`. Decide at B6 (a log-space objective, or accept `inf` as worse).
-- **Tests:** logits scaled by a known factor recover it; calibrated data gives a
-  temperature near 1; uninformative logits flatten instead of failing; the
-  out-of-fold loop of §7 as an integration test.
 
 ### B7. Smoke run
 Ten populations. Per cohort: Model 2 (raw and calibrated) against Model 1; plus
@@ -1500,17 +1901,6 @@ Model 1's reference is A4's table (offset variant; total 4.215 ± 1.450).
 
 Done when:
 - [ ] The user has seen the numbers.
-
-### B8. NB2 family (droppable)
-- **Build:** a new setting `family: Literal["poisson", "nb2"] = "poisson"`
-  (B2 has none), `"nb2"`, `dispersion_`; an unknown family raises (a test);
-  `log α` bounded (old bounds
-  `(1e-4, 5)`; justify or change by probe).
-- **Tests:** `check_grad`; statsmodels `NegativeBinomial` agreement in
-  `tests/validation`; `dispersion_` exists only for NB2; near-Poisson data does
-  not fail at the bound.
-- **Before starting**, show the user §6's NB2 row and the B7 table, and confirm
-  the step is still wanted: means-only output has no consumer for `dispersion_`.
 
 ### B9. Docs and close
 - `INDEPENDENT_TOTAL_PROBABILITY_MODEL.md` new §0 (the rebuilt model: equations,
@@ -1538,15 +1928,15 @@ Source: `tests/unit/test_independent_total_probability.py`.
 | Carried over, in new form | Step |
 |---|---|
 | Exposure has a fixed unit coefficient (doubling doubles) | B2, B5 |
-| Grouped fit equals literal per-child expansion | B4 |
-| Zero totals add nothing | B3, B4 |
+| Grouped fit equals literal per-child expansion | *dropped at B4: the Dirichlet fits the composition, not the children* |
+| Zero totals add nothing | B3 (*B4: a building without children is rejected; the shares need one*) |
 | An unobserved cohort raises | B4 |
 | Probabilities sum to 1 and cohorts sum to the total | B4, B5 |
 | Targets never enter a feature matrix | A3, B5 |
 | Both models beat their constant baselines | B2, B4 |
 | Optimizers report non-convergence | B1, B4 |
 | The family is explicit | B8 |
-| Temperature 1 is the plain softmax | B4 |
+| Temperature 1 is the plain softmax | B6 |
 
 **Dropped with their features (N13, N15):** tuning inside `fit`, pointwise
 log-probabilities, bootstrap draws and failures, the likelihood-ratio gate,
@@ -1566,6 +1956,17 @@ calibration metadata, seed provenance, state bundles.
 - **Tuning.** A convergence error inside a fold ends an Optuna study. Note it
   in `HYPERPARAMETER_TUNING_PLAN.md` §6 for Phase 3.
 - **pydantic/ruff.** The repo has no `[tool.ruff]`; do not add one.
+- **Three OpenMP runtimes (B8).** LightGBM (Homebrew's `libomp`), scikit-learn
+  (its bundled copy) and torch (its own) each load one; `import
+  age_group_prediction` loads LightGBM before torch, and torch's threaded
+  kernels then segfault (`logsigmoid` even on 10 numbers; building a tensor
+  above ~32k elements). A model's `fit` wraps every torch call, the tensors'
+  construction included, in `single_threaded_torch()`; `threadpoolctl` cannot
+  reach torch's setting. The documented remedy for a machine is one runtime per
+  process (the LightGBM FAQ: symlink every copy to one `libomp`; never
+  `KMP_DUPLICATE_LIB_OK`, which can give wrong results silently). In a probe,
+  import `torch` first or set one thread; a test that needs LightGBM loaded
+  first runs in a subprocess.
 - **Contract test and the exposure.** The refit check calls `fit(X, y)`
   without an exposure, so an example must not need one (`use_exposure=False`).
 - **Position, not index.** Rows are paired by position (N19). A sub-model
