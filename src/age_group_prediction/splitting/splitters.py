@@ -22,7 +22,7 @@ from sklearn.model_selection import (
     ShuffleSplit,
 )
 
-from ..utils import DesignMatrix, Groups, Target, take_rows
+from ..utils import DesignMatrix, Groups
 from .stratified import StratifiedFolds, StratifiedHoldout
 
 __all__ = ["Method", "Splitter"]
@@ -38,9 +38,11 @@ class Splitter:
     split with another's folds::
 
         splitter = Splitter("stratified_by_group")
-        X_train, X_test, y_train, y_test, groups_train, groups_test = (
-            splitter.train_test_split(X, y, groups, test_size=0.2, random_state=42)
+        train_index, test_index = splitter.train_test_indices(
+            X, groups, test_size=0.2, random_state=42
         )
+        X_train, y_train = take_rows(X, train_index), take_rows(y, train_index)
+        groups_train = take_rows(groups, train_index)
         cross_validate(
             estimator, X_train, y_train,
             cv=splitter.cv(n_splits=5, random_state=42), groups=groups_train,
@@ -60,23 +62,22 @@ class Splitter:
                 f"unknown method {self.method!r}; expected {list(get_args(Method))}"
             )
 
-    def train_test_split(
+    def train_test_indices(
         self,
         X: DesignMatrix,
-        y: Target,
         groups: Groups | None,
         *,
         test_size: float,
         random_state: int | None,
-    ) -> tuple[
-        DesignMatrix, DesignMatrix, Target, Target, Groups | None, Groups | None
-    ]:
-        """Split ``X``, ``y`` and ``groups``, as scikit-learn's function does.
+    ) -> tuple[np.ndarray, np.ndarray]:
+        """The positions of the training rows and of the test rows of ``X``.
 
-        Returns two per array in scikit-learn's order; the groups come back
-        because :meth:`cv` needs ``groups_train``. ``groups`` may be ``None``
-        only for ``random``, which then returns ``None`` for both group pieces;
-        the other methods split by groups and raise.
+        Positions, as scikit-learn's splitters and :meth:`cv` return, so every
+        array of the table's rows (``X``, ``y``, ``groups``, the exposure) is
+        taken by the same positions, whatever its index, with
+        :func:`~age_group_prediction.utils.take_rows`. ``groups`` may be
+        ``None`` only for ``random``; the other methods split by groups and
+        raise.
         """
         # ShuffleSplit ignores groups and warns if given them.
         keys = None if self.method == "random" else groups
@@ -95,14 +96,7 @@ class Splitter:
             # mypy flags this call if a new Method has no branch above.
             assert_never(self.method)
         train_index, test_index = next(holdout.split(X, groups=keys))
-        X_train, X_test = take_rows(X, train_index), take_rows(X, test_index)
-        y_train, y_test = take_rows(y, train_index), take_rows(y, test_index)
-        groups_train, groups_test = (
-            (None, None)
-            if groups is None
-            else (take_rows(groups, train_index), take_rows(groups, test_index))
-        )
-        return X_train, X_test, y_train, y_test, groups_train, groups_test
+        return train_index, test_index
 
     def cv(self, *, n_splits: int, random_state: int) -> BaseCrossValidator:
         """The validator for the training rows. Give it ``groups_train``.

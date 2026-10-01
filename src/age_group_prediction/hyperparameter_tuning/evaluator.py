@@ -14,7 +14,6 @@ from typing import Annotated, Any
 
 import numpy as np
 import optuna
-import pandas as pd
 from optuna.trial import BaseTrial
 from pydantic import AfterValidator, ConfigDict, Field, InstanceOf
 from pydantic.dataclasses import dataclass as pydantic_dataclass
@@ -24,7 +23,7 @@ from sklearn.model_selection import BaseCrossValidator
 from ..feature_engineering import FeatureTransformer
 from ..modeling import BaseAgeGroupModel
 from ..scoring import Metric
-from ..utils import DesignMatrix, Exposure, Groups, take_rows
+from ..utils import DesignMatrix, Exposure, Groups, Target, take_rows
 from .aggregation import Aggregation, WeightedMean
 from .parameters import Parameter
 
@@ -53,16 +52,17 @@ class CVHyperparameterEvaluator:
             cv=splitter.cv(n_splits=5, random_state=42),
             metric=POISSON_DEVIANCE, feature_transformer=tree,
         )
-        # On the full table, before the split; its rows taken by train_df's labels.
+        # On the full table, before the split; then by the split's positions.
         exposure = ExposureTransformer("n_apartments").fit_transform(table)
         study.optimize(lambda trial: evaluator.evaluate(
             trial, train_df, y_train, groups_train,
-            exposure=exposure.loc[train_df.index]))
+            exposure=take_rows(exposure, train_index)))
 
     The exposure is passed to the model as given, so build it with
     :class:`~age_group_prediction.preprocessing.ExposureTransformer`, which
-    rejects the values LightGBM would accept silently. ``Splitter.train_test_split``
-    does not split it: rows are paired by position, so take the training rows' values.
+    rejects the values LightGBM would accept silently. Rows are paired by
+    position, so take its training rows by the positions
+    ``Splitter.train_test_indices`` returned, the ones that gave ``train_df``.
     A lower-is-better metric is negated, so the study always maximizes.
     ``feature_transformer`` turns the raw table into each fold's design
     matrix. ``aggregation`` combines the fold scores into the trial value.
@@ -87,7 +87,7 @@ class CVHyperparameterEvaluator:
         self,
         trial: BaseTrial,
         X: DesignMatrix,
-        y: pd.Series | np.ndarray,
+        y: Target,
         groups: Groups | None = None,
         *,
         exposure: Exposure | None = None,

@@ -69,43 +69,19 @@ class DirectCohortModel(BaseAgeGroupModel):
         # 1 by default: more OpenMP threads crash alongside torch on macOS.
         self.n_jobs = n_jobs
 
-    def _check_exposure(
-        self, exposure: ArrayLike | None, *, expected: bool
-    ) -> np.ndarray | None:
-        """Return the exposure as floats, or ``None`` when none is ``expected``.
-
-        Only what would otherwise pass silently is checked here; LightGBM itself
-        rejects an unknown objective, a wrong-length exposure at fit and an
-        all-zero y. The values are validated where the data is prepared, by
-        :class:`~age_group_prediction.preprocessing.ExposureTransformer`.
-        """
-        if not expected:
-            return None
-        # A forgotten exposure would silently drop the offset.
-        if exposure is None:
-            raise ValueError(
-                "the model uses an exposure offset (use_exposure=True at fit); "
-                "pass `exposure`"
-            )
-        exposure_values = np.asarray(exposure, dtype=float)
-        # A column (n, 1), e.g. a one-column DataFrame, would broadcast against
-        # the (n,) scores at predict into an (n, n) result.
-        if exposure_values.ndim != 1:
-            raise ValueError(
-                f"exposure must be one-dimensional, got shape {exposure_values.shape}"
-            )
-        return exposure_values
-
     def fit(
         self, X: pd.DataFrame, y: pd.Series, exposure: ArrayLike | None = None
     ) -> Self:
-        """Fit the trees on ``X`` and ``y``; ``exposure`` is raw, not its log."""
+        """Fit the trees on ``X`` and ``y``; ``exposure`` is raw, not its log.
+
+        LightGBM itself rejects an unknown objective and an all-zero ``y``.
+        """
         if self.use_exposure and self.objective == "regression":
             raise ValueError(
                 "an exposure offset needs a log link, which 'regression' lacks; "
                 "set use_exposure=False or use objective='poisson'"
             )
-        exposure_values = self._check_exposure(exposure, expected=self.use_exposure)
+        exposure_values = self._check_exposure(X, exposure, expected=self.use_exposure)
         init_score = None
         base_log_rate = None
         if exposure_values is not None:
@@ -148,7 +124,7 @@ class DirectCohortModel(BaseAgeGroupModel):
         # Follows how the model was fitted, not the current use_exposure, which
         # set_params may have changed since.
         exposure_values = self._check_exposure(
-            exposure, expected=self.base_log_rate_ is not None
+            X, exposure, expected=self.base_log_rate_ is not None
         )
         if exposure_values is None or self.base_log_rate_ is None:
             return np.asarray(self.regressor_.predict(X))

@@ -24,10 +24,10 @@ class ModelPipeline(BaseAgeGroupModel):
     :class:`~age_group_prediction.preprocessing.ExposureTransformer`, which
     rejects the values LightGBM would accept silently. As in scikit-learn,
     the rows of ``X``, ``y`` and the exposure are paired by position, not by
-    index: split them with the same row positions, or take the exposure's
-    rows as ``exposure.loc[X_train.index]``. ``fit`` fits copies, so
-    the templates stay unfitted; ``predict`` uses the fitted copies
-    ``feature_transformer_`` and ``model_``. A setting changed by
+    index: take them all by the same positions, e.g. those of
+    :meth:`~age_group_prediction.splitting.Splitter.train_test_indices`.
+    ``fit`` fits copies, so the templates stay unfitted; ``predict`` uses the
+    fitted copies ``feature_transformer_`` and ``model_``. A setting changed by
     ``set_params`` after ``fit`` therefore reaches only the next ``fit``.
 
     Not scikit-learn's ``Pipeline``: that one names the exposure differently in
@@ -69,4 +69,15 @@ class ModelPipeline(BaseAgeGroupModel):
         check_is_fitted(self)
         return self.model_.predict(
             self.feature_transformer_.transform(X), exposure=exposure
+        )
+
+    def predict_logits(self, X: pd.DataFrame) -> pd.DataFrame:
+        """The model's logits for the raw table ``X``, what a calibrator takes.
+
+        Only for a model that has them, such as
+        :class:`~age_group_prediction.modeling.CohortProbabilityModel`.
+        """
+        check_is_fitted(self)
+        return self.model_.predict_logits(  # type: ignore[attr-defined]
+            self.feature_transformer_.transform(X)
         )

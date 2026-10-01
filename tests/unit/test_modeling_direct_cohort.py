@@ -39,15 +39,36 @@ def test_clone_and_set_params_change_only_the_copy() -> None:
 
 @pytest.mark.parametrize(
     ("exposure", "message"),
-    [(None, "pass `exposure`"), (EXPOSURE[:, None], "one-dimensional")],
-    ids=["missing-while-on", "two-dimensional"],
+    [
+        (None, "pass `exposure`"),
+        (EXPOSURE[:, None], "one-dimensional"),
+        (EXPOSURE[:1], "inconsistent numbers of samples"),
+        (EXPOSURE[:-1], "inconsistent numbers of samples"),
+    ],
+    ids=["missing-while-on", "two-dimensional", "length-one", "one-row-short"],
 )
 def test_exposure_misuse_raises(exposure: np.ndarray | None, message: str) -> None:
-    # Each would otherwise pass silently: a dropped offset, or a column that
-    # broadcasts into an (n, n) prediction. The values are checked by
-    # preprocessing.ExposureTransformer and its tests.
+    # The first two would pass silently: a dropped offset, or a column that
+    # broadcasts into an (n, n) prediction. A wrong length is rejected at fit
+    # by our check, as scikit-learn checks every per-row array, not only by
+    # LightGBM. The values are checked by preprocessing.ExposureTransformer
+    # and its tests.
     with pytest.raises(ValueError, match=message):
         DirectCohortModel(use_exposure=True).fit(X, Y, exposure=exposure)
+
+
+@pytest.mark.parametrize(
+    "exposure", [EXPOSURE[:1], EXPOSURE[:-1]], ids=["length-one", "one-row-short"]
+)
+def test_a_wrong_length_exposure_raises_at_predict(exposure: np.ndarray) -> None:
+    # Without the check numpy would broadcast a length-1 exposure to every
+    # building silently, and fail on another length with a broadcast error.
+    model = DirectCohortModel(use_exposure=True, n_estimators=5).fit(
+        X, Y, exposure=EXPOSURE
+    )
+
+    with pytest.raises(ValueError, match="inconsistent numbers of samples"):
+        model.predict(X, exposure=exposure)
 
 
 def test_an_unused_exposure_is_ignored() -> None:
@@ -126,10 +147,9 @@ def test_subsample_below_one_changes_the_model() -> None:
             X, Y, exposure=EXPOSURE
         ),
         lambda: DirectCohortModel(objective="not_an_objective").fit(X, Y),  # type: ignore[arg-type]
-        lambda: DirectCohortModel(use_exposure=True).fit(X, Y, exposure=EXPOSURE[:10]),
         lambda: DirectCohortModel(use_exposure=True).fit(X, Y * 0, exposure=EXPOSURE),
     ],
-    ids=["regression-with-exposure", "unknown-objective", "wrong-length", "all-zero-y"],
+    ids=["regression-with-exposure", "unknown-objective", "all-zero-y"],
 )
 # log(sum y / sum n) = log 0 warns before LightGBM rejects the all-zero y.
 @pytest.mark.filterwarnings("ignore:divide by zero:RuntimeWarning")

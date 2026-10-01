@@ -100,16 +100,19 @@ from sklearn.base import clone
 from age_group_prediction.modeling import DirectCohortModel
 from age_group_prediction.preprocessing import ExposureTransformer
 from age_group_prediction.scoring import POISSON_DEVIANCE
+from age_group_prediction.utils import take_rows
 
-# table and tree: Feature transformations §8.0 and §8.1; train_df and test_df:
-# a split of that table. The exposure is built before the split (§0.6).
+# table and tree: Feature transformations §8.0 and §8.1; train_index and
+# test_index: Splitter.train_test_indices on that table. The exposure is built
+# before the split and taken by the same positions (§0.6).
 exposure = ExposureTransformer("n_apartments").fit_transform(table)
+train_df, test_df = take_rows(table, train_index), take_rows(table, test_index)
 features = clone(tree).fit(train_df)
 X_train, X_test = features.transform(train_df), features.transform(test_df)
 model = DirectCohortModel(use_exposure=True).fit(
-    X_train, train_df["n_kindergarten"], exposure=exposure.loc[train_df.index]
+    X_train, train_df["n_kindergarten"], exposure=take_rows(exposure, train_index)
 )
-predictions = model.predict(X_test, exposure=exposure.loc[test_df.index])
+predictions = model.predict(X_test, exposure=take_rows(exposure, test_index))
 score = model.evaluate(test_df["n_kindergarten"], predictions, POISSON_DEVIANCE)
 ```
 
@@ -121,15 +124,20 @@ The model checks only what would otherwise pass silently. Each of these raises
 - `exposure` missing when the model uses one, which would drop the offset
   silently (one passed to a model without the offset is ignored);
 - an exposure that is not one-dimensional, which would broadcast into an
-  $(n, n)$ prediction.
+  $(n, n)$ prediction;
+- an exposure whose length differs from `X`'s, at fit and at predict: numpy
+  would broadcast a length-1 exposure to every row at predict silently.
+
+The exposure checks are `BaseAgeGroupModel._check_exposure`, shared by every
+model with an offset.
 
 The exposure's values are checked where the data is prepared, not here:
 `preprocessing.ExposureTransformer` returns the column as floats and raises
 unless every value is strictly positive and finite. LightGBM would accept the
 `-inf` or `nan` offset of a bad value silently, so build the exposure with it.
 
-LightGBM raises its own error for an unknown objective, a wrong-length exposure
-at fit, and an all-zero `y`. The unit tests pin these.
+LightGBM raises its own error for an unknown objective and an all-zero `y`.
+The unit tests pin these.
 
 ### 0.4 What Changed From §1–§10
 
@@ -177,8 +185,9 @@ exports the **original** classes of §1–§10.
    at most a numpy warning (none for NaN; §0.3).
    Neither learns anything, so nothing leaks from the test rows, and a bad
    test row fails before any model is fitted.
-2. **Split by neighborhood** with `Splitter`. It splits `X`, `y` and the
-   groups, **not the exposure**: take its rows as `exposure.loc[X_train.index]`.
+2. **Split by neighborhood** with `Splitter.train_test_indices`. It returns
+   row positions; take the table, the targets and the exposure (and the
+   groups, if a `cv` follows) by the same positions with `take_rows`.
 3. **Fit on the training rows.** Each feature transformer is fitted inside
    its pipeline, on those rows only.
 
@@ -189,6 +198,7 @@ from age_group_prediction.modeling import (
 from age_group_prediction.preprocessing import ExposureTransformer, ShareTransformer
 from age_group_prediction.scoring import POISSON_DEVIANCE
 from age_group_prediction.splitting import Splitter
+from age_group_prediction.utils import take_rows
 
 COHORTS = ["n_kindergarten", "n_elementary", "n_highschool"]
 
@@ -198,13 +208,13 @@ table = ShareTransformer(
 ).fit_transform(raw_table)
 exposure = ExposureTransformer("n_apartments").fit_transform(table)
 
-# 2. The split; the exposure is taken by the same rows
-X_train, X_test, Y_train, Y_test, groups_train, groups_test = Splitter(
-    "grouped"
-).train_test_split(
-    table, table[COHORTS], table["neighborhood_id"], test_size=0.2, random_state=0
+# 2. The split: row positions, applied to every array alike
+train_index, test_index = Splitter("grouped").train_test_indices(
+    table, table["neighborhood_id"], test_size=0.2, random_state=0
 )
-exposure_train, exposure_test = exposure.loc[X_train.index], exposure.loc[X_test.index]
+X_train, X_test = take_rows(table, train_index), take_rows(table, test_index)
+Y_train, Y_test = take_rows(table[COHORTS], train_index), take_rows(table[COHORTS], test_index)
+exposure_train, exposure_test = take_rows(exposure, train_index), take_rows(exposure, test_index)
 
 # 3. One pipeline per cohort; tree is Feature transformations §8.1
 model = IndependentCohortModels({
@@ -224,7 +234,7 @@ scores = {
 | Rule | Why |
 |---|---|
 | **The same exposure goes to every cohort.** A model with `use_exposure=False` ignores it; one fitted with the offset raises without it | One exposure serves every model, and a tuner can compare with and without the offset on one fixed exposure. A forgotten exposure would drop the offset silently |
-| **Rows are paired by position**, not by index, as in scikit-learn. Nothing checks the index | The splitter splits `X`, `y` and the groups by the same positions. Take the exposure's rows by `X`'s labels, as above |
+| **Rows are paired by position**, not by index, as in scikit-learn. Nothing checks the index | The splitter returns row positions, and every array is taken by them, the exposure included, as above |
 | **The keys of `cohort_models` equal `y`'s columns**, each once, or `fit` raises `ValueError` | A cohort would otherwise be dropped silently, or a duplicated column would reach its model as a DataFrame |
 | **The targets come from `y` only.** With the default `remainder="drop"`, as in `tree`, `X` may keep the target columns: each transformer reads only its plans' columns, and `predict` needs none. With `remainder="passthrough"`, drop the targets from `X` first | Otherwise the targets become features, and `predict` fails on a table without them |
 | **Each cohort is tuned on its own.** A nested name such as `cohort_models__n_kindergarten__model__learning_rate` raises `AttributeError`; tune each cohort's `ModelPipeline` (whose nested names, e.g. `model__learning_rate`, work), then assemble the mapping, or replace it with `set_params(cohort_models=...)` | The cohorts are independent, so no study tunes them together |

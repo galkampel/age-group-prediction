@@ -736,11 +736,14 @@ depends on who lives in it.
 The mechanism here is **family lifecycle**: children age in place, so a
 building's age mix reflects when its families formed and moved in.
 
-One structural note before the options. In a multinomial logit **every feature
-already gets its own coefficient per cohort**, so a feature × cohort
+One structural note before the options. In the composition model **every
+feature already gets its own coefficient per cohort**, so a feature × cohort
 interaction is automatic and free. The consequence is that this stage is
-roughly twice as parameter-hungry as the total stage for the same design
-matrix, and parsimony should bind harder here.
+$K$ times as parameter-hungry as the total stage for the same design matrix
+(one intercept and coefficient column per cohort in the rebuilt Dirichlet
+regression, §8.3; the old multinomial logit with a reference cohort had
+$K-1$, "roughly twice" for three cohorts), and parsimony should bind harder
+here.
 
 | Option | Verdict | What it buys you |
 |---|---|---|
@@ -1042,17 +1045,55 @@ the model takes it separately, as `exposure=`, where it cannot be mistaken for
 a predictor, and forms the offset $\log n$ itself. Build it with
 `ExposureTransformer` on the full table before splitting, as in §8.1.
 
+```python
+from age_group_prediction.modeling import ModelPipeline, TotalChildrenModel
+from age_group_prediction.preprocessing import ExposureTransformer
+
+exposure = ExposureTransformer("n_apartments").fit_transform(table)
+total_model = ModelPipeline(total_base, TotalChildrenModel()).fit(  # family="poisson" or "nb2"
+    fit_df, fit_df["n_children_total"], exposure=exposure.loc[fit_df.index]
+)
+total_mean = total_model.predict(valid_df, exposure=exposure.loc[valid_df.index])
+```
+
 ### 8.3 Model B — composition stage
 
 **The same plans, and a model with no exposure** (§4.7): age-group shares do
-not depend on building size. In a multinomial logit every feature already gets
-a coefficient per cohort, so this stage is roughly twice as parameter-hungry
-for the same design matrix and parsimony binds harder (§6.3).
+not depend on building size. The model is a Dirichlet regression of the
+cohort shares (`CohortProbabilityModel`), with one intercept and one
+coefficient per feature **for every cohort**, so this stage has $K$ times the
+total stage's parameters for the same design matrix and parsimony binds
+harder (§6.3). *Renamed from `composition_base` on 2026-10-01, after the
+model it feeds.*
 
 ```python
-composition_base = FeatureTransformer(
+from age_group_prediction.modeling import CohortProbabilityModel
+
+cohort_probability_base = FeatureTransformer(
     plans=total_base.plans,      # identical; only the model differs, taking no exposure
 )
+probability_model = ModelPipeline(cohort_probability_base, CohortProbabilityModel()).fit(
+    fit_df, fit_df[["n_kindergarten", "n_elementary", "n_highschool"]]
+)
+shares = probability_model.predict(valid_df)  # a DataFrame; rows sum to 1
+```
+
+**Combining the two.** `IndependentTotalProbabilityModel` holds both
+pipelines, fits them on the raw table (the total on the row sum of `y`) and
+predicts `total × shares`, one column per cohort. The same exposure goes to
+both; the probability model ignores it. The data flow, the post-hoc
+temperature calibration of the shares and the rules are in
+[Independent total and probability model §0](INDEPENDENT_TOTAL_PROBABILITY_MODEL.md#0-the-rebuilt-model-modelingindependent_total_probabilitypy).
+
+```python
+from age_group_prediction.modeling import IndependentTotalProbabilityModel
+
+COHORTS = ["n_kindergarten", "n_elementary", "n_highschool"]
+model_2 = IndependentTotalProbabilityModel(
+    total_children_model=ModelPipeline(total_base, TotalChildrenModel()),
+    cohort_probability_model=ModelPipeline(cohort_probability_base, CohortProbabilityModel()),
+).fit(fit_df, fit_df[COHORTS], exposure=exposure.loc[fit_df.index])
+predictions = model_2.predict(valid_df, exposure=exposure.loc[valid_df.index])
 ```
 
 ### 8.4 Model C — `BayesianConditionalModel`
@@ -1070,7 +1111,7 @@ written out; the other is the base declaration above, unchanged.
 
 | # | Candidate | Total | Composition |
 |---|---|---|---|
-| 1 | base | `total_base` | `composition_base` |
+| 1 | base | `total_base` | `cohort_probability_base` |
 | 2 | `total__ses_quadratic` | + the plan in 8.5.1 | base |
 | 3 | `total__daycare_log1p` | daycare plan replaced, 8.5.2 | base |
 | 4 | `total__room_share_x_household_size` | + the interactions in 8.5.3 | base |
@@ -1206,7 +1247,18 @@ open user-named `Interaction`s. **The rest still stand:**
    to about 4.00 there, more than any scaling choice moved it. The audit
    scored on independent populations, not on the project's cross-validation,
    so this is a prompt to check the ranges in the tuning work, not a
-   conclusion.
+   conclusion. *In the rebuilt models (2026-10-01) one `l2_penalty` has one
+   meaning in both stages: it multiplies $\tfrac12\|\beta\|^2$ added to the
+   **mean** negative log-likelihood per building, intercepts unpenalized
+   ([plan N8](MULTI_COHORT_MODELS_PLAN.md)). The old total penalty had that
+   meaning, so `total_l2_penalty = 1.0` is `l2_penalty = 1.0` on
+   `TotalChildrenModel`; the old `probability_c` was scikit-learn's inverse
+   `C` per child, and its range $[0.01, 100]$ is about `l2_penalty`
+   $[2\times10^{-6}, 2\times10^{-2}]$ at ~4,500 training children, before the
+   composition model became a Dirichlet regression per building. A second
+   prompt: in the plan's B7 smoke run the unpenalized Poisson total overfits
+   one population of ten (deviance 6.90 against the constant rate's 4.69), and
+   `l2_penalty = 1.0` pulls it back to 5.29 (NB2: 3.96).*
 
 ## 9. Related Documents
 

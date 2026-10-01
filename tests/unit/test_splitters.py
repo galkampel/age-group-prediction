@@ -21,6 +21,7 @@ from sklearn.model_selection import (
 )
 
 from age_group_prediction.splitting import Splitter, StratifiedFolds, StratifiedHoldout
+from age_group_prediction.utils import take_rows
 
 METHODS = ("random", "stratified_by_group", "grouped")
 
@@ -44,12 +45,15 @@ def _pairs() -> tuple[pd.DataFrame, pd.Series, pd.Series]:
     return _frame(rows_per_group=2, n_groups=5)
 
 
-def _split(method: str, seed: int, test_size: float = 0.2, pairs: bool = False):
-    """The six-tuple, for whichever fixture the test wants."""
-    X, y, groups = _pairs() if pairs else _frame()
-    return Splitter(method).train_test_split(
-        X, y, groups, test_size=test_size, random_state=seed
+def _split(
+    method: str, seed: int, test_size: float = 0.2, pairs: bool = False
+) -> tuple[pd.Series, pd.Series]:
+    """``(groups_train, groups_test)``, for whichever fixture the test wants."""
+    X, _, groups = _pairs() if pairs else _frame()
+    train_index, test_index = Splitter(method).train_test_indices(
+        X, groups, test_size=test_size, random_state=seed
     )
+    return groups.iloc[train_index], groups.iloc[test_index]
 
 
 # --- What each method guarantees --------------------------------------
@@ -57,7 +61,7 @@ def _split(method: str, seed: int, test_size: float = 0.2, pairs: bool = False):
 
 def test_stratified_by_group_always_leaves_every_test_group_represented() -> None:
     for seed in range(50):
-        *_, groups_train, groups_test = _split("stratified_by_group", seed, pairs=True)
+        groups_train, groups_test = _split("stratified_by_group", seed, pairs=True)
         assert set(groups_test) <= set(groups_train)
 
 
@@ -67,8 +71,8 @@ def test_random_sometimes_leaves_a_group_unrepresented() -> None:
     swallowed = [
         seed
         for seed in range(50)
-        if not set(_split("random", seed, pairs=True)[5])
-        <= set(_split("random", seed, pairs=True)[4])
+        if not set(_split("random", seed, pairs=True)[1])
+        <= set(_split("random", seed, pairs=True)[0])
     ]
     assert swallowed, "expected at least one seed to hold out a whole group"
 
@@ -76,46 +80,56 @@ def test_random_sometimes_leaves_a_group_unrepresented() -> None:
 def test_grouped_never_leaves_a_test_group_represented() -> None:
     # The opposite guarantee: a test group is never among the fit rows.
     for seed in range(20):
-        *_, groups_train, groups_test = _split("grouped", seed)
+        groups_train, groups_test = _split("grouped", seed)
         assert not set(groups_test) & set(groups_train)
 
 
-# --- What train_test_split returns ------------------------------------
+# --- What train_test_indices returns ----------------------------------
 
 
 @pytest.mark.parametrize("method", METHODS)
-def test_it_returns_two_pieces_per_array_in_sklearn_order(method: str) -> None:
-    X, y, groups = _frame()
-    X_train, X_test, y_train, y_test, groups_train, groups_test = Splitter(
-        method
-    ).train_test_split(X, y, groups, test_size=0.25, random_state=0)
-
-    assert len(X_train) == len(y_train) == len(groups_train)
-    assert len(X_test) == len(y_test) == len(groups_test)
-    assert len(X_train) + len(X_test) == len(X)
-
-
-@pytest.mark.parametrize("method", METHODS)
-def test_the_pieces_keep_their_original_row_labels(method: str) -> None:
-    # Why a fold can still be traced back to a table row: pandas carries the
-    # label through positional slicing.
-    X, y, groups = _frame()
-    X_train, X_test, y_train, _, groups_train, _ = Splitter(method).train_test_split(
-        X, y, groups, test_size=0.25, random_state=0
+def test_every_row_lands_on_exactly_one_side(method: str) -> None:
+    # A row lost, or in both halves, would leak or waste data silently.
+    X, _, groups = _frame()
+    train_index, test_index = Splitter(method).train_test_indices(
+        X, groups, test_size=0.25, random_state=0
     )
 
-    assert list(X_train.index) == list(y_train.index) == list(groups_train.index)
-    assert set(X_train.index) | set(X_test.index) == set(X.index)
-    # The rows travel together: X and y agree on every kept label.
-    pd.testing.assert_series_equal(y_train, y.loc[X_train.index])
+    np.testing.assert_array_equal(
+        np.sort(np.concatenate([train_index, test_index])), np.arange(len(X))
+    )
+
+
+@pytest.mark.parametrize("method", METHODS)
+def test_the_indices_are_positions_whatever_the_index(method: str) -> None:
+    # Every array (the exposure too) is taken by these positions. Labels
+    # returned as positions would take other rows, silently once the labels
+    # fall in range; _frame's labels start at 100.
+    X, _, groups = _frame()
+    labelled = Splitter(method).train_test_indices(
+        X, groups, test_size=0.25, random_state=0
+    )
+    plain = Splitter(method).train_test_indices(
+        X.reset_index(drop=True),
+        groups.reset_index(drop=True),
+        test_size=0.25,
+        random_state=0,
+    )
+
+    for index, expected in zip(labelled, plain, strict=True):
+        np.testing.assert_array_equal(index, expected)
 
 
 @pytest.mark.parametrize("method", METHODS)
 def test_the_same_random_state_reproduces_the_split(method: str) -> None:
-    first = _split(method, 7)
-    again = _split(method, 7)
+    X, _, groups = _frame()
+    first, again = (
+        Splitter(method).train_test_indices(X, groups, test_size=0.2, random_state=7)
+        for _ in range(2)
+    )
 
-    assert list(first[1].index) == list(again[1].index)
+    for index, repeated in zip(first, again, strict=True):
+        np.testing.assert_array_equal(index, repeated)
 
 
 @pytest.mark.parametrize("method", METHODS)
@@ -126,36 +140,32 @@ def test_a_different_random_state_moves_the_split(method: str) -> None:
 
 @pytest.mark.parametrize("method", METHODS)
 def test_every_method_holds_out_some_rows_and_keeps_most(method: str) -> None:
-    X_train, X_test, *_ = _split(method, 0)
+    groups_train, groups_test = _split(method, 0)
 
-    assert 0 < len(X_test) < len(X_train)
+    assert 0 < len(groups_test) < len(groups_train)
 
 
 def test_it_works_on_numpy_arrays_too() -> None:
-    # No pandas anywhere: the helper falls back to plain indexing.
+    # No pandas anywhere: the indices take rows of plain arrays as well.
     groups = np.array([f"N{g}" for g in range(1, 7) for _ in range(4)])
     X = np.arange(24.0).reshape(-1, 1)
-    X_train, X_test, _, _, groups_train, groups_test = Splitter(
-        "stratified_by_group"
-    ).train_test_split(X, np.arange(24.0), groups, test_size=0.25, random_state=0)
+    train_index, test_index = Splitter("stratified_by_group").train_test_indices(
+        X, groups, test_size=0.25, random_state=0
+    )
 
-    assert X_train.shape[0] + X_test.shape[0] == 24
-    assert set(groups_test) <= set(groups_train)
+    assert len(train_index) + len(test_index) == 24
+    assert set(take_rows(groups, test_index)) <= set(take_rows(groups, train_index))
 
 
-def test_random_takes_groups_none_and_returns_none_pieces() -> None:
+def test_random_takes_groups_none() -> None:
     # random never reads groups, and its validator warns if given them, so a
     # caller without groups must not have to invent some.
-    X, y, _ = _frame()
-    X_train, X_test, y_train, y_test, groups_train, groups_test = Splitter(
-        "random"
-    ).train_test_split(X, y, None, test_size=0.25, random_state=0)
+    X, _, _ = _frame()
+    train_index, test_index = Splitter("random").train_test_indices(
+        X, None, test_size=0.25, random_state=0
+    )
 
-    assert groups_train is None
-    assert groups_test is None
-    assert len(X_train) + len(X_test) == len(X)
-    assert list(X_train.index) == list(y_train.index)
-    assert list(X_test.index) == list(y_test.index)
+    assert len(train_index) + len(test_index) == len(X)
 
 
 # --- The cross-validator ----------------------------------------------
@@ -201,8 +211,8 @@ def test_each_method_pairs_one_split_with_one_validator(
 
         monkeypatch.setattr(cls, "__init__", record)
 
-    X, y, groups = _frame()
-    Splitter(method).train_test_split(X, y, groups, test_size=0.2, random_state=0)
+    X, _, groups = _frame()
+    Splitter(method).train_test_indices(X, groups, test_size=0.2, random_state=0)
 
     assert seen == [holdout]
     assert isinstance(Splitter(method).cv(n_splits=3, random_state=0), validator)
@@ -249,9 +259,11 @@ def test_the_documented_two_step_flow_scores_every_fold(method: str) -> None:
     groups = None if method == "random" else groups
     splitter = Splitter(method)
 
-    X_train, _, y_train, _, groups_train, _ = splitter.train_test_split(
-        X, y, groups, test_size=0.2, random_state=42
+    train_index, _ = splitter.train_test_indices(
+        X, groups, test_size=0.2, random_state=42
     )
+    X_train, y_train = take_rows(X, train_index), take_rows(y, train_index)
+    groups_train = None if groups is None else take_rows(groups, train_index)
     scores = cross_validate(
         DummyRegressor(),
         X_train,
@@ -302,10 +314,10 @@ def test_a_test_size_outside_the_unit_interval_is_rejected(test_size: float) -> 
 @pytest.mark.parametrize("method", ["stratified_by_group", "grouped"])
 def test_the_group_aware_methods_reject_groups_none(method: str) -> None:
     # One message for both: StratifiedHoldout raises sklearn's own wording.
-    X, y, _ = _frame()
+    X, _, _ = _frame()
 
     with pytest.raises(ValueError, match="should not be None"):
-        Splitter(method).train_test_split(X, y, None, test_size=0.25, random_state=0)
+        Splitter(method).train_test_indices(X, None, test_size=0.25, random_state=0)
 
 
 @pytest.mark.parametrize("method", METHODS)
@@ -333,9 +345,9 @@ def test_repeated_splits_give_identical_folds(method: str) -> None:
 
 def test_there_are_no_default_parameters() -> None:
     # Sizing and seeding are decisions, so the call site has to state them.
-    X, y, groups = _frame()
+    X, _, groups = _frame()
 
     with pytest.raises(TypeError):
-        Splitter("random").train_test_split(X, y, groups)  # type: ignore[call-arg]
+        Splitter("random").train_test_indices(X, groups)  # type: ignore[call-arg]
     with pytest.raises(TypeError):
         Splitter("random").cv()  # type: ignore[call-arg]
