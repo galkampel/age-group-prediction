@@ -89,8 +89,8 @@ does not import `tracking`.
 These are scikit-learn-style models that replace `models/` and
 `modeling_config`: settings in the constructor, and `fit(X, y, exposure=None)` /
 `predict(X, exposure=None)`. A single model such as `DirectCohortModel` takes an
-already transformed design matrix; `ModelPipeline` and `IndependentCohortModels`
-take the raw table. Nothing in `experiment/` or
+already transformed design matrix; `ModelPipeline`, `IndependentCohortModels`
+and `IndependentTotalProbabilityModel` take the raw table. Nothing in `experiment/` or
 `tracking/` calls them yet; the old `models/` is deleted once all three models
 are rebuilt. Plans: [MODEL_REIMPLEMENTATION_PLAN.md](MODEL_REIMPLEMENTATION_PLAN.md),
 [MULTI_COHORT_MODELS_PLAN.md](MULTI_COHORT_MODELS_PLAN.md).
@@ -108,8 +108,9 @@ are rebuilt. Plans: [MODEL_REIMPLEMENTATION_PLAN.md](MODEL_REIMPLEMENTATION_PLAN
 | `independent_cohorts.py` | **Model 1.** One independent model per cohort (any `BaseAgeGroupModel`, usually a `ModelPipeline` with its own features), fitted on its column of `y`; every cohort gets the same exposure; predicts a DataFrame, one column per cohort | `IndependentCohortModels`, `CohortModels` | `base` |
 | `independent_total_probability.py` | **Model 2.** The predicted total times the predicted cohort shares: `total_children_model` (fitted on the row sum of `y`) and `cohort_probability_model` (on `y`), two `ModelPipeline`s with their own features, cloned in `fit`, the same exposure to both (the probability model ignores it); an optional `temperature_calibrator`, already fitted on out-of-fold logits, applied to the probability pipeline's `predict_logits` at `predict`, used as given (`clone` drops its fit: wrap it in `FrozenEstimator` for a tuner); the shares' columns must equal `y`'s at fit; predicts a DataFrame with `y`'s columns and `X`'s index. Nested `set_params` names reach the two models | `IndependentTotalProbabilityModel` | `base`, `calibration` |
 
-Model description: [DIRECT_COHORT_MODEL.md §0](DIRECT_COHORT_MODEL.md#0-the-rebuilt-model-modelingdirect_cohortpy);
-every cohort from the raw table: [§0.6](DIRECT_COHORT_MODEL.md#06-every-cohort-from-the-raw-table-modelpipeline-and-independentcohortmodels).
+Model descriptions: Model 1, [DIRECT_COHORT_MODEL.md §0](DIRECT_COHORT_MODEL.md#0-the-rebuilt-model-modelingdirect_cohortpy),
+every cohort from the raw table in [§0.6](DIRECT_COHORT_MODEL.md#06-every-cohort-from-the-raw-table-modelpipeline-and-independentcohortmodels);
+Model 2, [INDEPENDENT_TOTAL_PROBABILITY_MODEL.md §0](INDEPENDENT_TOTAL_PROBABILITY_MODEL.md#0-the-rebuilt-model-modelingindependent_total_probabilitypy).
 
 ## `age_group_prediction.models` — Model Families
 

@@ -1,5 +1,242 @@
 # Independent Total And Probability Model (Model B)
 
+> **Two implementations.** §0 describes the rebuilt
+> `age_group_prediction.modeling.IndependentTotalProbabilityModel` and the
+> three classes it is made of. They are built and tested, but nothing calls
+> them yet. §1–§12 describe the original
+> `models/independent_total_probability.py`, which `experiment/` and
+> `tracking/` still run. That code is deleted once all three models are
+> rebuilt ([plan](MODEL_REIMPLEMENTATION_PLAN.md)).
+
+## 0. The Rebuilt Model (`modeling/independent_total_probability.py`)
+
+Two independent models, multiplied: a count regression for a building's
+**total** children and a Dirichlet regression for its **cohort shares**, each
+a `ModelPipeline` with its own feature transformer, fitted on the raw table.
+The shares can be calibrated afterwards by a temperature fitted on
+out-of-fold logits. Means only; nothing is searched inside `fit`.
+Decisions and evidence: [MULTI_COHORT_MODELS_PLAN.md](MULTI_COHORT_MODELS_PLAN.md)
+(§5, §7 and §9 B1–B9).
+
+### 0.1 The Model
+
+For building $b$ with apartment count $A_b$, feature vectors $x_b$ (total
+stage) and $w_b$ (composition stage), cohort counts $C_{b,k}$,
+$k = 1,\dots,K$, and total $Y_b = \sum_k C_{b,k}$:
+
+**Total** (`TotalChildrenModel`): the GLM of §1 without clipping or a floor,
+
+$$
+\log\mu_b = \log A_b + \beta_0 + x_b^\top\beta,
+\qquad
+Y_b \sim \operatorname{Poisson}(\mu_b)
+\;\;\text{or}\;\;
+Y_b \sim \operatorname{NB2}(\mu_b, \alpha),\ \operatorname{Var}(Y_b) = \mu_b + \alpha\mu_b^2 .
+$$
+
+$\log A_b$ is the offset (`use_exposure=True`, the default; without it
+there is no offset). For NB2, $\log\alpha$ is fitted with $\beta_0$ and
+$\beta$ and kept at $\alpha \ge 10^{-6}$, the Poisson limit in practice
+(below it the likelihood of data without overdispersion has no maximum).
+
+**Composition** (`CohortProbabilityModel`): a Dirichlet regression of the
+observed shares $s_{b,k} = C_{b,k} / Y_b$,
+
+$$
+s_b \sim \operatorname{Dirichlet}(\alpha_b),
+\qquad
+\alpha_{b,k} = \exp\!\left(a_k + w_b^\top\gamma_k\right),
+\qquad
+p_{b,k} = \frac{\alpha_{b,k}}{\sum_j \alpha_{b,j}} = \operatorname{softmax}(\log\alpha_b)_k ,
+$$
+
+one intercept and one coefficient vector per cohort (the common
+parameterization: a shift of all intercepts changes the precision
+$\sum_k \alpha_{b,k}$, not the mean, so the coefficients are identified).
+A share of 0 has no density, so the shares are compressed toward the centre
+before the fit, $s' = (s\,(N-1) + 1/K)/N$ over the $N$ training buildings
+(Smithson & Verkuilen 2006, as R's `DirichletReg`). Every building needs a
+child; the fit weighs buildings equally (one composition each).
+
+**Objectives.** Each model minimizes the **mean** negative log-likelihood per
+building plus $\tfrac{\lambda}{2}\lVert\beta\rVert^2$ on the feature
+coefficients only ($\lambda$ = `l2_penalty`; intercepts and $\alpha$
+unpenalized), with scipy's L-BFGS-B or BFGS on torch's likelihood and
+gradient. A fit that does not converge, overflows or ends non-finite raises.
+
+**Calibration** (`TemperatureCalibrator`, post-hoc): one temperature $T$
+fitted on **out-of-fold** logits $\ell_{b,k} = \log\alpha_{b,k}$ of the
+composition model and the same buildings' counts,
+
+$$
+p_{b,k}(T) = \frac{\exp(\ell_{b,k}/T)}{\sum_j \exp(\ell_{b,j}/T)},
+\qquad
+\hat T = \arg\min_{\log(1/T)\in(-10,\,10)}
+\;-\frac{1}{N}\sum_{b}\sum_{k} s_{b,k}\,\log p_{b,k}(T),
+$$
+
+the cross-entropy of each building's observed composition under the scaled
+shares, averaged over buildings (per building, as the Dirichlet fit), in
+log space so that a sharp logit never underflows to $\log 0$. $T = 1$ is
+the model's own prediction; $T > 1$ flattens it. The fitted value is always
+used: no likelihood-ratio gate. The precision $\sum_k\alpha_{b,k}$ is a row
+constant of $\ell_b$ and cancels, so the calibration is a power transform
+of the mean shares alone.
+
+**Combined prediction:**
+
+$$
+\widehat C_{b,k} = \widehat\mu_b\,\widehat p_{b,k}(\hat T),
+\qquad
+\sum_k \widehat C_{b,k} = \widehat\mu_b .
+$$
+
+### 0.2 API
+
+Import from `age_group_prediction.modeling`; the package root exports the
+**original** class of the same name (§1–§12).
+
+| Class | Settings (defaults) | `fit` takes | Fitted state | `predict` returns |
+|---|---|---|---|---|
+| `TotalChildrenModel` | `family="poisson"` or `"nb2"`; `solver="lbfgs"` or `"bfgs"` (`nb2`: `lbfgs` only, the solver with bounds); `use_exposure=True`; `l2_penalty=0.0`; `max_iter=500`; `tol=1e-6` (bounds the gradient) | the design matrix, the totals, `exposure=` (raw apartments) | `intercept_`, `coef_`, `use_exposure_`, `dispersion_` (NB2 only), `feature_names_in_`, `n_features_in_` | the mean total, an array |
+| `CohortProbabilityModel` | `solver`, `l2_penalty`, `max_iter`, `tol` as above | the design matrix, a DataFrame of cohort counts (≥ 2 columns, every building with a child); an exposure is ignored | `intercept_` (K), `coef_` (d × K), `cohorts_`, the feature names | the mean shares, a DataFrame with `y`'s columns, rows summing to 1; `predict_logits` gives $\log\alpha$ |
+| `TemperatureCalibrator` | none | out-of-fold logits and the counts of the same rows (DataFrames or arrays, paired by position) | `temperature_` | `softmax(logits / T)`, a DataFrame with the logits' columns and index |
+| `IndependentTotalProbabilityModel` | `total_children_model`, `cohort_probability_model` (two `ModelPipeline`s), `temperature_calibrator=None` (a fitted calibrator, or a `FrozenEstimator` of one) | the raw table, the cohort counts, `exposure=` for both models | `total_children_model_`, `cohort_probability_model_`, `temperature_calibrator_`, `cohorts_` | `total × shares`, a DataFrame with `y`'s columns at fit, indexed like `X` |
+
+`ModelPipeline.predict_logits(X)` transforms the raw table with the fitted
+transformer and returns the model's logits: what a calibrator is fitted on
+and what Model 2 feeds it at `predict`. Every model keeps the base signature
+`fit(X, y, exposure=None)` and `predict(X, exposure=None)`, and `evaluate`.
+
+### 0.3 Data Flow
+
+1. **Row-wise preprocessing, on the full table, before the split.**
+   `ShareTransformer` turns the room counts into shares; `ExposureTransformer`
+   returns the exposure as floats and raises for a zero, negative, infinite
+   or NaN value. Neither learns anything, so nothing leaks from the test rows.
+2. **Split by neighborhood** with `Splitter.train_test_indices`: row
+   positions, applied to the table, the targets, the groups and the exposure
+   alike with `take_rows`.
+3. **Calibrate on the training rows only.** Grouped folds on the training
+   rows; each fold's copy of the composition pipeline gives the held-out
+   rows' logits; the calibrator is fitted on all of them.
+4. **Fit Model 2 on the training rows** with the fitted calibrator, and
+   predict the test rows.
+
+```python
+from sklearn.base import clone
+
+from age_group_prediction.modeling import (
+    CohortProbabilityModel, IndependentTotalProbabilityModel, ModelPipeline,
+    TemperatureCalibrator, TotalChildrenModel,
+)
+from age_group_prediction.preprocessing import ExposureTransformer, ShareTransformer
+from age_group_prediction.scoring import COHORT_LOG_LOSS, POISSON_DEVIANCE
+from age_group_prediction.splitting import Splitter
+from age_group_prediction.utils import take_rows
+
+COHORTS = ["n_kindergarten", "n_elementary", "n_highschool"]
+
+# 1. On the full table: raw_table is the simulator's or the real data
+table = ShareTransformer(
+    ("3_rooms", "4_rooms", "5_rooms", "6_rooms"), reference_column="3_rooms"
+).fit_transform(raw_table)
+exposure = ExposureTransformer("n_apartments").fit_transform(table)
+
+# 2. The split: row positions, applied to every array alike
+train_index, test_index = Splitter("grouped").train_test_indices(
+    table, table["neighborhood_id"], test_size=0.2, random_state=0
+)
+X_train, X_test = take_rows(table, train_index), take_rows(table, test_index)
+Y_train, Y_test = take_rows(table[COHORTS], train_index), take_rows(table[COHORTS], test_index)
+groups_train = take_rows(table["neighborhood_id"], train_index)
+exposure_train, exposure_test = take_rows(exposure, train_index), take_rows(exposure, test_index)
+
+# 3. The calibrator, on out-of-fold logits of the composition pipeline;
+#    total_base and cohort_probability_base are Feature transformations §8.2–§8.3
+probability_pipeline = ModelPipeline(cohort_probability_base, CohortProbabilityModel())
+logits_val, counts_val = [], []
+for fit_index, val_index in Splitter("grouped").cv(n_splits=5, random_state=0).split(
+    X_train, Y_train, groups_train
+):
+    fold = clone(probability_pipeline).fit(take_rows(X_train, fit_index), take_rows(Y_train, fit_index))
+    logits_val.append(fold.predict_logits(take_rows(X_train, val_index)))
+    counts_val.append(take_rows(Y_train, val_index))
+calibrator = TemperatureCalibrator().fit(pd.concat(logits_val), pd.concat(counts_val))
+
+# 4. Model 2: the exposure goes to both pipelines; the composition one ignores it
+model = IndependentTotalProbabilityModel(
+    total_children_model=ModelPipeline(total_base, TotalChildrenModel()),  # or family="nb2"
+    cohort_probability_model=probability_pipeline,
+    temperature_calibrator=calibrator,  # FrozenEstimator(calibrator) if the model is cloned
+).fit(X_train, Y_train, exposure=exposure_train)
+predictions = model.predict(X_test, exposure=exposure_test)  # a DataFrame, total × shares
+scores = {
+    cohort: model.evaluate(Y_test[cohort], predictions[cohort], POISSON_DEVIANCE)
+    for cohort in COHORTS
+}
+scores["total"] = model.evaluate(Y_test.sum(axis=1), predictions.sum(axis=1), POISSON_DEVIANCE)
+scores["composition"] = model.evaluate(Y_test, predictions, COHORT_LOG_LOSS)  # per child
+```
+
+### 0.4 Rules
+
+| Rule | Why |
+|---|---|
+| **The same exposure goes to both models.** The total model raises without it (`use_exposure=True`); the composition model ignores it | A forgotten exposure would drop the offset silently; one exposure serves every model (Model 1's rule too) |
+| **Rows are paired by position**, not by index; nothing checks the index | The splitter returns positions and every array is taken by them |
+| **Every building has a child, and `y` has at least two cohorts.** Counts are validated where the data is prepared, not in the models; a cohort with no child at all raises | The observation is a building's composition; an unobserved cohort would be fitted to the compressed floor silently |
+| **The calibrator is fitted by the caller on out-of-fold logits and used as given.** `sklearn.base.clone` drops its fit, so wrap it in `sklearn.frozen.FrozenEstimator` when the model is cloned (a tuner clones per trial) | sklearn's own idiom for a prefit estimator inside a meta-estimator; the model has no folds inside |
+| **Set before `fit`.** The two pipelines are cloned in `fit`, and `predict` follows the fitted copies and the calibrator given at `fit`. Nested names reach both models, e.g. `set_params(cohort_probability_model__model__l2_penalty=1e-3)` (unlike Model 1's mapping) | Two named estimators are ordinary parameters; the templates stay unfitted |
+| **The composition model's columns must equal `y`'s at fit**, or `predict` raises | Shares under other names or in another order would be multiplied in by position, silently |
+| **`nb2` takes `solver="lbfgs"` only** | The floor on $\alpha$ is an L-BFGS-B bound; scipy would only warn and drop it under BFGS |
+| **One penalty meaning**: per building, intercepts unpenalized | Comparable across folds of different size; the old `probability_c` was per child ([Feature transformations §8.7 item 7](FEATURE_TRANSFORMATIONS.md#87-still-outstanding)) |
+| **$T$ is fitted per building; `COHORT_LOG_LOSS` scores per child** | The calibrator weighs buildings as the Dirichlet fit does; the metric weighs children, so the fitted $T$ is not the metric's optimum |
+| **The target columns come from `y` only**; with `remainder="drop"` (the §8 transformers) `X` may keep them | `predict` needs no target column |
+
+### 0.5 Errors
+
+| Raises | When |
+|---|---|
+| `ValueError` "pass `exposure`" / "inconsistent numbers of samples" / "one-dimensional" | the total model fitted or used with the offset but no exposure, or one of another length or shape |
+| `ValueError` "no child is observed in cohorts" | a cohort column of `y` sums to 0 |
+| `ValueError` "feature names" | columns reordered, renamed or missing at `predict` (scikit-learn's check) |
+| `ValueError` "unknown family" / "takes no bounds" / "l2_penalty must be at least 0" / "unknown solver" | a setting that would otherwise fit something else silently |
+| `RuntimeError` "did not converge" / "overflowed" / "non-finite objective" | the optimizer stopped early, or features on too large a scale (standardize them) |
+| `RuntimeError` "temperature search failed" | nan logits in the calibrator's `fit`; a building without children too, after numpy's divide warning (an error under `-W error`) |
+| `NotFittedError` | `predict` before `fit`; a calibrator that was never fitted or was dropped by `clone` |
+| `ValueError` "predicts cohorts … but y's columns at fit were" | the composition model's columns differ from `y`'s |
+
+Left to the libraries or to preprocessing: a negative count or an empty
+building (torch's argument validation raises; `ExposureTransformer` and the
+data preparation validate values), a Series `y` for the composition model,
+NaN in `X` (scikit-learn's input check).
+
+### 0.6 What Changed From §1–§12
+
+- **The composition model is a Dirichlet regression of the shares** (§0.1),
+  not a grouped multinomial on the counts: it models the composition and its
+  precision, weighs buildings equally, and is identified. Zero shares are
+  compressed, not dropped.
+- **Calibration is post-hoc** (`TemperatureCalibrator`), fitted by the caller
+  on out-of-fold logits, per building, with **no likelihood-ratio gate**: the
+  fitted $T$ is always used (§4's gate and `calibration_significance_level`
+  are gone).
+- **No clipping and no floor** on the mean (§3's $[-30, 30]$ and
+  `minimum_mean`); a failed fit raises. NB2's $\alpha$ has a floor at
+  $10^{-6}$ and no ceiling (§3's $[10^{-4}, 5]$).
+- **The exposure is an argument** (`exposure=`), built once with
+  `ExposureTransformer`, not a column the model reads.
+- **Hyperparameters are fixed in the constructors** and tuned from outside
+  (`set_params`); nothing is searched in `fit` (§5).
+- **Dropped** (means only): pointwise and joint log probabilities, predictive
+  draws and intervals, bootstrap refits, state bundles, persistence and
+  metadata (§6–§10).
+- **Evidence**: the plan's B7 smoke run over ten simulated populations,
+  untuned: Model 2 equals Model 1 on held-out deviance (within the noise) and
+  beats it on composition (cohort log loss, under 1% per child); calibration
+  adds a small, inconsistent gain ([plan §9 B7](MULTI_COHORT_MODELS_PLAN.md)).
+
 `IndependentTotalProbabilityModel` splits the prediction into two separately
 fitted parts: a count regression for a building's **total** children and a
 grouped multinomial model for the **age composition** of those children. Its
@@ -107,9 +344,8 @@ state, but carry zero composition weight.
 
 *Rebuilt (2026-10-01, `modeling/calibration.py`, `TemperatureCalibrator`):
 the calibrator is post-hoc, fitted by the caller on out-of-fold logits, with no
-likelihood-ratio gate and a per-building objective. Its formula is in
-[MULTI_COHORT_MODELS_PLAN.md §7](MULTI_COHORT_MODELS_PLAN.md#7-target-code-shape),
-"The calibration objective". The paragraph below describes the old model.*
+likelihood-ratio gate and a per-building objective; see §0.1. The paragraph
+below describes the old model.*
 
 After `probability_c` is selected, the model fits the composition component on
 each tuning fold's fit rows and collects out-of-fold logits for the validation
@@ -296,6 +532,11 @@ the cohort distribution declaration.
 
 ## 12. Tests And Related Documents
 
+- Tests of the rebuilt model (§0): `tests/unit/test_modeling_total_children.py`,
+  `test_modeling_cohort_probability.py`, `test_modeling_calibration.py`,
+  `test_modeling_independent_total_probability.py`, `test_modeling_pipeline.py`,
+  `test_modeling_optimization.py`, the contract test `test_modeling_contract.py`;
+  statsmodels oracles in `tests/validation/test_total_children.py`.
 - Tests: `tests/unit/test_independent_total_probability.py` (including the
   grouped/literal expansion oracle), `tests/unit/test_distributions.py`,
   `tests/unit/test_composition_kernels.py`,

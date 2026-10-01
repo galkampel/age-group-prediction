@@ -4,7 +4,9 @@
 `feat/hyperparameter-tuning`. Draft PR #6 merges into `feat/hyperparameter-tuning` (PR #5's branch).
 **Status (2026-09-24):** Phases 0, 1 and 2 are done, including the docs cleanup in
 Step 2.6. The non-slow suite gives **956 passed**. PR #6 was squash-merged into `feat/hyperparameter-tuning` as `aee3e6a`. Next: roadmap
-step 2 (§5).
+step 2 (§5). *2026-10-01: roadmap step 3 is done too (Models A and B rebuilt,
+PRs #10 and #11; suite 1221); step 2 (the tuning package) and step 4 (Model C)
+are next.*
 
 **Workflow**
 - Every step in §4 is a validation stop.
@@ -547,8 +549,13 @@ In order. Each step has its own plan and gated phases.
    [MULTI_COHORT_MODELS_PLAN.md](MULTI_COHORT_MODELS_PLAN.md) (there, Model 1
    and Model 2). ✓ Model A is complete: PR #10, merged as `27459eb` (steps A0–A4;
    [Direct cohort model §0.6](DIRECT_COHORT_MODEL.md#06-every-cohort-from-the-raw-table-modelpipeline-and-independentcohortmodels)).
-   Model B is next. B's feature declarations are already in
-   [FEATURE_TRANSFORMATIONS.md §8.2–8.5](FEATURE_TRANSFORMATIONS.md).
+   ✓ Model B is rebuilt: PR #11 (steps B0–B9; `TotalChildrenModel`,
+   `CohortProbabilityModel`, `TemperatureCalibrator`,
+   `IndependentTotalProbabilityModel`;
+   [Independent total and probability model §0](INDEPENDENT_TOTAL_PROBABILITY_MODEL.md#0-the-rebuilt-model-modelingindependent_total_probabilitypy)).
+   B's feature declarations are in
+   [FEATURE_TRANSFORMATIONS.md §8.2–8.5](FEATURE_TRANSFORMATIONS.md). The
+   plan's B7 smoke run compares the two models untuned.
 4. **Rebuild Model C** (`BayesianConditionalModel`). *Needs step 3*: C reuses
    B's frozen feature forms.
 5. **Delete the old stack:** `modeling_config.py`, `models/`,

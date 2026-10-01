@@ -14,10 +14,10 @@ implementation details conflict, the model specification controls behavior.
   the full evidence.
 - **In progress:**
   - the scikit-learn-style re-implementation of the models in `modeling/`
-    (Model A done; see the [plan](MODEL_REIMPLEMENTATION_PLAN.md));
+    (Models A and B done; see the [plan](MODEL_REIMPLEMENTATION_PLAN.md));
   - the multi-cohort models: Model A's cohorts combined in one object (done in
-    PR #10, merged), then Model B rebuilt (in progress; see the
-    [plan](MULTI_COHORT_MODELS_PLAN.md));
+    PR #10, merged), then Model B rebuilt as `IndependentTotalProbabilityModel`
+    (done in PR #11; see the [plan](MULTI_COHORT_MODELS_PLAN.md));
   - the `hyperparameter_tuning` package (the evaluator is done; see its
     [plan](HYPERPARAMETER_TUNING_PLAN.md));
   - the `splitting` package (built and tested, not yet wired).
@@ -40,7 +40,7 @@ implementation details conflict, the model specification controls behavior.
 | Document | Authority |
 |---|---|
 | [Direct cohort model](DIRECT_COHORT_MODEL.md) | Model A. §0: the rebuilt `modeling.DirectCohortModel` (equations, exposure offset, API); §0.6: `ModelPipeline` and `IndependentCohortModels`, every cohort from the raw table. §1–§10: the current per-cohort LightGBM families, tuning, marginal scoring, bootstrap uncertainty, persistence |
-| [Independent total and probability model](INDEPENDENT_TOTAL_PROBABILITY_MODEL.md) | Model B: NB2/Poisson total with exposure offset, grouped multinomial composition, temperature calibration, joint scoring, bootstrap uncertainty |
+| [Independent total and probability model](INDEPENDENT_TOTAL_PROBABILITY_MODEL.md) | Model B. §0: the rebuilt `modeling.IndependentTotalProbabilityModel` (a Poisson or NB2 total with the exposure offset, a Dirichlet regression of the cohort shares, post-hoc temperature calibration; equations, API, data flow, rules). §1–§12: the current NB2/Poisson total, grouped multinomial composition, gated calibration, joint scoring, bootstrap uncertainty |
 | [Bayesian conditional model overview](BAYESIAN_CONDITIONAL_MODEL_OVERVIEW.md) | Model C in brief: statistical model, fitting and diagnostics, prediction, selection, persistence, configuration |
 | [Bayesian NB2 + Dirichlet-Multinomial guide](BAYESIAN_CONDITIONAL_MODEL.md) | Model C: selection and comparison, persistence, configuration, metadata, and a technical explanation of the model's statistics, Pyro syntax, tensor shapes, estimator/component/inference ownership, prediction, diagnostics, and runtime workarounds |
 | [Feature transformations](FEATURE_TRANSFORMATIONS.md) | Which transformation each feature gets in each model and why; the per-model declarations built with the `feature_engineering` package |
@@ -58,7 +58,7 @@ implementation details conflict, the model specification controls behavior.
 | Document | Authority |
 |---|---|
 | [Model re-implementation plan](MODEL_REIMPLEMENTATION_PLAN.md) | Decisions and step-by-step record for the scikit-learn-style `modeling` package |
-| [Multi-cohort models plan](MULTI_COHORT_MODELS_PLAN.md) | Decisions and steps for `IndependentCohortModels` (Model A's cohorts in one object) and the rebuilt Model B in `modeling` |
+| [Multi-cohort models plan](MULTI_COHORT_MODELS_PLAN.md) | Decisions, steps and evidence for `IndependentCohortModels` (Model A's cohorts in one object; PR #10) and the rebuilt Model B in `modeling` (PR #11), with the smoke run comparing them |
 | [Hyperparameter tuning plan](HYPERPARAMETER_TUNING_PLAN.md) | Decisions, design and remaining work for the `hyperparameter_tuning` package |
 
 ## Extensions Beyond The Simplified Model (Not Implemented)

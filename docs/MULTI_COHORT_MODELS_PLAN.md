@@ -47,11 +47,15 @@ models, use the calibrator as given; ask once about `FrozenEstimator`).
 **B5 is done** (2026-10-01; the user commits it):
 `IndependentTotalProbabilityModel` in `modeling/independent_total_probability.py`,
 and `ModelPipeline.predict_logits`; the §7 usage block runs end to end.
-**B7's smoke run is done** (2026-10-01; the table in §9 B7, awaiting the
-user's reading): Model 2 equals Model 1 on deviance (within the noise) and
-beats it on composition (cohort log loss, t ≈ −5, under 1% per child);
-calibration adds a small, inconsistent gain.
-**Next: B9** (docs and close). Non-slow suite after B5: **1221
+**B7 is done** (2026-10-01; committed `f730434`; the table in §9 B7):
+Model 2 equals Model 1 on deviance (within the noise) and beats it on
+composition (cohort log loss, t ≈ −5, under 1% per child); calibration adds
+a small, inconsistent gain. **B9 is done** (2026-10-01; the user commits
+it): `INDEPENDENT_TOTAL_PROBABILITY_MODEL.md` §0 documents the rebuilt
+model; `composition_base` is `cohort_probability_base`; the cross-references
+are current and a new PR body is drafted (that session's scratchpad
+`pr11_body.md`, described in B9's record). **PR B is ready for review**
+once the user applies the body and marks it ready. Non-slow suite after B5: **1221
 passed** (1 skipped, 1 xfailed).
 
 ## Contents
@@ -2318,7 +2322,8 @@ test sets. The script stays in the scratchpad and the recipe is recorded
 here, as A4's.
 
 Done when:
-- [ ] The user has seen the numbers.
+- [x] The user has seen the numbers (2026-10-01; the user agreed with the
+  reading and moved on to B9).
 
 **Smoke run (2026-10-01).** Recipe: per seed 0–9, simulate
 (`StudentPopulationSimulator(load_simulation_config("configs/simulation.toml")).run(rng=np.random.default_rng(seed))`),
@@ -2472,6 +2477,69 @@ t ≈ −5, a gain under 1% per child); calibration adds a small, inconsistent
 
 Done when:
 - [ ] The user has reviewed the docs; PR B is ready to merge.
+
+**Record (2026-10-01).**
+- **Baseline** before the first edit: 1221 passed (1 skipped, 1 xfailed);
+  HEAD `f730434` (B7), the tree clean. After: 1221 (no `.py` change, so no
+  ruff, mypy or mutation checks).
+- **Docs:**
+  - `INDEPENDENT_TOTAL_PROBABILITY_MODEL.md`: the top note (two
+    implementations, as `DIRECT_COHORT_MODEL.md`'s) and a new §0 in that
+    doc's §0/§0.6 pattern: §0.1 the model in the old doc's notation ($A_b$,
+    $\mu_b$, $C_{b,k}$, $p_{b,k}$; the total GLM with the NB2 floor, the
+    Dirichlet regression with the compression, the per-building objectives
+    and penalty, the temperature objective and the row-constant
+    cancellation, the product); §0.2 an API table of the four classes and
+    `ModelPipeline.predict_logits`; §0.3 the data flow and one runnable
+    block (the §7 usage block's Model 2 part with the scores); §0.4 a rules
+    table with reasons; §0.5 the errors by message; §0.6 what changed from
+    §1–§12 (Dirichlet for the grouped multinomial; post-hoc, per-building,
+    ungated calibration; no clipping or floor; the exposure as an argument;
+    fixed hyperparameters; the dropped features; B7 as the evidence). The
+    "Temperature calibration" pointer now points to §0.1; §12 lists the new
+    tests.
+  - `FEATURE_TRANSFORMATIONS.md`: §8.2 a runnable `ModelPipeline(total_base,
+    TotalChildrenModel())` block with `ExposureTransformer`; §8.3
+    `composition_base` → `cohort_probability_base` (dated), the multinomial
+    sentence replaced by the Dirichlet's $K$ coefficient columns, a runnable
+    `CohortProbabilityModel` block and "Combining the two" with a Model 2
+    block; §8.5's table row; §8.7 item 7 restated under N8 (the total's
+    penalty keeps its meaning; the old `probability_c` range converted; B7's
+    overfitting population and the λ = 1 probe as a second prompt).
+  - `README.md` (the status bullet, the model-doc row, the plan row);
+    `MODEL_REIMPLEMENTATION_PLAN.md` §5 step 3 (Model B rebuilt, PR #11);
+    `MODULE_REFERENCE.md` (the `modeling` intro); this doc (status, B7's
+    "Done when", B9).
+- **Ran** under `-W error`, one namespace, seed 0 (scratchpad
+  `run_doc_blocks_b9.py`, A4's recipe; `fit_df`/`valid_df` from a grouped
+  split after §8.0): all 9 blocks of `FEATURE_TRANSFORMATIONS.md` §8.0–§8.3,
+  the §0.3 block (its scores equal B7's seed 0: 1.824, 1.826, 2.398, total
+  3.509, log loss 1.086, T = 1.261), and §7's usage block. `composition_base`
+  survives only in §8.3's rename note and this doc's history.
+- **PR #11:** a new body drafted in the scratchpad (`pr11_body.md`; the user
+  applies it and marks the PR ready): the summary with the Dirichlet
+  regression, the per-building calibrator and `FrozenEstimator`, the design
+  list, B7's one-line result, every step checked, the suite count.
+- **Review** (independent subagent; every §0 equation, setting, fitted
+  attribute, rule and error message checked against the code, the error
+  messages by probe; the §8.7 conversion against B0's record and sklearn's
+  objective; every anchor in the six docs resolved; the runner rerun), no
+  error; each finding reproduced:
+  - *Fixed.* `README.md`'s first status bullet still said "Model A done";
+    `FEATURE_TRANSFORMATIONS.md` §6.3 still described the multinomial's
+    "roughly twice" while §8.3 cites it for the Dirichlet's $K$ times;
+    `MODULE_REFERENCE.md`'s model-description pointer named only Model 1;
+    this status line called the PR body "current" while it is drafted;
+    `MODEL_REIMPLEMENTATION_PLAN.md`'s dated status line still said step 2
+    is next (a dated note added); §0's heading case now matches
+    `DIRECT_COHORT_MODEL.md`'s; §0.5's calibrator row says a building
+    without children raises after numpy's divide warning (under `-W error`
+    the warning itself).
+  - *Not changed, outside this PR.* `MODULE_REFERENCE.md`'s two links to
+    `README.md#run-the-modeling-notebook`, a heading that no longer exists.
+  - *Confirmed.* "overflowed" cannot be triggered by feature scale alone
+    (scipy's line search fails first); the message is pinned by the
+    optimization tests.
 
 ## 10. Old tests: carried over or dropped
 
