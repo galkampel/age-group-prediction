@@ -13,10 +13,14 @@ the branch is pushed, draft PR [#11](https://github.com/galkampel/age-group-pred
 is open, and the facts from PR A are re-verified. **B0a** (added by the user at
 the start of B1): `Splitter.train_test_indices` replaces `train_test_split`, so
 the exposure is split by the same positions as every other array; committed
-`6970c8b`. **B1 is done** (2026-09-30, awaiting the user's commit):
-`LBFGSMinimizer` in `modeling/optimization.py`, and the exposure rule, with a
-length check, in `BaseAgeGroupModel._check_exposure`. **Next: B2**
-(`TotalChildrenModel`, Poisson). Non-slow suite after B1: **1115 passed**
+`6970c8b`. **B1 is done** (`e2a4955`): `LBFGSMinimizer` in
+`modeling/optimization.py`, and the exposure rule, with a length check, in
+`BaseAgeGroupModel._check_exposure`. **B2 is done** (2026-09-30, revised
+2026-10-01 on the user's notes; the user commits it): `TotalChildrenModel`,
+Poisson, without a `family` setting (B8 adds it), with a `solver` setting over
+`Minimizer`. **Next: B3** (cohort log loss and tuner typing; handoff written
+2026-10-01, end of session, in §9 B3): start in plan mode by confirming B2's
+commit and re-verifying B3's facts. Non-slow suite after B2: **1147 passed**
 (1 skipped, 1 xfailed).
 
 ## Contents
@@ -154,7 +158,7 @@ reference doc `docs/INDEPENDENT_TOTAL_PROBABILITY_MODEL.md`.
 | N3 | *Revised four times on 2026-09-29, each time by the user.* **The exposure is the model's, and its values are validated in preprocessing.** (a) Whether a model has an offset is its own constructor setting (`use_exposure`), on the models that can have one; the base declares no such setting or property. (b) Which column holds it is a schema fact: `exposure_column="n_apartments"`. (c) `preprocessing.ExposureTransformer` reads that column and returns it as floats, or raises if a value is not strictly positive and finite. (d) The caller builds the exposure with it, on the full table before splitting, and passes it as `exposure=` to every model, `ModelPipeline` (N17) included. (e) Every model takes the same exposure: one with an offset raises if it is missing; any other model **ignores** it (A3). (f) The models take the **raw** exposure, not its log. (g) `FeatureTransformer.exposure_column` and `log_exposure` were removed | (a, b) statsmodels, R, glum, LightGBM and sklearn's examples all pass the exposure to the model, outside the feature matrix. (c) LightGBM accepts a zero, infinite or NaN exposure silently (§6), so the check is needed once. (e) A missing exposure would drop the offset silently; an ignored one lets a caller pass one exposure to every model, and a tuner compare `use_exposure` with one fixed exposure (the evaluator passes the same exposure to every trial). As sklearn's metadata routing does for metadata a consumer declares not requested. Before A3 an unexpected exposure raised, and `uses_exposure` told an aggregator where to route it. (f) `DirectCohortModel` needs `Σ exposure` for its intercept, and `exposure=` is settled (M10), as in statsmodels. History: first a transformer's `exposure_column` declared the exposure; then helper functions read it; then the user asked for the validation in preprocessing and the logic under a class; then for an explicit exposure argument on `ModelPipeline` (d), which gives up the guarantee that the pipeline always validates it |
 | N4 | No scoring override. Per-cohort scores are a caller loop: `model.evaluate(Y[c], predictions[c], metric)` | `mean_poisson_deviance` rejects several columns, and how to average cohorts is the caller's choice |
 | N5 | Names: `IndependentCohortModels` (Model 1), `TotalChildrenModel`, `CohortProbabilityModel`, `IndependentTotalProbabilityModel` (Model 2), `TemperatureCalibrator` | User: the first model is named for total children, the second for cohort probabilities. The combined class keeps the old name, as `DirectCohortModel` did; new classes are imported from `age_group_prediction.modeling` only |
-| N6 | Fitting uses `scipy.optimize.minimize(method="L-BFGS-B")` on objectives built from **predefined library functions**: `scipy.stats.poisson.logpmf`, `scipy.stats.nbinom.logpmf`, `scipy.special.log_softmax` and `xlogy`. Gradients are analytic | User: scipy is fine if the objective is predefined or easy to validate. Every objective is pinned to a library fit in tests (N7), and every gradient to `scipy.optimize.check_grad` |
+| N6 | Fitting uses `scipy.optimize.minimize(method="L-BFGS-B")` on objectives built from **predefined library functions**: `scipy.stats.poisson.logpmf`, `scipy.stats.nbinom.logpmf`, `scipy.special.log_softmax` and `xlogy`. Gradients are analytic. *B2 (user, 2026-10-01): the method is the model's `solver` setting, `"lbfgs"` (default) or `"bfgs"`, the two gradient-only methods that reach the oracle; see B2's revision* | User: scipy is fine if the objective is predefined or easy to validate. Every objective is pinned to a library fit in tests (N7), and every gradient to `scipy.optimize.check_grad` |
 | N7 | Test oracles: sklearn `PoissonRegressor` and `LogisticRegression` in `tests/unit`; statsmodels in `tests/validation` with `pytest.importorskip` | statsmodels is only in the `validation` dependency group |
 | N8 | One penalty meaning in both models: `l2_penalty` multiplies `½‖coefficients‖²` added to the **mean** negative log-likelihood (per building for totals, per child for probabilities). Intercepts are not penalized | Comparable across folds of different size. Conversions for the oracles are in §7 |
 | N9 | No clipping of the linear predictor and no floor on the mean. The optimizer runs under `np.errstate(over="raise", invalid="raise")`; a failure or non-finite result raises `RuntimeError` naming feature scale as the likely cause | Measured: clipping hid a failed fit (it returned `success=True` at a wrong point). `exp(·) > 0` already |
@@ -240,17 +244,19 @@ class IndependentCohortModels(BaseAgeGroupModel):
 
 # modeling/total_children.py  (B2, B8)
 class TotalChildrenModel(BaseAgeGroupModel):
-    def __init__(self, *, family="poisson", use_exposure=True, l2_penalty=0.0,
-                 max_iter=500, tol=...) -> None: ...
+    def __init__(self, *, solver="lbfgs", use_exposure=True, l2_penalty=0.0,
+                 max_iter=500, tol=1e-6) -> None: ...   # B8 adds family="poisson" 
     # fit(X, y: Series, exposure=None) ; predict(X, exposure=None) -> ndarray
     # exposure rule: BaseAgeGroupModel._check_exposure (B1): raises if used and
     # missing, ignored if not used, must be 1-D and len(X) long; predict follows
-    # the fitted state (A3); fitting via LBFGSMinimizer (B1)
-    # fitted: intercept_, coef_, feature_names_in_ (, dispersion_ for nb2)
+    # the fitted state (A3); fitting via Minimizer (B1; solver added in B2)
+    # fitted: intercept_, coef_, use_exposure_, feature_names_in_,
+    # n_features_in_ (, dispersion_ for nb2)
 
 # modeling/cohort_probability.py  (B4)
 class CohortProbabilityModel(BaseAgeGroupModel):
-    def __init__(self, *, l2_penalty=0.0, temperature=1.0, max_iter=500, tol=...) -> None: ...
+    def __init__(self, *, solver="lbfgs", l2_penalty=0.0, temperature=1.0,
+                 max_iter=500, tol=1e-6) -> None: ...
     # fit(X, y: DataFrame of cohort counts, exposure=None) ; predict_logits(X) -> DataFrame
     # predict(X, exposure=None) -> DataFrame of probabilities, rows sum to 1
     # the base signature is kept; a passed exposure is ignored (N3 e)
@@ -1181,6 +1187,8 @@ Done when:
   `sklearn.utils.validation.validate_data` for `X` (reordered columns at
   predict), finite non-negative counts, at least one child (an all-zero `y`
   returns `success=True` with intercept `−inf`).
+  *Changed at the start of B2 (user): no count check and no `family`; see the
+  record.*
 - **Tests:**
   1. matches `PoissonRegressor` at penalties 0, 0.01 and 1 (wrong gradient or penalty scale);
   2. `check_grad` on the objective;
@@ -1196,13 +1204,179 @@ Done when:
   test calls `fit(X, y)` without an exposure, so the default `True` would
   raise there.
 
+**Decisions at the start (user, 2026-09-30):**
+- **No `family` setting yet.** B8 adds `family: Literal["poisson", "nb2"]`
+  and its unknown-family test; if NB2 is dropped, no one-valued setting is left.
+- **No count check on `y`.** Measured: a NaN or infinite `y` is rejected by
+  scikit-learn's input check; a negative or non-integer count makes the
+  objective infinite, and `LBFGSMinimizer` raises ("non-finite objective").
+  Nothing passes silently, and data values are validated in preprocessing.
+  Only the all-zero `y` is checked: it "converges" silently to an intercept of
+  −17.6 (not `−inf`, as written above).
+- **`maxfun` fixed here** (open from B1): scipy's evaluation cap also ends with
+  status 1, where "raise max_iter" would mislead.
+
+**Revision before the commit (user's notes, 2026-10-01):**
+- **`solver` is a model setting**, as scikit-learn's: `solver: Literal["lbfgs",
+  "bfgs"] = "lbfgs"`, mapped to scipy's method. `LBFGSMinimizer` became
+  `Minimizer(method, max_iter, tol)` over a table of methods, each mapping
+  `tol` to its own gradient tolerance. Measured (seeds 0–9, λ ∈ {0, 0.01, 1},
+  worst coefficient difference from `PoissonRegressor(tol=1e-12)`): L-BFGS-B
+  with sklearn's options 6.1e-8 (15 evaluations, 1.1 ms); with scipy's
+  one-size `tol=1e-6` **2.7e-4** (it also sets `ftol`); BFGS 6.2e-8 (20, 1.6 ms);
+  CG 1.2e-7; TNC 8.7e-5; trust-constr 6.6e-8 but 19 ms; Newton-CG with a
+  Hessian failed 2 of 30; trust-exact with a Hessian 6.2e-8 in 5 evaluations.
+  So only L-BFGS-B (the one with bounds, for B8) and BFGS are allowed; no
+  Hessian methods (nothing to gain at ~1 ms per fit; NB2's Hessian is work).
+  An unknown method raises; bounds with BFGS raise (scipy would only warn).
+- **No stacked `[1, X]` matrix**: the objective takes `X` with the intercept a
+  separate parameter, `μ = exp(offset + b + Xβ)`, gradient
+  `[mean(μ − y), Xᵀ(μ − y)/N + λβ]`.
+- **Without an exposure** the offset is 0 and the start intercept `log(mean y)`,
+  stated explicitly. "Offset" is the GLM term for `log(exposure)` (statsmodels
+  uses both words the same way), so the name stays.
+- **Input checks, the fewest** (user's question: are they necessary, and in
+  every model?): measured without them, a NaN in `X` or `y` ends with
+  `success=False` (the minimizer raises) and every other bad input raises a
+  numpy `TypeError`; nothing is silent, but a bool column would raise instead
+  of being converted. So `check_X_y` stays at the top of `fit` for the float
+  conversion (it records nothing); the column names are **fitted state**,
+  recorded after success with `coef_` (`feature_names_in_`, `n_features_in_`)
+  by `validate_data(self, X, reset=True, skip_check_array=True)`, which
+  `validate_data(reset=False)` reads at predict (reordered columns would
+  otherwise be silent). No base-class helper: `DirectCohortModel` gets both
+  from LightGBM; B4 repeats the three lines, and a GLM base is proposed then
+  if the repetition warrants it.
+- Tests: the oracle test runs for both solvers; new: an unknown method, bounds
+  with BFGS, an unknown solver, the gradient-within-`tol` test for both
+  methods. 25 mutations, each failing its named test, among them: the BFGS
+  entry without `gtol`; `"bfgs"` mapped to an unknown method; the names not
+  recorded (reordered columns then pass with only a warning).
+- **Review of the revision** (independent subagent; `check_grad` at 30 points
+  with and without the offset, 5.2e-8; both solvers on the simulated table
+  unstandardized, seeds 0–9: within 1e-5 of the oracle, BFGS 2–4× faster
+  there), each finding reproduced:
+  - *Fixed.* The names were recorded by hand (`np.asarray(X.columns)`), which
+    is only half of sklearn's rule: it records names only when all are
+    strings, and none for an ndarray. Integer column names then warned at
+    predict on the training frame itself, and an ndarray `X` fitted fully and
+    then failed on `.columns`. Now sklearn's own call records them, after
+    success.
+  - *Fixed.* No test told the two solvers apart (both mapped to L-BFGS-B
+    passed everything). New test: `solver="bfgs"` passes `method="BFGS"` to
+    scipy (recorded by monkeypatching). A test comment claiming the oracle
+    test catches an unmapped tolerance was wrong for BFGS; reworded.
+  - *Fixed.* An unused `type: ignore` in the `maxfun` test; the two tables are
+    keyed by `Solver` and `Method`.
+  - *Not changed.* The `arg-type` ignores in the tests are dead under the
+    project's mypy (the package resolves to `Any` from tests) but needed with
+    `MYPYPATH=src`; same as `test_modeling_direct_cohort.py`'s.
+
+Done when:
+- [x] Matches `PoissonRegressor` (1e-6, both solvers) and statsmodels (1e-6);
+  mutations, review, non-slow suite: 1147 passed (1 skipped, 1 xfailed).
+
+**Record (2026-09-30).**
+- **Baseline** before the first edit: 1115 passed (1 skipped, 1 xfailed).
+- **Verified first:** `validate_data` rejects NaN in `X`, a wrong-length, 2-D
+  or NaN `y`, and at predict reordered, renamed or extra columns (an ndarray
+  only warns); the oracle conversion (6.1e-8, B1) and statsmodels `GLM` with
+  `exposure=` (1.3e-9); a negative `l2_penalty` passes silently (the fit moves;
+  scikit-learn rejects `alpha < 0`), so it is checked; `max_iter ≤ 0` already
+  raises and `tol ≤ 0` is harmless, so neither is.
+- **Built:** `TotalChildrenModel(*, use_exposure=True, l2_penalty=0.0,
+  max_iter=500, tol=1e-6)`; the objective is the protected static method
+  `_objective(parameters, design, y, offset, l2_penalty)`; fitted `intercept_`,
+  `coef_`, `use_exposure_` (what `predict` follows), and the feature names and
+  count. `LBFGSMinimizer`: `maxfun = (max_iter + 1)(2·maxls + 1)`.
+- **Tests:** `test_modeling_total_children.py` (17): the two oracle tests (λ in
+  {0, 0.01, 1} with the exposure, 0.01 without), `check_grad`, the huge
+  penalty, doubling, the fitted state, the three silent inputs (all-zero `y`,
+  negative penalty, reordered columns), a failed refit, the constant-rate
+  baseline (deviance below 0.8 of it on new buildings), the exposure rule (3
+  cases at fit and at predict) and an ignored exposure. The `maxfun` test in
+  `test_modeling_optimization.py`; the contract example (5 cases);
+  `tests/validation/test_total_children.py` (slow; statsmodels, seed 0).
+- **Mutations**, each failing its named test and restored: the penalty doubled;
+  the gradient without `/N`; the penalty's gradient dropped; the intercept
+  penalized; the offset dropped at predict; the template read at predict; each
+  of the three checks dropped; the names recorded before the fit; the start
+  returned; the exposure always expected at fit; `maxfun` for one line search
+  per iteration; the contract example deleted.
+- **Checks:** ruff and ruff format on the changed `.py` files; `uv run mypy`
+  and mypy on `modeling` plus the 4 test files; the `modeling` tests under
+  `-W error` (149 passed); the statsmodels test under `-W error`.
+- **Review** (independent subagent; its own mutations and probes), each
+  finding reproduced:
+  - *Fixed.* A failed refit left mixed state: `validate_data` recorded the new
+    column names before the fit could fail, so `predict` then ran the old
+    coefficients on the new columns, silently (and after a failed first fit
+    raised `AttributeError`, not `NotFittedError`). This plan had assumed it
+    would raise. Now `check_X_y` checks the data without touching the model,
+    and `validate_data` records the names only after success. New test: a
+    failed refit leaves the previous fit intact.
+  - *Fixed.* The `maxfun` bound was not strict: after a failed line search
+    L-BFGS-B resets and searches again, so an iteration can use about
+    2·maxls evaluations. Now `(max_iter + 1)(2·maxls + 1)`.
+  - *Fixed.* The docstring said `tol` means what it means in
+    `PoissonRegressor`; with the exposure our per-building gradient is on
+    another scale. It now says `tol` bounds the gradient of our objective.
+  - *Noted.* Unstandardized simulated features converge (coefficients within
+    3.7e-5 of a tight `PoissonRegressor`); features ×1e3 raise "standardize
+    them". `predict` has no `errstate`: features ×1e4 give `inf` with only a
+    numpy warning (N9 covers the fit).
+- **Docs:** `MODULE_REFERENCE.md` (`__init__.py`, `optimization.py`, new
+  `total_children.py` row); this doc (status, §7, B2, B8, §10). No code block
+  was edited.
+
 ### B3. Cohort log loss and tuner typing
+*Handoff written 2026-10-01, at the end of the B2 session. Re-verify the facts
+in plan mode, write a short summary, ask for approval.*
+
 - **Files:** `scoring.py`, `hyperparameter_tuning/evaluator.py` (`evaluate`'s `y` annotation becomes `Target`), their tests.
 - **Build:** `COHORT_LOG_LOSS = Metric("cohort_log_loss", ...)`:
   `−Σ xlogy(n_bk, p_bk) / Σ n_bk` (a plain `0·log 0` gives nan).
 - **Tests:** equals a hand computation; a zero-total building adds nothing; the
   evaluator scores a DataFrame `y`.
 - **Note in the doc:** `WeightedMean` weights folds by rows; this metric is per child.
+
+**Before the first edit:** confirm B2 is committed on top of `e2a4955`
+(`git log` shows a `feat(modeling): TotalChildrenModel ...` commit) and the
+tree is clean; otherwise stop and report. Baseline: 1147 passed (1 skipped,
+1 xfailed).
+
+**Facts from B2 that B3–B5 build on** (verified 2026-10-01; re-verify):
+- `scoring.py`: `Metric(name, function, greater_is_better=False)`, a frozen
+  dataclass whose `__post_init__` checks the name, the callable and the bool;
+  ready-made `POISSON_DEVIANCE`, `RMSE`, `MAE` wrap sklearn; `__all__` lists
+  them; tests in `tests/unit/test_scoring.py` (`test_ready_made_metrics_wrap_sklearn`,
+  `test_invalid_metric_is_rejected`).
+- `hyperparameter_tuning/evaluator.py`: `evaluate`'s `y` is annotated
+  `pd.Series | np.ndarray` (line 91 when written; find it by name); it imports
+  `DesignMatrix, Exposure, Groups, take_rows` from `..utils`, where `Target =
+  pd.Series | pd.DataFrame | np.ndarray` already exists (`utils.py:13`). The
+  fold aggregation is `hyperparameter_tuning/aggregation.py` (`WeightedMean`,
+  the size-weighted mean by rows). B3 changes nothing else in that package.
+- `modeling/total_children.py`: `TotalChildrenModel(*, solver="lbfgs",
+  use_exposure=True, l2_penalty=0.0, max_iter=500, tol=1e-6)`; fitted
+  `intercept_`, `coef_`, `use_exposure_`, `feature_names_in_`, `n_features_in_`;
+  `_objective(parameters, X, y, offset, l2_penalty)` static. `check_X_y` at the
+  top of `fit`; the names recorded after success by `validate_data(self, X,
+  reset=True, skip_check_array=True)`; `validate_data(reset=False)` at predict.
+  **B4 repeats these lines** for `CohortProbabilityModel` (with a DataFrame `y`:
+  `check_X_y(..., multi_output=True)`); propose a shared GLM base then only if
+  the repetition warrants it (user, B2).
+- `modeling/optimization.py`: `Minimizer(method, max_iter, tol)`, `Method =
+  Literal["L-BFGS-B", "BFGS"]`, `_OPTIONS` table; bounds only with L-BFGS-B.
+  B4's `CohortProbabilityModel` gets the same `solver: Solver = "lbfgs"` setting
+  (`Solver` and `_METHODS` live in `total_children.py`; move them to
+  `optimization.py` if B4 needs them, rather than importing one model from another).
+- The user kept `use_exposure_` (predict follows the fitted state, M10) after
+  asking whether it is practical: consistency with `DirectCohortModel` and
+  sklearn's principle that predict reads fitted state only. Do not re-ask.
+- `__init__.py` exports `Solver` and `TotalChildrenModel`; nothing from the
+  package root. `MODULE_REFERENCE.md` has the `optimization.py` and
+  `total_children.py` rows.
 
 ### B4. `CohortProbabilityModel`
 - **Files:** new `modeling/cohort_probability.py`, `__init__.py`, tests, contract example.
@@ -1263,7 +1437,9 @@ Done when:
 - [ ] The user has seen the numbers.
 
 ### B8. NB2 family (droppable)
-- **Build:** `family="nb2"`, `dispersion_`; `log α` bounded (old bounds
+- **Build:** a new setting `family: Literal["poisson", "nb2"] = "poisson"`
+  (B2 has none), `"nb2"`, `dispersion_`; an unknown family raises (a test);
+  `log α` bounded (old bounds
   `(1e-4, 5)`; justify or change by probe).
 - **Tests:** `check_grad`; statsmodels `NegativeBinomial` agreement in
   `tests/validation`; `dispersion_` exists only for NB2; near-Poisson data does
@@ -1304,7 +1480,7 @@ Source: `tests/unit/test_independent_total_probability.py`.
 | Targets never enter a feature matrix | A3, B5 |
 | Both models beat their constant baselines | B2, B4 |
 | Optimizers report non-convergence | B1, B4 |
-| The family is explicit | B2, B8 |
+| The family is explicit | B8 |
 | Temperature 1 is the plain softmax | B4 |
 
 **Dropped with their features (N13, N15):** tuning inside `fit`, pointwise

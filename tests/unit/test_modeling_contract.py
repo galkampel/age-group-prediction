@@ -41,6 +41,7 @@ from age_group_prediction.modeling import (
     DirectCohortModel,
     IndependentCohortModels,
     ModelPipeline,
+    TotalChildrenModel,
 )
 
 
@@ -104,11 +105,20 @@ def _independent_cohorts_example() -> Example:
     return model, X, y
 
 
+def _total_children_example() -> Example:
+    # No exposure: the refit test calls fit(X, y), so the default offset would raise.
+    rng = np.random.default_rng(0)
+    X = pd.DataFrame({"x": rng.normal(size=200)})
+    y = pd.Series(rng.poisson(np.exp(1 + 0.5 * X["x"])))
+    return TotalChildrenModel(use_exposure=False), X, y
+
+
 # Factories, so every test gets its own model and data and none is built at import.
 EXAMPLES: dict[type[BaseAgeGroupModel], Callable[[], Example]] = {
     DirectCohortModel: _direct_cohort_example,
     ModelPipeline: _model_pipeline_example,
     IndependentCohortModels: _independent_cohorts_example,
+    TotalChildrenModel: _total_children_example,
 }
 
 CHECKS: list[Callable[[str, BaseAgeGroupModel], None]] = [
