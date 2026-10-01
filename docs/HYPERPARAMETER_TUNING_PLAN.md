@@ -169,7 +169,10 @@ and return `aggregation.aggregate(scores, fold_sizes)`.
 - `aggregate(scores, fold_sizes)` rejects no folds and unequal lengths with a
   clear `ValueError` (numpy's own errors are unclear), and returns a float.
 - For a metric that isn't a mean over rows (RMSE, R²), size weights reduce
-  noise but don't equal the pooled metric. Rejected weightings: by each
+  noise but don't equal the pooled metric. `COHORT_LOG_LOSS` is a mean per
+  **child**, not per row: the pooled loss would weight each fold by its
+  children, so the size-weighted mean is close but not equal (B3,
+  `MULTI_COHORT_MODELS_PLAN.md`). Rejected weightings: by each
   fold's variance (leans toward easy folds) and by neighborhoods (a different
   target from the test-set metric).
 - **SE** (`corrected_std_error(scores)`): Nadeau–Bengio in its K-fold form,

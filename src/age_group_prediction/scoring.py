@@ -16,13 +16,21 @@ from dataclasses import dataclass
 
 import numpy as np
 from numpy.typing import ArrayLike
+from scipy.special import xlogy
 from sklearn.metrics import (
     mean_absolute_error,
     mean_poisson_deviance,
     root_mean_squared_error,
 )
 
-__all__ = ["MAE", "POISSON_DEVIANCE", "RMSE", "Metric"]
+__all__ = [
+    "COHORT_LOG_LOSS",
+    "MAE",
+    "POISSON_DEVIANCE",
+    "RMSE",
+    "Metric",
+    "cohort_log_loss",
+]
 
 
 @dataclass(frozen=True)
@@ -46,6 +54,30 @@ class Metric:
             )
 
 
+def cohort_log_loss(y_true: ArrayLike, y_pred: ArrayLike) -> float:
+    """The mean negative log probability per child: ``−Σ n_bk log p_bk / Σ n_bk``.
+
+    ``y_true`` holds the cohort counts, one row per building and one column per
+    cohort; ``y_pred`` the predicted cohorts in the same layout, paired by
+    position. Each row of ``y_pred`` is divided by its sum, so expected counts
+    per cohort score as their proportions and probabilities are unchanged. Per
+    child, not per building: a building with no children adds nothing, given
+    a positive prediction row (hence ``xlogy``, where a plain ``0 · log 0`` is
+    nan). Equals scikit-learn's ``log_loss`` on one row per child.
+    """
+    counts = np.asarray(y_true, dtype=float)
+    predictions = np.asarray(y_pred, dtype=float)
+    # numpy would broadcast one column, or one row, over every cohort silently.
+    if counts.shape != predictions.shape:
+        raise ValueError(
+            "y_true and y_pred must both be (buildings, cohorts) arrays of the "
+            f"same shape, got {counts.shape} and {predictions.shape}"
+        )
+    probabilities = predictions / predictions.sum(axis=1, keepdims=True)
+    return -float(xlogy(counts, probabilities).sum() / counts.sum())
+
+
 POISSON_DEVIANCE = Metric("poisson_deviance", mean_poisson_deviance)
 RMSE = Metric("rmse", root_mean_squared_error)
 MAE = Metric("mae", mean_absolute_error)
+COHORT_LOG_LOSS = Metric("cohort_log_loss", cohort_log_loss)

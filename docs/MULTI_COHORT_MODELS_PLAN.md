@@ -18,10 +18,11 @@ the exposure is split by the same positions as every other array; committed
 `BaseAgeGroupModel._check_exposure`. **B2 is done** (2026-09-30, revised
 2026-10-01 on the user's notes; the user commits it): `TotalChildrenModel`,
 Poisson, without a `family` setting (B8 adds it), with a `solver` setting over
-`Minimizer`. **Next: B3** (cohort log loss and tuner typing; handoff written
-2026-10-01, end of session, in §9 B3): start in plan mode by confirming B2's
-commit and re-verifying B3's facts. Non-slow suite after B2: **1147 passed**
-(1 skipped, 1 xfailed).
+`Minimizer`; committed `31ebdd1`. **B3 is done** (2026-10-01; the user commits
+it): `COHORT_LOG_LOSS` in `scoring.py` and the evaluator's `y: Target`.
+**Next: B4** (`CohortProbabilityModel`): start in plan mode by confirming B3's
+commit and re-verifying B3's facts (its "Facts from B2" list). Non-slow suite
+after B3: **1155 passed** (1 skipped, 1 xfailed).
 
 ## Contents
 1. Context and goal
@@ -281,8 +282,8 @@ class IndependentTotalProbabilityModel(BaseAgeGroupModel):
 |---|---|---|---|
 | Total, Poisson | `−mean(poisson.logpmf(y, μ)) + ½λ‖β[1:]‖²`, `μ = exposure·exp(Dβ)` | `Dᵀ(μ − y)/N`, plus `λβ` on non-intercepts | `PoissonRegressor(alpha=λ / mean(exposure)).fit(X, y/exposure, sample_weight=exposure)`; mean = `exposure · predict(X)` |
 | Total, NB2 | `−mean(nbinom.logpmf(y, 1/α, 1/(1+αμ))) + ½λ‖β[1:]‖²`, over `(β, log α)` | `−Dᵀ((y−μ)/(1+αμ))/N`; for `log α` see the probe in §6 | statsmodels `NegativeBinomial(y, D, exposure=exposure)`, λ = 0 |
-| Cohort probability | `−Σ xlogy(n_bk, p_bk)/M + ½λ‖W‖²`, `p = softmax(a + XW)` | `Xᵀ(n_b·p_bk − n_bk)/M`, plus `λW`; intercepts unpenalized | `LogisticRegression(C=1/(λM))` on one row per (building, cohort) with `sample_weight = n_bk > 0` |
-| Temperature | `COHORT_LOG_LOSS(counts, softmax(logits/T))` over `log(1/T)` in (−10, 10), `minimize_scalar(method="bounded")` | — | `sklearn.calibration` `_TemperatureScaling` uses the same form |
+| Cohort probability | `−Σ xlogy(n_bk, p_bk)/M + ½λ‖W‖²`, `p = softmax(a + XW)`. Its unpenalized part is `COHORT_LOG_LOSS` (B3), which also divides each row of `y_pred` by its sum, so predicted counts score as proportions | `Xᵀ(n_b·p_bk − n_bk)/M`, plus `λW`; intercepts unpenalized | `LogisticRegression(C=1/(λM))` on one row per (building, cohort) with `sample_weight = n_bk > 0` |
+| Temperature | `cohort_log_loss(counts, softmax(logits/T))` over `log(1/T)` in (−10, 10), `minimize_scalar(method="bounded")` | — | `sklearn.calibration` `_TemperatureScaling` uses the same form |
 
 Start values: total intercept `log(Σy / Σexposure)`, everything else 0.
 
@@ -1340,6 +1341,67 @@ in plan mode, write a short summary, ask for approval.*
   evaluator scores a DataFrame `y`.
 - **Note in the doc:** `WeightedMean` weights folds by rows; this metric is per child.
 
+Done when:
+- [x] The metric equals sklearn's `log_loss` on one row per child; mutations,
+  review, non-slow suite: 1155 passed (1 skipped, 1 xfailed).
+
+**Record (2026-10-01).**
+- **Baseline** before the first edit: 1147 passed (1 skipped, 1 xfailed).
+  B2 is `31ebdd1`, on `e2a4955`; the tree was clean.
+- **Verified first**, every fact below (sklearn 1.9.0, scipy 1.18.0):
+  `xlogy(0, p) = 0` where `0 · log 0` is nan; `−Σ xlogy / Σ n` equals sklearn's
+  `log_loss` on one row per (building, cohort) weighted by its count
+  (0.98147…); `xlogy` on two DataFrames aligns by label (a disjoint index sums
+  to 0, silently), so the arrays are taken positionally; a count matrix as
+  `y_pred` scores silently, and a `(n, 1)` `y_pred` broadcasts over the cohorts
+  silently; sklearn's `log_loss` raises for a value above 1 and only warns
+  when rows do not sum to 1; the evaluator already runs with a DataFrame `y`
+  and a DataFrame-returning model for all 3 split methods under `-W error`.
+- **Decision (user):** each row of `y_pred` is divided by its sum, so expected
+  counts per cohort (Model 1's or Model 2's output) and probabilities both
+  score; `y_true` stays as counts, which weights buildings by their children.
+  The user's note: this is the one place a prediction is normalized.
+- **Built:** `cohort_log_loss(y_true, y_pred)` and `COHORT_LOG_LOSS`
+  (`scoring.py`). One check, for what passes silently: both arrays 2-D of the
+  same shape (two 1-D arrays already fail in numpy, so `ndim` is not
+  checked). A zero-sum or negative `y_pred` row gives nan or inf, which the
+  evaluator's finite check rejects (not silent, so not checked). A negative
+  count in `y_true` scores silently: counts are validated in preprocessing
+  (N3), not here. The
+  evaluator's `y: Target`; its unused `pandas` import removed.
+- **Tests.** `test_scoring.py` (+6 cases): the mean per child, pinned to a
+  hand value and sklearn's `log_loss` on expanded rows; a building without
+  children adds nothing (and a zero probability for a zero count is finite);
+  predicted counts score as their proportions; DataFrames pair by position;
+  a one-column or 1-D `y_pred` raises; the ready-made row. Not tested: a
+  `y_pred` with fewer rows, which numpy itself rejects.
+  `test_hyperparameter_tuning_evaluator.py` (+1): a DataFrame `y` is split
+  and scored per fold with `COHORT_LOG_LOSS`, against a hand fold loop.
+- **Mutations**, each failing its named test and restored: `/ len(counts)`;
+  `np.log` for `xlogy`; the normalization dropped; the shape check dropped
+  (both cases); `greater_is_better=True`. The annotation has no mutation:
+  pandas is untyped here (§6), so mypy accepts a DataFrame `y` under the old
+  annotation too (probed with `MYPYPATH=src`); the widening is documentation,
+  and the evaluator test exercises the behavior.
+- **Checks:** ruff and ruff format on the 4 changed `.py` files; `uv run mypy`
+  and mypy on `modeling` plus the 2 test files clean; the 2 test files under
+  `-W error` (54 passed).
+- **Review** (independent subagent; its own probes and 5 mutations, each
+  caught by the pinned test), each finding reproduced:
+  - *Fixed.* The `ndim != 2` half of the shape check was untested and guarded
+    nothing silent (two 1-D arrays fail in numpy's `sum(axis=1)`); dropped.
+  - *Fixed.* The docstring's "adds nothing" holds only for a positive
+    prediction row (a zero count with a zero-sum row is nan); now says so.
+  - *Fixed.* This record said a negative entry is never silent; a negative
+    *count* is. §7's Temperature row called `COHORT_LOG_LOSS(...)`, but a
+    `Metric` is not callable: now `cohort_log_loss(...)`. The "Facts from B2"
+    list named the renamed test.
+  - *Noted for B6.* `softmax(logits / T)` underflows to an exact 0 at a small
+    `T` (logits `[800, 0, 0]`), where a positive count gives `inf`; sklearn's
+    `_TemperatureScaling` works from `log_softmax`. Decide at B6.
+- **Docs:** `MODULE_REFERENCE.md` (`scoring.py` row); `HYPERPARAMETER_TUNING_PLAN.md`
+  §4.3 (per child vs per row); this doc (status, §7, B3, B6). No code block was edited.
+
 **Before the first edit:** confirm B2 is committed on top of `e2a4955`
 (`git log` shows a `feat(modeling): TotalChildrenModel ...` commit) and the
 tree is clean; otherwise stop and report. Baseline: 1147 passed (1 skipped,
@@ -1349,7 +1411,7 @@ tree is clean; otherwise stop and report. Baseline: 1147 passed (1 skipped,
 - `scoring.py`: `Metric(name, function, greater_is_better=False)`, a frozen
   dataclass whose `__post_init__` checks the name, the callable and the bool;
   ready-made `POISSON_DEVIANCE`, `RMSE`, `MAE` wrap sklearn; `__all__` lists
-  them; tests in `tests/unit/test_scoring.py` (`test_ready_made_metrics_wrap_sklearn`,
+  them; tests in `tests/unit/test_scoring.py` (`test_ready_made_metrics_wrap_their_function`,
   `test_invalid_metric_is_rejected`).
 - `hyperparameter_tuning/evaluator.py`: `evaluate`'s `y` is annotated
   `pd.Series | np.ndarray` (line 91 when written; find it by name); it imports
@@ -1419,7 +1481,10 @@ tree is clean; otherwise stop and report. Baseline: 1147 passed (1 skipped,
 
 ### B6. `TemperatureCalibrator`
 - **Files:** new `modeling/calibration.py`, tests.
-- **Build:** N12–N14; no settings.
+- **Build:** N12–N14; no settings. B3's review: `softmax(logits / T)` can
+  underflow to an exact 0 at a small `T`, where a positive count makes
+  `cohort_log_loss` infinite; sklearn's `_TemperatureScaling` works from
+  `log_softmax`. Decide at B6 (a log-space objective, or accept `inf` as worse).
 - **Tests:** logits scaled by a known factor recover it; calibrated data gives a
   temperature near 1; uninformative logits flatten instead of failing; the
   out-of-fold loop of §7 as an integration test.

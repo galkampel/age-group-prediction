@@ -37,7 +37,12 @@ from age_group_prediction.hyperparameter_tuning import (
     WeightedMean,
 )
 from age_group_prediction.modeling import BaseAgeGroupModel, DirectCohortModel
-from age_group_prediction.scoring import POISSON_DEVIANCE, Metric
+from age_group_prediction.scoring import (
+    COHORT_LOG_LOSS,
+    POISSON_DEVIANCE,
+    Metric,
+    cohort_log_loss,
+)
 from age_group_prediction.splitting import Method, Splitter
 
 PARAMETERS = [FloatParameter("alpha", 0.1, 10.0, log=True)]
@@ -508,6 +513,61 @@ def test_matches_a_hand_written_fold_loop() -> None:
             transformer.transform(df.iloc[val]), exposure=exposure[val]
         )
         scores.append(-float(POISSON_DEVIANCE.function(y.iloc[val], y_val_pred)))
+        sizes.append(len(val))
+    assert len(set(sizes)) > 1
+    assert value == pytest.approx(np.average(scores, weights=sizes))
+
+
+class _MarginalProportions(BaseAgeGroupModel):
+    """Predicts the training cohort proportions for every row; a DataFrame in, out."""
+
+    def __init__(self, alpha: float = 1.0) -> None:
+        self.alpha = alpha
+
+    def fit(self, X: Any, y: Any, exposure: ArrayLike | None = None) -> Self:
+        counts = np.asarray(y, dtype=float)
+        self.proportions_ = counts.sum(axis=0) / counts.sum()
+        self.cohorts_ = list(y.columns)
+        return self
+
+    def predict(self, X: Any, exposure: ArrayLike | None = None) -> pd.DataFrame:
+        return pd.DataFrame(
+            np.tile(self.proportions_, (len(X), 1)),
+            columns=self.cohorts_,
+            index=X.index,
+        )
+
+
+def test_a_dataframe_target_is_split_and_scored_per_fold() -> None:
+    # A multi-cohort model takes a DataFrame y (one column per cohort) and
+    # returns one; the evaluator must slice it by position and hand both to
+    # a metric over cohorts, not treat y as one column.
+    rng = np.random.default_rng(0)
+    groups = np.repeat(np.arange(6), [5, 10, 20, 30, 45, 10])
+    rows = len(groups)
+    df = pd.DataFrame({"ses": rng.normal(size=rows)}, index=np.arange(rows)[::-1])
+    y = pd.DataFrame(
+        rng.poisson([1.0, 2.0, 1.5], size=(rows, 3)),
+        columns=["n_kindergarten", "n_elementary", "n_highschool"],
+        index=df.index,
+    )
+    cv = Splitter("grouped").cv(n_splits=3, random_state=0)
+    evaluator = CVHyperparameterEvaluator(
+        _MarginalProportions(),
+        PARAMETERS,
+        cv=cv,
+        metric=COHORT_LOG_LOSS,
+        feature_transformer=FeatureTransformer(remainder="passthrough"),
+    )
+
+    value = evaluator.evaluate(FixedTrial({"alpha": 1.0}), df, y, groups)
+
+    scores: list[float] = []
+    sizes: list[int] = []
+    for train, val in cv.split(df, y, groups):
+        proportions = y.iloc[train].sum() / y.iloc[train].to_numpy().sum()
+        predicted = np.tile(proportions.to_numpy(), (len(val), 1))
+        scores.append(-cohort_log_loss(y.iloc[val], predicted))
         sizes.append(len(val))
     assert len(set(sizes)) > 1
     assert value == pytest.approx(np.average(scores, weights=sizes))
