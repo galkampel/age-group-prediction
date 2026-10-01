@@ -36,10 +36,11 @@ before B5**, whose Model 2 takes an optional calibrator. **B8 is done**
 (torch's `NegativeBinomial`, a floor on `α`), and `Minimizer` runs torch
 single-threaded, because LightGBM's and torch's OpenMP runtimes crash together
 (B8's record; committed `5a27727`, `68b72c2`). **B4 is done** (2026-10-01;
-the user commits it): `CohortProbabilityModel`'s tests rewritten for the
+committed `4c02f8b`): `CohortProbabilityModel`'s tests rewritten for the
 Dirichlet build, its `fit` single-threaded like B8's. **Next: B6
-(`TemperatureCalibrator`)**, then B5, B7, B9. Non-slow suite after B4, the
-whole suite: **1189 passed** (1 skipped, 1 xfailed).
+(`TemperatureCalibrator`)**, then B5, B7, B9, in a new session: start from
+the handoff block before B6 in §9. Non-slow suite after B4, the whole
+suite: **1189 passed** (1 skipped, 1 xfailed).
 
 ## Contents
 1. Context and goal
@@ -367,7 +368,7 @@ predictions = model_2.predict(test_df, exposure=exposure_test)
 **Hazard to document:** `ModelPipeline` and the multi-cohort classes clone in
 `fit`, so a nested `set_params(...)` after `fit` does not reach the fitted
 copy. Set it before `fit`. *(Since B4 the temperature is the calibrator's,
-not a setting; whether Model 2 clones the fitted calibrator is B5's to settle.)*
+not a setting. Decided for B5: Model 2 does not clone the calibrator, see the handoff before B6.)*
 
 ## 8. Steps, PR A: Model 1 completion
 
@@ -1923,6 +1924,57 @@ in `modeling/`.
   counts alike; it is per child, so it weighs buildings by their children
   even though the Dirichlet fit does not.
 
+### Handoff for the next session (written 2026-10-01, after B4)
+*Read this, then B6, B5, B7, B9; re-verify every fact in plan mode before
+relying on it. Order: **B6 → B5 → B7 → B9**, one step per stop.*
+
+- **State:** HEAD `4c02f8b` (B4), on `68b72c2` (B8) and `5a27727` (the
+  solver move); the tree is clean; non-slow suite 1189 passed (1 skipped,
+  1 xfailed), no `--ignore` needed. `modeling` exports `BaseAgeGroupModel`,
+  `CohortModels`, `CohortProbabilityModel`, `DirectCohortModel`,
+  `IndependentCohortModels`, `ModelPipeline`, `Objective`, `Solver`,
+  `TotalChildrenModel`; `optimization.py` has `Minimizer`, `Solver`,
+  `single_threaded_torch`; `total_children.py` has `Family`.
+- **What the last two steps settled, and every later step inherits:**
+  - LightGBM, scikit-learn and torch each load an OpenMP runtime; importing
+    the package loads LightGBM first, and torch's threaded kernels then
+    segfault. A torch model's `fit` wraps its torch calls, tensors included,
+    in `single_threaded_torch()`. A test module that calls a torch objective
+    directly has a module-level autouse fixture setting one thread
+    (`test_modeling_total_children.py`); a probe imports torch first or sets
+    one thread; a test that needs LightGBM loaded first runs in a subprocess
+    (`test_an_nb2_fit_survives_lightgbm_loaded_first`). B6 needs none of
+    this (no torch); B5 and B7 only inherit it through the models.
+  - Restore a mutated file by copying the backup, never `git checkout`
+    (it reverted uncommitted work once); confirm with `md5 -q`.
+  - The statsmodels tests run with `uv run --group validation pytest
+    tests/validation/... -W error`.
+- **Facts measured for B6 (probe, 2026-10-01):** on miscalibrated logits
+  (`2.5 · log p`, 400 rows, multinomial counts of 20) the plain objective
+  `cohort_log_loss(counts, softmax(logits/T))` and the log-space one
+  `−Σ n·log_softmax(logits/T) / Σn` both give T = 2.506 (16–17 evaluations,
+  `minimize_scalar(bounds=(−10, 10), method="bounded")` over `log(1/T)`);
+  at logits `[800, 0, 0]` and T = 0.5 the plain one is `inf`, the log-space
+  one 1600. **Decided: the log-space objective** (sklearn's
+  `_TemperatureScaling` form). It needs only scipy (`log_softmax`), no torch.
+  `cohort_log_loss` still scores the result in tests (it normalizes rows).
+- **Facts measured for B5:** `sklearn.base.clone` of a fitted calibrator
+  drops `temperature_`; `sklearn.frozen.FrozenEstimator` (sklearn 1.9) keeps
+  it through `clone`. **Decided: Model 2 clones its two models in `fit`
+  (A3's pattern) and uses the calibrator as given**, fitted by the caller;
+  `predict` checks it is fitted (`check_is_fitted`). Ask the user once, at
+  B5's plan, whether a `FrozenEstimator` wrapper is wanted instead. One
+  check in B5's `fit`: the fitted probability model's `cohorts_` equal
+  `y`'s columns (a positional mismatch would be silent).
+- **B7:** the smoke run fits Model 1 (LightGBM) and Model 2 (torch) in one
+  process: the OpenMP case above; the models' guard covers it. Model 1's
+  reference is A4's table; reuse A4's recipe (B0a's `train_test_indices`).
+- **Rules that bit this session:** the §5 margins in a test must be measured
+  on the test's own data and seed before they are written (B4's "< 0.95 ×"
+  failed at 300 rows, held at 1000); every "raises" claim is probed, since
+  torch's argument validation raises before the minimizer does; `-W error`
+  turns numpy's divide warning into the raise.
+
 ### B6. `TemperatureCalibrator` (built before B5, since B4)
 - **Files:** new `modeling/calibration.py`, tests.
 - **Build:** N12–N14; no settings. `fit(logits, counts)` sets `temperature_`;
@@ -1930,7 +1982,9 @@ in `modeling/`.
   (the logits' columns and index). B3's review: `softmax(logits / T)` can
   underflow to an exact 0 at a small `T`, where a positive count makes
   `cohort_log_loss` infinite; sklearn's `_TemperatureScaling` works from
-  `log_softmax`. Decide at B6 (a log-space objective, or accept `inf` as worse).
+  `log_softmax`. *Decided in the handoff above: the objective is
+  `−Σ n·log_softmax(logits / T) / Σn` over `log(1/T)` in (−10, 10),
+  `minimize_scalar(method="bounded")`; no torch.*
 - **Tests:** logits scaled by a known factor recover it; calibrated data gives a
   temperature near 1; uninformative logits flatten instead of failing;
   `temperature_ = 1` is the plain softmax (moved from B4); the out-of-fold
@@ -1944,9 +1998,12 @@ in `modeling/`.
   to both, assign the fitted copies together only after both succeed, and take
   each prediction as an array before combining (a Series with its own index
   would realign into NaN). The output has `y`'s columns at fit and `X`'s index;
-  the probability model's cohorts must equal `y`'s columns. Unlike N21's
+  the probability model's cohorts must equal `y`'s columns (checked: a
+  positional mismatch would be silent). Unlike N21's
   mapping, two named estimators are ordinary parameters, so nested `set_params`
-  (`cohort_probability_model__model__l2_penalty`) reaches them.
+  (`cohort_probability_model__model__l2_penalty`) reaches them. *From the
+  handoff: the calibrator is used as given, not cloned (`clone` would drop
+  its `temperature_`); `predict` checks it is fitted.*
 - **Tests:**
   1. the output equals total × probabilities of the two models fitted separately, and rows sum to the total mean;
   2. the total target is `y.sum(axis=1)`; tables without target columns work;
