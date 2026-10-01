@@ -47,7 +47,11 @@ models, use the calibrator as given; ask once about `FrozenEstimator`).
 **B5 is done** (2026-10-01; the user commits it):
 `IndependentTotalProbabilityModel` in `modeling/independent_total_probability.py`,
 and `ModelPipeline.predict_logits`; the §7 usage block runs end to end.
-**Next: B7** (the smoke run), then B9. Non-slow suite after B5: **1221
+**B7's smoke run is done** (2026-10-01; the table in §9 B7, awaiting the
+user's reading): Model 2 equals Model 1 on deviance (within the noise) and
+beats it on composition (cohort log loss, t ≈ −5, under 1% per child);
+calibration adds a small, inconsistent gain.
+**Next: B9** (docs and close). Non-slow suite after B5: **1221
 passed** (1 skipped, 1 xfailed).
 
 ## Contents
@@ -2307,8 +2311,148 @@ may be gone): `ShareTransformer` and `ExposureTransformer` on the full table, `S
 (B0a; A4 used `exposure.loc[X.index]`), each model against its own start).
 Model 1's reference is A4's table (offset variant; total 4.215 ± 1.450).
 
+**Decisions at the start (user, 2026-10-01):** Model 2 at the class defaults
+(`l2_penalty=0`), untuned as Model 1 is, with **both families** (Poisson and
+NB2) as two variants, each raw and calibrated; no setting is read off the
+test sets. The script stays in the scratchpad and the recipe is recorded
+here, as A4's.
+
 Done when:
 - [ ] The user has seen the numbers.
+
+**Smoke run (2026-10-01).** Recipe: per seed 0–9, simulate
+(`StudentPopulationSimulator(load_simulation_config("configs/simulation.toml")).run(rng=np.random.default_rng(seed))`),
+then run `FEATURE_TRANSFORMATIONS.md` §8.0 (`ShareTransformer`, `table`), §8.1's
+`tree` block, §8.2 (`total_base`) and §8.3 (`composition_base`) in one
+namespace; `ExposureTransformer("n_apartments").fit_transform(table)` on the
+full table; `Splitter("grouped").train_test_indices(table,
+table["neighborhood_id"], test_size=0.2, random_state=seed)`, every array
+taken by those positions (`take_rows`). Model 1: `IndependentCohortModels`
+of three `ModelPipeline(tree, DirectCohortModel(use_exposure=True))`.
+Calibrator: `Splitter("grouped").cv(n_splits=5, random_state=seed)` on the
+training rows and their neighborhoods, `fold.predict_logits` of a cloned
+`ModelPipeline(composition_base, CohortProbabilityModel())` on each fold's
+held-out rows, `TemperatureCalibrator().fit` on the stacked logits and
+counts. Model 2: `IndependentTotalProbabilityModel(total_children_model=
+ModelPipeline(total_base, TotalChildrenModel(family=...)),
+cohort_probability_model=ModelPipeline(composition_base,
+CohortProbabilityModel()), temperature_calibrator=None or the calibrator)`.
+Baseline: the constant rate `Σy_train / Σexposure_train × exposure_test` per
+cohort (A4's), and its sum for the total; its shares are the training
+marginal shares, the log-loss baseline. Scores on the held-out buildings:
+mean Poisson deviance per cohort and of the summed prediction against the
+total; `cohort_log_loss` (per child). 179–206 training and 33–53 test
+buildings. Ran under `-W error`, silently, with LightGBM and torch in one
+process (scratchpad `smoke_b7.py`; per-session, rebuild it from this recipe).
+
+Mean ± SD over the 10 populations; lower is better.
+
+| Target | Baseline | Model 1 | Model 2 Poisson raw | Model 2 Poisson calibrated | Model 2 NB2 raw | Model 2 NB2 calibrated |
+|---|---|---|---|---|---|---|
+| `n_kindergarten` | 2.739 ± 0.680 | 2.628 ± 0.877 | 2.672 ± 0.637 | 2.604 ± 0.632 | 2.619 ± 0.520 | 2.552 ± 0.526 |
+| `n_elementary` | 2.532 ± 0.492 | 2.128 ± 0.499 | 2.203 ± 0.500 | 2.179 ± 0.509 | 2.177 ± 0.526 | 2.152 ± 0.536 |
+| `n_highschool` | 2.936 ± 0.909 | 2.572 ± 0.710 | 2.376 ± 0.654 | 2.362 ± 0.677 | 2.354 ± 0.629 | 2.339 ± 0.643 |
+| total (sum) | 5.277 ± 1.722 | 4.215 ± 1.450 | 4.448 ± 1.434 | 4.448 ± 1.434 | 4.348 ± 1.306 | 4.348 ± 1.306 |
+| cohort log loss | 1.089 ± 0.007 | 1.093 ± 0.010 | 1.086 ± 0.010 | 1.083 ± 0.008 | 1.086 ± 0.010 | 1.083 ± 0.008 |
+
+Model 2 minus Model 1, paired by population: mean ± SD, and the populations
+where Model 2 is lower.
+
+| Target | Poisson raw | Poisson calibrated | NB2 raw | NB2 calibrated |
+|---|---|---|---|---|
+| `n_kindergarten` | +0.044 ± 0.880 (6/10) | −0.024 ± 0.848 (6/10) | −0.008 ± 0.780 (5/10) | −0.075 ± 0.746 (6/10) |
+| `n_elementary` | +0.075 ± 0.325 (4/10) | +0.051 ± 0.316 (5/10) | +0.049 ± 0.305 (5/10) | +0.024 ± 0.301 (5/10) |
+| `n_highschool` | −0.196 ± 0.465 (5/10) | −0.210 ± 0.425 (6/10) | −0.218 ± 0.462 (6/10) | −0.233 ± 0.416 (5/10) |
+| total (sum) | +0.233 ± 1.254 (4/10) | +0.233 ± 1.254 (4/10) | +0.132 ± 1.066 (4/10) | +0.132 ± 1.066 (4/10) |
+| cohort log loss | −0.007 ± 0.006 (9/10) | −0.009 ± 0.006 (8/10) | −0.007 ± 0.006 (9/10) | −0.009 ± 0.006 (8/10) |
+
+Also measured: T = 1.365 ± 0.147 (1.15–1.58: the Dirichlet means are a
+little too sharp, so calibration flattens them); calibrated minus raw log
+loss −0.0022 ± 0.0028, lower in 6 of 10 (both families: the shares do not
+depend on the total's family); NB2 dispersion 0.103 ± 0.014 (§6 measured
+≈ 0.105). The total by population, baseline / Model 1 / Model 2 Poisson /
+NB2: seed 1 4.69 / 3.58 / 6.90 / 6.05, seed 2 4.60 / 4.86 / 5.24 / 5.36,
+seed 7 4.22 / 5.04 / 4.92 / 4.83; on the other seven Model 2 beats the
+baseline.
+
+**Reading.** "t" below is the paired mean over its standard error,
+`mean / (SD / √10)`.
+- Model 1 is reproduced exactly (A4's 2.628, 2.128, 2.572 and 4.215 ±
+  1.450), and so is the baseline (2.739, 2.532, 2.936): the
+  `train_test_indices` splits are A4's.
+- **On deviance, Model 2 and Model 1 are level.** The total differs by
+  +0.23 ± 1.25 (Poisson, t 0.6) and +0.13 ± 1.07 (NB2, t 0.4), lower in 4
+  of 10; per cohort |t| < 1, except high-schoolers (Model 2 lower by 0.20
+  to 0.23, t about −1.5, lower in only 5–6 of 10). The total's SD is
+  carried by one population: on seed 1 the untuned Poisson GLM overfits
+  (6.90 against Model 1's 3.58 and the baseline's 4.69; NB2 6.05). A probe
+  outside this table, not used to pick a setting, showed a penalty pulls it
+  back (Poisson λ = 1: 5.29; NB2 λ = 1: 3.96), so `l2_penalty` is the lever
+  to tune. NB2 against Poisson on the total, −0.10 ± 0.29 (t −1.1, 5 of
+  10), is not distinguishable either.
+- **On composition, Model 2 is clearly better, by a small amount.** Its
+  cohort log loss is below Model 1's by 0.007 ± 0.006 raw (t −3.6, 9 of 10)
+  and 0.009 ± 0.006 calibrated (t −5.1, 8 of 10). Calibrated, it beats the
+  training marginal shares too (−0.006 ± 0.005, t −3.5, 9 of 10); raw only
+  at t −1.8. Model 1's three independent models give shares slightly worse
+  than the marginal ones (+0.004, t +1.7). The gain is under 1% per child
+  (1.083 against the marginal's 1.089): the cohort shares are close to
+  unpredictable from these features.
+- **Calibration helps a little, and not on every population.** T =
+  1.37 ± 0.15, > 1 on every seed: the unpenalized Dirichlet's means are too
+  sharp out of fold, and temperature softens them. Calibrated minus raw log
+  loss is −0.0022 ± 0.0028 (t −2.5), lower in only 6 of 10 (seed 1 got
+  worse); it lowers kindergarten's deviance (t −2.3, 9 of 10), barely
+  elementary's, not high-schoolers', and cannot change the total (the
+  shares sum to 1; the raw and calibrated total columns are identical by
+  construction). T is fitted per building (B6's decision) and scored here
+  per child: the per-child optimum differs on some seeds (seed 0: 1.261 per
+  building, 1.467 per child; seed 5: 1.442 and 1.430), so the gain shown is
+  not the per-child optimum.
+- **Untuned on both sides**: `CohortProbabilityModel` at `l2_penalty=0`
+  (§7's usage block shows 1e-3), `TotalChildrenModel` at 0; a penalty may
+  shrink both T and the calibration gain. `MODEL_REIMPLEMENTATION_PLAN.md`
+  §5 re-checks after tuning.
+
+**In one line:** Model 2 equals Model 1 on deviance (total +0.23 Poisson and
++0.13 NB2, |t| < 0.6) and beats it on composition (cohort log loss −0.009,
+t ≈ −5, a gain under 1% per child); calibration adds a small, inconsistent
+−0.002 (6 of 10) and cannot change the total.
+
+**Record (2026-10-01).**
+- **Baseline** before the run: 1221 passed (1 skipped, 1 xfailed); HEAD
+  `491b7e8` (B5), the tree clean. After: 1221 (no `.py` change).
+- **Verified first** (a two-seed probe): the recipe runs under `-W error`
+  in ~2.5 s per population, LightGBM and torch in one process; Model 1
+  reproduced A4 on all 10 seeds.
+- **No `.py` file and no doc code block changed**, so no ruff, mypy or
+  mutation checks.
+- **Review** (independent subagent; reran the script, identical output;
+  re-derived the baseline, Model 1 and Model 2 Poisson raw and calibrated
+  on seeds 0, 1 and 5 with its own split, deviance, log-loss and
+  temperature code, all within 1.05e-6, T equal), no error; each finding
+  reproduced:
+  - *Confirmed.* No leakage: disjoint train and test neighborhoods; every
+    array by the same positions; transformer statistics fitted on training
+    rows only (the pipelines clone); the calibrator sees only training rows'
+    out-of-fold logits (disjoint groups in every fold, each training row
+    out of fold once); the `probability` template is never fitted itself.
+    The baseline's shares equal the training marginal (asserted).
+  - *Fixed (the reading).* The first reading said Model 2 is "level" per
+    cohort but called the total "Model 1's"; both are within the noise
+    (t computed above). NB2 against Poisson is t −1.1. The composition
+    gain is real but under 1% per child; calibration's win count against
+    raw is 6 of 10, not the 8 of 10 against Model 1.
+  - *Fixed (the reading).* T is fitted per building and scored per child;
+    the per-child optimum differs on some seeds (reproduced: seed 0 1.261
+    and 1.467, seed 1 1.299 and 1.426, seed 5 1.442 and 1.430).
+  - *Fixed (the reading).* The probability model's `l2_penalty=0` is stated;
+    the identical raw and calibrated total columns are said to be so by
+    construction; the per-seed totals (above) sit beside the mean ± SD.
+  - *Noted.* α is from each population's NB2 total fit (raw and calibrated
+    fit the same total model).
+- **Docs:** this doc (status, B7). No other doc changes: B9 writes the model
+  doc.
 
 ### B9. Docs and close
 - `INDEPENDENT_TOTAL_PROBABILITY_MODEL.md` new §0 (the rebuilt model: equations,
