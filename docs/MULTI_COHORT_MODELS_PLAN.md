@@ -44,7 +44,11 @@ to scikit-learn's own temperature scaling (sklearn 1.9). **Next: B5**
 (`IndependentTotalProbabilityModel`), then B7, B9, one step per stop; the
 handoff block before B6 in §9 still holds (B5's decisions: clone the two
 models, use the calibrator as given; ask once about `FrozenEstimator`).
-Non-slow suite after B6: **1203 passed** (1 skipped, 1 xfailed).
+**B5 is done** (2026-10-01; the user commits it):
+`IndependentTotalProbabilityModel` in `modeling/independent_total_probability.py`,
+and `ModelPipeline.predict_logits`; the §7 usage block runs end to end.
+**Next: B7** (the smoke run), then B9. Non-slow suite after B5: **1221
+passed** (1 skipped, 1 xfailed).
 
 ## Contents
 1. Context and goal
@@ -252,10 +256,11 @@ class ExposureTransformer(TransformerMixin, BaseEstimator):
     def fit(self, X, y=None) -> Self: ...          # learns nothing
     def transform(self, X) -> pd.Series: ...       # the raw exposure as floats, or raises
 
-# modeling/pipeline.py  (A2)
+# modeling/pipeline.py  (A2; predict_logits since B5)
 class ModelPipeline(BaseAgeGroupModel):
     def __init__(self, feature_transformer: FeatureTransformer, model: BaseAgeGroupModel) -> None: ...
     # fit(X_raw, y, exposure=None) ; predict(X_raw, exposure=None)
+    # predict_logits(X_raw): model_.predict_logits on the transformed table (a model that has them)
     # fitted: feature_transformer_, model_
 
 # modeling/independent_cohorts.py  (A3)
@@ -308,11 +313,15 @@ class TemperatureCalibrator(BaseEstimator):
 class IndependentTotalProbabilityModel(BaseAgeGroupModel):
     def __init__(self, *, total_children_model: BaseAgeGroupModel,
                  cohort_probability_model: BaseAgeGroupModel,   # two ModelPipelines
-                 temperature_calibrator: TemperatureCalibrator | None = None) -> None: ...
-    # fit(X_raw, y: DataFrame of cohort counts, exposure=None): total target = y.sum(axis=1)
-    # predict(X_raw, exposure=None) -> DataFrame = total_mean[:, None] * probabilities,
-    #   the probabilities calibrated by the (already fitted) calibrator when given
+                 temperature_calibrator: TemperatureCalibrator | FrozenEstimator | None = None) -> None: ...
+    # fit(X_raw, y: DataFrame of cohort counts, exposure=None): clones both; total target = y.sum(axis=1)
+    # predict(X_raw, exposure=None) -> DataFrame = total_mean[:, None] * shares, the shares
+    #   calibrator.predict(cohort_probability_model_.predict_logits(X)) when a calibrator is given
+    #   (used as given, stored at fit as temperature_calibrator_; its own predict raises if unfitted;
+    #   clone drops a fit, so wrap it in FrozenEstimator for a tuner),
+    #   else the probability model's own; their columns must equal y's at fit
     # the same exposure goes to both models; the probability model ignores it
+    # fitted: total_children_model_, cohort_probability_model_, temperature_calibrator_, cohorts_
 ```
 
 **The math.** `D = [1, X]`, `N` buildings, `M = Σ n_bk` children, `λ = l2_penalty`.
@@ -381,8 +390,7 @@ logits_val, counts_val = [], []
 for fit_index, val_index in cv.split(train_df, Y_train, groups_train):
     fold = clone(probability_pipeline).fit(
         take_rows(train_df, fit_index), take_rows(Y_train, fit_index))
-    X_val = fold.feature_transformer_.transform(take_rows(train_df, val_index))
-    logits_val.append(fold.model_.predict_logits(X_val))
+    logits_val.append(fold.predict_logits(take_rows(train_df, val_index)))
     counts_val.append(take_rows(Y_train, val_index))
 calibrator = TemperatureCalibrator().fit(pd.concat(logits_val), pd.concat(counts_val))
 
@@ -390,7 +398,7 @@ model_2 = IndependentTotalProbabilityModel(
     total_children_model=ModelPipeline(total_base, TotalChildrenModel(l2_penalty=0.1)),   # use_exposure=True
     cohort_probability_model=ModelPipeline(                                               # no exposure
         cohort_probability_base, CohortProbabilityModel(l2_penalty=1e-3)),
-    temperature_calibrator=calibrator,                                                    # fitted above
+    temperature_calibrator=calibrator,   # fitted above; FrozenEstimator(calibrator) if model_2 will be cloned
 ).fit(train_df, Y_train, exposure=exposure_train)
 predictions = model_2.predict(test_df, exposure=exposure_test)
 ```
@@ -2174,6 +2182,121 @@ Done when:
   7. predictions returned with their own index are placed by position (A3's NaN finding).
 - **Contract example:** the total model with `use_exposure=False` (the refit
   test passes no exposure).
+
+Done when:
+- [x] The output equals total × shares of the two pipelines fitted alone, and
+  the §7 usage block runs as written under `-W error`.
+- [x] Mutations, review, non-slow suite: 1221 passed (1 skipped, 1 xfailed).
+
+**Record (2026-10-01).**
+- **Baseline** before the first edit: 1203 passed (1 skipped, 1 xfailed);
+  HEAD `42ebb2f` (B6), the tree clean.
+- **Verified first** (probes with torch first): `clone` of a fitted
+  `TemperatureCalibrator` drops `temperature_`, so **`clone(model_2)` with a
+  plain fitted calibrator holds an unfitted one** (the tuner clones per
+  trial; the contract refit test clones); `FrozenEstimator(calibrator)`
+  keeps the fit through `clone`, its `predict` forwards and its `fit` is a
+  no-op. sklearn's 4 contract checks pass on a class with two required
+  estimator parameters and an optional `None` one; `get_params(deep=True)`
+  lists `total_children_model__model__l2_penalty` and
+  `cohort_probability_model__model__l2_penalty`, and nested `set_params`
+  reaches them. `ModelPipeline` had no `predict_logits`. Calibrating
+  `log(probabilities)` equals calibrating the logits (0.0; the row constant
+  cancels), an alternative not taken.
+- **Decisions (user: "best practices, do not overcomplicate; the settings
+  easy to change"):** the calibrator is **used as given** (not cloned, not
+  wrapped); the docstring and §7 say to wrap it in `FrozenEstimator` when
+  the model is cloned, sklearn's own idiom for a prefit estimator inside a
+  meta-estimator; no wrapping code. **`ModelPipeline.predict_logits(X)`**
+  (the fitted transformer, then `model_.predict_logits`), so Model 2 never
+  reaches into the pipeline and the §7 loop is `fold.predict_logits(X_val)`;
+  the settings stay on the models inside the pipelines.
+- **Built:** `IndependentTotalProbabilityModel(*, total_children_model,
+  cohort_probability_model, temperature_calibrator=None)`; `fit` clones
+  both, the total on `y.sum(axis=1)`, the probability model on `y`, the
+  same exposure to both, `total_children_model_`,
+  `cohort_probability_model_`, `cohorts_` and `temperature_calibrator_`
+  (the calibrator as given) set together after both succeed. `predict`: the shares from `calibrator.predict(pipeline.predict_logits(X))`
+  with a calibrator, else the probability model's own `predict` (wrapped in
+  a DataFrame, so an array-returning model has numbered columns); **one
+  check**, the shares' columns equal `y`'s at fit (other cohorts, or another
+  order, would be multiplied in by position); the total as an array;
+  `total[:, None] × shares` with `y`'s columns and `X`'s index. A
+  `check_is_fitted` on the calibrator was built and then dropped: the
+  calibrator's own `predict` raises `NotFittedError` already (its mutant
+  survived). The annotation admits `FrozenEstimator`. Exported from
+  `modeling` only.
+- **Tests** (`test_modeling_independent_total_probability.py`, 12; data:
+  features `x` and `z`, the exposure in no feature, Dirichlet-multinomial
+  counts with a child in every building, non-default index): the product
+  of the two pipelines fitted alone and rows summing to the total (under
+  `filterwarnings("error")`; it also catches a probability model given the
+  total's features, so the planned "own transformer" test was dropped as
+  redundant); the total is `y`'s row sum and predict needs no target
+  columns; doubling the exposure doubles every cohort exactly (so it
+  reaches the total only); nested `set_params` reaches the next fit; a
+  given calibrator is applied to the pipeline's logits; an unfitted or
+  cloned plain calibrator raises `NotFittedError` and a `FrozenEstimator`
+  survives `clone`; predict follows the calibrator given at fit; the
+  templates stay unfitted; a failing second fit
+  leaves the previous fit intact; columns follow `y`, rows follow `X`; a
+  probability model with other cohort names raises; a total returned as a
+  Series with its own index is placed by position. `test_modeling_pipeline.py`:
+  `predict_logits` equals the inner model's logits on the transformed
+  table. The contract example (6 cases): two pipelines, no exposure, no
+  calibrator.
+- **Ran:** §7's usage block (Model 1 and Model 2 parts) as written, under
+  `-W error`, in one namespace after `FEATURE_TRANSFORMATIONS.md` §8.0, the
+  `tree` block of §8.1, §8.2 and §8.3 (`cohort_probability_base` aliased to
+  `composition_base` until B9 renames it), on seed 0: 49 test buildings,
+  the DataFrame named and indexed as documented, T = 1.26, total deviance
+  3.52, cohort log loss 1.086 (scratchpad `run_usage_b5.py`).
+- **Mutations** (13 behaviors + the contract example), each failing its
+  named test and restored by copy with md5 confirmed: the total fitted on
+  the first cohort (2 tests); `+` for `×`; the probability model given the
+  total's transformer (the product test); the exposure replaced at
+  predict; the calibrator skipped; the calibrator setting read at predict;
+  `clone` dropped; the total assigned before the second fit; `index=None`;
+  the columns check dropped; `np.asarray` dropped on the total; the
+  transform skipped, and the transformer refitted, in `predict_logits`;
+  the contract example deleted (6 cases). Three mutants
+  survived rightly, not being behaviors: reordering the assignments after
+  both fits; the columns taken from the shares (equal by the check); and
+  the calibrator's `check_is_fitted` (dropped, above).
+- **Checks:** ruff and ruff format on the 6 changed `.py` files; `uv run
+  mypy` and mypy on `modeling` plus the 3 test files clean; the 3 test
+  files under `-W error` (49 passed).
+- **Review** (independent subagent; its own end-to-end product, exposure,
+  calibrator, clone and `FrozenEstimator` checks to 1e-14; 12 edge inputs;
+  one mutation), each finding reproduced:
+  - *Fixed.* `predict` read the calibrator from the setting, so
+    `set_params(temperature_calibrator=...)` after `fit` changed a fitted
+    model's output without a refit, unlike every other setting (§3 rule 7).
+    Now `fit` stores it as `temperature_calibrator_` (still used as given)
+    and `predict` reads that; new test `predict follows the calibrator given
+    at fit` (mutation: the setting read at predict, both the branch and the
+    call).
+  - *Fixed.* The pipeline's `predict_logits` test ran on the training table,
+    where a refitted `Center` gives the same values, so the "refitted
+    transformer" mistake its comment named survived; it now runs on a subset
+    (the refit mutant then fails it).
+  - *Fixed.* `cohorts` is read from `y` before the two fits, so an ndarray
+    `y` fails at once rather than after two fits (no check added: the
+    signature says DataFrame).
+  - *Fixed.* §7's shape said the calibrator is "checked fitted"; now "its own
+    predict raises if unfitted". The never-fitted-calibrator case was
+    dropped from the clone test (it tested the calibrator's own raise).
+  - *Accepted.* The two `type: ignore[attr-defined]` over a `Protocol` (a
+    class for the type checker only); the columns check at predict; the
+    comments; `cohorts_: list[object]`.
+  - *Fine.* A 1-column `y`; integer cohort names; a duplicated index at
+    predict; a wrong-length or missing exposure; nested
+    `set_params(total_children_model__model__family="nb2")`; pickling a
+    calibrated fitted model; `evaluate` with `COHORT_LOG_LOSS`; a calibrator
+    fitted on logits in another cohort order (T is a scalar).
+- **Docs:** `MODULE_REFERENCE.md` (`__init__.py`, `pipeline.py`, new
+  `independent_total_probability.py` rows); this doc (status, §7 shape and
+  usage block, B5). `INDEPENDENT_TOTAL_PROBABILITY_MODEL.md` §0 is B9's.
 
 ### B7. Smoke run
 Ten populations. Per cohort: Model 2 (raw and calibrated) against Model 1; plus

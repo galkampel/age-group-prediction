@@ -13,7 +13,11 @@ from age_group_prediction.feature_engineering import (
     ColumnPlan,
     FeatureTransformer,
 )
-from age_group_prediction.modeling import DirectCohortModel, ModelPipeline
+from age_group_prediction.modeling import (
+    CohortProbabilityModel,
+    DirectCohortModel,
+    ModelPipeline,
+)
 
 # Centered, so the transformer learns a statistic that a refit would change.
 # The exposure is not a feature: it is then the only way size enters.
@@ -88,3 +92,24 @@ def test_predict_follows_the_fitted_copies_after_set_params() -> None:
     pipeline.set_params(model__use_exposure=False)
 
     np.testing.assert_array_equal(pipeline.predict(X, exposure=exposure), expected)
+
+
+def test_predict_logits_transforms_the_table_like_predict() -> None:
+    # The raw table handed to the model, or a refitted transformer, would give
+    # a calibrator logits that do not match the probabilities predict returns.
+    X, y, _ = _table()
+    counts = pd.DataFrame({"a": 1 + y, "b": y.iloc[::-1].to_numpy()}, index=X.index)
+    pipeline = ModelPipeline(FEATURES, CohortProbabilityModel()).fit(X, counts)
+    # New rows: on the training table a refitted Center would give the same.
+    X_new = X.iloc[:50]
+
+    logits = pipeline.predict_logits(X_new)
+
+    pd.testing.assert_frame_equal(
+        logits,
+        pipeline.model_.predict_logits(  # type: ignore[attr-defined]
+            pipeline.feature_transformer_.transform(X_new)
+        ),
+    )
+    assert list(logits.columns) == ["a", "b"]
+    assert logits.index.equals(X_new.index)

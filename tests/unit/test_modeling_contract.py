@@ -41,6 +41,7 @@ from age_group_prediction.modeling import (
     CohortProbabilityModel,
     DirectCohortModel,
     IndependentCohortModels,
+    IndependentTotalProbabilityModel,
     ModelPipeline,
     TotalChildrenModel,
 )
@@ -127,6 +128,29 @@ def _cohort_probability_example() -> Example:
     return CohortProbabilityModel(), X, y
 
 
+def _independent_total_probability_example() -> Example:
+    # No exposure (the refit test calls fit(X, y)) and no calibrator (clone
+    # would drop its fit); every building has a child.
+    rng = np.random.default_rng(0)
+    X = pd.DataFrame({"x": rng.normal(size=200)})
+    y = pd.DataFrame(
+        {
+            "a": 1 + rng.poisson(np.exp(1 + 0.5 * X["x"])),
+            "b": rng.poisson(np.exp(0.5 - 0.3 * X["x"])),
+        }
+    )
+    features = FeatureTransformer(
+        (ColumnPlan(name="x", columns=("x",), transforms=(Center(),)),)
+    )
+    model = IndependentTotalProbabilityModel(
+        total_children_model=ModelPipeline(
+            features, TotalChildrenModel(use_exposure=False)
+        ),
+        cohort_probability_model=ModelPipeline(features, CohortProbabilityModel()),
+    )
+    return model, X, y
+
+
 # Factories, so every test gets its own model and data and none is built at import.
 EXAMPLES: dict[type[BaseAgeGroupModel], Callable[[], Example]] = {
     DirectCohortModel: _direct_cohort_example,
@@ -134,6 +158,7 @@ EXAMPLES: dict[type[BaseAgeGroupModel], Callable[[], Example]] = {
     IndependentCohortModels: _independent_cohorts_example,
     TotalChildrenModel: _total_children_example,
     CohortProbabilityModel: _cohort_probability_example,
+    IndependentTotalProbabilityModel: _independent_total_probability_example,
 }
 
 CHECKS: list[Callable[[str, BaseAgeGroupModel], None]] = [

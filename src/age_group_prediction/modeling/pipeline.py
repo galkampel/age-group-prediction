@@ -70,3 +70,14 @@ class ModelPipeline(BaseAgeGroupModel):
         return self.model_.predict(
             self.feature_transformer_.transform(X), exposure=exposure
         )
+
+    def predict_logits(self, X: pd.DataFrame) -> pd.DataFrame:
+        """The model's logits for the raw table ``X``, what a calibrator takes.
+
+        Only for a model that has them, such as
+        :class:`~age_group_prediction.modeling.CohortProbabilityModel`.
+        """
+        check_is_fitted(self)
+        return self.model_.predict_logits(  # type: ignore[attr-defined]
+            self.feature_transformer_.transform(X)
+        )
