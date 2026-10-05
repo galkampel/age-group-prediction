@@ -60,6 +60,7 @@ implementation details conflict, the model specification controls behavior.
 | [Model re-implementation plan](MODEL_REIMPLEMENTATION_PLAN.md) | Decisions and step-by-step record for the scikit-learn-style `modeling` package |
 | [Multi-cohort models plan](MULTI_COHORT_MODELS_PLAN.md) | Decisions, steps and evidence for `IndependentCohortModels` (Model A's cohorts in one object; PR #10) and the rebuilt Model B in `modeling` (PR #11), with the smoke run comparing them |
 | [Hyperparameter tuning plan](HYPERPARAMETER_TUNING_PLAN.md) | Decisions, design and remaining work for the `hyperparameter_tuning` package |
+| [Direct cohort generalization plan](DIRECT_COHORT_GENERALIZATION_PLAN.md) | Any regressor in `DirectCohortModel` (the exposure as a weighted rate, with the derivation), the `feature_transformer` inside each model in place of `ModelPipeline`, and the tuning evaluator on the raw table |
 
 ## Extensions Beyond The Simplified Model (Not Implemented)
 
