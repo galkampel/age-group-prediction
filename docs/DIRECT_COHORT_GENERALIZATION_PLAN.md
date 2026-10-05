@@ -1,7 +1,7 @@
 # Plan: Any regressor in `DirectCohortModel`, and the feature transformer inside each model
 
 **Branch:** `feat/estimator-and-feature-transformer`, from `feat/hyperparameter-tuning` (where `modeling/` lives; PRs #6–#11 used the same base). PR into `feat/hyperparameter-tuning`.
-**Status (2026-10-05):** Steps 0–3 done (draft PR #12; Steps 1–2 committed, Step 3 awaits the user's commit); next Step 4. Handoff for the implementing session: `DIRECT_COHORT_GENERALIZATION_HANDOFF.md`. Baseline `uv run pytest -m "not slow"`: **1221 passed, 1 skipped, 1 xfailed**; after Step 1: **1224 passed**; after Step 2: **1232 passed** (1233 before the revision removed one test). After Step 3: **1239 passed**.
+**Status (2026-10-05):** Steps 0–4 done (draft PR #12; Steps 0–3 committed, Step 4 awaits the user's commit); next Step 5. Handoff for the implementing session: `DIRECT_COHORT_GENERALIZATION_HANDOFF.md`. Baseline `uv run pytest -m "not slow"`: **1221 passed, 1 skipped, 1 xfailed**; after Step 1: **1224 passed**; after Step 2: **1232 passed** (1233 before the revision removed one test). After Step 3: **1239 passed**. After Step 4: **1232 passed** (the 5 `ModelPipeline` tests and its 5 contract cases removed, 3 added).
 **Source of truth:** this file. Update its status and checkboxes at every stop.
 
 ## Contents
@@ -454,21 +454,45 @@ Files: delete `modeling/pipeline.py` and `tests/unit/test_modeling_pipeline.py`;
 edit `modeling/__init__.py`, `modeling/independent_cohorts.py`, `modeling/independent_total_probability.py`,
 `tests/unit/test_modeling_contract.py`, `tests/unit/test_modeling_independent_cohorts.py`,
 `tests/unit/test_modeling_independent_total_probability.py`, `tests/unit/test_modeling_calibration.py`.
-- [ ] Delete the module, its export in `__init__.py` and `__all__`, and its `EXAMPLES` entry
+- [x] Delete the module, its export in `__init__.py` and `__all__`, and its `EXAMPLES` entry
   and import in the contract test (`test_every_shipped_model_has_an_example` will otherwise fail).
-- [ ] Replace every `ModelPipeline(features, Model(...))` in the tests with
+- [x] Replace every `ModelPipeline(features, Model(...))` in the tests with
   `Model(..., feature_transformer=features)`. Ensure `test_modeling_calibration.py`'s use
   (around line 225) and the `_RenamedShares` / `_SeriesTotal` stand-ins still fit.
-- [ ] `independent_cohorts.py`: the comment "usually a ModelPipeline" → "each with its own
+- [x] `independent_cohorts.py`: the comment "usually a ModelPipeline" → "each with its own
   `feature_transformer`"; docstring: "each has its own feature transformer, model and
   hyperparameters" stays true. Add the I1 sentence: "A plain `dict` suffices: the output
   order is `y`'s column order at fit, whatever the mapping's order."
   `independent_total_probability.py`: "Both are usually a ModelPipeline, each with its own
   features; their settings are reached by nested names (`cohort_probability_model__l2_penalty`)"
   — one level shorter now that there is no `model__`.
-- [ ] Grep check: `grep -rn "ModelPipeline\|pipeline" src/age_group_prediction/modeling tests/unit/test_modeling_*`
+- [x] Grep check: `grep -rn "ModelPipeline\|pipeline" src/age_group_prediction/modeling tests/unit/test_modeling_*`
   returns nothing (`src/student_simulator/pipeline.py` is a different package and stays).
+  Result: one unrelated hit remains, `test_the_preprocessing_pipeline_reproduces_build_modeling_table_exactly`
+  in `test_modeling_data.py`.
+- [x] Added during the step: `ModelPipeline`'s docstring was the only place stating that the rows
+  of `X`, `y` and the exposure are paired by position (a misaligned split passes silently); that
+  sentence moved to `BaseAgeGroupModel.fit`, and `IndependentCohortModels` points there.
+  `test_modeling_pipeline.py` was deleted without moving a test: each of its five has a
+  counterpart (template tests in `test_modeling_feature_transformer.py` and
+  `test_modeling_direct_cohort.py`; Direct's doubling and follows-fit tests; the statistics test,
+  which also catches a refit at predict; the logits test).
 - **Done when:** suite and mypy pass; the grep is empty. Stop.
+- **Result (2026-10-05):** ruff and mypy clean; the four changed test files (62 tests) pass with
+  `-W error`; mutation: `pipeline.py` restored with its export but no `EXAMPLES` entry fails
+  `test_every_shipped_model_has_an_example` (it discovers six models against five examples);
+  review: no correctness findings. One test gap, reproduced: `_transform_features` checking the
+  template (`self.feature_transformer is None`) instead of the fitted copy passed every test, and
+  after `set_params(feature_transformer=None)` all three models predicted on the raw table
+  silently (40–74% off, no error); the deleted `ModelPipeline` follows-fit test had guarded the
+  analogous mistake. Added `test_predict_follows_the_transformer_fitted_at_fit[model]` to
+  `test_modeling_feature_transformer.py`; that mutation fails it ×3. Nits applied: the composites'
+  docstrings reflowed and de-duplicated, the cross-reference fully qualified, "usually" restored in
+  the `CohortModels` comment, a stale `type: ignore` dropped. Non-slow suite 1232 passed,
+  1 skipped, 1 xfailed.
+  **Deferred by the user to a separate PR:** the mixed fitted state after a failed refit in
+  `TotalChildrenModel` and `CohortProbabilityModel` (Step 3's open finding); this PR leaves
+  both `fit` methods as they are.
 
 ### Step 5 — The evaluator fits the model on the raw rows
 Files: `hyperparameter_tuning/evaluator.py`, `tests/unit/test_hyperparameter_tuning_evaluator.py`,
@@ -622,7 +646,7 @@ Migration: `DirectCohortModel(n_estimators=100, ...)` →
 - [x] 1 Feature helpers in `BaseAgeGroupModel`
 - [x] 2 `DirectCohortModel`: any regressor, weighted-rate exposure
 - [x] 3 `feature_transformer` on the three leaf models
-- [ ] 4 Remove `ModelPipeline`
+- [x] 4 Remove `ModelPipeline`
 - [ ] 5 Evaluator on the raw rows
 - [ ] 6 Docs (including the derivation)
 - [ ] 7 Final checks

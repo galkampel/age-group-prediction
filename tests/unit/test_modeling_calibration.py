@@ -20,7 +20,6 @@ from age_group_prediction.feature_engineering import (
 )
 from age_group_prediction.modeling import (
     CohortProbabilityModel,
-    ModelPipeline,
     TemperatureCalibrator,
 )
 
@@ -206,7 +205,7 @@ def test_nan_logits_raise() -> None:
 
 @pytest.mark.filterwarnings("error")
 def test_the_out_of_fold_loop_runs_as_documented() -> None:
-    # The documented flow (MULTI_COHORT_MODELS_PLAN.md §7): a pipeline's fold
+    # The documented flow (MULTI_COHORT_MODELS_PLAN.md §7): a model's fold
     # copies give out-of-fold logits, the calibrator is fitted on them, and
     # then applied to the full fit's logits.
     rng = np.random.default_rng(3)
@@ -222,29 +221,25 @@ def test_the_out_of_fold_loop_runs_as_documented() -> None:
         np.vstack([rng.multinomial(n, s) for n, s in zip(totals, shares)]),
         columns=COHORTS,
     )
-    pipeline = ModelPipeline(
-        FeatureTransformer(
+    model = CohortProbabilityModel(
+        feature_transformer=FeatureTransformer(
             tuple(
                 ColumnPlan(name=c, columns=(c,), transforms=(Center(),))
                 for c in ("ses", "size")
             )
-        ),
-        CohortProbabilityModel(),
+        )
     )
 
     logits_val, counts_val = [], []
     for fit_index, val_index in KFold(5, shuffle=True, random_state=0).split(table):
-        fold = clone(pipeline).fit(table.iloc[fit_index], counts.iloc[fit_index])
-        X_val = fold.feature_transformer_.transform(table.iloc[val_index])
-        logits_val.append(fold.model_.predict_logits(X_val))  # type: ignore[attr-defined]
+        fold = clone(model).fit(table.iloc[fit_index], counts.iloc[fit_index])
+        logits_val.append(fold.predict_logits(table.iloc[val_index]))
         counts_val.append(counts.iloc[val_index])
     calibrator = TemperatureCalibrator().fit(
         pd.concat(logits_val), pd.concat(counts_val)
     )
-    fitted = clone(pipeline).fit(table, counts)
-    probabilities = calibrator.predict(
-        fitted.model_.predict_logits(fitted.feature_transformer_.transform(table))  # type: ignore[attr-defined]
-    )
+    fitted = clone(model).fit(table, counts)
+    probabilities = calibrator.predict(fitted.predict_logits(table))
 
     assert np.isfinite(calibrator.temperature_)
     assert list(probabilities.columns) == COHORTS

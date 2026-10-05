@@ -17,7 +17,6 @@ from age_group_prediction.feature_engineering import (
 from age_group_prediction.modeling import (
     DirectCohortModel,
     IndependentCohortModels,
-    ModelPipeline,
 )
 
 COHORTS = ["n_kindergarten", "n_elementary", "n_highschool"]
@@ -53,17 +52,17 @@ def _table(n_rows: int = 200) -> tuple[pd.DataFrame, pd.DataFrame, pd.Series]:
     return table, table[COHORTS], exposure
 
 
-def _cohort_models() -> dict[str, ModelPipeline]:
+def _cohort_models() -> dict[str, DirectCohortModel]:
     """Different features and offsets per cohort, in another order than y's columns."""
     return {
-        "n_highschool": ModelPipeline(
-            _features("x"), DirectCohortModel(estimator=_lightgbm(), use_exposure=True)
+        "n_highschool": DirectCohortModel(
+            estimator=_lightgbm(), use_exposure=True, feature_transformer=_features("x")
         ),
-        "n_elementary": ModelPipeline(
-            _features("z"), DirectCohortModel(estimator=_lightgbm())
+        "n_elementary": DirectCohortModel(
+            estimator=_lightgbm(), feature_transformer=_features("z")
         ),
-        "n_kindergarten": ModelPipeline(
-            _features("x"), DirectCohortModel(estimator=_lightgbm(), use_exposure=True)
+        "n_kindergarten": DirectCohortModel(
+            estimator=_lightgbm(), use_exposure=True, feature_transformer=_features("x")
         ),
     }
 

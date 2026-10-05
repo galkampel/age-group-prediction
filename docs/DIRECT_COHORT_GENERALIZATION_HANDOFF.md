@@ -58,7 +58,7 @@ I1 sentence to the docstring.
 - **Estimator instance, not kwargs or a dict** (plan G1a): `clone` drops `**kwargs`, and
   `set_params` cannot reach inside a dict.
 
-### 2b. Open question for the user (ask before starting Step 4)
+### 2b. Answered: the failed-refit mixed state is deferred to a separate PR (the user, 2026-10-05)
 
 Pre-existing since PR #11, found by the Step 3 review: in `TotalChildrenModel` and
 `CohortProbabilityModel`, a refit whose final `validate_data(self, X, reset=True)` raises
@@ -66,8 +66,7 @@ Pre-existing since PR #11, found by the Step 3 review: in `TotalChildrenModel` a
 (probed: `coef_` shape (3,), names `['a', 'b']`); `feature_transformer_` now joins that
 mixed state. The comment "Recorded after success, so a failed refit leaves the previous fit
 whole" is therefore not quite true. Fix: check the names before any fitted state is
-assigned. Ask whether to fix it in this PR (in Step 4, or as its own step) or separately;
-do not fold it in without their answer.
+assigned. The user chose a separate PR: this PR does not touch those two `fit` methods.
 
 ## 3. How the user works (non-negotiable)
 

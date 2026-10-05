@@ -143,3 +143,21 @@ def test_predict_logits_transforms_the_table_like_predict() -> None:
         by_hand.predict_logits(features.transform(table)),
         rtol=1e-12,
     )
+
+
+@pytest.mark.parametrize(("build", "target"), MODELS.values(), ids=list(MODELS))
+def test_predict_follows_the_transformer_fitted_at_fit(
+    build: Build, target: Target
+) -> None:
+    # Predict must follow the fitted copy, not the current setting: checking
+    # the template for None would, after set_params(feature_transformer=None),
+    # predict on the raw table, silently when the transformer keeps the columns.
+    table, exposure, counts = _table()
+    model = build(FEATURES).fit(table[["x"]], target(counts), exposure=exposure)
+    expected = np.asarray(model.predict(table[["x"]], exposure=exposure))
+
+    model.set_params(feature_transformer=None)
+
+    np.testing.assert_array_equal(
+        np.asarray(model.predict(table[["x"]], exposure=exposure)), expected
+    )

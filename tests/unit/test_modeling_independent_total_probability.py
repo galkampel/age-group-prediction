@@ -19,7 +19,6 @@ from age_group_prediction.feature_engineering import (
 from age_group_prediction.modeling import (
     CohortProbabilityModel,
     IndependentTotalProbabilityModel,
-    ModelPipeline,
     TemperatureCalibrator,
     TotalChildrenModel,
 )
@@ -61,9 +60,9 @@ def _model(
     calibrator: TemperatureCalibrator | FrozenEstimator | None = None,
 ) -> IndependentTotalProbabilityModel:
     return IndependentTotalProbabilityModel(
-        total_children_model=ModelPipeline(_features("x"), TotalChildrenModel()),
-        cohort_probability_model=ModelPipeline(
-            _features("z"), CohortProbabilityModel()
+        total_children_model=TotalChildrenModel(feature_transformer=_features("x")),
+        cohort_probability_model=CohortProbabilityModel(
+            feature_transformer=_features("z")
         ),
         temperature_calibrator=calibrator,
     )
@@ -99,7 +98,7 @@ def test_the_total_is_the_row_sum_of_y_and_predict_needs_no_target_columns() -> 
     # new buildings or predict a fraction of the children.
     table, y, exposure = _table()
     model = _model().fit(table, y, exposure=exposure)
-    total_alone = ModelPipeline(_features("x"), TotalChildrenModel()).fit(
+    total_alone = TotalChildrenModel(feature_transformer=_features("x")).fit(
         table, y.sum(axis=1), exposure=exposure
     )
 
@@ -126,16 +125,16 @@ def test_doubling_the_exposure_doubles_every_cohort() -> None:
 
 
 def test_nested_settings_reach_the_next_fit() -> None:
-    # The pipelines are named parameters, so a tuner sets their models'
+    # The sub-models are named parameters, so a tuner sets their
     # settings through nested names; fit must fit the templates as set.
     table, y, exposure = _table()
     model = _model()
-    tuned = clone(model).set_params(cohort_probability_model__model__l2_penalty=10.0)
+    tuned = clone(model).set_params(cohort_probability_model__l2_penalty=10.0)
 
     fitted = model.fit(table, y, exposure=exposure)
     fitted_tuned = tuned.fit(table, y, exposure=exposure)
 
-    assert fitted_tuned.cohort_probability_model_.model_.l2_penalty == 10.0  # type: ignore[attr-defined]
+    assert fitted_tuned.cohort_probability_model_.l2_penalty == 10.0
     assert not np.allclose(
         fitted.predict(table, exposure=exposure),
         fitted_tuned.predict(table, exposure=exposure),
@@ -204,7 +203,7 @@ def test_predict_follows_the_calibrator_given_at_fit() -> None:
 
 
 def test_the_templates_stay_unfitted() -> None:
-    # Fitting the caller's pipelines in place would leak one fold's fit into
+    # Fitting the caller's sub-models in place would leak one fold's fit into
     # the next.
     table, y, exposure = _table()
     model = _model().fit(table, y, exposure=exposure)
@@ -254,8 +253,8 @@ def test_a_probability_model_with_other_cohorts_raises() -> None:
     # y's cohorts by position, silently.
     table, y, exposure = _table()
     model = IndependentTotalProbabilityModel(
-        total_children_model=ModelPipeline(_features("x"), TotalChildrenModel()),
-        cohort_probability_model=ModelPipeline(_features("z"), _RenamedShares()),
+        total_children_model=TotalChildrenModel(feature_transformer=_features("x")),
+        cohort_probability_model=_RenamedShares(feature_transformer=_features("z")),
     ).fit(table, y, exposure=exposure)
 
     with pytest.raises(ValueError, match="predicts cohorts"):
@@ -273,9 +272,9 @@ def test_predictions_are_placed_by_position_not_by_their_own_index() -> None:
     # A total with its own index would be realigned to X's, into NaN, silently.
     table, y, exposure = _table()
     model = IndependentTotalProbabilityModel(
-        total_children_model=ModelPipeline(_features("x"), _SeriesTotal()),
-        cohort_probability_model=ModelPipeline(
-            _features("z"), CohortProbabilityModel()
+        total_children_model=_SeriesTotal(feature_transformer=_features("x")),
+        cohort_probability_model=CohortProbabilityModel(
+            feature_transformer=_features("z")
         ),
     ).fit(table, y, exposure=exposure)
 

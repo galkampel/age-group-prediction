@@ -57,6 +57,10 @@ class BaseAgeGroupModel(BaseEstimator, ABC):
         setting gives it an offset raises if it is missing, rather than
         silently dropping the offset; any other model ignores it. So a caller
         holding several models passes the same exposure to each.
+
+        As in scikit-learn, the rows of ``X``, ``y`` and the exposure are paired
+        by position, not by index: take them all by the same positions, e.g.
+        those of :meth:`~age_group_prediction.splitting.Splitter.train_test_indices`.
         """
 
     @abstractmethod

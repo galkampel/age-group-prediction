@@ -15,7 +15,6 @@ from .direct_cohort import DirectCohortModel, Regressor
 from .independent_cohorts import CohortModels, IndependentCohortModels
 from .independent_total_probability import IndependentTotalProbabilityModel
 from .optimization import Solver
-from .pipeline import ModelPipeline
 from .total_children import TotalChildrenModel
 
 __all__ = [
@@ -25,7 +24,6 @@ __all__ = [
     "DirectCohortModel",
     "IndependentCohortModels",
     "IndependentTotalProbabilityModel",
-    "ModelPipeline",
     "Regressor",
     "Solver",
     "TemperatureCalibrator",

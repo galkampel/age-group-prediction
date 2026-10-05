@@ -16,8 +16,8 @@ from .base import BaseAgeGroupModel
 
 __all__ = ["CohortModels", "IndependentCohortModels"]
 
-# Each model takes the raw table, so each cohort keeps its own features:
-# usually a ModelPipeline.
+# Each model takes the raw table, usually through its own feature_transformer,
+# so each cohort can keep its own features.
 type CohortModels = Mapping[str, BaseAgeGroupModel]
 
 
@@ -32,8 +32,10 @@ class IndependentCohortModels(BaseAgeGroupModel):
 
     The same ``exposure`` goes to every cohort; a model without an exposure
     offset ignores it. Rows are paired by position, as in
-    :class:`~age_group_prediction.modeling.ModelPipeline`. ``predict`` returns a DataFrame with one column per
-    cohort, in ``y``'s column order at fit, indexed like ``X``.
+    :meth:`~age_group_prediction.modeling.BaseAgeGroupModel.fit`. ``predict``
+    returns a DataFrame with one column per cohort, in ``y``'s column order at
+    fit whatever the mapping's order (so a plain ``dict`` suffices), indexed
+    like ``X``.
     """
 
     def __init__(self, cohort_models: CohortModels) -> None:
