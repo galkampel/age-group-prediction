@@ -25,15 +25,13 @@ class BaseAgeGroupModel(BaseEstimator, ABC):
 
     Subclasses take their settings in ``__init__`` and store them verbatim, so
     ``get_params`` and ``set_params`` (inherited from ``BaseEstimator``) and
-    ``sklearn.base.clone`` work, and a tuner can build a fresh model per trial.
-    Data are only ever method arguments (``X``, ``y``, and ``exposure`` where a
-    model uses one), and fitted state lives in trailing-underscore attributes.
-    ``fit`` replaces all fitted state, so a refit equals a fresh fit: a tuner
-    reuses one copy across the folds of a trial.
+    ``sklearn.base.clone`` work. Data are only ever method arguments (``X``,
+    ``y``, and ``exposure`` where a model uses one), and fitted state lives in
+    trailing-underscore attributes. ``fit`` replaces all fitted state, so a
+    refit equals a fresh fit.
 
     A model that transforms its own features lists ``feature_transformer`` in
-    its ``__init__`` (``get_params`` reads the signature, so the base class
-    cannot declare it for it). ``fit`` fits a copy on the training rows and
+    its ``__init__``. ``fit`` fits a copy on the training rows and
     ``predict`` transforms with that copy, so new rows get the training
     statistics; ``None`` means ``X`` is already the design matrix. The logic
     is shared here, in :meth:`_fit_features` and :meth:`_transform_features`.
@@ -55,8 +53,7 @@ class BaseAgeGroupModel(BaseEstimator, ABC):
 
         ``exposure`` is each row's raw exposure, not its log. A model whose
         setting gives it an offset raises if it is missing, rather than
-        silently dropping the offset; any other model ignores it. So a caller
-        holding several models passes the same exposure to each.
+        silently dropping the offset; any other model ignores it.
 
         As in scikit-learn, the rows of ``X``, ``y`` and the exposure are paired
         by position, not by index: take them all by the same positions, e.g.
@@ -73,11 +70,7 @@ class BaseAgeGroupModel(BaseEstimator, ABC):
         """
 
     def evaluate(self, y_true: ArrayLike, y_pred: ArrayLike, metric: Metric) -> float:
-        """Score ``y_pred`` against ``y_true`` with one metric.
-
-        A method rather than a free function so a model can change how it is
-        scored. The cast turns a custom metric's numpy scalar into a float.
-        """
+        """Score ``y_pred`` against ``y_true`` with one metric."""
         return float(metric.function(y_true, y_pred))
 
     def _fit_features(

@@ -16,19 +16,17 @@ from .base import BaseAgeGroupModel
 
 __all__ = ["CohortModels", "IndependentCohortModels"]
 
-# Each model takes the raw table, usually through its own feature_transformer,
-# so each cohort can keep its own features.
+# Each model takes the raw table, usually through its own feature_transformer.
 type CohortModels = Mapping[str, BaseAgeGroupModel]
 
 
 class IndependentCohortModels(BaseAgeGroupModel):
     """Fit one model per cohort on its own column of ``y``, and predict them all.
 
-    The cohorts are independent: each has its own feature transformer, model
-    and hyperparameters, so each is tuned on its own and the tuned models are
-    assembled here. Nested ``set_params`` names do not reach into the mapping;
-    replace it with ``set_params(cohort_models=...)``, before ``fit``, which
-    fits copies.
+    Each cohort's model has its own features and hyperparameters. Nested
+    ``set_params`` names do not reach into the mapping: tune each model on its
+    own and replace the mapping with ``set_params(cohort_models=...)``, before
+    ``fit``, which fits copies.
 
     The same ``exposure`` goes to every cohort; a model without an exposure
     offset ignores it. Rows are paired by position, as in

@@ -27,35 +27,20 @@ class Regressor(Protocol):
 
 
 class DirectCohortModel(BaseAgeGroupModel):
-    """Any regressor with a Poisson or Gaussian loss, fitted on one cohort.
+    """One regressor, with a Poisson or Gaussian loss, for one cohort's count.
 
-    ``X`` is the raw table when ``feature_transformer`` is given, otherwise the
-    finished design matrix. Cohorts are independent, so each gets its own instance.
-    ``estimator`` is always given, and carries its own loss and
-    hyperparameters, e.g. ``LGBMRegressor(objective="poisson")``,
-    ``HistGradientBoostingRegressor(loss="poisson")`` or
-    ``PoissonRegressor()``. A tuner reaches its settings by nested names
-    (``estimator__n_estimators``) through ``set_params``; nothing is searched
-    in ``fit``. LightGBM ignores ``subsample`` unless ``subsample_freq >= 1``
-    is set on the estimator too.
+    ``estimator`` carries its own loss and hyperparameters (``estimator__…``
+    in ``set_params``). ``X`` is the raw table when ``feature_transformer`` is
+    given, otherwise the finished design matrix.
 
-    ``use_exposure`` makes the raw exposure (apartments), passed to ``fit`` and
-    ``predict``, scale the mean: the estimator learns the rate per apartment
-    from ``y / exposure`` with ``sample_weight=exposure``, and ``predict``
-    multiplies it back by the exposure to give a count. For a Poisson loss this
-    is the offset model ``log(exposure)`` itself, since the two negative
-    log-likelihoods differ by a constant, ``L_offset = L_rate - sum(y log
-    exposure)``; for a Gaussian loss it is least squares of the count with a
-    variance proportional to the exposure. Both derivations are in
-    ``docs/DIRECT_COHORT_MODEL.md`` §0.1. The equivalence is of the
-    likelihoods: a penalized scikit-learn GLM (``PoissonRegressor(alpha=…)``)
-    normalizes ``sample_weight`` to sum to one, so its ``alpha`` acts as
-    ``alpha * mean(exposure)`` in the offset model; LightGBM and
-    ``HistGradientBoostingRegressor`` use the weights as given. Unlike
-    LightGBM's ``init_score``, it needs only ``sample_weight``: a regressor
-    without one fails at ``fit`` with its own error. With
-    ``use_exposure=False`` a passed exposure is ignored, so a caller can pass
-    one exposure to every model, and a tuner can compare with and without.
+    With ``use_exposure``, the raw exposure passed to ``fit`` and ``predict``
+    scales the mean: ``fit`` regresses ``y / exposure`` with
+    ``sample_weight=exposure``, and ``predict`` multiplies by the exposure. For
+    a Poisson loss this is the offset model ``log(exposure)``
+    (``docs/DIRECT_COHORT_MODEL.md`` §0.1). A penalized scikit-learn GLM
+    normalizes ``sample_weight``, so its ``alpha`` acts as
+    ``alpha * mean(exposure)``. Without ``use_exposure`` a passed exposure is
+    ignored.
     """
 
     def __init__(
@@ -65,8 +50,7 @@ class DirectCohortModel(BaseAgeGroupModel):
         use_exposure: bool = False,
         feature_transformer: FeatureTransformer | None = None,
     ) -> None:
-        # Stored verbatim, unvalidated: set_params assigns attributes without
-        # re-entering __init__, so fit is where the configuration is checked.
+        # Stored verbatim: set_params assigns attributes without re-entering here.
         self.estimator = estimator
         self.use_exposure = use_exposure
         self.feature_transformer = feature_transformer
@@ -74,11 +58,7 @@ class DirectCohortModel(BaseAgeGroupModel):
     def fit(
         self, X: pd.DataFrame, y: pd.Series, exposure: ArrayLike | None = None
     ) -> Self:
-        """Fit a copy of ``estimator`` on ``X`` and ``y``; ``exposure`` is raw, not its log.
-
-        What the loss cannot fit is left to the estimator: LightGBM, for one,
-        rejects an all-zero ``y`` under a Poisson loss.
-        """
+        """Fit a copy of ``estimator`` on ``X`` and ``y``; ``exposure`` is raw, not its log."""
         exposure_values = self._check_exposure(X, exposure, expected=self.use_exposure)
         feature_transformer, X = self._fit_features(X, y)
         # A copy, so the caller's template stays unfitted across folds.
@@ -86,9 +66,7 @@ class DirectCohortModel(BaseAgeGroupModel):
         if exposure_values is None:
             estimator.fit(X, y)
         else:
-            # The rate per apartment, weighted by the apartments: the offset
-            # model's likelihood for a Poisson loss, least squares of the count
-            # for a Gaussian one; any regressor that takes sample_weight.
+            # The rate per apartment, weighted by the apartments.
             estimator.fit(X, y / exposure_values, sample_weight=exposure_values)
         # Set together, only once fitting succeeded.
         self.estimator_ = estimator

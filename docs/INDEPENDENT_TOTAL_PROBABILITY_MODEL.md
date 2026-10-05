@@ -12,7 +12,7 @@
 
 Two independent models, multiplied: a count regression for a building's
 **total** children and a Dirichlet regression for its **cohort shares**, each
-a `ModelPipeline` with its own feature transformer, fitted on the raw table.
+with its own `feature_transformer`, fitted on the raw table.
 The shares can be calibrated afterwards by a temperature fitted on
 out-of-fold logits. Means only; nothing is searched inside `fit`.
 Decisions and evidence: [MULTI_COHORT_MODELS_PLAN.md](MULTI_COHORT_MODELS_PLAN.md)
@@ -98,13 +98,13 @@ Import from `age_group_prediction.modeling`; the package root exports the
 
 | Class | Settings (defaults) | `fit` takes | Fitted state | `predict` returns |
 |---|---|---|---|---|
-| `TotalChildrenModel` | `family="poisson"` or `"nb2"`; `solver="lbfgs"` or `"bfgs"` (`nb2`: `lbfgs` only, the solver with bounds); `use_exposure=True`; `l2_penalty=0.0`; `max_iter=500`; `tol=1e-6` (bounds the gradient) | the design matrix, the totals, `exposure=` (raw apartments) | `intercept_`, `coef_`, `use_exposure_`, `dispersion_` (NB2 only), `feature_names_in_`, `n_features_in_` | the mean total, an array |
-| `CohortProbabilityModel` | `solver`, `l2_penalty`, `max_iter`, `tol` as above | the design matrix, a DataFrame of cohort counts (≥ 2 columns, every building with a child); an exposure is ignored | `intercept_` (K), `coef_` (d × K), `cohorts_`, the feature names | the mean shares, a DataFrame with `y`'s columns, rows summing to 1; `predict_logits` gives $\log\alpha$ |
+| `TotalChildrenModel` | `family="poisson"` or `"nb2"`; `solver="lbfgs"` or `"bfgs"` (`nb2`: `lbfgs` only, the solver with bounds); `use_exposure=True`; `l2_penalty=0.0`; `max_iter=500`; `tol=1e-6` (bounds the gradient); `feature_transformer=None` | the raw table with `feature_transformer`, otherwise the design matrix; the totals; `exposure=` (raw apartments) | `intercept_`, `coef_`, `use_exposure_`, `dispersion_` (NB2 only), `feature_transformer_`, `feature_names_in_`, `n_features_in_` (of the design matrix) | the mean total, an array |
+| `CohortProbabilityModel` | `solver`, `l2_penalty`, `max_iter`, `tol`, `feature_transformer` as above | `X` as above, a DataFrame of cohort counts (≥ 2 columns, every building with a child); an exposure is ignored | `intercept_` (K), `coef_` (d × K), `cohorts_`, `feature_transformer_`, the feature names | the mean shares, a DataFrame with `y`'s columns, rows summing to 1; `predict_logits` gives $\log\alpha$ |
 | `TemperatureCalibrator` | none | out-of-fold logits and the counts of the same rows (DataFrames or arrays, paired by position) | `temperature_` | `softmax(logits / T)`, a DataFrame with the logits' columns and index |
-| `IndependentTotalProbabilityModel` | `total_children_model`, `cohort_probability_model` (two `ModelPipeline`s), `temperature_calibrator=None` (a fitted calibrator, or a `FrozenEstimator` of one) | the raw table, the cohort counts, `exposure=` for both models | `total_children_model_`, `cohort_probability_model_`, `temperature_calibrator_`, `cohorts_` | `total × shares`, a DataFrame with `y`'s columns at fit, indexed like `X` |
+| `IndependentTotalProbabilityModel` | `total_children_model`, `cohort_probability_model` (each with its own `feature_transformer`), `temperature_calibrator=None` (a fitted calibrator, or a `FrozenEstimator` of one) | the raw table, the cohort counts, `exposure=` for both models | `total_children_model_`, `cohort_probability_model_`, `temperature_calibrator_`, `cohorts_` | `total × shares`, a DataFrame with `y`'s columns at fit, indexed like `X` |
 
-`ModelPipeline.predict_logits(X)` transforms the raw table with the fitted
-transformer and returns the model's logits: what a calibrator is fitted on
+`CohortProbabilityModel.predict_logits(X)` transforms the raw table with its
+fitted `feature_transformer_` and returns the logits: what a calibrator is fitted on
 and what Model 2 feeds it at `predict`. Every model keeps the base signature
 `fit(X, y, exposure=None)` and `predict(X, exposure=None)`, and `evaluate`.
 
@@ -118,7 +118,7 @@ and what Model 2 feeds it at `predict`. Every model keeps the base signature
    positions, applied to the table, the targets, the groups and the exposure
    alike with `take_rows`.
 3. **Calibrate on the training rows only.** Grouped folds on the training
-   rows; each fold's copy of the composition pipeline gives the held-out
+   rows; each fold's copy of the composition model gives the held-out
    rows' logits; the calibrator is fitted on all of them.
 4. **Fit Model 2 on the training rows** with the fitted calibrator, and
    predict the test rows.
@@ -127,8 +127,8 @@ and what Model 2 feeds it at `predict`. Every model keeps the base signature
 from sklearn.base import clone
 
 from age_group_prediction.modeling import (
-    CohortProbabilityModel, IndependentTotalProbabilityModel, ModelPipeline,
-    TemperatureCalibrator, TotalChildrenModel,
+    CohortProbabilityModel, IndependentTotalProbabilityModel, TemperatureCalibrator,
+    TotalChildrenModel,
 )
 from age_group_prediction.preprocessing import ExposureTransformer, ShareTransformer
 from age_group_prediction.scoring import COHORT_LOG_LOSS, POISSON_DEVIANCE
@@ -152,22 +152,22 @@ Y_train, Y_test = take_rows(table[COHORTS], train_index), take_rows(table[COHORT
 groups_train = take_rows(table["neighborhood_id"], train_index)
 exposure_train, exposure_test = take_rows(exposure, train_index), take_rows(exposure, test_index)
 
-# 3. The calibrator, on out-of-fold logits of the composition pipeline;
+# 3. The calibrator, on out-of-fold logits of the composition model;
 #    total_base and cohort_probability_base are Feature transformations §8.2–§8.3
-probability_pipeline = ModelPipeline(cohort_probability_base, CohortProbabilityModel())
+probability_model = CohortProbabilityModel(feature_transformer=cohort_probability_base)
 logits_val, counts_val = [], []
 for fit_index, val_index in Splitter("grouped").cv(n_splits=5, random_state=0).split(
     X_train, Y_train, groups_train
 ):
-    fold = clone(probability_pipeline).fit(take_rows(X_train, fit_index), take_rows(Y_train, fit_index))
+    fold = clone(probability_model).fit(take_rows(X_train, fit_index), take_rows(Y_train, fit_index))
     logits_val.append(fold.predict_logits(take_rows(X_train, val_index)))
     counts_val.append(take_rows(Y_train, val_index))
 calibrator = TemperatureCalibrator().fit(pd.concat(logits_val), pd.concat(counts_val))
 
-# 4. Model 2: the exposure goes to both pipelines; the composition one ignores it
+# 4. Model 2: the exposure goes to both models; the composition one ignores it
 model = IndependentTotalProbabilityModel(
-    total_children_model=ModelPipeline(total_base, TotalChildrenModel()),  # or family="nb2"
-    cohort_probability_model=probability_pipeline,
+    total_children_model=TotalChildrenModel(feature_transformer=total_base),  # or family="nb2"
+    cohort_probability_model=probability_model,
     temperature_calibrator=calibrator,  # FrozenEstimator(calibrator) if the model is cloned
 ).fit(X_train, Y_train, exposure=exposure_train)
 predictions = model.predict(X_test, exposure=exposure_test)  # a DataFrame, total × shares
@@ -187,7 +187,7 @@ scores["composition"] = model.evaluate(Y_test, predictions, COHORT_LOG_LOSS)  # 
 | **Rows are paired by position**, not by index; nothing checks the index | The splitter returns positions and every array is taken by them |
 | **Every building has a child, and `y` has at least two cohorts.** Counts are validated where the data is prepared, not in the models; a cohort with no child at all raises | The observation is a building's composition; an unobserved cohort would be fitted to the compressed floor silently |
 | **The calibrator is fitted by the caller on out-of-fold logits and used as given.** `sklearn.base.clone` drops its fit, so wrap it in `sklearn.frozen.FrozenEstimator` when the model is cloned (a tuner clones per trial) | sklearn's own idiom for a prefit estimator inside a meta-estimator; the model has no folds inside |
-| **Set before `fit`.** The two pipelines are cloned in `fit`, and `predict` follows the fitted copies and the calibrator given at `fit`. Nested names reach both models, e.g. `set_params(cohort_probability_model__model__l2_penalty=1e-3)` (unlike Model 1's mapping) | Two named estimators are ordinary parameters; the templates stay unfitted |
+| **Set before `fit`.** The two models are cloned in `fit`, and `predict` follows the fitted copies and the calibrator given at `fit`. Nested names reach both models, e.g. `set_params(cohort_probability_model__l2_penalty=1e-3)` (unlike Model 1's mapping) | Two named estimators are ordinary parameters; the templates stay unfitted |
 | **The composition model's columns must equal `y`'s at fit**, or `predict` raises | Shares under other names or in another order would be multiplied in by position, silently |
 | **`nb2` takes `solver="lbfgs"` only** | The floor on $\alpha$ is an L-BFGS-B bound; scipy would only warn and drop it under BFGS |
 | **One penalty meaning**: per building, intercepts unpenalized | Comparable across folds of different size; the old `probability_c` was per child ([Feature transformations §8.7 item 7](FEATURE_TRANSFORMATIONS.md#87-still-outstanding)) |
@@ -534,7 +534,7 @@ the cohort distribution declaration.
 
 - Tests of the rebuilt model (§0): `tests/unit/test_modeling_total_children.py`,
   `test_modeling_cohort_probability.py`, `test_modeling_calibration.py`,
-  `test_modeling_independent_total_probability.py`, `test_modeling_pipeline.py`,
+  `test_modeling_independent_total_probability.py`, `test_modeling_feature_transformer.py`,
   `test_modeling_optimization.py`, the contract test `test_modeling_contract.py`;
   statsmodels oracles in `tests/validation/test_total_children.py`.
 - Tests: `tests/unit/test_independent_total_probability.py` (including the

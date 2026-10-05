@@ -11,7 +11,7 @@ coefficient means, and why the alternatives were rejected.
 
 | Label | Class | Stages and feature use |
 |---|---|---|
-| **A** | `DirectCohortModel` | One LightGBM regressor per cohort (Poisson or regression objective); raw features; optional exposure offset |
+| **A** | `DirectCohortModel` | One regressor per cohort (any estimator with a Poisson or Gaussian loss); raw features; optional exposure as a weighted rate |
 | **B** | `IndependentTotalProbabilityModel` | Penalized Poisson/NB2 total with a log-exposure offset, plus a grouped multinomial composition stage |
 | **C** | `BayesianConditionalModel` | Hierarchical NB2 total plus a composition stage; uses B's frozen specs; `Normal(0, 0.5)` coefficient priors |
 
@@ -129,7 +129,7 @@ All 8 numeric columns (`ses`, `avg_household_size`, `median_age`,
 | `ses` squared | Adds a **non-monotone** column while keeping `ses`: $(\text{ses}-c)^2$ orders buildings by their distance from $c$, so one split isolates both tails where `ses` alone needs two. Useless if $c$ lies outside the data range, since $x^2$ is then monotone | **Keep as a candidate.** Center at the SES reference point 0.0 (Section 3.2) |
 | SES B-spline | **Removes `ses`** and replaces it with 5 overlapping basis columns ([fitted_features.py:285-290](../src/age_group_prediction/fitted_features.py#L285-L290)), so no column orders buildings by SES and a simple SES threshold has to be approximated across columns | **Rejected** |
 | Interactions | Trees build them through successive splits | Not needed; not offered for `tree` |
-| $\log n$ as `init_score` | Changes the target scale, not a column | **Add** (Section 3.3) |
+| The exposure $n$, as a weighted regression of the rate $y/n$ with weight $n$ (§3.3) | Changes the target scale, not a column | **Add** (Section 3.3) |
 
 ### 3.2 SES candidates
 
@@ -184,23 +184,19 @@ center also changes what the coefficients mean.
 
 ### 3.3 Exposure: add the offset **and** keep `n_apartments`
 
-For the Poisson objective, `DirectCohortModel(use_exposure=True)` passes
-$\log n_i + b_c$ as LightGBM's `init_score`:
+For a Poisson loss, `DirectCohortModel(use_exposure=True)` fits the offset model
 
 $$
-\log \mu_{i,c} = \log n_i + b_c + f_c(\mathbf{x}_i),
-\qquad b_c = \log \frac{\sum_i y_{i,c}}{\sum_i n_i},
+\log \mu_{i,c} = \log n_i + f_c(\mathbf{x}_i),
 $$
 
-so each cohort's trees learn a **per-apartment rate**.
-- **Why $b_c$:** it is the intercept, the average log rate per apartment.
-  LightGBM skips its `boost_from_average` once given an `init_score`, so
-  without $b_c$ the trees would start at one child per apartment.
-- **Why the model adds the offset itself:** LightGBM's `predict` doesn't add
-  the `init_score` back, so the model returns
-  $\exp(\text{raw score} + \log n_i + b_c)$.
-- **Details:** the equations and the correct inputs are in
-  [DIRECT_COHORT_MODEL.md §0](DIRECT_COHORT_MODEL.md#0-the-rebuilt-model-modelingdirect_cohortpy).
+so each cohort's estimator learns a **per-apartment rate**. It does so as a
+weighted regression of the rate: the estimator is fitted on $y_{i,c} / n_i$
+with `sample_weight` $n_i$, and `predict` multiplies by $n_i$. That has the
+same likelihood as the offset, works for any regressor that takes
+`sample_weight`, and starts from the average rate $\sum_i y_{i,c} / \sum_i n_i$.
+The derivation, and the Gaussian case, are in
+[DIRECT_COHORT_MODEL.md §0.1](DIRECT_COHORT_MODEL.md#01-the-model-the-exposure-as-a-weighted-regression-of-the-per-apartment-rate).
 
 - **Why the offset:** child counts grow roughly in proportion to $n$. Trees
   approximate that with step functions, need many splits to do so, and cannot
@@ -209,9 +205,10 @@ so each cohort's trees learn a **per-apartment rate**.
 - **Why keep `n_apartments` as a feature too:** the offset asserts exact
   proportionality. Keeping the feature lets the trees learn departures from it,
   for example larger buildings having fewer children per apartment.
-- **Not for `regression`:** it has no log link, so a log-scale offset does not
-  apply, and the model refuses the combination. (An alternative there is to
-  model $y/n$ with weights $n$.)
+- **With a Gaussian loss too:** the weighted rate is then least squares of the
+  count with a mean proportional to $n$ and a variance proportional to $n$, as
+  a count's variance grows
+  ([DIRECT_COHORT_MODEL.md §0.1 (D)](DIRECT_COHORT_MODEL.md#01-the-model-the-exposure-as-a-weighted-regression-of-the-per-apartment-rate)).
 
 ---
 
@@ -541,7 +538,7 @@ daycare candidates comparable. How hard to shrink is the tuned penalty's job.
 
 ### Model A: `DirectCohortModel`
 
-One LightGBM regressor per cohort (`n_kindergarten`, `n_elementary`,
+One regressor per cohort (`n_kindergarten`, `n_elementary`,
 `n_highschool`). The hyperparameters are fixed per instance and tuned from
 outside, not inside `fit`.
 
@@ -549,7 +546,7 @@ outside, not inside `fit`.
 |---|---|---|
 | **Base** | All 8 numeric columns raw, one-hot `school_status`, 3-room reference | Reference point for everything below |
 | SES quadratic | Adds $(\text{ses}-0)^2$, the squared deviation from the SES reference point; keeps `ses` | Does an explicit non-monotone column beat the splits the trees would make anyway? |
-| **+ size offset** | `use_exposure=True`: $\log n + b$ as `init_score` (Poisson only); `n_apartments` stays a feature | Does modeling the per-apartment rate beat letting the trees learn size from scratch? It was expected to be the largest gain. An untuned smoke run over 10 simulated populations found only weak evidence: about 4% lower deviance for kindergarten and high school, and none for elementary ([plan, Step 2.4](MODEL_REIMPLEMENTATION_PLAN.md)) |
+| **+ size offset** | `use_exposure=True`: a weighted regression of the rate $y/n$ with weight $n$ (§3.3); `n_apartments` stays a feature | Does modeling the per-apartment rate beat letting the trees learn size from scratch? It was expected to be the largest gain. An untuned smoke run over 10 simulated populations found only weak evidence: about 4% lower deviance for kindergarten and high school, and none for elementary ([plan, Step 2.4](MODEL_REIMPLEMENTATION_PLAN.md)) |
 | Objective: Poisson / regression | Poisson log-likelihood vs squared error | Does a count likelihood beat squared error? |
 
 ### Model B: `IndependentTotalProbabilityModel`
@@ -836,8 +833,8 @@ variable at once.
 | `median_age` | Raw | $z$ (report $\beta/s$; fixed $(x-37)/10$ optional) | Same |
 | `n_daycares_500m` | Raw; drop the `log1p` candidate | Candidate 1: $d/2$ (0 = none; per 2 daycares, about 1 SD). Candidate 2: $\log\frac{1+d}{1+\bar d}$ | A fixed unit is fold-stable where a learned min-max is not, and a unit near 1 SD is shrunk like the z-scored columns; the centered log1p keeps its unit across folds and reads as an elasticity |
 | Room shares (4, 5, 6; reference 3) | Raw | $(s_k-\bar s_k)/0.10$, one common unit | 10 pp substituted out of the 3-room reference; centering puts the baseline at the average mix |
-| `n_apartments` | Raw feature, and optionally the exposure (`use_exposure=True`, Poisson) | Not a feature | Trees cannot extrapolate proportional growth; the feature still captures departures from proportionality |
-| Exposure | Raw $n$ passed as `fit(..., exposure=n)` / `predict(..., exposure=n)`; the model uses $\log n + b$ as `init_score` | $\log n$ offset, coefficient 1, unscaled | Models the per-apartment rate; `log1p` adds a size-dependent bias of about $1/n$ |
+| `n_apartments` | Raw feature, and optionally the exposure (`use_exposure=True`) | Not a feature | Trees cannot extrapolate proportional growth; the feature still captures departures from proportionality |
+| Exposure | Raw $n$ passed as `fit(..., exposure=n)` / `predict(..., exposure=n)`; the model fits a weighted regression of the rate $y/n$ with weight $n$ (§3.3) | $\log n$ offset, coefficient 1, unscaled | Models the per-apartment rate; `log1p` adds a size-dependent bias of about $1/n$ |
 | `school_status` | One-hot (the only required transform) | One-hot, reference `none`, unscaled | Already interpretable |
 | Interactions | None needed — splits represent them | **Total:** room share × household size, then × SES. **Composition:** room share × median age, then × daycare. One per candidate | Only room shares vary within a neighborhood, so every well-powered interaction is room share × a neighborhood feature. Each phase takes the moderator matching its question — household size for *how many*, neighborhood age for *which ages* (Section 6) |
 
@@ -949,38 +946,43 @@ exact proportionality, and the feature lets the trees learn departures from
 it. The exposure belongs to the model, not the transformer: `use_exposure=True`,
 with the raw count passed to `fit` and `predict`. Build it with
 `ExposureTransformer` on the full table, before splitting: it rejects a zero,
-negative, infinite or NaN count, which the model would otherwise accept, with
-at most a numpy warning (none for NaN).
+negative, infinite or NaN count, which LightGBM would otherwise fit silently.
+The model takes `tree` as its `feature_transformer` and fits a copy on the
+rows it is fitted on.
 
 ```python
-from sklearn.base import clone
+from lightgbm import LGBMRegressor
 from age_group_prediction.modeling import DirectCohortModel
 from age_group_prediction.preprocessing import ExposureTransformer
 
 exposure = ExposureTransformer("n_apartments").fit_transform(table)
-features = clone(tree).fit(fit_df)
-model = DirectCohortModel(use_exposure=True).fit(
-    features.transform(fit_df), fit_df["n_kindergarten"],
-    exposure=exposure.loc[fit_df.index],
-)
+model = DirectCohortModel(
+    estimator=LGBMRegressor(objective="poisson", n_jobs=1, verbosity=-1),
+    use_exposure=True,
+    feature_transformer=tree,
+).fit(fit_df, fit_df["n_kindergarten"], exposure=exposure.loc[fit_df.index])
 ```
 
-For `objective="regression"` there is no log link, and the model refuses
-`use_exposure=True` (§3.3).
+With a Gaussian loss (`objective="regression"`) the exposure is allowed too
+(§3.3).
 
-**Combining the cohorts.** Each cohort gets its own model and its own copy of
-the transformer: a `ModelPipeline` per cohort, held by `IndependentCohortModels`,
-which fits and predicts on the raw table and returns one column per cohort.
-The same exposure goes to every cohort; a model without the offset ignores it.
-The data flow and the rules are in
-[Direct cohort model §0.6](DIRECT_COHORT_MODEL.md#06-every-cohort-from-the-raw-table-modelpipeline-and-independentcohortmodels).
+**Combining the cohorts.** Each cohort gets its own model, with its own copy
+of the transformer, held by `IndependentCohortModels`, which fits and predicts
+on the raw table and returns one column per cohort. The same exposure goes to
+every cohort; a model without the offset ignores it. The data flow and the
+rules are in
+[Direct cohort model §0.6](DIRECT_COHORT_MODEL.md#06-every-cohort-from-the-raw-table-independentcohortmodels).
 
 ```python
-from age_group_prediction.modeling import IndependentCohortModels, ModelPipeline
+from age_group_prediction.modeling import IndependentCohortModels
 
 COHORTS = ["n_kindergarten", "n_elementary", "n_highschool"]
 cohort_models = IndependentCohortModels({
-    cohort: ModelPipeline(tree, DirectCohortModel(use_exposure=True))
+    cohort: DirectCohortModel(
+        estimator=LGBMRegressor(objective="poisson", n_jobs=1, verbosity=-1),
+        use_exposure=True,
+        feature_transformer=tree,
+    )
     for cohort in COHORTS
 }).fit(fit_df, fit_df[COHORTS], exposure=exposure.loc[fit_df.index])
 predictions = cohort_models.predict(valid_df, exposure=exposure.loc[valid_df.index])
@@ -1046,11 +1048,11 @@ a predictor, and forms the offset $\log n$ itself. Build it with
 `ExposureTransformer` on the full table before splitting, as in §8.1.
 
 ```python
-from age_group_prediction.modeling import ModelPipeline, TotalChildrenModel
+from age_group_prediction.modeling import TotalChildrenModel
 from age_group_prediction.preprocessing import ExposureTransformer
 
 exposure = ExposureTransformer("n_apartments").fit_transform(table)
-total_model = ModelPipeline(total_base, TotalChildrenModel()).fit(  # family="poisson" or "nb2"
+total_model = TotalChildrenModel(feature_transformer=total_base).fit(  # family="poisson" or "nb2"
     fit_df, fit_df["n_children_total"], exposure=exposure.loc[fit_df.index]
 )
 total_mean = total_model.predict(valid_df, exposure=exposure.loc[valid_df.index])
@@ -1072,14 +1074,14 @@ from age_group_prediction.modeling import CohortProbabilityModel
 cohort_probability_base = FeatureTransformer(
     plans=total_base.plans,      # identical; only the model differs, taking no exposure
 )
-probability_model = ModelPipeline(cohort_probability_base, CohortProbabilityModel()).fit(
+probability_model = CohortProbabilityModel(feature_transformer=cohort_probability_base).fit(
     fit_df, fit_df[["n_kindergarten", "n_elementary", "n_highschool"]]
 )
 shares = probability_model.predict(valid_df)  # a DataFrame; rows sum to 1
 ```
 
 **Combining the two.** `IndependentTotalProbabilityModel` holds both
-pipelines, fits them on the raw table (the total on the row sum of `y`) and
+models, fits them on the raw table (the total on the row sum of `y`) and
 predicts `total × shares`, one column per cohort. The same exposure goes to
 both; the probability model ignores it. The data flow, the post-hoc
 temperature calibration of the shares and the rules are in
@@ -1090,8 +1092,8 @@ from age_group_prediction.modeling import IndependentTotalProbabilityModel
 
 COHORTS = ["n_kindergarten", "n_elementary", "n_highschool"]
 model_2 = IndependentTotalProbabilityModel(
-    total_children_model=ModelPipeline(total_base, TotalChildrenModel()),
-    cohort_probability_model=ModelPipeline(cohort_probability_base, CohortProbabilityModel()),
+    total_children_model=TotalChildrenModel(feature_transformer=total_base),
+    cohort_probability_model=CohortProbabilityModel(feature_transformer=cohort_probability_base),
 ).fit(fit_df, fit_df[COHORTS], exposure=exposure.loc[fit_df.index])
 predictions = model_2.predict(valid_df, exposure=exposure.loc[valid_df.index])
 ```
@@ -1227,8 +1229,8 @@ open user-named `Interaction`s. **The rest still stand:**
    [fitted_features.py](../src/age_group_prediction/fitted_features.py) rather
    than on the declarations above, and moves when that module is retired.
 3. **`DirectCohortModel`:** done in the rebuilt
-   `modeling.DirectCohortModel`, which takes `use_exposure=True` and uses
-   $\log n + b$ as `init_score`
+   `modeling.DirectCohortModel`, which takes `use_exposure=True` and fits
+   a weighted regression of the rate $y/n$ with weight $n$ (§3.3)
    ([DIRECT_COHORT_MODEL.md §0](DIRECT_COHORT_MODEL.md#0-the-rebuilt-model-modelingdirect_cohortpy)).
 4. **Model C:** no candidate changes of its own. Rerun the prior-predictive
    checks after any unit or baseline change, and revisit

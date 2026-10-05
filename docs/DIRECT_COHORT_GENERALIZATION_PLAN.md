@@ -1,7 +1,7 @@
 # Plan: Any regressor in `DirectCohortModel`, and the feature transformer inside each model
 
 **Branch:** `feat/estimator-and-feature-transformer`, from `feat/hyperparameter-tuning` (where `modeling/` lives; PRs #6–#11 used the same base). PR into `feat/hyperparameter-tuning`.
-**Status (2026-10-05):** Steps 0–4 done (draft PR #12; Steps 0–3 committed, Step 4 awaits the user's commit); next Step 5. Handoff for the implementing session: `DIRECT_COHORT_GENERALIZATION_HANDOFF.md`. Baseline `uv run pytest -m "not slow"`: **1221 passed, 1 skipped, 1 xfailed**; after Step 1: **1224 passed**; after Step 2: **1232 passed** (1233 before the revision removed one test). After Step 3: **1239 passed**. After Step 4: **1232 passed** (the 5 `ModelPipeline` tests and its 5 contract cases removed, 3 added).
+**Status (2026-10-05):** Steps 0–6 done (draft PR #12; Steps 0–4 committed, Steps 5–6 await the user's commit); next Step 7. Handoff for the implementing session: `DIRECT_COHORT_GENERALIZATION_HANDOFF.md`. Baseline `uv run pytest -m "not slow"`: **1221 passed, 1 skipped, 1 xfailed**; after Step 1: **1224 passed**; after Step 2: **1232 passed** (1233 before the revision removed one test). After Step 3: **1239 passed**. After Step 4: **1232 passed** (the 5 `ModelPipeline` tests and its 5 contract cases removed, 3 added). After Step 5: **1230 passed** (2 evaluator tests removed).
 **Source of truth:** this file. Update its status and checkboxes at every stop.
 
 ## Contents
@@ -102,7 +102,7 @@ $$\frac{\partial \mathcal{L}}{\partial F_b} = E_b e^{F_b} - y_b = \mu_b - y_b,
 which is all a gradient-boosting step uses to build a tree. The starting point also
 agrees: with weights, LightGBM's `boost_from_average` starts at the weighted mean rate
 $\log\big(\sum_b w_b r_b / \sum_b w_b\big) = \log\big(\sum_b y_b / \sum_b E_b\big)$, exactly
-the intercept $b = \log(\sum y / \sum E)$ the old code put into `init_score`. So the
+the intercept $F_0 = \log(\sum y / \sum E)$ the old code put into `init_score`. So the
 trees are the same, and the prediction is
 
 $$\hat\mu_b = E_b \,\hat\lambda_b = E_b \cdot \texttt{estimator\_.predict}(x_b),$$
@@ -169,7 +169,7 @@ additive offset of (A) gives the mean $f(x_b) + \log E_b$, which is not proporti
 the apartments; that is why the old model rejected `use_exposure` with a Gaussian loss.
 The weighted rate scales the mean instead, so the mean structure is the intended one
 (expected count proportional to apartments, $f$ the average children per apartment) and
-`use_exposure=True` is meaningful for a Gaussian loss too (G4). Without the weight (plain
+`use_exposure=True` is meaningful for a Gaussian loss too. Without the weight (plain
 regression of $r_b$) the mean would be the same, but each building would count equally,
 a $\operatorname{Var}(y_b) \propto E_b^2$ assumption. The one Gaussian-specific caveat
 is that $f(x_b)$ can be negative, as it already could without an exposure.
@@ -177,8 +177,8 @@ is that $f(x_b)$ can be negative, as it already could without an exposure.
 **(E) Why not a residual.** Fitting $y_b - \mu^{(0)}_b$ (the count minus an initial
 prediction) is only meaningful for a squared-error loss, where the residual is again a
 Gaussian target; for a Poisson loss the residual is not a count and can be negative, so
-the fallback would fit a different model than the LightGBM path. Decision G3 uses (B)
-for every estimator instead.
+a residual-based path would fit a different model than the LightGBM one. The model uses
+(B) for every estimator instead.
 
 ## 3. How to work
 
@@ -198,6 +198,10 @@ The standing rules of `docs/MULTI_COHORT_MODELS_PLAN.md` §3 apply verbatim. In 
    success; `predict` follows the fitted state; each test's name and comment state
    the mistake it catches; no test that only checks a library.
 6. Probes: `PYTHONPATH=src uv run --group test python -c "..."`; quote globs in zsh.
+7. **Comments and docstrings keep only what is relevant and important** (the user, 2026-10-05):
+   what the code does and the non-obvious constraint (what would otherwise pass silently, what
+   the caller must do). Derivations, examples and motivation or intuition go in the docs, with a
+   pointer at most.
 
 ## 4. Target code shape
 
@@ -497,23 +501,23 @@ edit `modeling/__init__.py`, `modeling/independent_cohorts.py`, `modeling/indepe
 ### Step 5 — The evaluator fits the model on the raw rows
 Files: `hyperparameter_tuning/evaluator.py`, `tests/unit/test_hyperparameter_tuning_evaluator.py`,
 `docs/HYPERPARAMETER_TUNING_PLAN.md` (§5 example, D13, the §6 task).
-- [ ] Remove the `feature_transformer` field and its `InstanceOf` import if unused; rename
+- [x] Remove the `feature_transformer` field and its `InstanceOf` import if unused (`InstanceOf` stays: `metric` uses it); rename
   `build_feature_transformer_and_model(params) -> (FeatureTransformer, BaseAgeGroupModel)`
   to `build_model(params) -> BaseAgeGroupModel`. In `evaluate`, delete the per-fold
   `feature_transformer.fit/transform` block; call `model.fit(X_train, y_train, exposure=exposure_train)`
   and `model.predict(X_val, exposure=exposure_val)` on the raw rows.
-- [ ] Docstrings: "`X` is the raw table; a numpy array works only with a model whose
+- [x] Docstrings: "`X` is the raw table; a numpy array works only with a model whose
   `feature_transformer` is `None`"; the class example as in §4 (`estimator=…`,
   `feature_transformer=tree`, `estimator__…` names). Module docstring of `parameters.py`
   line 3: the example name becomes `"estimator__learning_rate"`.
-- [ ] Tests: drop the `feature_transformer` construction/validation cases (lines ~151, 184,
+- [x] Tests: drop the `feature_transformer` construction/validation cases (lines ~151, 184,
   214–222); rename the two `build_feature_transformer_and_model` tests to `build_model`;
   `_RecordingTransformer` now goes in as `DirectCohortModel(feature_transformer=_RecordingTransformer(), …)`
   and the test asserts it saw only training rows per fold; the "templates stay unfitted"
   test checks `evaluator.model` and `evaluator.model.feature_transformer`. Add
   `test_the_model_transforms_each_fold_on_its_training_rows` if `_RecordingTransformer`
   does not already prove it.
-- [ ] `HYPERPARAMETER_TUNING_PLAN.md`: §5 example rewritten (every parameter name prefixed
+- [x] `HYPERPARAMETER_TUNING_PLAN.md`: §5 example rewritten (every parameter name prefixed
   `estimator__`; `subsample_freq=1` set on the template estimator since the model no longer
   derives it; `exposure = ExposureTransformer("n_apartments").fit_transform(df)` before the
   split and `take_rows(exposure, train_index)`, as the §6 task required; refit through
@@ -521,6 +525,30 @@ Files: `hyperparameter_tuning/evaluator.py`, `tests/unit/test_hyperparameter_tun
   3.4's "refit through `build_feature_transformer_and_model`" → `build_model`.
 - **Done when:** the evaluator tests pass with `-W error`; the suite passes; the §5 code
   block runs (rule: run every code block you put in a doc). Stop.
+- **Changed during the step (approved):** `_RecordingTransformer` and
+  `test_the_transformer_is_fitted_per_fold_on_training_rows_only` were deleted, not moved into
+  the model. The evaluator no longer fits a transformer; that `model.fit` gets exactly each
+  fold's training rows is pinned by `test_every_trial_sees_identical_folds`, and the model's own
+  transformer behaviour by `test_modeling_feature_transformer.py`. The transformer-template test
+  became `test_the_model_template_is_left_unfitted` (`evaluate` fitting `self.model` is silent:
+  equal scores). The hand-written fold loop keeps an independent by-hand transform on a model
+  with `feature_transformer=None`. In the tuning plan, §4.2 and D11 were updated too.
+  `HyperparameterStudy` is Phase 3, so §5 ran with a seeded-Optuna stand-in (the user's choice).
+- **Result (2026-10-05):** ruff and mypy clean; the evaluator tests (38) pass with `-W error`;
+  mutations, each restored: (a) `evaluate` fits `self.model` → the template, suggested-once and
+  hand-loop tests fail; (b) the model fitted on all rows → identical-folds, exposure-slicing,
+  hand-loop and DataFrame-target tests fail; (c) `build_model` without `set_params` → both build
+  tests, suggested-once and hand-loop fail. The §5 block (extracted from the doc) and the class
+  docstring example ran on simulated tables. Non-slow suite 1230 passed, 1 skipped, 1 xfailed.
+  Review: no correctness findings; the deletion of the recording-transformer test confirmed (no
+  evaluator mutation is caught only by it), and the hand loop does tell per-fold features from
+  features fitted on all rows (-1.41335 vs -1.40813). Applied: the tuning plan's §8 PR text and
+  §4.2 no longer list a `FeatureTransformer` setting, its status line marks the 1002 count as
+  Phase-2 history, and `evaluate`'s numpy note covers models without a `feature_transformer`.
+  Rejected: re-adding a type check on `feature_transformer` (the evaluator's pydantic field had
+  one). Probed: a `StandardScaler` given as a model's `feature_transformer` fits a copy and
+  predicts with the training statistics, equal to scaling by hand; nothing passes silently, so
+  there is no check to add.
 
 ### Step 6 — Documentation
 Files: `docs/DIRECT_COHORT_MODEL.md` §0.1–§0.6, `docs/INDEPENDENT_TOTAL_PROBABILITY_MODEL.md` §0,
@@ -528,7 +556,7 @@ Files: `docs/DIRECT_COHORT_MODEL.md` §0.1–§0.6, `docs/INDEPENDENT_TOTAL_PROB
 `docs/MULTI_COHORT_MODELS_PLAN.md` (a dated note that `ModelPipeline` was folded into the
 models by this plan; N20 pointer), `docs/MODEL_REIMPLEMENTATION_PLAN.md` (same note at §2),
 `docs/README.md`.
-- [ ] `DIRECT_COHORT_MODEL.md` §0.1: copy §2b of this plan **in full** (setup, (A)–(E),
+- [x] `DIRECT_COHORT_MODEL.md` §0.1: copy §2b of this plan **in full** (setup, (A)–(E),
   LaTeX as written) as a new subsection "The exposure as a weighted regression of the
   per-apartment rate", replacing the current `init_score` description; keep §0.1's symbols
   consistent with it ($E_b$, $\lambda_b$, $\mu_b$, $F$). §0.5 (evidence) gets the measured
@@ -540,17 +568,49 @@ models by this plan; N20 pointer), `docs/MODEL_REIMPLEMENTATION_PLAN.md` (same n
   `DirectCohortModel(estimator=LGBMRegressor(…), use_exposure=True, feature_transformer=tree)`
   per cohort; the rules table:
   the nested-names rule becomes `estimator__learning_rate`, and the I1/I2 answers get a row.
-- [ ] `INDEPENDENT_TOTAL_PROBABILITY_MODEL.md` §0: sub-models carry their own
+- [x] `INDEPENDENT_TOTAL_PROBABILITY_MODEL.md` §0: sub-models carry their own
   `feature_transformer`; nested names drop `model__`.
-- [ ] `MODULE_REFERENCE.md`: delete the `modeling/pipeline.py` row; update `direct_cohort.py`
+- [x] `MODULE_REFERENCE.md`: delete the `modeling/pipeline.py` row; update `direct_cohort.py`
   ("any scikit-learn-style regressor with a Poisson or Gaussian loss; the exposure as a
   weighted rate; optional `feature_transformer`"), `independent_cohorts.py`, `total_children.py`,
   `cohort_probability.py`, `base.py` (the helpers) and `hyperparameter_tuning/evaluator.py` rows.
-- [ ] Run every code block changed in the docs.
+- [x] Trim the docstrings and comments of the files this PR touched to §3 rule 7 (the user's
+  scope); the moved derivations, examples and motivation land in `DIRECT_COHORT_MODEL.md` §0
+  first (and the evaluator's example in the tuning plan's §5).
+- [x] Run every code block changed in the docs.
 - **Done when:** `grep -rn "ModelPipeline" docs` hits only historical notes that say it was
   removed; all changed blocks ran. Stop.
+- **Result (2026-10-05):** docs updated: `DIRECT_COHORT_MODEL.md` §0 (§0.1 is §2b verbatim, the
+  rest in its notation; §0.3 records, probed, that LightGBM fits a zero, NaN or infinite exposure
+  silently while `HistGradientBoostingRegressor` raises; §0.6 retitled, anchors updated),
+  `INDEPENDENT_TOTAL_PROBABILITY_MODEL.md` §0, `FEATURE_TRANSFORMATIONS.md` §3.3 and §8.1–§8.3,
+  `MODULE_REFERENCE.md`, `README.md`, and dated notes in the two historical plans (N17, N18, N20
+  pointers). Trim (§3 rule 7): `DirectCohortModel`'s class docstring keeps the contract, the
+  §0.1 pointer and the GLM `alpha` line (the examples, `subsample_freq`, the likelihood identity,
+  the `init_score` comparison and the missing-`sample_weight` error moved to §0.2–§0.3);
+  `BaseAgeGroupModel` lost four motivation clauses; the evaluator's example became a pointer to
+  the tuning plan's §5; `IndependentCohortModels` lost one. Ran, under `-W error`, in one
+  namespace with `raw_table` from the simulator (seed 0): the 10 blocks of
+  `FEATURE_TRANSFORMATIONS.md` §8.0–§8.3, both of `DIRECT_COHORT_MODEL.md` §0 and the one of
+  `INDEPENDENT_TOTAL_PROBABILITY_MODEL.md` §0; the §6 end-to-end probe; the §0.6 nested-name rule
+  (`cohort_models__a__estimator__…` raises `AttributeError`). The `ModelPipeline` grep hits only
+  plans, the handoff and the README's plan row. ruff and mypy clean; non-slow suite 1230 passed,
+  1 skipped, 1 xfailed. Review: no code findings; every probed doc claim held (bad exposures,
+  the `sample_weight` errors, all-zero `y`, nested names, the `alpha` scaling, the anchors).
+  Applied: four links in `MODEL_REIMPLEMENTATION_PLAN.md` that the heading renames had broken;
+  six places in `FEATURE_TRANSFORMATIONS.md` (§1, §3.1, §5, §7, §8.7) that still described
+  `init_score` or "Poisson only"; in §0.1 and §2b alike, the intercept renamed $F_0$ (it clashed
+  with the building index $b$), and "(G4)", "Decision G3" and "the fallback" reworded; §0.3's
+  parenthetical ("a non-finite rate or weight"); §0.5 states the pinned tolerance and the measured
+  one; `MODULE_REFERENCE.md`'s "Depends on" adds `feature_engineering` to the three leaf models.
+  Blocks re-run, all pass; §0.1 still equals §2b. Left for the user: rule-7 leftovers in
+  `total_children.py` (the lgamma-floor evidence, the penalty's motivation) and
+  `cohort_probability.py` (the Model 2 context, the citation), pre-existing PR #11 text outside
+  the agreed scope; and whether the LightGBM `subsample_freq` note, now only in the docs, should
+  return to `DirectCohortModel`'s docstring as a silent-failure constraint.
 
 ### Step 7 — Final check and PR
+- [ ] The whole diff's comments and docstrings follow §3 rule 7.
 - [ ] Full routine on the whole diff: ruff, mypy, `uv run pytest -m "not slow"`, then the
   slow tests touching `modeling` or `hyperparameter_tuning` if any.
 - [ ] `git status` shows only `modeling/`, `hyperparameter_tuning/`, their tests and `docs/`.
@@ -647,8 +707,8 @@ Migration: `DirectCohortModel(n_estimators=100, ...)` →
 - [x] 2 `DirectCohortModel`: any regressor, weighted-rate exposure
 - [x] 3 `feature_transformer` on the three leaf models
 - [x] 4 Remove `ModelPipeline`
-- [ ] 5 Evaluator on the raw rows
-- [ ] 6 Docs (including the derivation)
+- [x] 5 Evaluator on the raw rows
+- [x] 6 Docs (including the derivation)
 - [ ] 7 Final checks
 
 ## Checks
