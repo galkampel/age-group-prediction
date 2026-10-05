@@ -11,6 +11,7 @@ from numpy.typing import ArrayLike
 from sklearn.utils.validation import check_is_fitted, check_X_y, validate_data
 from torch.distributions import NegativeBinomial, Poisson
 
+from ..feature_engineering import FeatureTransformer
 from .base import BaseAgeGroupModel
 from .optimization import Minimizer, Solver, single_threaded_torch
 
@@ -29,7 +30,8 @@ _START_DISPERSION = 0.1
 class TotalChildrenModel(BaseAgeGroupModel):
     """A count regression of the total, ``log μ = offset + b + Xβ``.
 
-    ``X`` is the finished design matrix. With ``use_exposure`` (the default:
+    ``X`` is the raw table when ``feature_transformer`` is given, otherwise
+    the finished design matrix. With ``use_exposure`` (the default:
     Model 2's specification) the offset is ``log(exposure)``, the raw exposure
     passed to ``fit`` and ``predict``, so ``b + Xβ`` is the log rate per
     apartment; a forgotten exposure raises. With ``use_exposure=False`` there
@@ -59,6 +61,7 @@ class TotalChildrenModel(BaseAgeGroupModel):
         l2_penalty: float = 0.0,
         max_iter: int = 500,
         tol: float = 1e-6,
+        feature_transformer: FeatureTransformer | None = None,
     ) -> None:
         self.family = family
         self.solver = solver
@@ -66,6 +69,7 @@ class TotalChildrenModel(BaseAgeGroupModel):
         self.l2_penalty = l2_penalty
         self.max_iter = max_iter
         self.tol = tol
+        self.feature_transformer = feature_transformer
 
     @staticmethod
     def _objective(
@@ -112,8 +116,9 @@ class TotalChildrenModel(BaseAgeGroupModel):
             raise ValueError(f"unknown family {self.family!r}; use 'poisson' or 'nb2'")
         if self.l2_penalty < 0:
             raise ValueError(f"l2_penalty must be at least 0, got {self.l2_penalty}")
-        X_values, y_values = check_X_y(X, y, y_numeric=True)
         exposure_values = self._check_exposure(X, exposure, expected=self.use_exposure)
+        feature_transformer, X = self._fit_features(X, y)
+        X_values, y_values = check_X_y(X, y, y_numeric=True)
         # The start is the fit without features.
         if exposure_values is None:
             offset = np.zeros(len(y_values))
@@ -148,6 +153,7 @@ class TotalChildrenModel(BaseAgeGroupModel):
         self.intercept_ = float(parameters[0])
         self.coef_: np.ndarray = parameters[1 : 1 + X_values.shape[1]]
         self.use_exposure_: bool = self.use_exposure
+        self.feature_transformer_ = feature_transformer
         # Only an NB2 fit has a dispersion; a refit as Poisson drops the old one.
         if self.family == "nb2":
             self.dispersion_ = float(np.exp(parameters[-1]))
@@ -161,7 +167,7 @@ class TotalChildrenModel(BaseAgeGroupModel):
         """The predicted mean total for each row of ``X``."""
         check_is_fitted(self)
         # Rejects columns in another order, which would be silent.
-        X_values = validate_data(self, X, reset=False)
+        X_values = validate_data(self, self._transform_features(X), reset=False)
         # The fitted state, not use_exposure, which set_params may have changed.
         exposure_values = self._check_exposure(X, exposure, expected=self.use_exposure_)
         log_mean = self.intercept_ + X_values @ self.coef_

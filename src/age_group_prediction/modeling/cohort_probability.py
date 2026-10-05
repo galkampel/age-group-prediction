@@ -12,6 +12,7 @@ from scipy.special import softmax
 from sklearn.utils.validation import check_is_fitted, check_X_y, validate_data
 from torch.distributions import Dirichlet
 
+from ..feature_engineering import FeatureTransformer
 from .base import BaseAgeGroupModel
 from .optimization import Minimizer, Solver, single_threaded_torch
 
@@ -21,7 +22,8 @@ __all__ = ["CohortProbabilityModel"]
 class CohortProbabilityModel(BaseAgeGroupModel):
     """A Dirichlet regression of the cohort shares, ``s_b ~ Dirichlet(α_b)``.
 
-    ``X`` is the finished design matrix and ``y`` the cohort counts, one
+    ``X`` is the raw table when ``feature_transformer`` is given, otherwise
+    the finished design matrix, and ``y`` the cohort counts, one
     column per cohort (at least two), at least one child per building and
     no negative count. The building's composition ``s_b = y_b / Σ_k y_bk`` is modelled
     as a Dirichlet with ``α_bk = exp(a_k + x_b β_k)``; the predicted share is
@@ -44,11 +46,13 @@ class CohortProbabilityModel(BaseAgeGroupModel):
         l2_penalty: float = 0.0,
         max_iter: int = 500,
         tol: float = 1e-6,
+        feature_transformer: FeatureTransformer | None = None,
     ) -> None:
         self.solver = solver
         self.l2_penalty = l2_penalty
         self.max_iter = max_iter
         self.tol = tol
+        self.feature_transformer = feature_transformer
 
     @staticmethod
     def _objective(
@@ -77,6 +81,7 @@ class CohortProbabilityModel(BaseAgeGroupModel):
         """Fit ``a`` and ``W`` on ``X`` and the cohort counts ``y``; ``exposure`` is ignored."""
         if self.l2_penalty < 0:
             raise ValueError(f"l2_penalty must be at least 0, got {self.l2_penalty}")
+        feature_transformer, X = self._fit_features(X, y)
         X_values, counts = check_X_y(X, y, multi_output=True, y_numeric=True)
         cohorts = list(getattr(y, "columns", range(counts.shape[1])))
         # A cohort never observed would be fitted to the compressed floor silently.
@@ -100,6 +105,7 @@ class CohortProbabilityModel(BaseAgeGroupModel):
         self.intercept_: np.ndarray = parameters[:n_cohorts]
         self.coef_: np.ndarray = parameters[n_cohorts:].reshape(-1, n_cohorts)
         self.cohorts_: list[object] = cohorts
+        self.feature_transformer_ = feature_transformer
         # Recorded after success, so a failed refit leaves the previous fit whole.
         validate_data(self, X, reset=True, skip_check_array=True)
         return self
@@ -108,7 +114,7 @@ class CohortProbabilityModel(BaseAgeGroupModel):
         """``log α = a + XW``, one column per cohort; what a calibrator is fitted on."""
         check_is_fitted(self)
         # Rejects columns in another order, which would be silent.
-        X_values = validate_data(self, X, reset=False)
+        X_values = validate_data(self, self._transform_features(X), reset=False)
         return pd.DataFrame(
             self.intercept_ + X_values @ self.coef_,
             columns=self.cohorts_,
@@ -119,6 +125,8 @@ class CohortProbabilityModel(BaseAgeGroupModel):
         self, X: pd.DataFrame, exposure: ArrayLike | None = None
     ) -> pd.DataFrame:
         """Each cohort's predicted share, the Dirichlet mean; ``exposure`` is ignored."""
+        # The raw X: predict_logits transforms it. A second transform here would
+        # pass silently, since the design keeps the raw column names.
         logits = self.predict_logits(X)
         return pd.DataFrame(
             softmax(logits.to_numpy(), axis=1),

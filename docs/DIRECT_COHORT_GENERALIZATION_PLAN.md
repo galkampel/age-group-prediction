@@ -1,7 +1,7 @@
 # Plan: Any regressor in `DirectCohortModel`, and the feature transformer inside each model
 
 **Branch:** `feat/estimator-and-feature-transformer`, from `feat/hyperparameter-tuning` (where `modeling/` lives; PRs #6–#11 used the same base). PR into `feat/hyperparameter-tuning`.
-**Status (2026-10-05):** Steps 0–2 done (draft PR #12; Steps 1–2 await the user's commit); next Step 3. Handoff for the implementing session: `DIRECT_COHORT_GENERALIZATION_HANDOFF.md`. Baseline `uv run pytest -m "not slow"`: **1221 passed, 1 skipped, 1 xfailed**; after Step 1: **1224 passed**; after Step 2: **1232 passed** (1233 before the revision removed one test).
+**Status (2026-10-05):** Steps 0–3 done (draft PR #12; Steps 1–2 committed, Step 3 awaits the user's commit); next Step 4. Handoff for the implementing session: `DIRECT_COHORT_GENERALIZATION_HANDOFF.md`. Baseline `uv run pytest -m "not slow"`: **1221 passed, 1 skipped, 1 xfailed**; after Step 1: **1224 passed**; after Step 2: **1232 passed** (1233 before the revision removed one test). After Step 3: **1239 passed**.
 **Source of truth:** this file. Update its status and checkboxes at every stop.
 
 ## Contents
@@ -403,33 +403,51 @@ Files: `modeling/direct_cohort.py`, `modeling/__init__.py`, `tests/unit/test_mod
 ### Step 3 — `feature_transformer` on the three leaf models
 Files: `modeling/direct_cohort.py`, `modeling/total_children.py`, `modeling/cohort_probability.py`,
 new `tests/unit/test_modeling_feature_transformer.py`.
-- [ ] Add `feature_transformer: FeatureTransformer | None = None` (keyword-only, last) to each
-  `__init__`, stored verbatim. In each `fit`: `feature_transformer, X_design = self._fit_features(X, y)`
-  first, then the existing logic on `X_design`; assign `self.feature_transformer_ = feature_transformer`
-  **together with the other fitted state, after success**. In `predict` (and
-  `CohortProbabilityModel.predict_logits`): `X_design = self._transform_features(X)` first.
-  `CohortProbabilityModel`'s `validate_data(self, X_design, ...)` then records the design
-  matrix's columns, which is what it must compare at predict.
-- [ ] Docstrings: replace "``X`` is the finished design matrix" with "``X`` is the raw table
-  when ``feature_transformer`` is given, otherwise the finished design matrix", in all three.
-- [ ] New test file, parametrized over factories for the three models (ids = class names),
-  on a raw table with a `Center()` plan (as `test_modeling_pipeline.py` builds it), moving the
-  `ModelPipeline` tests here:
-  - `test_the_template_transformer_stays_unfitted` (from `test_the_templates_stay_unfitted`).
-  - `test_rows_are_transformed_with_the_training_statistics` — fit on half, predict the
-    other half; equals a hand-built `clone(transformer).fit(train).transform(test)` fed to the
-    same model with `feature_transformer=None`. Catches a refit at predict.
-  - `test_predict_follows_the_fitted_copy_after_set_params` — `set_params(feature_transformer=other)`
-    after fit changes nothing until the next fit.
+- [x] Add `feature_transformer: FeatureTransformer | None = None` (keyword-only, last) to each
+  `__init__`, stored verbatim. In each `fit`, after the configuration checks:
+  `feature_transformer, X = self._fit_features(X, y)` (the user's choice: `X` is rebound to
+  the design matrix, no separate name), then the existing logic on it, including
+  `check_X_y` and `validate_data(self, X, reset=True)` in `TotalChildrenModel` and
+  `CohortProbabilityModel`; `self.feature_transformer_ = feature_transformer` is assigned with
+  the other fitted state, after success. At predict, `_transform_features(X)` feeds
+  `DirectCohortModel.predict`, `TotalChildrenModel.predict` and
+  `CohortProbabilityModel.predict_logits`. **`CohortProbabilityModel.predict` does not
+  transform**: it goes through `predict_logits`, and a second transform would pass silently,
+  since the design keeps the raw column names (probed: `['x']`).
+- [x] Docstrings: "``X`` is the raw table when ``feature_transformer`` is given, otherwise the
+  finished design matrix", in all three.
+- [x] New test file, parametrized over the three models (ids = class names). The raw table
+  has columns the transformer drops (`z`, `n_apartments`) and `x` with mean 2: on a centred
+  `x` alone a skipped transformer is invisible (probed: trees ignore a shift, an intercept
+  absorbs it).
+  - `test_rows_are_transformed_with_the_training_statistics[model]` — fit on half, predict
+    the other half; equals the same model with `feature_transformer=None` on a hand-built
+    design matrix. Catches the transformer skipped at fit, at predict or both, refitted at
+    predict, or applied twice.
+  - `test_the_template_transformer_stays_unfitted[model]`.
   - `test_predict_logits_transforms_the_table_like_predict` — `CohortProbabilityModel` only.
-  - `test_a_model_without_a_transformer_takes_a_design_matrix` — `feature_transformer=None`
-    fitted on `transformer.fit_transform(table)` equals the model with the transformer fitted
-    on `table`. Catches the helper being skipped on one path.
-- [ ] `test_modeling_contract.py`: nothing to add (defaults are `None`), but run it: the
-  four sklearn checks and the refit test must pass for all three.
-- [ ] Mutation checks: use `self.feature_transformer.fit` in place → template test fails;
-  skip `_transform_features` in `predict_logits` → the logits test fails.
+  - Dropped from the original list: the `set_params` test (the template at predict is
+    unfitted, so a misuse raises `NotFittedError`, loudly) and
+    `test_a_model_without_a_transformer_takes_a_design_matrix` (the first test compares with
+    exactly that model, on held-out rows).
+- [x] `test_modeling_contract.py`: unchanged; the four sklearn checks and the refit test pass
+  for all three.
+- [x] Mutation checks, each fails its test: (a) the base helper fits the template → template
+  test ×3; (b) each model fits on raw `X` → statistics test; (c) Direct/Total skip the
+  transform at predict → statistics test; (d) `CohortProbabilityModel.predict` transforms too
+  → statistics test (double shift); (e) `predict_logits` skips it → logits test. Total and
+  Cohort mistakes also trip their own feature-name check (loud); Direct's would be silent.
 - **Done when:** the new file passes with `-W error`; suite and mypy pass. Stop.
+- **Result (2026-10-05):** ruff and mypy clean; 115 tests (new file, the three models' files,
+  contract) pass with `-W error`; non-slow suite 1239 passed, 1 skipped, 1 xfailed.
+  Review: no correctness findings. Applied: `TotalChildrenModel.fit` checks the exposure
+  before fitting the transformer (as `DirectCohortModel` does); the logits test's comment
+  now names the silent mistake it catches (a double transform in `predict_logits`, verified
+  by mutation). Open, pre-existing since PR #11: in `TotalChildrenModel` and
+  `CohortProbabilityModel` a refit whose `validate_data(reset=True)` raises (e.g. a
+  non-string column name) leaves the new `coef_` with the old `feature_names_in_` (probed:
+  `coef_` (3,), names `['a', 'b']`); `feature_transformer_` now joins that state. Not fixed
+  here; for the user to decide.
 
 ### Step 4 — Remove `ModelPipeline`; docstrings of the composites
 Files: delete `modeling/pipeline.py` and `tests/unit/test_modeling_pipeline.py`;
@@ -603,7 +621,7 @@ Migration: `DirectCohortModel(n_estimators=100, ...)` →
 - [x] 0 Branch, plan doc, baseline (1221 passed)
 - [x] 1 Feature helpers in `BaseAgeGroupModel`
 - [x] 2 `DirectCohortModel`: any regressor, weighted-rate exposure
-- [ ] 3 `feature_transformer` on the three leaf models
+- [x] 3 `feature_transformer` on the three leaf models
 - [ ] 4 Remove `ModelPipeline`
 - [ ] 5 Evaluator on the raw rows
 - [ ] 6 Docs (including the derivation)

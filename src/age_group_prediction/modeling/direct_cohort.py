@@ -10,6 +10,7 @@ from numpy.typing import ArrayLike
 from sklearn.base import clone
 from sklearn.utils.validation import check_is_fitted
 
+from ..feature_engineering import FeatureTransformer
 from .base import BaseAgeGroupModel
 
 __all__ = ["DirectCohortModel", "Regressor"]
@@ -28,8 +29,8 @@ class Regressor(Protocol):
 class DirectCohortModel(BaseAgeGroupModel):
     """Any regressor with a Poisson or Gaussian loss, fitted on one cohort.
 
-    ``X`` is the finished design matrix: features are transformed before they
-    reach the model. Cohorts are independent, so each gets its own instance.
+    ``X`` is the raw table when ``feature_transformer`` is given, otherwise the
+    finished design matrix. Cohorts are independent, so each gets its own instance.
     ``estimator`` is always given, and carries its own loss and
     hyperparameters, e.g. ``LGBMRegressor(objective="poisson")``,
     ``HistGradientBoostingRegressor(loss="poisson")`` or
@@ -57,11 +58,18 @@ class DirectCohortModel(BaseAgeGroupModel):
     one exposure to every model, and a tuner can compare with and without.
     """
 
-    def __init__(self, *, estimator: Regressor, use_exposure: bool = False) -> None:
+    def __init__(
+        self,
+        *,
+        estimator: Regressor,
+        use_exposure: bool = False,
+        feature_transformer: FeatureTransformer | None = None,
+    ) -> None:
         # Stored verbatim, unvalidated: set_params assigns attributes without
         # re-entering __init__, so fit is where the configuration is checked.
         self.estimator = estimator
         self.use_exposure = use_exposure
+        self.feature_transformer = feature_transformer
 
     def fit(
         self, X: pd.DataFrame, y: pd.Series, exposure: ArrayLike | None = None
@@ -72,6 +80,7 @@ class DirectCohortModel(BaseAgeGroupModel):
         rejects an all-zero ``y`` under a Poisson loss.
         """
         exposure_values = self._check_exposure(X, exposure, expected=self.use_exposure)
+        feature_transformer, X = self._fit_features(X, y)
         # A copy, so the caller's template stays unfitted across folds.
         estimator: Regressor = clone(self.estimator)
         if exposure_values is None:
@@ -84,6 +93,7 @@ class DirectCohortModel(BaseAgeGroupModel):
         # Set together, only once fitting succeeded.
         self.estimator_ = estimator
         self.use_exposure_: bool = exposure_values is not None
+        self.feature_transformer_ = feature_transformer
         return self
 
     def predict(self, X: pd.DataFrame, exposure: ArrayLike | None = None) -> np.ndarray:
@@ -92,7 +102,9 @@ class DirectCohortModel(BaseAgeGroupModel):
         # Follows how the model was fitted, not the current use_exposure, which
         # set_params may have changed since.
         exposure_values = self._check_exposure(X, exposure, expected=self.use_exposure_)
-        prediction = np.asarray(self.estimator_.predict(X), dtype=float)
+        prediction = np.asarray(
+            self.estimator_.predict(self._transform_features(X)), dtype=float
+        )
         if exposure_values is None:
             return prediction
         return prediction * exposure_values
