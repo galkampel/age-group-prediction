@@ -1,6 +1,6 @@
 """The values each hyperparameter may take: one class per Optuna ``suggest_*`` call.
 
-``name`` is the model's ``set_params`` key, e.g. ``"learning_rate"``.
+``name`` is the model's ``set_params`` key, e.g. ``"estimator__learning_rate"``.
 
 A parameter is validated when created, not at the first trial: pydantic checks
 the types strictly (``IntParameter("p", 1.5, 9)`` fails), then Optuna's own

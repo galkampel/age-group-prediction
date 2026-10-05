@@ -62,7 +62,7 @@ class _RecordingModel(BaseAgeGroupModel):
     """Records what fit and predict receive; predicts the training mean of y."""
 
     fits: ClassVar[list[tuple[float, list[int], list[float] | None]]] = []
-    predicts: ClassVar[list[tuple[list[float] | None, list[int]]]] = []
+    predicts: ClassVar[list[list[float] | None]] = []
 
     def __init__(self, alpha: float = 1.0) -> None:
         self.alpha = alpha
@@ -73,31 +73,8 @@ class _RecordingModel(BaseAgeGroupModel):
         return self
 
     def predict(self, X: Any, exposure: ArrayLike | None = None) -> np.ndarray:
-        # The fitted_by column, if a _RecordingTransformer added it, tells
-        # which fit transformed these rows.
-        seen = (
-            sorted(set(X["fitted_by"]))
-            if "fitted_by" in getattr(X, "columns", ())
-            else []
-        )
-        _RecordingModel.predicts.append((_listed(exposure), seen))
+        _RecordingModel.predicts.append(_listed(exposure))
         return np.full(len(X), self.mean_)
-
-
-class _RecordingTransformer(FeatureTransformer):
-    """Records the row ids and targets at each fit; stamps rows with that fit's number."""
-
-    # Replaces fit and transform wholesale; only these two are called.
-
-    fits: ClassVar[list[tuple[list[int], list[float]]]] = []
-
-    def fit(self, X: Any, y: Any = None) -> _RecordingTransformer:
-        self.fit_number_ = len(_RecordingTransformer.fits)
-        _RecordingTransformer.fits.append((_ids(X), np.asarray(y).tolist()))
-        return self
-
-    def transform(self, X: Any) -> Any:
-        return X.assign(fitted_by=self.fit_number_)
 
 
 class _Median(Aggregation):
@@ -132,7 +109,6 @@ def _mean_of_y(*, greater_is_better: bool = True) -> Metric:
 def _reset_recordings() -> None:
     _RecordingModel.fits.clear()
     _RecordingModel.predicts.clear()
-    _RecordingTransformer.fits.clear()
 
 
 def _cv() -> Any:
@@ -145,12 +121,7 @@ def _folds() -> list[tuple[np.ndarray, np.ndarray]]:
 
 
 def _evaluator(**overrides: Any) -> CVHyperparameterEvaluator:
-    kwargs: dict[str, Any] = {
-        "cv": _cv(),
-        "metric": MSE,
-        # Passes the columns through: most tests need no transformation.
-        "feature_transformer": FeatureTransformer(remainder="passthrough"),
-    } | overrides
+    kwargs: dict[str, Any] = {"cv": _cv(), "metric": MSE} | overrides
     model = kwargs.pop("model", _RecordingModel())
     parameters = kwargs.pop("parameters", PARAMETERS)
     return CVHyperparameterEvaluator(model, parameters, **kwargs)
@@ -182,7 +153,6 @@ def _optimize(
         ({"metric": "neg_mean_squared_error"}, "metric"),  # the old sklearn API
         ({"metric": {"name": "mse", "function": mean_squared_error}}, "metric"),
         ({"cv": 5}, "cv"),
-        ({"feature_transformer": StandardScaler()}, "feature_transformer"),
         ({"aggregation": "mean"}, "aggregation"),  # the old string API
     ],
     ids=[
@@ -192,7 +162,6 @@ def _optimize(
         "metric-string",
         "metric-dict",
         "cv",
-        "feature-transformer",
         "aggregation-string",
     ],
 )
@@ -212,42 +181,33 @@ def test_duplicate_parameter_names_are_named() -> None:
 
 def test_settings_are_stored_as_given_and_frozen() -> None:
     model = _RecordingModel()
-    transformer = FeatureTransformer(remainder="passthrough")
-    evaluator = _evaluator(
-        parameters=list(PARAMETERS), model=model, feature_transformer=transformer
-    )
+    evaluator = _evaluator(parameters=list(PARAMETERS), model=model)
 
     assert evaluator.parameters == tuple(PARAMETERS)
-    # Not copied here: the templates are cloned per trial.
+    # Not copied here: the template is cloned per trial.
     assert evaluator.model is model
-    assert evaluator.feature_transformer is transformer
     assert evaluator.metric is MSE
     assert evaluator.aggregation == WeightedMean()  # the default
     with pytest.raises(dataclasses.FrozenInstanceError):
         evaluator.metric = MSE  # type: ignore[misc]
 
 
-def test_build_feature_transformer_and_model_returns_unfitted_copies() -> None:
-    transformer_template = FeatureTransformer(remainder="passthrough")
+def test_build_model_returns_an_unfitted_copy() -> None:
     model_template = _RecordingModel(alpha=1.0)
-    evaluator = _evaluator(
-        feature_transformer=transformer_template, model=model_template
-    )
+    evaluator = _evaluator(model=model_template)
 
-    transformer, model = evaluator.build_feature_transformer_and_model({"alpha": 3.0})
+    model = evaluator.build_model({"alpha": 3.0})
 
-    assert transformer is not transformer_template
     assert model is not model_template
     assert model.get_params()["alpha"] == 3.0
     assert model_template.get_params()["alpha"] == 1.0
-    for built in (transformer, model):
-        with pytest.raises(NotFittedError):
-            check_is_fitted(built)
+    with pytest.raises(NotFittedError):
+        check_is_fitted(model)
 
 
-def test_build_feature_transformer_and_model_rejects_an_unknown_parameter() -> None:
+def test_build_model_rejects_an_unknown_parameter() -> None:
     with pytest.raises(ValueError, match="Invalid parameter 'beta'"):
-        _evaluator().build_feature_transformer_and_model({"beta": 1.0})
+        _evaluator().build_model({"beta": 1.0})
 
 
 # --- evaluate ---------------------------------------------------------
@@ -284,31 +244,16 @@ def test_every_trial_sees_identical_folds() -> None:
     assert rows[0:3] == [sorted(train.tolist()) for train, _ in _folds()]
 
 
-def test_the_transformer_is_fitted_per_fold_on_training_rows_only() -> None:
-    _evaluator(feature_transformer=_RecordingTransformer()).evaluate(
-        FixedTrial({"alpha": 1.0}), X, Y, GROUPS
-    )
-
-    folds = _folds()
-    # One fit per fold, on its training rows and their targets only.
-    assert _RecordingTransformer.fits == [
-        (sorted(t.tolist()), Y[t].tolist()) for t, _ in folds
-    ]
-    # Each fold's validation rows were transformed by that fold's own fit.
-    assert [seen for _, seen in _RecordingModel.predicts] == [[0], [1], [2]]
-
-
-def test_the_transformer_template_is_left_unfitted() -> None:
-    # Each fold fits a clone: a shared, refitted template would carry one
-    # trial's statistics into another's when trials run in parallel.
-    evaluator = _evaluator(
-        feature_transformer=FeatureTransformer(remainder="passthrough")
-    )
+def test_the_model_template_is_left_unfitted() -> None:
+    # Each trial fits a clone: a shared, refitted template would carry one
+    # trial's fit into another's when trials run in parallel. The scores
+    # alone would not show it.
+    evaluator = _evaluator()
 
     evaluator.evaluate(FixedTrial({"alpha": 1.0}), X, Y, GROUPS)
 
     with pytest.raises(NotFittedError):
-        check_is_fitted(evaluator.feature_transformer)
+        check_is_fitted(evaluator.model)
 
 
 def test_exposure_is_sliced_to_each_fold() -> None:
@@ -323,16 +268,14 @@ def test_exposure_is_sliced_to_each_fold() -> None:
     assert [e for _, _, e in _RecordingModel.fits] == [
         EXPOSURE[t].tolist() for t, _ in folds
     ]
-    assert [e for e, _ in _RecordingModel.predicts] == [
-        EXPOSURE[v].tolist() for _, v in folds
-    ]
+    assert _RecordingModel.predicts == [EXPOSURE[v].tolist() for _, v in folds]
 
 
 def test_no_exposure_arrives_as_none() -> None:
     _evaluator().evaluate(FixedTrial({"alpha": 1.0}), X, Y, GROUPS)
 
     assert [e for _, _, e in _RecordingModel.fits] == [None] * 3
-    assert [e for e, _ in _RecordingModel.predicts] == [None] * 3
+    assert _RecordingModel.predicts == [None] * 3
 
 
 @pytest.mark.parametrize(
@@ -492,13 +435,13 @@ def test_matches_a_hand_written_fold_loop() -> None:
     model = DirectCohortModel(
         estimator=LGBMRegressor(objective="poisson", n_jobs=1, verbosity=-1),
         use_exposure=True,
+        feature_transformer=tree,
     )
     evaluator = CVHyperparameterEvaluator(
         model,
         [IntParameter("estimator__n_estimators", 5, 20)],
         cv=cv,
         metric=POISSON_DEVIANCE,
-        feature_transformer=tree,
     )
 
     value = evaluator.evaluate(
@@ -509,8 +452,11 @@ def test_matches_a_hand_written_fold_loop() -> None:
     scores: list[float] = []
     sizes: list[int] = []
     for train, val in cv.split(df, y, groups):
+        # The features by hand, on a model that takes the design matrix.
         transformer = clone(tree).fit(df.iloc[train], y.iloc[train])
-        fitted = clone(model).set_params(estimator__n_estimators=10)
+        fitted = clone(model).set_params(
+            feature_transformer=None, estimator__n_estimators=10
+        )
         fitted.fit(
             transformer.transform(df.iloc[train]),
             y.iloc[train],
@@ -564,7 +510,6 @@ def test_a_dataframe_target_is_split_and_scored_per_fold() -> None:
         PARAMETERS,
         cv=cv,
         metric=COHORT_LOG_LOSS,
-        feature_transformer=FeatureTransformer(remainder="passthrough"),
     )
 
     value = evaluator.evaluate(FixedTrial({"alpha": 1.0}), df, y, groups)

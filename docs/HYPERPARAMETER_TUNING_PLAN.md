@@ -2,8 +2,8 @@
 
 **Branch:** `feat/hyperparameter-tuning` · draft PR #5.
 **Status:** Phases 1 (parameters) and 2 (evaluator, aggregations) are done
-and committed through `0bf1562`. Non-slow suite: 1002 passed, 8 warnings.
-**Next:** the §6 task "Evaluator on the raw table", then **3.1** (the study), then the rest of Phase 3 and Phase 4 (docs).
+and committed through `0bf1562` (non-slow suite then: 1002 passed, 8 warnings).
+**Next:** **3.1** (the study), then the rest of Phase 3 and Phase 4 (docs). The §6 task "Evaluator on the raw table" was done by [DIRECT_COHORT_GENERALIZATION_PLAN.md](DIRECT_COHORT_GENERALIZATION_PLAN.md) Step 5 (PR #12).
 The history of each step is in the git log and the commit messages.
 **To resume:** read this doc (§2 decisions, §4 design, §6 remaining work, §7
 working notes), then the package code and its tests; start the next sub-task
@@ -38,9 +38,9 @@ experiment runner.
 | D8 | Only COMPLETE trials can win | a pruned trial's value comes from fewer folds |
 | D9 | No conditional or derived parameters in v1 | the LightGBM example (§5) doesn't need them |
 | D10 | Settings in the constructor; data (`X, y, groups, exposure`) as arguments of the named method `evaluate` | the sklearn convention; one evaluator scores many targets; Optuna's one-argument objective is a lambda |
-| D11 | The evaluator tunes a `BaseAgeGroupModel`: per trial, `build_feature_transformer_and_model(params)` makes copies (`clone`, `set_params`); each fold refits them, predicts, and scores with `model.evaluate(y, y_pred, metric)` | the repo's models get `clone`/`set_params` from `BaseEstimator`; a misspelled parameter raises at `set_params` |
+| D11 | The evaluator tunes a `BaseAgeGroupModel`: per trial, `build_model(params)` makes a copy (`clone`, `set_params`); each fold refits it on the raw rows, predicts, and scores with `model.evaluate(y, y_pred, metric)` | the repo's models get `clone`/`set_params` from `BaseEstimator`; a misspelled parameter raises at `set_params` |
 | D12 | One direction: the score is the metric's value if `greater_is_better`, else its negation; the study always maximizes | no sign to get wrong |
-| D13 | A required `feature_transformer: FeatureTransformer`, fitted per fold on the training rows and targets | a transformer fitted on all rows would leak validation statistics; a `Pipeline` was rejected (its `fit` and `predict` name the exposure differently, and it has no `evaluate`). *To be superseded by `modeling.ModelPipeline`, which has neither problem: §6 "Evaluator on the raw table"* |
+| D13 | A required `feature_transformer: FeatureTransformer`, fitted per fold on the training rows and targets | a transformer fitted on all rows would leak validation statistics; a `Pipeline` was rejected (its `fit` and `predict` name the exposure differently, and it has no `evaluate`). **Superseded** by [DIRECT_COHORT_GENERALIZATION_PLAN.md](DIRECT_COHORT_GENERALIZATION_PLAN.md) F1/F3: the model owns its `feature_transformer` and fits it inside its own `fit`, on each fold's training rows; the evaluator has no transformer |
 | D14 | `exposure=None` is part of `BaseAgeGroupModel.fit`/`predict`; the evaluator slices it per fold and always passes it | typed calls (mypy); the model decides whether it needs one |
 | D15 | `evaluate(trial, X, y, groups=None, *, exposure=None)`; `X` is the raw table | the exposure is data (D10) |
 | D16 | `Metric` and the ready-made metrics live in the top-level `scoring.py` | models and tuning both use them |
@@ -109,27 +109,26 @@ class CVHyperparameterEvaluator:
     _: KW_ONLY
     cv: BaseCrossValidator                     # from Splitter.cv(...)
     metric: InstanceOf[Metric]
-    feature_transformer: FeatureTransformer
     aggregation: Aggregation = field(default_factory=WeightedMean)
 
     def evaluate(self, trial, X, y, groups=None, *, exposure=None) -> float: ...
-    def build_feature_transformer_and_model(self, params) -> tuple[FeatureTransformer, BaseAgeGroupModel]: ...
+    def build_model(self, params) -> BaseAgeGroupModel: ...
 ```
 
-Per trial: suggest the parameters once, build one copy of the transformer and
-the model, then for each fold (`train_index`, `val_index`):
-1. slice `X`, `y` and `exposure` by position (`take_rows`);
-2. fit the transformer on the training rows and transform both parts;
-3. fit the model, predict the validation rows, and score them (signed, D12);
-4. report the fold's own score to the pruner, and prune if it says so.
+Per trial: suggest the parameters once, build one copy of the model, then for
+each fold (`train_index`, `val_index`):
+1. slice the raw `X`, `y` and `exposure` by position (`take_rows`);
+2. fit the model (which fits its own `feature_transformer` on the training
+   rows), predict the validation rows, and score them (signed, D12);
+3. report the fold's own score to the pruner, and prune if it says so.
 
 After the last fold: record the user attrs `fold_scores` and `fold_sizes`,
 and return `aggregation.aggregate(scores, fold_sizes)`.
 
 - **Settings are validated when the evaluator is built** (pydantic). Each
   check prevents a silent or late failure (measured): a string metric failed
-  after 1 fold was fitted, a string aggregation after every fold; any sklearn
-  transformer ran; an empty search space gave identical trials; duplicate
+  after 1 fold was fitted, a string aggregation after every fold; an empty
+  search space gave identical trials; duplicate
   names made Optuna reuse the first value; a set of parameters would make a
   seeded study's order vary between runs. `model` (D17) and `cv` (always a
   `Splitter.cv` validator) are type-checked too. `InstanceOf[Metric]`: lax
@@ -138,9 +137,9 @@ and return `aggregation.aggregate(scores, fold_sizes)`.
   `X` (a longer one would be sliced to size silently); a NaN or inf fold score
   raises `ValueError` before `report` (Optuna stores NaN silently), which
   marks the trial FAIL and stops the study.
-- **Copies once per trial, refits per fold:** `fit` replaces all fitted state
-  (a contract test checks it), so one pair serves every fold; copies keep the
-  templates unfitted and parallel trials (`n_jobs > 1`) independent.
+- **A copy once per trial, refits per fold:** `fit` replaces all fitted state
+  (a contract test checks it), so one copy serves every fold; the copy keeps
+  the template unfitted and parallel trials (`n_jobs > 1`) independent.
 - **Pruning** sees each fold's own score (`step` = fold number), the contract
   of Optuna's `WilcoxonPruner`, which pairs fold k across trials. Measured,
   on 10 folds of unequal difficulty with a bad trial that ties on fold 0:
@@ -155,8 +154,8 @@ and return `aggregation.aggregate(scores, fold_sizes)`.
 - `exposure` is the raw count the model expects, not its log. Build it with
   `ExposureTransformer` on the full table: the evaluator checks only its shape,
   and only `ExposureTransformer` checks its values.
-- Leakage is still possible if `X` was already fitted on all rows and a
-  pass-through transformer is used.
+- Leakage is still possible if `X` was already fitted on all rows and the
+  model has `feature_transformer=None`.
 
 ### 4.3 Aggregation (`aggregation.py`)
 
@@ -218,41 +217,48 @@ The Optuna study is kept as `optuna_study_` for `optuna.visualization`. No
 
 ```python
 parameters = [                                  # same bounds as [direct_cohort_search_space]
-    IntParameter("max_depth", 3, 8),
-    IntParameter("num_leaves", 7, 63),
-    IntParameter("min_child_samples", 5, 40),
-    FloatParameter("learning_rate", 0.01, 0.2, log=True),
-    IntParameter("n_estimators", 50, 400),
-    FloatParameter("reg_alpha", 1e-8, 10.0, log=True),
-    FloatParameter("reg_lambda", 1e-8, 10.0, log=True),
-    FloatParameter("min_split_gain", 0.0, 1.0),
-    FloatParameter("subsample", 0.7, 1.0),
-    FloatParameter("colsample_bytree", 0.7, 1.0),
+    IntParameter("estimator__max_depth", 3, 8),
+    IntParameter("estimator__num_leaves", 7, 63),
+    IntParameter("estimator__min_child_samples", 5, 40),
+    FloatParameter("estimator__learning_rate", 0.01, 0.2, log=True),
+    IntParameter("estimator__n_estimators", 50, 400),
+    FloatParameter("estimator__reg_alpha", 1e-8, 10.0, log=True),
+    FloatParameter("estimator__reg_lambda", 1e-8, 10.0, log=True),
+    FloatParameter("estimator__min_split_gain", 0.0, 1.0),
+    FloatParameter("estimator__subsample", 0.7, 1.0),
+    FloatParameter("estimator__colsample_bytree", 0.7, 1.0),
 ]
+# On the full table, before the split; then taken by the split's positions.
+exposure = ExposureTransformer("n_apartments").fit_transform(df)
 splitter = Splitter("stratified_by_group")
 train_index, test_index = splitter.train_test_indices(
     df, groups, test_size=0.2, random_state=42)
 train_df, Y_train = take_rows(df, train_index), take_rows(df[cohort_columns], train_index)
-g_train = take_rows(groups, train_index)
+g_train, exposure_train = take_rows(groups, train_index), take_rows(exposure, train_index)
 evaluator = CVHyperparameterEvaluator(
-    DirectCohortModel(use_exposure=True), parameters,
+    DirectCohortModel(
+        # subsample_freq=1: LightGBM ignores subsample without it.
+        estimator=LGBMRegressor(objective="poisson", subsample_freq=1, n_jobs=1, verbosity=-1),
+        use_exposure=True, feature_transformer=tree),
+    parameters,
     cv=splitter.cv(n_splits=5, random_state=42),
-    metric=POISSON_DEVIANCE, feature_transformer=tree,
+    metric=POISSON_DEVIANCE,
 )
-exposure_train = train_df["n_apartments"]
 for cohort in cohort_columns:                    # one study per cohort
     result = HyperparameterStudy(seed=seeds[cohort], n_trials=30).optimize(
         lambda trial: evaluator.evaluate(
             trial, train_df, Y_train[cohort], g_train, exposure=exposure_train))
-    transformer, model = evaluator.build_feature_transformer_and_model(result.best_params)
-    transformer.fit(train_df, Y_train[cohort])
-    models[cohort] = model.fit(
-        transformer.transform(train_df), Y_train[cohort], exposure=exposure_train)
+    models[cohort] = evaluator.build_model(result.best_params).fit(
+        train_df, Y_train[cohort], exposure=exposure_train)
 ```
 
-Compared with the old closure: `num_leaves` and `max_depth` are sampled
-independently (D9; LightGBM caps the leaves by depth); `subsample_freq` is
-derived inside the model; fixed settings live on the template; the model's
+`HyperparameterStudy` is Phase 3 (3.1–3.2); until then the block was run with a
+seeded Optuna study in its place. Compared with the old closure: the model
+takes the raw table and fits its own `feature_transformer` per fold; the
+LightGBM settings live on the template estimator and are tuned by nested
+names (`estimator__…`); `num_leaves` and `max_depth` are sampled
+independently (D9; LightGBM caps the leaves by depth); `subsample_freq` is set
+on the estimator, since the model no longer derives it; the estimator's
 `random_state` replaces a seed per trial and fold. Out-of-fold predictions
 (for `_cross_fitted_normal_scale`) are a possible later
 `evaluator.out_of_fold_predict(params)`.
@@ -271,11 +277,11 @@ choices asked), then §7's routine, then a stop for approval.
   Fixed: `evaluate`'s `y` is typed as one target (`pd.Series | np.ndarray`;
   a two-column `y` failed inside LightGBM), the package docstring, a numpy
   test on a path nothing uses, and a misplaced comment.
-- [ ] **Evaluator on the raw table** (from [MULTI_COHORT_MODELS_PLAN.md](MULTI_COHORT_MODELS_PLAN.md) N20). Switch `CVHyperparameterEvaluator` from a separate `feature_transformer` and model to one `modeling.ModelPipeline`, cloned per fold; its `exposure` argument is kept and passed through. Build that argument with `preprocessing.ExposureTransformer(...).fit_transform(table)`. *Done when:* the evaluator takes a pipeline, and a test shows it fits one per fold; §5's example builds `exposure = ExposureTransformer("n_apartments").fit_transform(df)` before the split and passes `take_rows(exposure, train_index)` (the split's positions), not `train_df["n_apartments"]`.
+- [x] **Evaluator on the raw table** (from [MULTI_COHORT_MODELS_PLAN.md](MULTI_COHORT_MODELS_PLAN.md) N20). Switch `CVHyperparameterEvaluator` from a separate `feature_transformer` and model to one `modeling.ModelPipeline`, cloned per fold; its `exposure` argument is kept and passed through. Build that argument with `preprocessing.ExposureTransformer(...).fit_transform(table)`. *Done when:* the evaluator takes a pipeline, and a test shows it fits one per fold; §5's example builds `exposure = ExposureTransformer("n_apartments").fit_transform(df)` before the split and passes `take_rows(exposure, train_index)` (the split's positions), not `train_df["n_apartments"]`. **Done 2026-10-05** by [DIRECT_COHORT_GENERALIZATION_PLAN.md](DIRECT_COHORT_GENERALIZATION_PLAN.md) Step 5, with the model's own `feature_transformer` instead of `ModelPipeline` (removed there in Step 4): the evaluator has no transformer, fits the model on each fold's raw rows, and `build_feature_transformer_and_model` became `build_model`.
 - [ ] **3.1 Study constructor and defaults.** *Done when:* the default sampler is a seeded multivariate TPE and the default pruner `NopPruner`; invalid `n_trials`, timeout or `n_jobs` combinations are rejected.
 - [ ] **3.2 `optimize` and the best trial.** *Done when:* the same seed gives an identical `TuningResult`; a pruned trial never wins; ties go to the lowest number; no completed trial raises `RuntimeError`; `initial_params` run first.
 - [ ] **3.3 Records and results.** *Done when:* each `TrialRecord` carries the fold scores and sizes and the derived SE; `to_dict()` round-trips through `json`; `is_reproducible` is False with a timeout or `n_jobs > 1`.
-- [ ] **3.4 Integration test** (§5 on a small simulated table, a few trials). *Done when:* the best parameters refit through `build_feature_transformer_and_model` and predict.
+- [ ] **3.4 Integration test** (§5 on a small simulated table, a few trials). *Done when:* the best parameters refit through `build_model` and predict.
 - [ ] **3.5 Pruners in the docs:** `WilcoxonPruner` or `SuccessiveHalvingPruner` for CV, not `MedianPruner` (§4.2). Wilcoxon's docs also advise shuffling the evaluation order per trial; decide whether that applies with fixed folds.
   **Then the Phase 3 review** and your approval.
 - [ ] **4.1 `docs/HYPERPARAMETER_TUNING.md`:** the three parts, the decisions, aggregation and pruning guidance, the worked example, hazards, how a rebuilt model becomes tunable (D17), what remains.
@@ -362,10 +368,10 @@ tested parts that tune the repo's own `modeling.BaseAgeGroupModel`s.
   bounds. A search space is a plain list of them.
 - **`CVHyperparameterEvaluator`** (`evaluator.py`): a frozen pydantic
   dataclass of settings, checked when built: a model, parameters, a
-  `Splitter.cv` validator, a `Metric`, a `FeatureTransformer` and an
-  `Aggregation`. The data go to `evaluate(trial, X, y, groups, *, exposure=None)`.
-  - Each trial copies the transformer and the model once; each fold refits
-    them on its training rows only, so no validation rows leak in.
+  `Splitter.cv` validator, a `Metric` and an `Aggregation`. The data go to `evaluate(trial, X, y, groups, *, exposure=None)`.
+  - Each trial copies the model once; each fold refits it (and its own
+    `feature_transformer`) on its training rows only, so no validation rows
+    leak in.
   - A lower-is-better metric is negated, so the study always maximizes.
   - Each fold's own score is reported for pruning, the contract of Optuna's
     `WilcoxonPruner`. A NaN or inf score raises.
