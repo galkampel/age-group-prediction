@@ -48,7 +48,9 @@ class CVHyperparameterEvaluator:
     Optuna calls its objective with the trial alone, so bind the data::
 
         evaluator = CVHyperparameterEvaluator(
-            DirectCohortModel(use_exposure=True), parameters,
+            DirectCohortModel(estimator=LGBMRegressor(objective="poisson", n_jobs=1),
+                              use_exposure=True),
+            parameters,  # names such as "estimator__n_estimators"
             cv=splitter.cv(n_splits=5, random_state=42),
             metric=POISSON_DEVIANCE, feature_transformer=tree,
         )

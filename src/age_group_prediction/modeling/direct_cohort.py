@@ -1,121 +1,89 @@
-"""Model A: one LightGBM regressor for one cohort's child count."""
+"""Model A: one regressor for one cohort's child count, the exposure as a weighted rate."""
 
 from __future__ import annotations
 
-from typing import Literal, Self
+from typing import Protocol, Self
 
 import numpy as np
 import pandas as pd
-from lightgbm import LGBMRegressor
 from numpy.typing import ArrayLike
+from sklearn.base import clone
 from sklearn.utils.validation import check_is_fitted
 
 from .base import BaseAgeGroupModel
 
-__all__ = ["DirectCohortModel", "Objective"]
+__all__ = ["DirectCohortModel", "Regressor"]
 
-Objective = Literal["poisson", "regression"]
+
+class Regressor(Protocol):
+    """What ``estimator`` must do: scikit-learn's regressor API with ``sample_weight``."""
+
+    def fit(
+        self, X: pd.DataFrame, y: ArrayLike, sample_weight: ArrayLike | None = None
+    ) -> Self: ...
+
+    def predict(self, X: pd.DataFrame) -> ArrayLike: ...
 
 
 class DirectCohortModel(BaseAgeGroupModel):
-    """A LightGBM regressor with fixed hyperparameters, fitted on one cohort.
+    """Any regressor with a Poisson or Gaussian loss, fitted on one cohort.
 
     ``X`` is the finished design matrix: features are transformed before they
-    reach the model. Cohorts are independent, so each gets its own instance and
-    hyperparameters. These default to LightGBM's own and are tuned from outside
-    through ``set_params``; nothing is searched in ``fit``.
+    reach the model. Cohorts are independent, so each gets its own instance.
+    ``estimator`` is always given, and carries its own loss and
+    hyperparameters, e.g. ``LGBMRegressor(objective="poisson")``,
+    ``HistGradientBoostingRegressor(loss="poisson")`` or
+    ``PoissonRegressor()``. A tuner reaches its settings by nested names
+    (``estimator__n_estimators``) through ``set_params``; nothing is searched
+    in ``fit``. LightGBM ignores ``subsample`` unless ``subsample_freq >= 1``
+    is set on the estimator too.
 
-    ``use_exposure`` (Poisson only) makes the raw exposure (apartments), passed
-    to ``fit`` and ``predict``, enter as the offset ``log(exposure)``. The trees
-    then learn the cohort's rate per apartment rather than per building, and
-    ``predict`` multiplies it back by the exposure to give a count. With
+    ``use_exposure`` makes the raw exposure (apartments), passed to ``fit`` and
+    ``predict``, scale the mean: the estimator learns the rate per apartment
+    from ``y / exposure`` with ``sample_weight=exposure``, and ``predict``
+    multiplies it back by the exposure to give a count. For a Poisson loss this
+    is the offset model ``log(exposure)`` itself, since the two negative
+    log-likelihoods differ by a constant, ``L_offset = L_rate - sum(y log
+    exposure)``; for a Gaussian loss it is least squares of the count with a
+    variance proportional to the exposure. Both derivations are in
+    ``docs/DIRECT_COHORT_MODEL.md`` §0.1. The equivalence is of the
+    likelihoods: a penalized scikit-learn GLM (``PoissonRegressor(alpha=…)``)
+    normalizes ``sample_weight`` to sum to one, so its ``alpha`` acts as
+    ``alpha * mean(exposure)`` in the offset model; LightGBM and
+    ``HistGradientBoostingRegressor`` use the weights as given. Unlike
+    LightGBM's ``init_score``, it needs only ``sample_weight``: a regressor
+    without one fails at ``fit`` with its own error. With
     ``use_exposure=False`` a passed exposure is ignored, so a caller can pass
     one exposure to every model, and a tuner can compare with and without.
     """
 
-    def __init__(
-        self,
-        *,
-        objective: Objective = "poisson",
-        use_exposure: bool = False,
-        n_estimators: int = 100,
-        learning_rate: float = 0.1,
-        num_leaves: int = 31,
-        max_depth: int = -1,
-        min_child_samples: int = 20,
-        reg_alpha: float = 0.0,
-        reg_lambda: float = 0.0,
-        min_split_gain: float = 0.0,
-        subsample: float = 1.0,
-        colsample_bytree: float = 1.0,
-        random_state: int = 42,
-        n_jobs: int = 1,
-    ) -> None:
+    def __init__(self, *, estimator: Regressor, use_exposure: bool = False) -> None:
         # Stored verbatim, unvalidated: set_params assigns attributes without
         # re-entering __init__, so fit is where the configuration is checked.
-        self.objective = objective
+        self.estimator = estimator
         self.use_exposure = use_exposure
-        self.n_estimators = n_estimators
-        self.learning_rate = learning_rate
-        self.num_leaves = num_leaves
-        self.max_depth = max_depth
-        self.min_child_samples = min_child_samples
-        self.reg_alpha = reg_alpha
-        self.reg_lambda = reg_lambda
-        self.min_split_gain = min_split_gain
-        self.subsample = subsample
-        self.colsample_bytree = colsample_bytree
-        self.random_state = random_state
-        # 1 by default: more OpenMP threads crash alongside torch on macOS.
-        self.n_jobs = n_jobs
 
     def fit(
         self, X: pd.DataFrame, y: pd.Series, exposure: ArrayLike | None = None
     ) -> Self:
-        """Fit the trees on ``X`` and ``y``; ``exposure`` is raw, not its log.
+        """Fit a copy of ``estimator`` on ``X`` and ``y``; ``exposure`` is raw, not its log.
 
-        LightGBM itself rejects an unknown objective and an all-zero ``y``.
+        What the loss cannot fit is left to the estimator: LightGBM, for one,
+        rejects an all-zero ``y`` under a Poisson loss.
         """
-        if self.use_exposure and self.objective == "regression":
-            raise ValueError(
-                "an exposure offset needs a log link, which 'regression' lacks; "
-                "set use_exposure=False or use objective='poisson'"
-            )
         exposure_values = self._check_exposure(X, exposure, expected=self.use_exposure)
-        init_score = None
-        base_log_rate = None
-        if exposure_values is not None:
-            # The intercept in log space: the average log rate per apartment,
-            # log(sum y / sum exposure). LightGBM skips boost_from_average once
-            # given an init_score, so without it the trees would start at 1 per
-            # apartment.
-            base_log_rate = float(np.log(np.sum(y) / exposure_values.sum()))
-            init_score = np.log(exposure_values) + base_log_rate
-        regressor = LGBMRegressor(
-            objective=self.objective,
-            n_estimators=self.n_estimators,
-            learning_rate=self.learning_rate,
-            num_leaves=self.num_leaves,
-            max_depth=self.max_depth,
-            min_child_samples=self.min_child_samples,
-            reg_alpha=self.reg_alpha,
-            reg_lambda=self.reg_lambda,
-            min_split_gain=self.min_split_gain,
-            subsample=self.subsample,
-            # LightGBM ignores subsample unless bagging runs at some frequency.
-            subsample_freq=1 if self.subsample < 1 else 0,
-            colsample_bytree=self.colsample_bytree,
-            random_state=self.random_state,
-            n_jobs=self.n_jobs,
-            # Identical trees on every refit; LightGBM recommends force_col_wise with it.
-            deterministic=True,
-            force_col_wise=True,
-            verbosity=-1,
-        ).fit(X, y, init_score=init_score)
-        # Set together, only once fitting succeeded, so a failed refit cannot pair
-        # new trees with an old intercept or the reverse.
-        self.regressor_ = regressor
-        self.base_log_rate_: float | None = base_log_rate
+        # A copy, so the caller's template stays unfitted across folds.
+        estimator: Regressor = clone(self.estimator)
+        if exposure_values is None:
+            estimator.fit(X, y)
+        else:
+            # The rate per apartment, weighted by the apartments: the offset
+            # model's likelihood for a Poisson loss, least squares of the count
+            # for a Gaussian one; any regressor that takes sample_weight.
+            estimator.fit(X, y / exposure_values, sample_weight=exposure_values)
+        # Set together, only once fitting succeeded.
+        self.estimator_ = estimator
+        self.use_exposure_: bool = exposure_values is not None
         return self
 
     def predict(self, X: pd.DataFrame, exposure: ArrayLike | None = None) -> np.ndarray:
@@ -123,11 +91,8 @@ class DirectCohortModel(BaseAgeGroupModel):
         check_is_fitted(self)
         # Follows how the model was fitted, not the current use_exposure, which
         # set_params may have changed since.
-        exposure_values = self._check_exposure(
-            X, exposure, expected=self.base_log_rate_ is not None
-        )
-        if exposure_values is None or self.base_log_rate_ is None:
-            return np.asarray(self.regressor_.predict(X))
-        # LightGBM's predict never adds the init_score back; the offset is ours.
-        raw = self.regressor_.predict(X, raw_score=True)
-        return np.asarray(np.exp(raw + np.log(exposure_values) + self.base_log_rate_))
+        exposure_values = self._check_exposure(X, exposure, expected=self.use_exposure_)
+        prediction = np.asarray(self.estimator_.predict(X), dtype=float)
+        if exposure_values is None:
+            return prediction
+        return prediction * exposure_values

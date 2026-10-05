@@ -63,8 +63,9 @@ Plan §3 restates `docs/MULTI_COHORT_MODELS_PLAN.md` §3. The short form:
 ## 4. Facts already verified (do not re-derive, do re-check line numbers)
 
 - `sklearn.utils.estimator_checks.check_parameters_default_constructible` allows only
-  `None`, scalars, tuples, types and callables as defaults → `estimator=None`, and
-  `DirectCohortModel.default_estimator()` returns the configured `LGBMRegressor`.
+  `None`, scalars, tuples, types and callables as defaults, but accepts a required
+  argument with no default. So `estimator` is required (plan G2, revised 2026-10-05);
+  there is no `default_estimator()`.
 - `clone(model).set_params(estimator__n_estimators=5)` works on a `BaseEstimator` with an
   estimator parameter and leaves the template untouched.
 - Weighted rate vs `init_score` on LightGBM (2000 rows, 50 trees, Poisson): predictions
@@ -94,7 +95,7 @@ Plan §3 restates `docs/MULTI_COHORT_MODELS_PLAN.md` §3. The short form:
 - `test_every_shipped_model_has_an_example` fails the moment a model is added or removed
   without touching `EXAMPLES` in the contract test (Step 4 removes `ModelPipeline`).
 - `test_hyperparameter_tuning_evaluator.py` tunes `n_estimators` on a `DirectCohortModel`;
-  after Step 2 that must be `estimator__n_estimators` on an explicit `default_estimator()`.
+  after Step 2 that is `estimator__n_estimators` on an explicit `LGBMRegressor`.
 - `CohortProbabilityModel` uses `validate_data(self, X, reset=...)`; after Step 3 it must see
   the design matrix, not the raw table, on both paths.
 - LightGBM ignores `subsample` unless `subsample_freq >= 1`; the old model derived it, the

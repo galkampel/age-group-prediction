@@ -12,6 +12,7 @@ import numpy as np
 import optuna
 import pandas as pd
 import pytest
+from lightgbm import LGBMRegressor
 from numpy.typing import ArrayLike
 from optuna.pruners import BasePruner
 from optuna.trial import FixedTrial
@@ -349,12 +350,15 @@ def test_an_exposure_not_one_per_row_is_rejected(exposure: np.ndarray) -> None:
 
 def test_a_missing_exposure_raises_the_models_error() -> None:
     evaluator = _evaluator(
-        model=DirectCohortModel(use_exposure=True),
-        parameters=[IntParameter("n_estimators", 1, 5)],
+        model=DirectCohortModel(
+            estimator=LGBMRegressor(objective="poisson", n_jobs=1, verbosity=-1),
+            use_exposure=True,
+        ),
+        parameters=[IntParameter("estimator__n_estimators", 1, 5)],
     )
 
     with pytest.raises(ValueError, match="pass `exposure`"):
-        evaluator.evaluate(FixedTrial({"n_estimators": 2}), X, Y, GROUPS)
+        evaluator.evaluate(FixedTrial({"estimator__n_estimators": 2}), X, Y, GROUPS)
 
 
 @pytest.mark.parametrize("greater_is_better", [True, False])
@@ -485,17 +489,20 @@ def test_matches_a_hand_written_fold_loop() -> None:
         )
     )
     cv = Splitter("grouped").cv(n_splits=3, random_state=0)
-    model = DirectCohortModel(use_exposure=True)
+    model = DirectCohortModel(
+        estimator=LGBMRegressor(objective="poisson", n_jobs=1, verbosity=-1),
+        use_exposure=True,
+    )
     evaluator = CVHyperparameterEvaluator(
         model,
-        [IntParameter("n_estimators", 5, 20)],
+        [IntParameter("estimator__n_estimators", 5, 20)],
         cv=cv,
         metric=POISSON_DEVIANCE,
         feature_transformer=tree,
     )
 
     value = evaluator.evaluate(
-        FixedTrial({"n_estimators": 10}), df, y, groups, exposure=df["n"]
+        FixedTrial({"estimator__n_estimators": 10}), df, y, groups, exposure=df["n"]
     )
 
     exposure = df["n"].to_numpy()
@@ -503,7 +510,7 @@ def test_matches_a_hand_written_fold_loop() -> None:
     sizes: list[int] = []
     for train, val in cv.split(df, y, groups):
         transformer = clone(tree).fit(df.iloc[train], y.iloc[train])
-        fitted = clone(model).set_params(n_estimators=10)
+        fitted = clone(model).set_params(estimator__n_estimators=10)
         fitted.fit(
             transformer.transform(df.iloc[train]),
             y.iloc[train],

@@ -5,6 +5,7 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 import pytest
+from lightgbm import LGBMRegressor
 from sklearn.exceptions import NotFittedError
 from sklearn.utils.validation import check_is_fitted
 
@@ -37,7 +38,13 @@ def _table(n_rows: int = 200) -> tuple[pd.DataFrame, pd.Series, pd.Series]:
 
 
 def _pipeline() -> ModelPipeline:
-    return ModelPipeline(FEATURES, DirectCohortModel(use_exposure=True))
+    return ModelPipeline(
+        FEATURES,
+        DirectCohortModel(
+            estimator=LGBMRegressor(objective="poisson", n_jobs=1, verbosity=-1),
+            use_exposure=True,
+        ),
+    )
 
 
 def test_the_templates_stay_unfitted() -> None:

@@ -1,7 +1,7 @@
 # Plan: Any regressor in `DirectCohortModel`, and the feature transformer inside each model
 
 **Branch:** `feat/estimator-and-feature-transformer`, from `feat/hyperparameter-tuning` (where `modeling/` lives; PRs #6–#11 used the same base). PR into `feat/hyperparameter-tuning`.
-**Status (2026-10-05):** Steps 0–1 done (draft PR #12; Step 1 awaits the user's commit); next Step 2. Handoff for the implementing session: `DIRECT_COHORT_GENERALIZATION_HANDOFF.md`. Baseline `uv run pytest -m "not slow"`: **1221 passed, 1 skipped, 1 xfailed**; after Step 1: **1224 passed**.
+**Status (2026-10-05):** Steps 0–2 done (draft PR #12; Steps 1–2 await the user's commit); next Step 3. Handoff for the implementing session: `DIRECT_COHORT_GENERALIZATION_HANDOFF.md`. Baseline `uv run pytest -m "not slow"`: **1221 passed, 1 skipped, 1 xfailed**; after Step 1: **1224 passed**; after Step 2: **1232 passed** (1233 before the revision removed one test).
 **Source of truth:** this file. Update its status and checkboxes at every stop.
 
 ## Contents
@@ -41,12 +41,14 @@ features itself ("Evaluator on the raw table"). This plan closes that task too.
 
 | # | Decision | Why |
 |---|---|---|
-| G1 | `DirectCohortModel(*, estimator=None, use_exposure=False, feature_transformer=None)`. The ten LightGBM hyperparameters and `objective` are removed; they live on the estimator | The estimator carries its own loss and hyperparameters; mirroring them would have to be redone for every library. Tuning reaches them by nested names (`estimator__n_estimators`), which `BaseEstimator.set_params` already supports (verified) |
-| G2 | `estimator=None` builds LightGBM in `fit`: `LGBMRegressor(objective="poisson", n_jobs=1, deterministic=True, force_col_wise=True, verbosity=-1, random_state=42)`, returned by the static method `DirectCohortModel.default_estimator()` | sklearn's `check_parameters_default_constructible` (in `test_modeling_contract.py`) only allows `None`, scalars, tuples, types and callables as defaults, so an estimator instance cannot be the default. A tuner needs an instance to reach `estimator__…`, so the default is also available as a factory |
+| G1 | `DirectCohortModel(*, estimator, use_exposure=False, feature_transformer=None)`, `estimator` required. The ten LightGBM hyperparameters and `objective` are removed; they live on the estimator | The estimator carries its own loss and hyperparameters; mirroring them would have to be redone for every library. Tuning reaches them by nested names (`estimator__n_estimators`), which `BaseEstimator.set_params` already supports (verified) |
+| G1a | **An estimator instance, not `**kwargs` or a parameter dict** | scikit-learn's meta-estimator practice (`BaggingRegressor(estimator=…)`, `TransformedTargetRegressor(regressor=…)`). Probed 2026-10-05: `**kwargs` are omitted by `get_params` and **dropped by `clone`**, so every trial would run on defaults; a dict cannot be reached by `set_params(estimator_params__n_estimators=…)` (`AttributeError`); an instance exposes `estimator__n_estimators` in `get_params(deep=True)`, and the evaluator's `clone(model).set_params(**params)` changes only the trial copy. Tuning needs only the nested names |
+| G1b | **`estimator` is typed by a `Protocol` `Regressor`** (`fit(X, y, sample_weight=None)`, `predict(X)`), exported from `modeling` | No library type states this contract: scikit-learn's `RegressorMixin`, which LightGBM, `HistGradientBoostingRegressor` and `PoissonRegressor` subclass, declares only `score` (no `fit`, `predict` or `sample_weight`), and with no stubs mypy reads it as `Any`. The Protocol states what the model calls; any library meets it structurally, without inheriting |
+| G2 | **`estimator` is required, with no default** (revised 2026-10-05 at the user's request; first planned as `estimator=None` plus a `default_estimator()` factory). The caller always builds the estimator, e.g. `LGBMRegressor(objective="poisson", n_jobs=1)` | The user always sets it explicitly, and a tuner needs the instance anyway to reach `estimator__…`. The first plan's reason was wrong: `check_parameters_default_constructible` only constrains defaults that exist (`None`, scalars, tuples, types, callables) and accepts a required argument (probed; `IndependentCohortModels(cohort_models)` already has one, and the contract test builds each model from an example instance). Settings the factory carried now belong to whoever builds the estimator: `n_jobs=1`, since more OpenMP threads crash alongside torch on macOS |
 | G3 | **The exposure enters as a weighted rate, for every estimator:** `fit(X, y / exposure, sample_weight=exposure)`; `predict` returns `estimator_.predict(X) * exposure` | For a Poisson loss this is the *same* likelihood as the offset `log(exposure)`: `Σ E_i (μ_i − r_i log μ_i)` with `r_i = y_i/E_i` has the same gradient and hessian per row as `Σ (E_i μ_i − y_i log(E_i μ_i))`. Verified on LightGBM: weighted-rate vs `init_score` predictions agree to 1.5e-8 relative. It needs only `sample_weight`, which LightGBM, `HistGradientBoostingRegressor`, `PoissonRegressor` and most regressors accept; `init_score` exists only in LightGBM. One code path, no `raw_score`, no stored intercept. The user chose this over an `init_score` branch |
-| G4 | **`use_exposure` is allowed with a Gaussian loss.** The old guard ("an exposure offset needs a log link") is removed with `objective` | Under G3 a Gaussian estimator minimizes `Σ E_i (y_i/E_i − f(x_i))² = Σ (y_i − E_i f(x_i))² / E_i`: weighted least squares of the count with mean `E_i f(x_i)` and variance proportional to `E_i`, the variance a count has. The mean structure is the one we want (count ∝ exposure) and the weights are the right ones, so it models the right thing; it is the Gaussian analogue of the offset, not an abuse of it. The one caveat is inherited from the Gaussian loss itself: a rate can come out negative, as it already could without an exposure. *(This answers the user's question; if they still prefer the restriction, keep an `objective: Literal["poisson","regression"]` declaration and the guard: a one-line addition to Step 2.)* |
-| G5 | A regressor whose `fit` lacks `sample_weight` is **not** pre-checked | Python raises `TypeError: fit() got an unexpected keyword argument 'sample_weight'` itself. Rule: validate only what would pass silently |
-| G6 | Fitted state of `DirectCohortModel`: `estimator_`, `use_exposure_: bool`, `feature_transformer_`. `regressor_` and `base_log_rate_` go | `estimator_` is sklearn's name for a fitted inner estimator; `use_exposure_` is what `TotalChildrenModel` already records, and `predict` follows it rather than the current setting |
+| G4 | **`use_exposure` is allowed with a Gaussian loss.** The old guard ("an exposure offset needs a log link") is removed with `objective` | Under G3 a Gaussian estimator minimizes `Σ E_i (y_i/E_i − f(x_i))² = Σ (y_i − E_i f(x_i))² / E_i`: weighted least squares of the count with mean `E_i f(x_i)` and variance proportional to `E_i`, the variance a count has. The mean structure is the one we want (count ∝ exposure) and the weights are the right ones, so it models the right thing; it is the Gaussian analogue of the offset, not an abuse of it. The one caveat is inherited from the Gaussian loss itself: a rate can come out negative, as it already could without an exposure. Full derivation in §2b (D), pinned by `test_the_gaussian_weighted_rate_is_least_squares_of_the_count`. A guard could not be reliable anyway: the model cannot read an arbitrary estimator's loss (`objective` in LightGBM, `loss` in HistGradientBoosting, the class for `PoissonRegressor`), so it would need a second `objective=` declaration that can disagree silently. The user agreed on 2026-10-05 |
+| G5 | A regressor whose `fit` lacks `sample_weight` is **not** pre-checked | The estimator fails with its own error: Python's `TypeError: fit() got an unexpected keyword argument 'sample_weight'` for a plain `fit(X, y)`, `ValueError` for a scikit-learn `Pipeline`. Rule: validate only what would pass silently |
+| G6 | Fitted state of `DirectCohortModel`: `estimator_`, `use_exposure_: bool`, `feature_transformer_`. `regressor_` and `base_log_rate_` go | `estimator_` is sklearn's name for a fitted inner estimator; `use_exposure_` is what `TotalChildrenModel` already records, and `predict` follows it rather than the current setting. Both are needed: `estimator_` holds the fitted copy, so the template stays unfitted across folds and trials; without `use_exposure_`, `set_params(use_exposure=False)` after a fit would make `predict` return rates instead of counts, silently, and nothing in the fitted estimator records the choice |
 | F1 | **The `feature_transformer` parameter is declared by each leaf model** (`DirectCohortModel`, `TotalChildrenModel`, `CohortProbabilityModel`), default `None` = "X is already the design matrix". **The base class owns the logic**: `_fit_features(X, y) -> (fitted transformer or None, design matrix)` and `_transform_features(X)`, plus the class-level annotation `feature_transformer: FeatureTransformer \| None` | `BaseEstimator.get_params` reads each concrete class's `__init__` signature, so a parameter the base "declares" would be invisible to `get_params`, `set_params` and `clone`; it must appear in every leaf `__init__`. The *behaviour* (clone, fit on the training rows, transform with the training statistics, None = identity) is shared, so it lives in `BaseAgeGroupModel`. Composites (`IndependentCohortModels`, `IndependentTotalProbabilityModel`) take none: their children do |
 | F2 | `ModelPipeline` is deleted (`modeling/pipeline.py`, its tests, its export) | With F1 it is a second way to do the same thing |
 | F3 | `CVHyperparameterEvaluator` drops its `feature_transformer` field; `build_feature_transformer_and_model` becomes `build_model`; each fold calls `model.fit(raw rows)` | Otherwise the package keeps two ways to transform. This is the tuning plan's open task "Evaluator on the raw table", done with the model instead of `ModelPipeline` |
@@ -106,24 +108,71 @@ trees are the same, and the prediction is
 $$\hat\mu_b = E_b \,\hat\lambda_b = E_b \cdot \texttt{estimator\_.predict}(x_b),$$
 
 which is why `predict` multiplies by the exposure instead of adding $\log E_b$ to a raw
-score. (Measured on LightGBM, 2000 rows, 50 trees: the two predictions agree to
+score. The equivalence is of the likelihoods. An estimator that also penalizes and
+*normalizes* `sample_weight` scales its penalty differently: scikit-learn's
+`PoissonRegressor(alpha=…)` divides the weighted loss by $\sum_b w_b = \sum_b E_b$, so its
+`alpha` acts as `alpha` $\times \bar E$ in the offset model (measured 2026-10-05: with
+`alpha=1` the weighted-rate coefficients match the offset model's at `alpha` $= \bar E = 47.6$
+to $10^{-4}$, and at `alpha=0` the two agree). LightGBM and `HistGradientBoostingRegressor`
+use the weights as given, so their penalties are unchanged. No single rescaling of the
+weights fixes both: dividing by $\bar E$ would change LightGBM's hessians and so its
+`reg_lambda` and `min_child_weight`. (Measured on LightGBM, 2000 rows, 50 trees: the two predictions agree to
 $1.5 \times 10^{-8}$ relative; `min_child_samples` counts rows in both, so the only
 difference is floating point.)
 
-**(D) What a Gaussian estimator fits under the same transformation.** With squared
-error and the same target and weights,
+**(D) The same transformation under a Gaussian likelihood.** The derivation runs as for
+Poisson, with the squared-error loss in place of the Poisson one; $f$ now enters the
+mean directly (identity link), and $f_b$ is short for $f(x_b)$.
 
-$$\sum_b w_b \big(r_b - f(x_b)\big)^2 = \sum_b E_b \Big(\frac{y_b}{E_b} - f(x_b)\Big)^2
-= \sum_b \frac{\big(y_b - E_b f(x_b)\big)^2}{E_b},$$
+*(D1) The model.* The building's count is Gaussian with a mean proportional to the
+exposure and a variance that grows with it, as a count's does:
 
-weighted least squares of the **count** with mean $E_b f(x_b)$ and weight $1/E_b$,
-i.e. the estimator for a model whose variance grows with the exposure,
-$\operatorname{Var}(y_b) \propto E_b$, as a count's does. The mean structure is the
-intended one (expected count proportional to apartments, $f$ the average children per
-apartment), so `use_exposure=True` is meaningful for a Gaussian loss too (G4); the only
-Gaussian-specific caveat is that $f(x_b)$ can be negative, as it already could without
-an exposure. Without weights (plain regression of $r_b$) the mean structure would be the
-same but each building would count equally, a variance $\propto E_b^2$ assumption.
+$$y_b \sim \mathcal{N}\big(\mu_b,\ \sigma^2 E_b\big), \qquad \mu_b = E_b\, f_b .$$
+
+Its negative log-likelihood is
+
+$$\mathcal{L}_{\text{Gauss}}(f, \sigma^2) = \sum_b \Big[\frac{(y_b - E_b f_b)^2}{2\sigma^2 E_b}
++ \tfrac12 \log\big(2\pi\sigma^2 E_b\big)\Big].$$
+
+*(D2) The weighted-rate formulation.* Regress the rate $r_b = y_b / E_b$ on $x_b$ with
+the estimator's squared-error loss $\tfrac12 (r - f)^2$ and `sample_weight` $w_b = E_b$:
+
+$$\mathcal{L}_{\text{rate}}(f) = \tfrac12 \sum_b w_b \big(r_b - f_b\big)^2
+= \tfrac12 \sum_b E_b \Big(\frac{y_b}{E_b} - f_b\Big)^2
+= \tfrac12 \sum_b \frac{\big(y_b - E_b f_b\big)^2}{E_b}.$$
+
+*(D3) Equivalence.* Comparing the two,
+
+$$\mathcal{L}_{\text{Gauss}}(f, \sigma^2) = \frac{1}{\sigma^2}\,\mathcal{L}_{\text{rate}}(f)
++ \tfrac12 \sum_b \log\big(2\pi\sigma^2 E_b\big),$$
+
+and the last term does not depend on $f$. For every $\sigma^2$ the two objectives
+therefore have the same minimizer in $f$, so the prediction never needs $\sigma^2$. Per
+row, in $f_b$,
+
+$$\frac{\partial \mathcal{L}_{\text{rate}}}{\partial f_b} = E_b f_b - y_b = \mu_b - y_b,
+\qquad
+\frac{\partial^2 \mathcal{L}_{\text{rate}}}{\partial f_b^2} = E_b :$$
+
+the gradient has the Poisson form of (C), and the Hessian is the exposure instead of
+$\mu_b$. The starting point agrees too: a constant $f$ minimizes
+$\tfrac12\sum_b (y_b - E_b f)^2 / E_b$ at $f = \sum_b y_b / \sum_b E_b$, the weighted
+mean rate a booster starts from. The prediction is again
+$\hat\mu_b = E_b \cdot \texttt{estimator\_.predict}(x_b)$. (Checked numerically: the
+weighted-rate fit equals the weighted least-squares fit of $y$ on $[E, E x]$ with
+weights $1/E$ to $10^{-16}$, and the full maximum-likelihood fit of (D1), $\sigma^2$
+included, to $10^{-8}$; pinned by
+`test_the_gaussian_weighted_rate_is_least_squares_of_the_count`.)
+
+*(D4) Why not the additive offset, and why the weight.* With an identity link, the
+additive offset of (A) gives the mean $f(x_b) + \log E_b$, which is not proportional to
+the apartments; that is why the old model rejected `use_exposure` with a Gaussian loss.
+The weighted rate scales the mean instead, so the mean structure is the intended one
+(expected count proportional to apartments, $f$ the average children per apartment) and
+`use_exposure=True` is meaningful for a Gaussian loss too (G4). Without the weight (plain
+regression of $r_b$) the mean would be the same, but each building would count equally,
+a $\operatorname{Var}(y_b) \propto E_b^2$ assumption. The one Gaussian-specific caveat
+is that $f(x_b)$ can be negative, as it already could without an exposure.
 
 **(E) Why not a residual.** Fitting $y_b - \mu^{(0)}_b$ (the count minus an initial
 prediction) is only meaningful for a squared-error loss, where the residual is again a
@@ -187,25 +236,19 @@ class Regressor(Protocol):
     def predict(self, X) -> ArrayLike: ...
 
 class DirectCohortModel(BaseAgeGroupModel):
-    def __init__(self, *, estimator: Regressor | None = None, use_exposure: bool = False,
+    def __init__(self, *, estimator: Regressor, use_exposure: bool = False,
                  feature_transformer: FeatureTransformer | None = None) -> None: ...
-
-    @staticmethod
-    def default_estimator() -> LGBMRegressor:
-        return LGBMRegressor(objective="poisson", n_jobs=1, deterministic=True,
-                             force_col_wise=True, verbosity=-1, random_state=42)
 
     def fit(self, X, y: pd.Series, exposure=None) -> Self:
         exposure_values = self._check_exposure(X, exposure, expected=self.use_exposure)
         feature_transformer, X_design = self._fit_features(X, y)
-        estimator = clone(self.estimator) if self.estimator is not None else self.default_estimator()
+        estimator: Regressor = clone(self.estimator)
         if exposure_values is None:
             estimator.fit(X_design, y)
         else:
             # The offset as a weighted rate: the same Poisson likelihood as
             # log(exposure), for any regressor that takes sample_weight (G3).
-            estimator.fit(X_design, np.asarray(y, dtype=float) / exposure_values,
-                          sample_weight=exposure_values)
+            estimator.fit(X_design, y / exposure_values, sample_weight=exposure_values)
         self.estimator_ = estimator
         self.use_exposure_: bool = exposure_values is not None
         self.feature_transformer_ = feature_transformer
@@ -227,7 +270,7 @@ parameter and the two helper calls (`_fit_features` at the top of `fit`, assigni
 ```python
 # hyperparameter_tuning/evaluator.py  (shape after Step 5)
 evaluator = CVHyperparameterEvaluator(
-    DirectCohortModel(estimator=DirectCohortModel.default_estimator(),
+    DirectCohortModel(estimator=LGBMRegressor(objective="poisson", n_jobs=1),
                       use_exposure=True, feature_transformer=tree),
     parameters,            # names such as "estimator__n_estimators"
     cv=..., metric=POISSON_DEVIANCE)
@@ -280,25 +323,26 @@ Files: `src/age_group_prediction/modeling/base.py`, `tests/unit/test_modeling_ba
 Files: `modeling/direct_cohort.py`, `modeling/__init__.py`, `tests/unit/test_modeling_direct_cohort.py`,
 `tests/unit/test_modeling_contract.py` (example factory only), `tests/unit/test_hyperparameter_tuning_evaluator.py`
 (parameter names only), `hyperparameter_tuning/evaluator.py` (docstring example only).
-- [ ] Rewrite the class as in §4 (G1–G6). Remove `Objective` from the module and from
+- [x] Rewrite the class as in §4 (G1–G6). Remove `Objective` from the module and from
   `modeling/__init__.py` (`__all__` too); export `Regressor` instead.
-- [ ] Module and class docstrings: *why* a weighted rate (G3; the one-line identity
+- [x] Module and class docstrings: *why* a weighted rate (G3; the one-line identity
   $\mathcal{L}_{\text{off}} = \mathcal{L}_{\text{rate}} - \sum y_b \log E_b$ from §2b (C),
   with a pointer to the doc section for the full derivation), that it holds for Gaussian
   too (G4, §2b (D)), and that the estimator's own
   objective and hyperparameters are set on the estimator (`estimator__…` names in a tuner).
   Note that LightGBM ignores `subsample` unless `subsample_freq ≥ 1` is set on the estimator
   (the model no longer derives it).
-- [ ] Tests (replace the file's LightGBM-specific ones; keep the exposure-misuse ones):
+- [x] Tests (replace the file's LightGBM-specific ones; keep the exposure-misuse ones):
   - Parametrize a module-level `ESTIMATORS` list with ids:
-    `DirectCohortModel.default_estimator().set_params(n_estimators=20)`,
+    the configured `LGBMRegressor(objective="poisson", n_estimators=20, n_jobs=1, …)`,
     `HistGradientBoostingRegressor(loss="poisson", max_iter=20, random_state=0)`,
-    `PoissonRegressor()`, and the Gaussian `LGBMRegressor(objective="regression", n_estimators=20, n_jobs=1, verbosity=-1)`.
+    `PoissonRegressor(alpha=0.0)` (a separate `POISSON_ESTIMATORS` for the Poisson-only tests), and the Gaussian `LGBMRegressor(objective="regression", n_estimators=20, n_jobs=1, verbosity=-1)`.
   - `test_doubling_the_exposure_doubles_the_prediction[estimator]` — catches the exposure
     lost at predict, for every estimator including the Gaussian one (G4).
   - `test_training_mean_prediction_matches_the_target_mean[estimator]` (Poisson ones, with
-    and without exposure) — catches a wrong rate (e.g. `y * exposure`) or a missing weight.
-  - `test_the_weighted_rate_equals_lightgbm_offset` — fit the default LightGBM through the
+    and without exposure) — catches a prediction on the wrong scale (e.g. `y * exposure`); a
+    missing weight is caught by the recording test, see mutation (a).
+  - `test_the_weighted_rate_equals_lightgbms_offset` — fit the configured LightGBM through the
     model and, by hand, `LGBMRegressor(...).fit(X, y, init_score=log(E)+b)` with
     `exp(raw + log(E) + b)`; `np.testing.assert_allclose(rtol=1e-6)`. Catches a
     reformulation that is *not* the offset model (the probe gave 1.5e-8).
@@ -312,19 +356,49 @@ Files: `modeling/direct_cohort.py`, `modeling/__init__.py`, `tests/unit/test_mod
   - `test_invalid_input_surfaces_an_error`: drop the `regression + use_exposure` case (G4)
     and the `not_an_objective` case; keep `y * 0` with exposure (LightGBM raises).
   - Delete `test_subsample_below_one_changes_the_model` (it now tests LightGBM, not us).
-- [ ] `test_modeling_contract.py`: `_direct_cohort_example` unchanged in shape (`DirectCohortModel()`
-  still default-constructible). `check_parameters_default_constructible` must pass with
-  `estimator=None` — this is why G2 exists.
-- [ ] `test_hyperparameter_tuning_evaluator.py` and `evaluator.py`'s docstring: wherever a
+  - Added during the step: `test_fit_receives_the_rate_with_the_exposure_as_weight` (a
+    recording stand-in pins `fit`'s target and weight exactly, for any estimator) and
+    `test_the_gaussian_weighted_rate_is_least_squares_of_the_count` (§2b (D)). The single
+    remaining invalid-input case became `test_an_all_zero_target_surfaces_lightgbms_error`,
+    without the divide-by-zero warning filter (our `log(sum y / sum E)` is gone).
+- [x] `test_modeling_contract.py`: every example passes an explicit
+  `LGBMRegressor(objective="poisson", n_jobs=1, verbosity=-1)`; the four sklearn checks pass
+  with `estimator` required (G2, revised).
+- [x] `test_hyperparameter_tuning_evaluator.py` and `evaluator.py`'s docstring: wherever a
   `DirectCohortModel` is tuned on `n_estimators`, build it as
-  `DirectCohortModel(estimator=DirectCohortModel.default_estimator(), use_exposure=True)`
-  and name the parameter `estimator__n_estimators`. Minimal edits; Step 5 reworks this file.
-- [ ] Mutation checks: (a) replace `sample_weight=exposure_values` by nothing → the
-  mean-prediction and offset-equality tests fail; (b) drop `* exposure_values` in predict →
-  the doubling test fails; (c) fit `self.estimator` instead of a clone → the template test fails.
+  `DirectCohortModel(estimator=LGBMRegressor(objective="poisson", n_jobs=1, …), use_exposure=True)`
+  and name the parameter `estimator__n_estimators`. The same explicit estimator goes into
+  `test_modeling_independent_cohorts.py` and `test_modeling_pipeline.py`. Minimal edits; Step 5 reworks this file.
+- [x] Mutation checks: (a) drop `sample_weight=exposure_values` → the recording test, the
+  offset-equality test and the Gaussian least-squares test fail (the mean test alone
+  misses it for HistGradientBoosting: 0.48% at rel=0.01, hence the recording test);
+  (b) drop `* exposure_values` in predict → the doubling test fails; (c) fit `self.estimator`
+  instead of a clone → the template test fails; (d) predict on `self.use_exposure` → the
+  follows-fit test fails; (e) target `y * exposure` → the recording and mean tests fail.
 - **Done when:** the non-slow suite passes; mypy strict passes; a probe shows
   `DirectCohortModel(estimator=HistGradientBoostingRegressor(loss="poisson"), use_exposure=True)`
   fitting and predicting on `test_modeling_direct_cohort.py`'s data. Stop.
+- **Result (2026-10-05):** ruff and mypy clean; the changed tests pass with `-W error`;
+  the five mutations above fail their tests; the HistGradientBoosting probe predicts a
+  training mean of 6.677 against 6.677. Review findings, each reproduced: a penalized
+  scikit-learn GLM normalizes `sample_weight`, so its `alpha` acts as `alpha * mean(E)` in
+  the offset model (documented in the docstring and §2b; the test GLM is now
+  `PoissonRegressor(alpha=0.0)`, which at `alpha=1` had shrunk `ses` to 0.05 from 0.4); a
+  one-column `y` broadcast silently into an (n, n) target with `LinearRegression`, so
+  `fit` now rejects a `y` that is not one-dimensional (`test_a_two_dimensional_target_raises`,
+  mutation-checked); docstrings no longer claim `TypeError` or that every estimator rejects
+  an all-zero `y`. Rejected: an unclear error for `estimator__…` on `estimator=None` (it is
+  scikit-learn's own). Non-slow suite after the fixes: 1233 passed, 1 skipped, 1 xfailed.
+- **Revision (2026-10-05, the user's review):** `estimator` is required and
+  `default_estimator()` is gone (G2 revised; G1b, G6 justified). `y` is divided as given
+  (`Series / ndarray` divides by position and keeps `y`'s index), so the numpy conversion
+  and the `np.ndim(y)` check it needed are removed with `test_a_two_dimensional_target_raises`:
+  without the conversion pandas itself raises for a one-column frame with an exposure
+  (`Unable to coerce to Series`), and a frame `y` otherwise contradicts the declared
+  `pd.Series`. Mutations (a)–(e) re-run, each fails its tests. Review: no correctness
+  findings (positional division confirmed with mismatched indexes; the short
+  `LGBMRegressor(n_jobs=1)` refits bit-identically); stale plan lines and the `fit` comment
+  (Poisson-only wording) fixed. Non-slow suite: 1232 passed, 1 skipped, 1 xfailed.
 
 ### Step 3 — `feature_transformer` on the three leaf models
 Files: `modeling/direct_cohort.py`, `modeling/total_children.py`, `modeling/cohort_probability.py`,
@@ -417,11 +491,12 @@ models by this plan; N20 pointer), `docs/MODEL_REIMPLEMENTATION_PLAN.md` (same n
   per-apartment rate", replacing the current `init_score` description; keep §0.1's symbols
   consistent with it ($E_b$, $\lambda_b$, $\mu_b$, $F$). §0.5 (evidence) gets the measured
   $1.5 \times 10^{-8}$ agreement and the test that pins it. §0.2 API table: the new constructor,
-  `default_estimator()`, `estimator_`, `use_exposure_`, `feature_transformer_`; the code
+  `estimator_`, `use_exposure_`, `feature_transformer_`; the code
   example passes `feature_transformer=tree` and the raw rows. §0.3 errors: remove the
-  log-link error, add the `TypeError` of G5. §0.4: note the generalization. §0.6: the title
+  log-link error, add the estimator's own error of G5 (no pre-check). §0.4: note the generalization. §0.6: the title
   and table lose `ModelPipeline`; the example builds
-  `DirectCohortModel(use_exposure=True, feature_transformer=tree)` per cohort; the rules table:
+  `DirectCohortModel(estimator=LGBMRegressor(…), use_exposure=True, feature_transformer=tree)`
+  per cohort; the rules table:
   the nested-names rule becomes `estimator__learning_rate`, and the I1/I2 answers get a row.
 - [ ] `INDEPENDENT_TOTAL_PROBABILITY_MODEL.md` §0: sub-models carry their own
   `feature_transformer`; nested names drop `model__`.
@@ -465,7 +540,8 @@ tree = FeatureTransformer((ColumnPlan(name="x", columns=("x",), transforms=(Cent
 y = table[["n_kindergarten", "n_elementary"]]; exposure = table["n_apartments"].to_numpy()
 
 model = IndependentCohortModels({
-    "n_kindergarten": DirectCohortModel(use_exposure=True, feature_transformer=tree),           # default LightGBM
+    "n_kindergarten": DirectCohortModel(estimator=LGBMRegressor(objective="poisson", n_jobs=1),
+                                        use_exposure=True, feature_transformer=tree),         # LightGBM
     "n_elementary": DirectCohortModel(estimator=HistGradientBoostingRegressor(loss="poisson"),
                                       feature_transformer=tree),                              # sklearn, no offset
 }).fit(table, y, exposure=exposure)
@@ -493,9 +569,9 @@ Into `feat/hyperparameter-tuning`, where `modeling/` lives. Plan and decisions:
 
 ## What changes
 
-1. **`DirectCohortModel(*, estimator=None, use_exposure=False, feature_transformer=None)`.**
-   Any scikit-learn-style regressor with a Poisson or Gaussian loss (`estimator=None` builds
-   the configured LightGBM, also available as `DirectCohortModel.default_estimator()`). The
+1. **`DirectCohortModel(*, estimator, use_exposure=False, feature_transformer=None)`.**
+   Any scikit-learn-style regressor with a Poisson or Gaussian loss, always given
+   explicitly (`estimator` is required). The
    ten mirrored LightGBM hyperparameters and `objective` are removed; a tuner reaches the
    estimator's own by nested names (`estimator__n_estimators`).
 2. **The exposure as a weighted regression of the per-apartment rate**:
@@ -526,7 +602,7 @@ Migration: `DirectCohortModel(n_estimators=100, ...)` →
 
 - [x] 0 Branch, plan doc, baseline (1221 passed)
 - [x] 1 Feature helpers in `BaseAgeGroupModel`
-- [ ] 2 `DirectCohortModel`: any regressor, weighted-rate exposure
+- [x] 2 `DirectCohortModel`: any regressor, weighted-rate exposure
 - [ ] 3 `feature_transformer` on the three leaf models
 - [ ] 4 Remove `ModelPipeline`
 - [ ] 5 Evaluator on the raw rows
