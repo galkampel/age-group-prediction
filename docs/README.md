@@ -39,7 +39,7 @@ implementation details conflict, the model specification controls behavior.
 
 | Document | Authority |
 |---|---|
-| [Direct cohort model](DIRECT_COHORT_MODEL.md) | Model A. §0: the rebuilt `modeling.DirectCohortModel` (equations, exposure offset, API); §0.6: `ModelPipeline` and `IndependentCohortModels`, every cohort from the raw table. §1–§10: the current per-cohort LightGBM families, tuning, marginal scoring, bootstrap uncertainty, persistence |
+| [Direct cohort model](DIRECT_COHORT_MODEL.md) | Model A. §0: the rebuilt `modeling.DirectCohortModel` (any regressor; the exposure as a weighted rate, with the derivation; API); §0.6: `IndependentCohortModels`, every cohort from the raw table. §1–§10: the current per-cohort LightGBM families, tuning, marginal scoring, bootstrap uncertainty, persistence |
 | [Independent total and probability model](INDEPENDENT_TOTAL_PROBABILITY_MODEL.md) | Model B. §0: the rebuilt `modeling.IndependentTotalProbabilityModel` (a Poisson or NB2 total with the exposure offset, a Dirichlet regression of the cohort shares, post-hoc temperature calibration; equations, API, data flow, rules). §1–§12: the current NB2/Poisson total, grouped multinomial composition, gated calibration, joint scoring, bootstrap uncertainty |
 | [Bayesian conditional model overview](BAYESIAN_CONDITIONAL_MODEL_OVERVIEW.md) | Model C in brief: statistical model, fitting and diagnostics, prediction, selection, persistence, configuration |
 | [Bayesian NB2 + Dirichlet-Multinomial guide](BAYESIAN_CONDITIONAL_MODEL.md) | Model C: selection and comparison, persistence, configuration, metadata, and a technical explanation of the model's statistics, Pyro syntax, tensor shapes, estimator/component/inference ownership, prediction, diagnostics, and runtime workarounds |
@@ -60,6 +60,7 @@ implementation details conflict, the model specification controls behavior.
 | [Model re-implementation plan](MODEL_REIMPLEMENTATION_PLAN.md) | Decisions and step-by-step record for the scikit-learn-style `modeling` package |
 | [Multi-cohort models plan](MULTI_COHORT_MODELS_PLAN.md) | Decisions, steps and evidence for `IndependentCohortModels` (Model A's cohorts in one object; PR #10) and the rebuilt Model B in `modeling` (PR #11), with the smoke run comparing them |
 | [Hyperparameter tuning plan](HYPERPARAMETER_TUNING_PLAN.md) | Decisions, design and remaining work for the `hyperparameter_tuning` package |
+| [Direct cohort generalization plan](DIRECT_COHORT_GENERALIZATION_PLAN.md) | Any regressor in `DirectCohortModel` (the exposure as a weighted rate, with the derivation), the `feature_transformer` inside each model in place of `ModelPipeline`, and the tuning evaluator on the raw table |
 
 ## Extensions Beyond The Simplified Model (Not Implemented)
 

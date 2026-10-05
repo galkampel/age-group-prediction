@@ -2,6 +2,8 @@
 
 **Branch:** `fix/direct-cohort-fixed-hyperparameters`, rebased onto
 `feat/hyperparameter-tuning`. Draft PR #6 merges into `feat/hyperparameter-tuning` (PR #5's branch).
+> **2026-10-05, [DIRECT_COHORT_GENERALIZATION_PLAN.md](DIRECT_COHORT_GENERALIZATION_PLAN.md) (PR #12):** `DirectCohortModel` takes any regressor as `estimator`, with the exposure as a weighted rate (`objective`, the ten LightGBM hyperparameters, `init_score`, `regressor_` and `base_log_rate_` are gone); each leaf model takes its own `feature_transformer`, and `ModelPipeline` is removed. This plan's record below is kept as it was.
+
 **Status (2026-09-24):** Phases 0, 1 and 2 are done, including the docs cleanup in
 Step 2.6. The non-slow suite gives **956 passed**. PR #6 was squash-merged into `feat/hyperparameter-tuning` as `aee3e6a`. Next: roadmap
 step 2 (§5). *2026-10-01: roadmap step 3 is done too (Models A and B rebuilt,
@@ -48,6 +50,8 @@ models are rebuilt.
 
 ## 2. The exposure offset in LightGBM
 
+> *Superseded 2026-10-05:* the `init_score` offset and `base_log_rate_` below were replaced by a weighted regression of the rate (`y / exposure`, `sample_weight=exposure`), the same likelihood for any regressor; see [DIRECT_COHORT_MODEL.md §0.1](DIRECT_COHORT_MODEL.md#01-the-model-the-exposure-as-a-weighted-regression-of-the-per-apartment-rate).
+
 **Terms.** The *exposure* $n_i$ (apartments) is the size the expected count
 scales with. That's the standard Poisson-GLM term, as in person-years at risk.
 Its log, $\log n_i$, is the *offset*: it enters with a coefficient fixed at 1.
@@ -66,7 +70,7 @@ log rate per apartment (see "In equations" below).
   strictly positive value per row of `X`, in the same order, e.g.
   `exposure=df["n_apartments"]`. *(2026-09-30: build it instead with
   `ExposureTransformer`, on the full table before splitting; see
-  [Direct cohort model §0.6](DIRECT_COHORT_MODEL.md#06-every-cohort-from-the-raw-table-modelpipeline-and-independentcohortmodels).)*
+  [Direct cohort model §0.6](DIRECT_COHORT_MODEL.md#06-every-cohort-from-the-raw-table-independentcohortmodels).)*
   It is the raw count, not `log n`, because the
   model needs `Σn` for the starting rate below. statsmodels follows the same
   convention: `exposure=` is raw and logged internally, while `offset=` is
@@ -101,7 +105,7 @@ log rate per apartment (see "In equations" below).
 ### In equations
 
 The equations, the derivation of $b$, and the correct inputs now live in
-[DIRECT_COHORT_MODEL.md §0.1](DIRECT_COHORT_MODEL.md#01-the-model), the
+[DIRECT_COHORT_MODEL.md §0.1](DIRECT_COHORT_MODEL.md#01-the-model-the-exposure-as-a-weighted-regression-of-the-per-apartment-rate), the
 reference for the rebuilt model. They were moved there in Step 2.6a so that
 there is one copy.
 
@@ -181,7 +185,7 @@ class DirectCohortModel(BaseAgeGroupModel):
 Usage: transform first, then one instance per cohort. *(2026-09-30: this is
 the Phase 2 form. The current one builds the exposure with
 `ExposureTransformer` and fits every cohort with `IndependentCohortModels`;
-see [Direct cohort model §0.6](DIRECT_COHORT_MODEL.md#06-every-cohort-from-the-raw-table-modelpipeline-and-independentcohortmodels).)*
+see [Direct cohort model §0.6](DIRECT_COHORT_MODEL.md#06-every-cohort-from-the-raw-table-independentcohortmodels).)*
 
 ```python
 features = clone(tree).fit(train_df)
@@ -548,7 +552,7 @@ In order. Each step has its own plan and gated phases.
    (`IndependentTotalProbabilityModel`) in `modeling/`. Plan:
    [MULTI_COHORT_MODELS_PLAN.md](MULTI_COHORT_MODELS_PLAN.md) (there, Model 1
    and Model 2). ✓ Model A is complete: PR #10, merged as `27459eb` (steps A0–A4;
-   [Direct cohort model §0.6](DIRECT_COHORT_MODEL.md#06-every-cohort-from-the-raw-table-modelpipeline-and-independentcohortmodels)).
+   [Direct cohort model §0.6](DIRECT_COHORT_MODEL.md#06-every-cohort-from-the-raw-table-independentcohortmodels)).
    ✓ Model B is rebuilt: PR #11 (steps B0–B9; `TotalChildrenModel`,
    `CohortProbabilityModel`, `TemperatureCalibrator`,
    `IndependentTotalProbabilityModel`;

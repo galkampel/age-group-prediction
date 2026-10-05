@@ -20,7 +20,6 @@ from pydantic.dataclasses import dataclass as pydantic_dataclass
 from sklearn.base import clone
 from sklearn.model_selection import BaseCrossValidator
 
-from ..feature_engineering import FeatureTransformer
 from ..modeling import BaseAgeGroupModel
 from ..scoring import Metric
 from ..utils import DesignMatrix, Exposure, Groups, Target, take_rows
@@ -45,27 +44,18 @@ def _unique_names(parameters: Sequence[Parameter]) -> tuple[Parameter, ...]:
 class CVHyperparameterEvaluator:
     """Score one hyperparameter set by cross-validation; greater is better.
 
-    Optuna calls its objective with the trial alone, so bind the data::
-
-        evaluator = CVHyperparameterEvaluator(
-            DirectCohortModel(use_exposure=True), parameters,
-            cv=splitter.cv(n_splits=5, random_state=42),
-            metric=POISSON_DEVIANCE, feature_transformer=tree,
-        )
-        # On the full table, before the split; then by the split's positions.
-        exposure = ExposureTransformer("n_apartments").fit_transform(table)
-        study.optimize(lambda trial: evaluator.evaluate(
-            trial, train_df, y_train, groups_train,
-            exposure=take_rows(exposure, train_index)))
+    Optuna calls its objective with the trial alone, so bind the data in a
+    lambda (example: ``docs/HYPERPARAMETER_TUNING_PLAN.md`` §5).
 
     The exposure is passed to the model as given, so build it with
     :class:`~age_group_prediction.preprocessing.ExposureTransformer`, which
     rejects the values LightGBM would accept silently. Rows are paired by
     position, so take its training rows by the positions
-    ``Splitter.train_test_indices`` returned, the ones that gave ``train_df``.
+    ``Splitter.train_test_indices`` returned, the ones that gave ``X``.
     A lower-is-better metric is negated, so the study always maximizes.
-    ``feature_transformer`` turns the raw table into each fold's design
-    matrix. ``aggregation`` combines the fold scores into the trial value.
+    The model transforms its own features (its ``feature_transformer``),
+    fitted on each fold's training rows. ``aggregation`` combines the fold
+    scores into the trial value.
     For the ``random`` method pass ``groups=None``: ``KFold`` warns on every
     split that receives groups.
     """
@@ -80,7 +70,6 @@ class CVHyperparameterEvaluator:
     cv: BaseCrossValidator
     # InstanceOf: lax pydantic would otherwise build a Metric from a dict.
     metric: InstanceOf[Metric]
-    feature_transformer: FeatureTransformer
     aggregation: Aggregation = field(default_factory=WeightedMean)
 
     def evaluate(
@@ -96,12 +85,13 @@ class CVHyperparameterEvaluator:
 
         ``trial`` may be ``optuna.trial.FixedTrial(params)`` to score one
         parameter set without a study. ``X`` is the raw table; a numpy array
-        works only with a pass-through transformer. ``exposure`` holds one raw
-        exposure per row of ``X``.
+        works only with a model that takes the design matrix (no
+        ``feature_transformer``). ``exposure`` holds one raw exposure per row
+        of ``X``.
         """
         self._check_exposure(exposure, X)
         params = {p.name: p.suggest(trial) for p in self.parameters}
-        feature_transformer, model = self.build_feature_transformer_and_model(params)
+        model = self.build_model(params)
         scores: list[float] = []
         fold_sizes: list[int] = []
         for fold, (train_index, val_index) in enumerate(self.cv.split(X, y, groups)):
@@ -112,13 +102,8 @@ class CVHyperparameterEvaluator:
                 if exposure is None
                 else (take_rows(exposure, train_index), take_rows(exposure, val_index))
             )
-            # Fitted on this fold's training rows only, so no validation
-            # statistics leak in; fit replaces the previous fold's state.
-            feature_transformer.fit(X_train, y_train)
-            X_train, X_val = (
-                feature_transformer.transform(X_train),
-                feature_transformer.transform(X_val),
-            )
+            # The model fits its features on this fold's training rows only, so
+            # no validation statistics leak in; fit replaces the previous fold's state.
             model.fit(X_train, y_train, exposure=exposure_train)
             y_val_pred = model.predict(X_val, exposure=exposure_val)
             value = model.evaluate(y_val, y_val_pred, self.metric)
@@ -151,14 +136,12 @@ class CVHyperparameterEvaluator:
                 f"got shape {np.shape(exposure)}"
             )
 
-    def build_feature_transformer_and_model(
-        self, params: Mapping[str, Any]
-    ) -> tuple[FeatureTransformer, BaseAgeGroupModel]:
-        """Unfitted copies of the templates, with ``params`` set on the model.
+    def build_model(self, params: Mapping[str, Any]) -> BaseAgeGroupModel:
+        """An unfitted copy of the template, with ``params`` set.
 
-        Called once per trial and for the final refit. Copies, so the
-        templates stay unfitted and parallel trials share nothing; one pair
+        Called once per trial and for the final refit. A copy, so the
+        template stays unfitted and parallel trials share nothing; one copy
         serves every fold, because ``fit`` replaces all fitted state.
         """
         model: BaseAgeGroupModel = clone(self.model).set_params(**params)
-        return clone(self.feature_transformer), model
+        return model

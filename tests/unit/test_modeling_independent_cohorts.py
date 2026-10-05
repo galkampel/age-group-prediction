@@ -5,6 +5,7 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 import pytest
+from lightgbm import LGBMRegressor
 from numpy.typing import ArrayLike
 from sklearn.base import clone
 
@@ -16,10 +17,14 @@ from age_group_prediction.feature_engineering import (
 from age_group_prediction.modeling import (
     DirectCohortModel,
     IndependentCohortModels,
-    ModelPipeline,
 )
 
 COHORTS = ["n_kindergarten", "n_elementary", "n_highschool"]
+
+
+def _lightgbm() -> LGBMRegressor:
+    # One thread: more OpenMP threads crash alongside torch on macOS.
+    return LGBMRegressor(objective="poisson", n_jobs=1, verbosity=-1)
 
 
 def _features(column: str) -> FeatureTransformer:
@@ -47,15 +52,17 @@ def _table(n_rows: int = 200) -> tuple[pd.DataFrame, pd.DataFrame, pd.Series]:
     return table, table[COHORTS], exposure
 
 
-def _cohort_models() -> dict[str, ModelPipeline]:
+def _cohort_models() -> dict[str, DirectCohortModel]:
     """Different features and offsets per cohort, in another order than y's columns."""
     return {
-        "n_highschool": ModelPipeline(
-            _features("x"), DirectCohortModel(use_exposure=True)
+        "n_highschool": DirectCohortModel(
+            estimator=_lightgbm(), use_exposure=True, feature_transformer=_features("x")
         ),
-        "n_elementary": ModelPipeline(_features("z"), DirectCohortModel()),
-        "n_kindergarten": ModelPipeline(
-            _features("x"), DirectCohortModel(use_exposure=True)
+        "n_elementary": DirectCohortModel(
+            estimator=_lightgbm(), feature_transformer=_features("z")
+        ),
+        "n_kindergarten": DirectCohortModel(
+            estimator=_lightgbm(), use_exposure=True, feature_transformer=_features("x")
         ),
     }
 
@@ -165,7 +172,9 @@ def test_predictions_are_placed_by_position_not_by_their_own_index() -> None:
     # silently.
     table, y, _ = _table()
     X = table[["x", "z"]]
-    model = IndependentCohortModels({"n_elementary": _SeriesPredictions()})
+    model = IndependentCohortModels(
+        {"n_elementary": _SeriesPredictions(estimator=_lightgbm())}
+    )
 
     predictions = model.fit(X, y[["n_elementary"]]).predict(X)
 

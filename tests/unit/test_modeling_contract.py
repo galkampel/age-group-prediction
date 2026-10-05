@@ -22,6 +22,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 import pytest
+from lightgbm import LGBMRegressor
 from sklearn.base import clone
 from sklearn.utils.estimator_checks import (
     check_do_not_raise_errors_in_init_or_set_params,
@@ -42,7 +43,6 @@ from age_group_prediction.modeling import (
     DirectCohortModel,
     IndependentCohortModels,
     IndependentTotalProbabilityModel,
-    ModelPipeline,
     TotalChildrenModel,
 )
 
@@ -70,22 +70,17 @@ MODELS = _models(BaseAgeGroupModel)
 type Example = tuple[BaseAgeGroupModel, pd.DataFrame, pd.Series | pd.DataFrame]
 
 
+def _lightgbm() -> LGBMRegressor:
+    # One thread: reproducible trees for the refit test, and more OpenMP
+    # threads crash alongside torch on macOS.
+    return LGBMRegressor(objective="poisson", n_jobs=1, verbosity=-1)
+
+
 def _direct_cohort_example() -> Example:
     rng = np.random.default_rng(0)
     X = pd.DataFrame({"x": rng.normal(size=200)})
     y = pd.Series(rng.poisson(np.exp(1 + 0.5 * X["x"])))
-    return DirectCohortModel(), X, y
-
-
-def _model_pipeline_example() -> Example:
-    # No exposure: the refit test calls fit(X, y).
-    rng = np.random.default_rng(0)
-    X = pd.DataFrame({"x": rng.normal(size=200)})
-    y = pd.Series(rng.poisson(np.exp(1 + 0.5 * X["x"])))
-    features = FeatureTransformer(
-        (ColumnPlan(name="x", columns=("x",), transforms=(Center(),)),)
-    )
-    return ModelPipeline(features, DirectCohortModel()), X, y
+    return DirectCohortModel(estimator=_lightgbm()), X, y
 
 
 def _independent_cohorts_example() -> Example:
@@ -102,7 +97,12 @@ def _independent_cohorts_example() -> Example:
         (ColumnPlan(name="x", columns=("x",), transforms=(Center(),)),)
     )
     model = IndependentCohortModels(
-        {cohort: ModelPipeline(features, DirectCohortModel()) for cohort in y}
+        {
+            cohort: DirectCohortModel(
+                estimator=_lightgbm(), feature_transformer=features
+            )
+            for cohort in y
+        }
     )
     return model, X, y
 
@@ -143,10 +143,10 @@ def _independent_total_probability_example() -> Example:
         (ColumnPlan(name="x", columns=("x",), transforms=(Center(),)),)
     )
     model = IndependentTotalProbabilityModel(
-        total_children_model=ModelPipeline(
-            features, TotalChildrenModel(use_exposure=False)
+        total_children_model=TotalChildrenModel(
+            use_exposure=False, feature_transformer=features
         ),
-        cohort_probability_model=ModelPipeline(features, CohortProbabilityModel()),
+        cohort_probability_model=CohortProbabilityModel(feature_transformer=features),
     )
     return model, X, y
 
@@ -154,7 +154,6 @@ def _independent_total_probability_example() -> Example:
 # Factories, so every test gets its own model and data and none is built at import.
 EXAMPLES: dict[type[BaseAgeGroupModel], Callable[[], Example]] = {
     DirectCohortModel: _direct_cohort_example,
-    ModelPipeline: _model_pipeline_example,
     IndependentCohortModels: _independent_cohorts_example,
     TotalChildrenModel: _total_children_example,
     CohortProbabilityModel: _cohort_probability_example,

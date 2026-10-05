@@ -22,12 +22,11 @@ class IndependentTotalProbabilityModel(BaseAgeGroupModel):
 
     ``total_children_model`` predicts a building's total children from the
     raw table (the row sum of ``y`` at fit); ``cohort_probability_model``
-    predicts its cohort shares (``y``'s columns). Both are usually a
-    :class:`~age_group_prediction.modeling.ModelPipeline`, each with its own
-    features; their settings are reached by nested ``set_params`` names
-    (``cohort_probability_model__model__l2_penalty``), before ``fit``, which
-    fits copies. The same ``exposure`` goes to both; the probability model
-    has no offset and ignores it.
+    predicts its cohort shares (``y``'s columns). Each usually has its own
+    ``feature_transformer``; their settings are reached by nested
+    ``set_params`` names (``cohort_probability_model__l2_penalty``), before
+    ``fit``, which fits copies. The same ``exposure`` goes to both; the
+    probability model has no offset and ignores it.
 
     ``temperature_calibrator`` is an already fitted
     :class:`~age_group_prediction.modeling.TemperatureCalibrator` (on

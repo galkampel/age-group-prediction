@@ -11,11 +11,10 @@ rebuilt here.
 from .base import BaseAgeGroupModel
 from .calibration import TemperatureCalibrator
 from .cohort_probability import CohortProbabilityModel
-from .direct_cohort import DirectCohortModel, Objective
+from .direct_cohort import DirectCohortModel, Regressor
 from .independent_cohorts import CohortModels, IndependentCohortModels
 from .independent_total_probability import IndependentTotalProbabilityModel
 from .optimization import Solver
-from .pipeline import ModelPipeline
 from .total_children import TotalChildrenModel
 
 __all__ = [
@@ -25,8 +24,7 @@ __all__ = [
     "DirectCohortModel",
     "IndependentCohortModels",
     "IndependentTotalProbabilityModel",
-    "ModelPipeline",
-    "Objective",
+    "Regressor",
     "Solver",
     "TemperatureCalibrator",
     "TotalChildrenModel",
