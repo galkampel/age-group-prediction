@@ -1,7 +1,7 @@
 # Handoff: generalize `DirectCohortModel` and move the feature transformer into the models
 
 **For:** the implementing session (Sonnet or Opus). **Written:** 2026-10-05; **updated
-2026-10-05 after Step 3**, to resume at Step 4.
+2026-10-05 after Step 7**: the plan is complete.
 **Plan (source of truth):** [DIRECT_COHORT_GENERALIZATION_PLAN.md](DIRECT_COHORT_GENERALIZATION_PLAN.md). Read it in full before the first edit; this file only orients you.
 
 ## 1. What the task is
@@ -33,10 +33,10 @@ I1 sentence to the docstring.
 |---|---|
 | Branch | `feat/estimator-and-feature-transformer`, cut from `feat/hyperparameter-tuning` (where `modeling/` lives; `main` does not have it) |
 | PR | **#12, draft**, into `feat/hyperparameter-tuning`. The user applies body updates; give them the ticked Steps checklist at each stop |
-| Done and committed | Step 0 `e09c58a` (plan, handoff, README row) · Step 1 `8fd73f7` (base-class helpers) · Step 2 `ea67cd7` (any regressor, weighted-rate exposure) · Step 3 `229c22d` (`feature_transformer` on the three leaf models) |
-| Suite | `uv run pytest -m "not slow"`: **1239 passed, 1 skipped, 1 xfailed** (baseline before Step 1: 1221). The 6 warnings come from mlflow in `test_gate8_tracking` |
-| Working tree | clean, apart from this file once updated |
-| Next | **Step 4** (remove `ModelPipeline`; composites' docstrings), then Steps 5–7, one at a time |
+| Done and committed | Steps 0–6: `e09c58a`, `8fd73f7`, `ea67cd7`, `229c22d`, `adff045`/`6334a90` (Step 4), `1ef8da5` (Step 5), `e8e654d` (Step 6); Step 7 (final checks, PR body) done 2026-10-05 |
+| Suite | `uv run pytest -m "not slow"`: **1230 passed, 1 skipped, 1 xfailed** (1221 before the PR). The 6 warnings come from mlflow in `test_gate8_tracking` |
+| Working tree | clean once Step 7's doc updates are committed |
+| Next | **Nothing: the plan is complete.** The PR awaits the user's review; the follow-up (failed-refit mixed state, §2b) is a separate PR |
 
 ### 2a. Decisions made in Steps 1–3 (settled; do not reopen)
 

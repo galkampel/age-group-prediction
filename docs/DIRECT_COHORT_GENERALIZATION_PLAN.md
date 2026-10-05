@@ -1,7 +1,7 @@
 # Plan: Any regressor in `DirectCohortModel`, and the feature transformer inside each model
 
 **Branch:** `feat/estimator-and-feature-transformer`, from `feat/hyperparameter-tuning` (where `modeling/` lives; PRs #6–#11 used the same base). PR into `feat/hyperparameter-tuning`.
-**Status (2026-10-05):** Steps 0–6 done (draft PR #12; Steps 0–4 committed, Steps 5–6 await the user's commit); next Step 7. Handoff for the implementing session: `DIRECT_COHORT_GENERALIZATION_HANDOFF.md`. Baseline `uv run pytest -m "not slow"`: **1221 passed, 1 skipped, 1 xfailed**; after Step 1: **1224 passed**; after Step 2: **1232 passed** (1233 before the revision removed one test). After Step 3: **1239 passed**. After Step 4: **1232 passed** (the 5 `ModelPipeline` tests and its 5 contract cases removed, 3 added). After Step 5: **1230 passed** (2 evaluator tests removed).
+**Status (2026-10-05):** **All steps done** (draft PR #12; Steps 0–6 committed, Step 7's doc updates await the user's commit). The PR awaits review. Follow-up, by the user's decision a separate PR: the mixed fitted state after a failed refit in `TotalChildrenModel` and `CohortProbabilityModel` (Step 3's open finding). Handoff for the implementing session: `DIRECT_COHORT_GENERALIZATION_HANDOFF.md`. Baseline `uv run pytest -m "not slow"`: **1221 passed, 1 skipped, 1 xfailed**; after Step 1: **1224 passed**; after Step 2: **1232 passed** (1233 before the revision removed one test). After Step 3: **1239 passed**. After Step 4: **1232 passed** (the 5 `ModelPipeline` tests and its 5 contract cases removed, 3 added). After Step 5: **1230 passed** (2 evaluator tests removed).
 **Source of truth:** this file. Update its status and checkboxes at every stop.
 
 ## Contents
@@ -610,16 +610,30 @@ models by this plan; N20 pointer), `docs/MODEL_REIMPLEMENTATION_PLAN.md` (same n
   return to `DirectCohortModel`'s docstring as a silent-failure constraint.
 
 ### Step 7 — Final check and PR
-- [ ] The whole diff's comments and docstrings follow §3 rule 7.
-- [ ] Full routine on the whole diff: ruff, mypy, `uv run pytest -m "not slow"`, then the
+- [x] The whole diff's comments and docstrings follow §3 rule 7.
+- [x] Full routine on the whole diff: ruff, mypy, `uv run pytest -m "not slow"`, then the
   slow tests touching `modeling` or `hyperparameter_tuning` if any.
-- [ ] `git status` shows only `modeling/`, `hyperparameter_tuning/`, their tests and `docs/`.
-- [ ] Draft PR body (user applies it): the two generalizations, the decisions table, the
+- [x] `git status` shows only `modeling/`, `hyperparameter_tuning/`, their tests and `docs/`.
+- [x] Draft PR body (user applies it): the two generalizations, the decisions table, the
   evaluator change, the removed classes/parameters (`ModelPipeline`, `Objective`, the ten
   LightGBM arguments, `regressor_`, `base_log_rate_`), and the migration line
   `DirectCohortModel(n_estimators=…)` → `DirectCohortModel(estimator=LGBMRegressor(…))`.
-- [ ] Update this doc's status; update the memory files for the tuning plan (its §6 task is
+- [x] Update this doc's status; update the memory files for the tuning plan (its §6 task is
   done here) and the multi-cohort plan.
+- **Result (2026-10-05):** ruff, format and mypy clean on the whole diff; non-slow suite 1230
+  passed, 1 skipped, 1 xfailed; the slow statsmodels oracles (`tests/validation/test_total_children.py`)
+  pass; the contract test discovers exactly the five models; the tuning plan's §5 block and the
+  §6 probe run. The PR diff is 29 files, all under `modeling/`, `hyperparameter_tuning/`, their
+  tests and `docs/`. The `subsample_freq` note stays docs-only (the user asked for best practice:
+  scikit-learn's meta-estimators leave inner-library quirks to the library; the model no longer
+  touches `subsample`). Whole-diff review: no correctness findings; code, tests and docs agree
+  (exports, parameters, fitted state, nested names probed). Rejected, by probe: §0.3's
+  "(n, n) prediction" is right (with a Series `y`, pandas raises at fit; the silent broadcast is at
+  predict). Left for the user, optional: a few short rule-7 phrases in `base.py` and
+  `independent_cohorts.py`; two helper tests in `test_modeling_base.py` that the per-leaf tests
+  now subsume; a stale comment in `test_hyperparameter_tuning_parameters.py` (outside the diff:
+  bare LightGBM names called "the DirectCohortModel bounds"). §7 holds the final PR body; the
+  handoff and memory are updated.
 
 ## 6. Verification
 
@@ -659,7 +673,7 @@ tuning §5 example running unchanged from the doc.
 
 ## 7. Draft PR title and body
 
-Opened after Step 0's first commit; ticked as steps land. No "Generated with" footer.
+Opened after Step 0's first commit; final form after Step 7. No "Generated with" footer.
 
 **Title:** `Any regressor in DirectCohortModel; the feature transformer inside each model`
 
@@ -686,10 +700,15 @@ Into `feat/hyperparameter-tuning`, where `modeling/` lives. Plan and decisions:
 3. **`feature_transformer` is a parameter of each leaf model** (`DirectCohortModel`,
    `TotalChildrenModel`, `CohortProbabilityModel`), with the fit/transform helpers in
    `BaseAgeGroupModel`. **`ModelPipeline` is removed.** `IndependentCohortModels` and
-   `IndependentTotalProbabilityModel` are unchanged in code.
+   `IndependentTotalProbabilityModel` are unchanged in behaviour; their sub-models carry
+   their own transformers.
 4. **`CVHyperparameterEvaluator` fits the model on the raw rows**: its `feature_transformer`
    field goes, `build_feature_transformer_and_model` becomes `build_model`. This closes the
    tuning plan's "Evaluator on the raw table" task.
+5. **Docs:** `docs/DIRECT_COHORT_MODEL.md` §0 (the derivation of the weighted rate for Poisson
+   and Gaussian losses, the API, the errors), Model 2's §0, `FEATURE_TRANSFORMATIONS.md`,
+   `MODULE_REFERENCE.md`, the tuning plan. Docstrings keep only what the code does and its
+   non-obvious constraints; derivations, examples and motivation moved to the docs.
 
 ## Removed or renamed
 
@@ -698,7 +717,17 @@ its `regressor_` and `base_log_rate_` (now `estimator_`, `use_exposure_`,
 `feature_transformer_`), `CVHyperparameterEvaluator.feature_transformer`.
 Migration: `DirectCohortModel(n_estimators=100, ...)` →
 `DirectCohortModel(estimator=LGBMRegressor(objective="poisson", n_estimators=100, ...))`;
-`ModelPipeline(tree, model)` → `model.set_params(feature_transformer=tree)`.
+`ModelPipeline(tree, model)` → the leaf model with `feature_transformer=tree`;
+`evaluator.build_feature_transformer_and_model(params)` → `evaluator.build_model(params)`,
+fitted on the raw rows; tuned names gain the prefix `estimator__` (`estimator__learning_rate`).
+LightGBM ignores `subsample` unless `subsample_freq >= 1` is set on the estimator; the old
+model set it itself.
+
+## Follow-up
+
+Pre-existing since PR #11, deferred to a separate PR: in `TotalChildrenModel` and
+`CohortProbabilityModel`, a refit whose final `validate_data(reset=True)` raises leaves the new
+`coef_` with the old `feature_names_in_`.
 
 ## Steps
 
@@ -709,10 +738,13 @@ Migration: `DirectCohortModel(n_estimators=100, ...)` →
 - [x] 4 Remove `ModelPipeline`
 - [x] 5 Evaluator on the raw rows
 - [x] 6 Docs (including the derivation)
-- [ ] 7 Final checks
+- [x] 7 Final checks
 
 ## Checks
 
-Per step: ruff, mypy strict on `modeling`, changed tests with `-W error`, one mutation check
-per claimed behaviour, independent review, `uv run pytest -m "not slow"`.
+Per step: ruff, mypy, changed tests with `-W error`, one mutation check per claimed
+behaviour, an independent review, `uv run pytest -m "not slow"`. Every changed doc code block
+was run. Final: the non-slow suite gives 1230 passed, 1 skipped, 1 xfailed (1221 before the
+PR); the slow statsmodels oracles for `TotalChildrenModel` pass; the contract test discovers
+the five remaining models; an independent review of the whole diff.
 ```
