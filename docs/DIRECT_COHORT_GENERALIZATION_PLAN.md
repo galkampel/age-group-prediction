@@ -1,7 +1,7 @@
 # Plan: Any regressor in `DirectCohortModel`, and the feature transformer inside each model
 
 **Branch:** `feat/estimator-and-feature-transformer`, from `feat/hyperparameter-tuning` (where `modeling/` lives; PRs #6–#11 used the same base). PR into `feat/hyperparameter-tuning`.
-**Status (2026-10-05):** Step 0 done except the first commit and the draft PR (§7); next Step 1. Handoff for the implementing session: `DIRECT_COHORT_GENERALIZATION_HANDOFF.md`. Baseline `uv run pytest -m "not slow"`: **1221 passed, 1 skipped, 1 xfailed**.
+**Status (2026-10-05):** Steps 0–1 done (draft PR #12; Step 1 awaits the user's commit); next Step 2. Handoff for the implementing session: `DIRECT_COHORT_GENERALIZATION_HANDOFF.md`. Baseline `uv run pytest -m "not slow"`: **1221 passed, 1 skipped, 1 xfailed**; after Step 1: **1224 passed**.
 **Source of truth:** this file. Update its status and checkboxes at every stop.
 
 ## Contents
@@ -244,18 +244,21 @@ Each step is a validation stop. Line numbers are as of 2026-10-05; refer to name
 - [x] Copy this file to `docs/DIRECT_COHORT_GENERALIZATION_PLAN.md`; add a row to the
   "Active Plans" table in `docs/README.md`.
 - [x] Run `uv run pytest -m "not slow"`: **1221 passed, 1 skipped, 1 xfailed** (2026-10-05, on the new branch).
-- [ ] First commit (the plan doc, the handoff `docs/DIRECT_COHORT_GENERALIZATION_HANDOFF.md`, the README row), push, and open a **draft PR** into `feat/hyperparameter-tuning` with the title and body of §7. Later steps update the PR body's checklist.
+- [x] First commit (the plan doc, the handoff `docs/DIRECT_COHORT_GENERALIZATION_HANDOFF.md`, the README row), push, and open a **draft PR** into `feat/hyperparameter-tuning` with the title and body of §7. Later steps update the PR body's checklist.
 - **Done when:** the branch exists, the doc is in the repo, the baseline matches. Stop.
 
 ### Step 1 — Feature helpers in the base class
 Files: `src/age_group_prediction/modeling/base.py`, `tests/unit/test_modeling_base.py`.
-- [ ] Add the class-level annotation, `_fit_features` and `_transform_features` as in §4.
+- [x] Add the class-level annotation, `_fit_features` and `_transform_features` as in §4.
+  Also annotated `feature_transformer_: FeatureTransformer | None`, which mypy strict needs for
+  `_transform_features`; with no value it creates no attribute, so `get_params` and
+  `check_is_fitted` are unaffected (probed).
   Import `FeatureTransformer` from `..feature_engineering` and `clone` from `sklearn.base`
   (both already imported by `pipeline.py`, so no new dependency direction).
-- [ ] Docstring of `BaseAgeGroupModel`: one paragraph on `feature_transformer`: a model
+- [x] Docstring of `BaseAgeGroupModel`: one paragraph on `feature_transformer`: a model
   that takes one lists it in `__init__`, fits a copy on the training rows inside `fit`,
   and transforms with that copy at predict; `None` means `X` is already the design matrix.
-- [ ] Tests, with a small stand-in `_FeatureModel(BaseAgeGroupModel)` that has
+- [x] Tests, with a small stand-in `_FeatureModel(BaseAgeGroupModel)` that has
   `__init__(self, *, feature_transformer=None)` and uses both helpers:
   - `test_without_a_transformer_the_helpers_return_x_itself` — catches a copy or
     conversion of `X` when there is nothing to do (`is X`).
@@ -266,6 +269,12 @@ Files: `src/age_group_prediction/modeling/base.py`, `tests/unit/test_modeling_ba
     `test_rows_are_transformed_with_the_training_statistics` from `test_modeling_pipeline.py`.)
 - **Done when:** the three tests pass with `-W error`; mypy strict passes on `modeling`;
   nothing else changed. Stop.
+- **Result (2026-10-05):** ruff and mypy clean; tests pass with `-W error`; four mutations
+  (no clone, refit at transform, `X.copy()` without a transformer, untransformed design
+  matrix at fit) each fail their test; review: three low notes applied (comment that only
+  leaf models set the attributes, `y` comment reworded since `FeatureTransformer` ignores
+  it, test comment covers the design-matrix check); non-slow suite 1224 passed, 1 skipped,
+  1 xfailed.
 
 ### Step 2 — `DirectCohortModel` takes any regressor; the offset as a weighted rate
 Files: `modeling/direct_cohort.py`, `modeling/__init__.py`, `tests/unit/test_modeling_direct_cohort.py`,
@@ -516,7 +525,7 @@ Migration: `DirectCohortModel(n_estimators=100, ...)` →
 ## Steps
 
 - [x] 0 Branch, plan doc, baseline (1221 passed)
-- [ ] 1 Feature helpers in `BaseAgeGroupModel`
+- [x] 1 Feature helpers in `BaseAgeGroupModel`
 - [ ] 2 `DirectCohortModel`: any regressor, weighted-rate exposure
 - [ ] 3 `feature_transformer` on the three leaf models
 - [ ] 4 Remove `ModelPipeline`
