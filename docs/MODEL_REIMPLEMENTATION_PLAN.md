@@ -559,7 +559,10 @@ In order. Each step has its own plan and gated phases.
    [Independent total and probability model §0](INDEPENDENT_TOTAL_PROBABILITY_MODEL.md#0-the-rebuilt-model-modelingindependent_total_probabilitypy)).
    B's feature declarations are in
    [FEATURE_TRANSFORMATIONS.md §8.2–8.5](FEATURE_TRANSFORMATIONS.md). The
-   plan's B7 smoke run compares the two models untuned.
+   plan's B7 smoke run compares the two models untuned. *2026-10-07:* Model B is
+   being rebuilt again on scikit-learn classifiers and a statsmodels NB2, without
+   torch, as `TotalTimesProbabilityModel`:
+   [TOTAL_TIMES_PROBABILITY_MODEL_PLAN.md](TOTAL_TIMES_PROBABILITY_MODEL_PLAN.md).
 4. **Rebuild Model C** (`BayesianConditionalModel`). *Needs step 3*: C reuses
    B's frozen feature forms.
 5. **Delete the old stack:** `modeling_config.py`, `models/`,
