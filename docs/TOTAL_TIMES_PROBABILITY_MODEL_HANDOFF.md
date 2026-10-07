@@ -1,8 +1,8 @@
 # Handoff: rebuild Model 2 as `TotalTimesProbabilityModel`
 
 **For:** the implementing session (Claude Opus 5.5). **Written:** 2026-10-07 at the end of
-the planning session; **updated 2026-10-07 at the end of the first implementing session:
-sub-tasks 0–2 are done and committed.**
+the planning session; **updated 2026-10-07: sub-tasks 0–2 are done and committed; sub-task 3
+is done (committed by the user after its stop).**
 **Plan (source of truth):** [TOTAL_TIMES_PROBABILITY_MODEL_PLAN.md](TOTAL_TIMES_PROBABILITY_MODEL_PLAN.md).
 Read it in full before the first edit (its §8 records say what each sub-task did and why);
 this file only orients you.
@@ -20,12 +20,13 @@ Model 2 (`modeling/independent_total_probability.py`, PR #11) predicts each coho
    `NegativeBinomialRegressor`, statsmodels' `NegativeBinomial(loglike_method="nb2",
    exposure=…)`); one taking `sample_weight` gets the weighted rate; any other raises.
    `TotalChildrenModel` is deleted in sub-task 5.
-2. **Probabilities (next, sub-tasks 3–4):** `CohortProbabilityModel(estimator: Classifier,
+2. **Probabilities (sub-task 3 done, 4 next):** `CohortProbabilityModel(estimator: Classifier,
    calibration_method=None, calibration_cv=5, feature_transformer)`. `fit` converts the counts
    to one weighted row per building and cohort (weight = count) **inside the model**, after
    fitting the feature transformer on the buildings; optional
-   `CalibratedClassifierCV(ensemble=False)` with `GroupKFold` splits by building; `predict`
-   maps `predict_proba` by `classes_` into `y`'s column order (plan P5–P11).
+   `CalibratedClassifierCV(ensemble=False)` with `GroupKFold` splits by building; the
+   classifier is fitted on the cohort positions, so `predict` names its columns with `cohorts_`
+   (plan P5–P11).
    `TemperatureCalibrator` is deleted.
 3. **Combined (sub-task 5):** `TotalTimesProbabilityModel(total_model, probability_model)`
    replaces `IndependentTotalProbabilityModel` (plan P12).
@@ -36,11 +37,12 @@ Model 2 (`modeling/independent_total_probability.py`, PR #11) predicts each coho
 
 | Item | State |
 |---|---|
-| Branch | `feat/total-times-probability-model`, HEAD `732e465`, pushed, tree clean |
+| Branch | `feat/total-times-probability-model`, HEAD `1e2bc66` (handoff update) before sub-task 3's commit |
 | Commits | `02b7725` plan + handoff (sub-task 0); `9f9fb58` the rename (1); `732e465` NB2 and `CountModel`'s exposure cases (2, with its three revisions) |
 | PR | Draft **#13** into `feat/hyperparameter-tuning`; its body has the sub-task checklist (the user ticks it) |
-| Suite | **1247 passed, 1 skipped, 1 xfailed** (`uv run pytest -m "not slow"`; pytest collects only `tests/`) |
-| Next | **Sub-task 3** (`CohortProbabilityModel` on a classifier), after the open question in §5. Then 4–7, one per stop |
+| Suite | **1232 passed, 1 skipped, 1 xfailed** after sub-task 3 and its revisions 1–3 (`uv run pytest -m "not slow"`; pytest collects only `tests/`) |
+| Sub-task 3 | `CohortProbabilityModel` on a classifier, with `replication` `"weighted"`/`"per_child"` (revisions 1–4; the classifier is fitted on the cohort positions; no `validate_data`), `multinomial_to_categorical`, and a row-sum check at `predict`; the torch Model 2 (`independent_total_probability.py`) and `calibration.py` deleted with their tests (plan §8 records) |
+| Next | **Sub-task 4** (calibration, P9–P11). Then 5–7, one per stop |
 
 ## 3. Decisions (settled; do not reopen)
 
@@ -100,21 +102,14 @@ From implementing sub-tasks 1–2 (the user's answers; plan §8 records):
   repo's vocabulary (e.g. the raw `exposure`); comments concise, keeping the "why".
 - Correct your own earlier wrong claims explicitly in the next message.
 
-## 5. Sub-task 3: files, and an open question to raise first
+## 5. Sub-task 3: settled (2026-10-07)
 
-Files: `src/age_group_prediction/modeling/cohort_probability.py` (rewritten on a classifier),
-`tests/unit/test_modeling_cohort_probability.py` (rewritten), the contract test's `EXAMPLES`.
-
-**Open question (found 2026-10-07; re-verify with `grep -rn predict_logits src tests`):** the
-rewrite removes `CohortProbabilityModel.predict_logits`, which the torch build still uses:
-`modeling/independent_total_probability.py:89`, `tests/unit/test_modeling_independent_total_probability.py:158`,
-`tests/unit/test_modeling_calibration.py:236,242`, `tests/unit/test_modeling_feature_transformer.py:132-143`,
-`tests/unit/test_modeling_cohort_probability.py:183` (rewritten anyway), plus the contract
-`EXAMPLES` of the torch classes. The plan's sub-task 3 "Verify" probe (the new model's
-`COHORT_LOG_LOSS` against the torch Dirichlet build on the same split) assumed the torch build
-stays importable until sub-task 5. Plan sub-task 3 must settle the order before editing, with
-the options and evidence, and ask the user. For example: run the torch baseline probe first
-and record its number, then delete the old Model 2 stack in sub-task 3; or merge sub-task 3
-with sub-task 5's deletions.
+The `predict_logits` question was settled with the user: the torch Dirichlet baseline was
+measured first (1.0819; the new model 1.0783), then the torch class's dependents were deleted
+in sub-task 3. Decided there as well (plan §8 record): counts are not validated in the model
+(a counts validator in `preprocessing.py` is a §10 follow-up), `validate_data` was removed in
+revision 4 (the column-order gap without a transformer is a §10 follow-up for both models), `y`
+must be a DataFrame. Sub-task 5
+now only adds `TotalTimesProbabilityModel` and deletes `total_children.py` and `optimization.py`.
 
 Memory to update at each stop: `multi-cohort-models-plan.md` in the Claude memory directory.

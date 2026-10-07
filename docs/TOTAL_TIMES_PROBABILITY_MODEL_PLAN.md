@@ -6,11 +6,11 @@ conversation. This file is the source of truth: update its status line and the
 sub-task checkboxes in §8 as work finishes. Orientation for a new session:
 [TOTAL_TIMES_PROBABILITY_MODEL_HANDOFF.md](TOTAL_TIMES_PROBABILITY_MODEL_HANDOFF.md).
 
-**Status (2026-10-07):** approved by the user. **Sub-tasks 0–2 are done** (branch
+**Status (2026-10-07):** approved by the user. **Sub-tasks 0–3 are done** (branch
 `feat/total-times-probability-model`; `DirectCohortModel` is now `CountModel`, with
-an exposure branch and NB2 as `NegativeBinomialRegressor`; non-slow suite 1247 passed,
-1 skipped, 1 xfailed; records in §8). Sub-task 3 (`CohortProbabilityModel` on a
-classifier) is next. During planning the user revised it twice: NB2 goes through
+an exposure branch and NB2 as `NegativeBinomialRegressor`; `CohortProbabilityModel` is a
+classifier on weighted rows, and the torch Model 2 and `TemperatureCalibrator` are deleted;
+records in §8). Sub-task 4 (calibration) is next. During planning the user revised it twice: NB2 goes through
 `CountModel` (the renamed `DirectCohortModel`) as an estimator taking the exposure (an offset in the first plan; raw `exposure` since sub-task 2); a
 `replication` setting for row-resampling classifiers was considered and dropped
 on measurement (P6, P8).
@@ -118,16 +118,16 @@ them. In short:
 | `modeling/total_children.py` | torch Poisson/NB2 GLM | **deleted** |
 | `modeling/negative_binomial.py` | — | **new:** `NegativeBinomialRegressor`, a scikit-learn regressor around statsmodels NB2 with `fit(X, y, exposure=None)` and `predict(X, exposure=None)` |
 | `modeling/cohort_probability.py` | torch Dirichlet regression, `predict_logits` | **rewritten:** a classifier on the categorical representation (one weighted row per building and cohort), optional `CalibratedClassifierCV` |
-| `modeling/calibration.py` | `TemperatureCalibrator` | **deleted** (`CalibratedClassifierCV(method="temperature")` replaces it) |
+| `modeling/calibration.py` | `TemperatureCalibrator` | **deleted in sub-task 3** (`CalibratedClassifierCV(method="temperature")` replaces it in sub-task 4) |
 | `modeling/optimization.py` | `Minimizer`, `Solver`, `single_threaded_torch` | **deleted** (only the two torch models use it; the old stack's `models/count_regression.py` has its own) |
-| `modeling/independent_total_probability.py` | `IndependentTotalProbabilityModel(total_children_model, cohort_probability_model, temperature_calibrator)` | **renamed** `modeling/total_times_probability.py`, `TotalTimesProbabilityModel(total_model, probability_model)` |
+| `modeling/independent_total_probability.py` | `IndependentTotalProbabilityModel(total_children_model, cohort_probability_model, temperature_calibrator)` | **deleted in sub-task 3** (it needed the torch `CohortProbabilityModel`); replaced in sub-task 5 by `modeling/total_times_probability.py`, `TotalTimesProbabilityModel(total_model, probability_model)` |
 | `modeling/__init__.py` | exports the above | `CountModel`, `Regressor`, `ExposureRegressor`, `NegativeBinomialRegressor`, `Classifier`, `CalibrationMethod`, `CohortProbabilityModel`, `TotalTimesProbabilityModel`, Model 1's names; gone: `DirectCohortModel`, `Solver`, `TemperatureCalibrator`, `TotalChildrenModel`, `IndependentTotalProbabilityModel` |
 | `pyproject.toml` | `statsmodels` only in the `validation` group | `statsmodels>=0.14.5` in `dependencies` |
-| `tests/unit/test_modeling_total_children.py`, `test_modeling_calibration.py`, `test_modeling_optimization.py`, `tests/validation/test_total_children.py` | tests of the deleted code | **deleted** |
+| `tests/unit/test_modeling_total_children.py`, `test_modeling_calibration.py`, `test_modeling_optimization.py`, `tests/validation/test_total_children.py` | tests of the deleted code | **deleted** (`test_modeling_calibration.py` in sub-task 3, the rest in sub-task 5) |
 | `tests/unit/test_modeling_direct_cohort.py` | `DirectCohortModel` | renamed `test_modeling_count_model.py`; the exposure branch added |
-| `tests/unit/test_modeling_cohort_probability.py`, `test_modeling_independent_total_probability.py` | tests of the torch builds | **rewritten** (`test_modeling_total_times_probability.py`) |
+| `tests/unit/test_modeling_cohort_probability.py`, `test_modeling_independent_total_probability.py` | tests of the torch builds | the first **rewritten** (sub-task 3); the second **deleted** in sub-task 3, `test_modeling_total_times_probability.py` new in sub-task 5 |
 | `tests/unit/test_modeling_negative_binomial.py` | — | **new** |
-| `tests/unit/test_modeling_contract.py` | `EXAMPLES` per concrete model (line 155) | entries renamed/added; a model without an example fails `test_every_shipped_model_has_an_example` |
+| `tests/unit/test_modeling_contract.py` | `EXAMPLES` per concrete model (line 153 after sub-task 3) | entries renamed/added; a model without an example fails `test_every_shipped_model_has_an_example` |
 | `tests/unit/test_modeling_feature_transformer.py`, `test_modeling_independent_cohorts.py`, `tests/unit/test_hyperparameter_tuning_evaluator.py` (builds a `DirectCohortModel`: lines 40, 296, 435) | use the old names | updated |
 | `docs/DIRECT_COHORT_MODEL.md` §0 | `DirectCohortModel` | file name kept; §0 says the class is `CountModel`, used for a cohort and for the total, with the exposure rule |
 | `docs/INDEPENDENT_TOTAL_PROBABILITY_MODEL.md` §0 | the torch build | §0 rewritten (the file keeps §1–§12 for the old stack until roadmap step 5 deletes it) |
@@ -153,10 +153,10 @@ untouched (deleted by roadmap step 5).
 | P2 | **`DirectCohortModel` is renamed `CountModel`** (`modeling/count_model.py`): a regression of one count column, a cohort's or the total, with any estimator and an optional exposure. **It is Model 2's total model**; `TotalChildrenModel` is deleted | The user: "this model and the direct model should be similar, can combine the two", and asked whether to rename once it serves the total too; `CountModel` chosen over `CountRegressionModel`. `DirectCohortModel` already gives Poisson and Gaussian losses with and without the exposure (the weighted rate is the Poisson offset model exactly; measured again, coefficient difference 2e-13). Its torch Poisson with `l2_penalty` is `PoissonRegressor(alpha=…)` (pinned to 3e-7 in PR #11's N6). "Model A" stays the docs' name for the direct approach |
 | P3 | **`CountModel` takes two kinds of estimator and tells them apart with sklearn's `has_fit_parameter(estimator, "exposure")`.** An estimator whose `fit` has an `exposure` parameter (`ExposureRegressor` protocol: `fit(X, y, exposure=None)`, `predict(X, exposure=None)`) is given the raw exposure at `fit` and `predict`; any other (`Regressor`, as today) gets the weighted rate. Without `use_exposure` both are fitted plainly. The fitted copy decides at `predict` (the same test on `estimator_`). *Revised by the user in sub-task 2 (2026-10-07): the argument is statsmodels' own raw `exposure`, not `offset=log(exposure)`* | The user: "DirectCohortModel should be able to use NB2 as well: identify the NB2 model and treat it differently". **Why not the rate for NB2:** the weighted-rate form is exact for Poisson only; for NB2 it fits a different model (measured: coefficients differ by 0.021), and statsmodels' NB accepts the non-integer `y / exposure` silently. **Why a signature test, not `isinstance`:** it is sklearn's own idiom for `sample_weight` (`has_fit_parameter`), it names the capability rather than one class, so any future estimator taking the exposure gets the same treatment, and it is measured to say `False` for `PoissonRegressor`, `LGBMRegressor`, `LinearRegression` and HGB. **Why the raw exposure, not an offset** (the user): it is what statsmodels calls `exposure` (the log is taken inside, coefficient 1) and what every model here takes ("raw, not its log"); measured identical to `offset=log(exposure)` (difference 0.0) |
 | P4 | **NB2 is `NegativeBinomialRegressor`** in `modeling/negative_binomial.py`: a scikit-learn regressor (`BaseEstimator`, `RegressorMixin`) around statsmodels' `discrete_model.NegativeBinomial(loglike_method="nb2", exposure=…)`, `fit(method="bfgs", maxiter=max_iter, disp=0)` (sub-task 2 adds the BFGS preliminary fit, `has_constant="add"`, `skip_hessian=True` and the warning handling: §8 record); fitted `intercept_`, `coef_`, `dispersion_` (α), `n_features_in_`/`feature_names_in_` (`validate_data`); `predict(X, exposure=None)` = `exposure · exp(b + Xβ)` from the stored coefficients (what statsmodels' `predict(exposure=)` computes), the exposure's shape checked. **Exposure only, no `offset`** (the user asked whether to allow both): no model here has a second fixed log-scale term, and two ways of giving the same thing add up silently if both are passed; an `offset` is one argument to add if ever needed. Unpenalized; `max_iter=500` is its one setting. A fit that does not converge raises. statsmodels moves to the main dependencies | The user asked for a scikit-learn wrapper of statsmodels' NB2 with an optional exposure and no torch. As a plain regressor it plugs into `CountModel` (P3), so Model 1's cohorts and Model 2's total get NB2 the same way. **"Can I predict using the exposure component?"** Yes: `results.predict(exog, exposure=e)` (equivalently `offset=log e`) returns `e · exp(b + Xβ)`. **Alternatives** (table in §9): statsmodels `GLM(family=NegativeBinomial(alpha))` (α must be fixed; L2 via `fit_regularized(L1_wt=0)`: a penalized variant for later if the smoke run needs one), the current torch objective (dropped: no torch), `glum` (not installed; θ fixed), LightGBM/XGBoost (no NB objective; a custom objective would re-create the torch code), scikit-learn (none: `TweedieRegressor` is not NB) |
-| P5 | **The categorical representation is built inside `CohortProbabilityModel.fit`,** by a static method `CohortProbabilityModel.to_categorical(y) -> (positions, labels, weights)`: one row per `(building, cohort)` with a positive count, `labels` the cohort name, `weights` the count (`np.nonzero(counts)`). `X` is the design matrix's rows at `positions`. The feature transformer is fitted on the **original** rows first | The user: inside only if both the raw and the categorical targets are needed there. They are: (a) the feature transformer must see one row per building, as in every other model (a replicated fit would weight the training statistics by children); (b) the calibration folds must keep a building's rows together (P10), which needs the original row ids; (c) `fit(X, y: counts)` keeps the base contract, so the probability model is fitted, scored (`COHORT_LOG_LOSS` on counts) and tuned on its own, and `TotalTimesProbabilityModel` only passes `y` on |
-| P6 | **Weighted replication only, weight = count (per child).** No `replication` setting; not one row per child; never `count / total` | The user's choice of weighting, and the evidence against a setting. For an estimator that fits a weighted likelihood the two replications are **equivalent:** a `sample_weight` of `c` multiplies that row's log-likelihood term by `c`, exactly what `c` identical rows contribute; measured on `LogisticRegression`: coefficient difference 1.8e-15 (442 weighted rows vs 1,325 per-child rows). For an estimator that **resamples rows** (RF) they are not identical fits, but the held-out quality is the same within noise (P8's table: 0.712 vs 0.708 against a seed spread of 0.57–0.86), so a setting would serve no measured purpose; it is a one-argument extension of `to_categorical` if real data ever shows one. The weighted rows are the multinomial likelihood of the counts given the total, the quantity `COHORT_LOG_LOSS` scores; `count / total` (one unit per building, the Dirichlet build's weighting) is a different estimator (coefficients move by 0.06) and not that likelihood |
-| P7 | **`estimator: Classifier`**, a `Protocol`: `fit(X, y, sample_weight=None)`, `predict_proba(X)`, `classes_`. Multinomial classifiers (`LogisticRegression`, whose lbfgs is multinomial in sklearn 1.9, `multi_class` is gone; `HistGradientBoostingClassifier`; `LGBMClassifier`, `objective_ = "multiclass"` when ≥ 3 labels; `RandomForestClassifier`) and `OneVsRestClassifier(binary)` alike. `predict` maps `predict_proba`'s columns **by `classes_`**, never by position, into `y`'s column order at fit | `classes_` are sorted labels (`['el', 'hs', 'kg']` for `['kg', 'el', 'hs']`): a positional mapping would permute cohorts silently. **Rows sum to 1** for all of them: `OneVsRestClassifier.predict_proba` normalizes in the multiclass case (measured 2e-16), as do HGB, LightGBM, RF and `CalibratedClassifierCV` (sigmoid and isotonic are per-class, then normalized; temperature is a softmax). The model asserts nothing about it: it is what the libraries do, and `COHORT_LOG_LOSS` renormalizes anyway. `OneVsRestClassifier.fit` takes `sample_weight` only through metadata routing (`set_fit_request(sample_weight=True)` on the inner estimator, `sklearn.set_config(enable_metadata_routing=True)`); documented, not special-cased |
-| P8 | **Bagging and bootstrap under replication: nothing is built; the estimators' own resampling is left as the user sets it.** The docs explain the units and give the measured table | **The user's question:** the cohorts of a building are connected (they share `x_b`, sum to `Y_b`, and their proportions sum to one), so should a resample keep the building's rows together? **The answer in three parts.** (1) The sum-to-one constraint is on the model's output `p_b`, which every classifier's `predict_proba` (and `CalibratedClassifierCV`) enforces by softmax or normalization; it is not a dependence between rows. (2) Under the conditional multinomial model `C_b \| Y_b ~ Mult(Y_b, p_b)` is `Y_b` independent categorical draws, so the exchangeable unit is the **child**; the weighted representation merely compresses identical child rows into one cell per cohort. A row resampler then draws **cells** (a bag can hold building b's kindergarten cell and drop its elementary cell) instead of children (a bag thins each building's composition at random); neither keeps a building whole; only a bootstrap **by building** does, which scikit-learn and LightGBM do not offer. (3) **Measured** (RF, 300 trees, 5 seeds, held-out cross-entropy against the true `p`): weighted + bootstrap 0.712, per-child + bootstrap 0.708, weighted without bootstrap 0.716, per-child without bootstrap 0.717, a hand-made bootstrap by building 0.717, against a seed-to-seed spread of 0.57–0.86: **all the same within noise**. So no representation switch and no grouped bagging is justified. **What the libraries do** (the user's "permutation" is not it): LightGBM's bagging is subsampling **without replacement** (`subsample`, active only with `subsample_freq > 0`; off by default); `HistGradientBoostingClassifier` has **no** row subsampling and its early stopping is off under 10,000 rows; `LogisticRegression` has none; `RandomForestClassifier` bootstraps **with replacement**, on by default (with `sample_weight`, sklearn multiplies the weight by the draw count); XGBoost (not a dependency; from its parameter docs) uses **all rows** by default, `subsample=1.0`, and subsamples without replacement per round only when set below 1. So RF is the only common estimator that resamples by default, and the user chose to leave it as is. **Observed building features** (type, year) change nothing: every row of a building shares its whole `x_b` already, and conditioning on more of it makes the conditional independence of its children more plausible, not less; the grouped unit becomes the right one only for an **unobserved** building effect (a random building intercept in the generator, or a generated characteristic withheld from the model) or for uncertainty intervals. **If real data shows extra-multinomial variation between buildings** (the case where the building is the right unit): `bootstrap=False` on RF removes the resampling (randomness then comes from `max_features`), or a bootstrap-by-building aggregator over `CohortProbabilityModel` (the ten-line probe above), added only then. The folds that must be grouped are the calibration folds (by building, P10) and the tuner's (by neighborhood, `Splitter`) |
+| P5 | *Revision 3 (the user):* the labels are the cohorts' **column positions** in `y` (0..K−1), not their names; `multinomial_to_categorical` returns `(sample_positions, cohort_positions, weights | None)`. *Revised by the user in sub-task 3, revision 1 (2026-10-07):* the static method is `multinomial_to_categorical(y, replication) -> (positions, labels, weights | None)` (the user: "`to_categorical` is misleading"), with both representations of P6. As first planned: **The categorical representation is built inside `CohortProbabilityModel.fit`,** by a static method `CohortProbabilityModel.to_categorical(y) -> (positions, labels, weights)`: one row per `(building, cohort)` with a positive count, `labels` the cohort name, `weights` the count (`np.nonzero(counts)`). `X` is the design matrix's rows at `positions`. The feature transformer is fitted on the **original** rows first | The user: inside only if both the raw and the categorical targets are needed there. They are: (a) the feature transformer must see one row per building, as in every other model (a replicated fit would weight the training statistics by children); (b) the calibration folds must keep a building's rows together (P10), which needs the original row ids; (c) `fit(X, y: counts)` keeps the base contract, so the probability model is fitted, scored (`COHORT_LOG_LOSS` on counts) and tuned on its own, and `TotalTimesProbabilityModel` only passes `y` on |
+| P6 | *Revised by the user in sub-task 3, revision 1 (2026-10-07):* **both replications, a setting `replication: ReplicationType = "weighted"`** (`Literal["per_child", "weighted"]`; named in revision 2): "weighted" one row per (building, cohort) with `sample_weight` = the count, "per_child" one row per child and no `sample_weight` passed (the user: "set two categorical representations; the idea is to check both"). Measured on the simulator (§6): identical for LR; for the trees within noise per seed (replicated − weighted −0.002 to +0.010; `min_samples_leaf`/`min_child_samples` count rows, not weights); "per_child" fits 2–3× slower and admits classifiers without `sample_weight` (KNN, LDA, QDA, Gaussian process, `OneVsRestClassifier` without routing); it needs integer counts (`np.repeat` raises on floats). Never `count / total`. As first planned: **Weighted replication only, weight = count (per child).** No `replication` setting; not one row per child; never `count / total` | The user's choice of weighting, and the evidence against a setting. For an estimator that fits a weighted likelihood the two replications are **equivalent:** a `sample_weight` of `c` multiplies that row's log-likelihood term by `c`, exactly what `c` identical rows contribute; measured on `LogisticRegression`: coefficient difference 1.8e-15 (442 weighted rows vs 1,325 per-child rows). For an estimator that **resamples rows** (RF) they are not identical fits, but the held-out quality is the same within noise (P8's table: 0.712 vs 0.708 against a seed spread of 0.57–0.86), so a setting would serve no measured purpose; it is a one-argument extension of `to_categorical` if real data ever shows one. The weighted rows are the multinomial likelihood of the counts given the total, the quantity `COHORT_LOG_LOSS` scores; `count / total` (one unit per building, the Dirichlet build's weighting) is a different estimator (coefficients move by 0.06) and not that likelihood |
+| P7 | *Revision 3 (the user):* with position labels, `classes_` is `0..K−1` in `y`'s order (every cohort observed), so `predict` names the columns with `cohorts_` directly; no by-name mapping, and cohort names of mixed types work (as names they fail sklearn's sort). *Revised by the user in sub-task 3, revision 1 (2026-10-07):* **no one-vs-rest detection or wrap** (the user, after the survey in §6: no common classifier lacks a multiclass fit; binary-only ones raise; scikit-learn's `multi_class` tag is `True` for every classifier, so it cannot tell); the caller wraps explicitly. **`predict` raises if a row of probabilities does not sum to 1** (atol 1e-6; softmax classifiers measured within 2.2e-16): LightGBM's `objective="multiclassova"` returns rows summing to 0.67–1.28 silently, and Model 2 would then predict cohorts that miss its total; the valid objectives are LightGBM's `"multiclass"` (its default above 2 classes), CatBoost's `"MultiClass"` and XGBoost's `multi:softprob` (both from the docs, not installed). This replaces "the model asserts nothing" below. As first planned: **`estimator: Classifier`**, a `Protocol`: `fit(X, y, sample_weight=None)`, `predict_proba(X)`, `classes_`. Multinomial classifiers (`LogisticRegression`, whose lbfgs is multinomial in sklearn 1.9, `multi_class` is gone; `HistGradientBoostingClassifier`; `LGBMClassifier`, `objective_ = "multiclass"` when ≥ 3 labels; `RandomForestClassifier`) and `OneVsRestClassifier(binary)` alike. `predict` maps `predict_proba`'s columns **by `classes_`**, never by position, into `y`'s column order at fit (until revision 3: now the labels are positions) | `classes_` are sorted labels (`['el', 'hs', 'kg']` for `['kg', 'el', 'hs']`): a positional mapping would permute cohorts silently. **Rows sum to 1** for all of them: `OneVsRestClassifier.predict_proba` normalizes in the multiclass case (measured 2e-16), as do HGB, LightGBM, RF and `CalibratedClassifierCV` (sigmoid and isotonic are per-class, then normalized; temperature is a softmax). The model asserts nothing about it: it is what the libraries do, and `COHORT_LOG_LOSS` renormalizes anyway. `OneVsRestClassifier.fit` takes `sample_weight` only through metadata routing (`set_fit_request(sample_weight=True)` on the inner estimator, `sklearn.set_config(enable_metadata_routing=True)`); documented, not special-cased |
+| P8 | *Revised by the user in sub-task 3, revision 1 (2026-10-07):* the per-child representation now exists as `replication="per_child"` (P6), so "no representation switch" below no longer holds; grouped bagging is still not built. As first planned: **Bagging and bootstrap under replication: nothing is built; the estimators' own resampling is left as the user sets it.** The docs explain the units and give the measured table | **The user's question:** the cohorts of a building are connected (they share `x_b`, sum to `Y_b`, and their proportions sum to one), so should a resample keep the building's rows together? **The answer in three parts.** (1) The sum-to-one constraint is on the model's output `p_b`, which every classifier's `predict_proba` (and `CalibratedClassifierCV`) enforces by softmax or normalization; it is not a dependence between rows. (2) Under the conditional multinomial model `C_b \| Y_b ~ Mult(Y_b, p_b)` is `Y_b` independent categorical draws, so the exchangeable unit is the **child**; the weighted representation merely compresses identical child rows into one cell per cohort. A row resampler then draws **cells** (a bag can hold building b's kindergarten cell and drop its elementary cell) instead of children (a bag thins each building's composition at random); neither keeps a building whole; only a bootstrap **by building** does, which scikit-learn and LightGBM do not offer. (3) **Measured** (RF, 300 trees, 5 seeds, held-out cross-entropy against the true `p`): weighted + bootstrap 0.712, per-child + bootstrap 0.708, weighted without bootstrap 0.716, per-child without bootstrap 0.717, a hand-made bootstrap by building 0.717, against a seed-to-seed spread of 0.57–0.86: **all the same within noise**. So no representation switch and no grouped bagging is justified. **What the libraries do** (the user's "permutation" is not it): LightGBM's bagging is subsampling **without replacement** (`subsample`, active only with `subsample_freq > 0`; off by default); `HistGradientBoostingClassifier` has **no** row subsampling and its early stopping is off under 10,000 rows; `LogisticRegression` has none; `RandomForestClassifier` bootstraps **with replacement**, on by default (with `sample_weight`, sklearn multiplies the weight by the draw count); XGBoost (not a dependency; from its parameter docs) uses **all rows** by default, `subsample=1.0`, and subsamples without replacement per round only when set below 1. So RF is the only common estimator that resamples by default, and the user chose to leave it as is. **Observed building features** (type, year) change nothing: every row of a building shares its whole `x_b` already, and conditioning on more of it makes the conditional independence of its children more plausible, not less; the grouped unit becomes the right one only for an **unobserved** building effect (a random building intercept in the generator, or a generated characteristic withheld from the model) or for uncertainty intervals. **If real data shows extra-multinomial variation between buildings** (the case where the building is the right unit): `bootstrap=False` on RF removes the resampling (randomness then comes from `max_features`), or a bootstrap-by-building aggregator over `CohortProbabilityModel` (the ten-line probe above), added only then. The folds that must be grouped are the calibration folds (by building, P10) and the tuner's (by neighborhood, `Splitter`) |
 | P9 | **Calibration is `CalibratedClassifierCV` inside `CohortProbabilityModel`:** `calibration_method: CalibrationMethod \| None = None` (`Literal["temperature", "sigmoid", "isotonic"]`, `None` = the estimator's own probabilities), `calibration_cv: int = 5`. `fit` wraps the cloned estimator as `CalibratedClassifierCV(estimator, method=…, cv=<grouped splits>, ensemble=False)` and fits it with the weights. **No `TemperatureCalibrator`** | The user's specification. `ensemble=False` is **cross-fitting**: the estimator is fitted on each of `k` folds, its out-of-fold probabilities for **every** row are collected, **one** calibrator is fitted on them, then the estimator is refitted on all rows; `predict` is that one model through that one map. `ensemble=True` (sklearn's default for a non-frozen estimator) averages `k` calibrated fold models and never fits on all rows. Cross-fitting is the user's preference and what the previous build did by hand (the B6 loop). `TemperatureCalibrator` duplicated sklearn's `_TemperatureScaling`, whose objective it was pinned to; the calibration now sits in the model, so clones and tuning (`probability_model__calibration_method`) carry it, and no `FrozenEstimator` idiom is needed |
 | P10 | **Calibration folds: `GroupKFold(n_splits=calibration_cv)` over the replicated rows with `groups=positions`** (the building), unshuffled, passed as a list of splits | A building's rows carry its known composition; with plain `KFold` the same building sits in a fit fold and its calibration fold, and the calibrator sees in-sample confidence. Grouping by building removes that; grouping by **neighborhood** (the repo's evaluation unit) would need `groups` at `fit`, which the base contract does not carry: documented as the limitation (the tuner's outer folds are by neighborhood regardless). Unshuffled `GroupKFold` is deterministic, so no `random_state` setting |
 | P11 | **Folds: 5. Isotonic is allowed but documented as inappropriate here** | **How many:** the calibrator must map the **final** model's probabilities, but it is fitted on fold models trained on `(k−1)/k` of the rows, which are less confident than the final one; `k = 2` (50/50) calibrates a model fitted on half the data and biases the temperature toward sharpening; larger `k` approaches the final model at the cost of `k` fits; with ~245 buildings per training set, 5 (sklearn's default) leaves ~200 buildings per fold fit and uses every row for calibration. **How much is enough:** temperature fits 1 parameter and sigmoid 2 per class, so every row of a 5-fold cross-fit (~1,300 child-weighted rows) is ample; isotonic is non-parametric per class and sklearn advises it only well above ~1,000 samples per class, so it overfits here (the previous plan's N12 said the same). Measured: all three run on the replicated data; temperature fits `T ≈ 1.00` on well-specified simulated data |
@@ -204,6 +204,16 @@ with α = 0.1 and exposure 5–40.
 | mypy 2.3.1, `TypeIs[ExposureRegressor]` on `Regressor \| ExposureRegressor` (`OffsetRegressor` then) | narrows the `True` branch only; the `False` branch stays the union (hence one `cast`) |
 | mypy 2.3.1, revision 2: two named checks on `Regressor \| ExposureRegressor` | `TypeIs` treats the protocols as overlapping (the first case stays the union, the second is marked unreachable); `TypeGuard` narrows each case to exactly its type: no `cast` |
 | `has_fit_parameter(…, "sample_weight")` | `True` for `LGBMRegressor`, HGB, `PoissonRegressor`, `LinearRegression`; `False` for `NegativeBinomialRegressor`, `Pipeline`, `TransformedTargetRegressor` (sklearn's `BaggingRegressor` uses the same test) |
+| *Sub-task 3 probes:* a negative `sample_weight` | fitted silently by `LogisticRegression`, HGB and `LGBMClassifier`; `RandomForestClassifier` raises. A NaN weight: `LGBMClassifier` silent, `LogisticRegression` raises; `np.nonzero` selects NaN cells |
+| Reordered DataFrame columns at `predict_proba` | `LGBMClassifier` silent; LR, HGB, RF raise "feature names should match". `CountModel(LGBMRegressor)` without a transformer: predictions differ by 2.41, no error (§10 follow-up) |
+| Unpenalized `LogisticRegression` under `-W error` | `C=np.inf` clean; `penalty=None` raises a `FutureWarning` (deprecated in 1.8) |
+| `OneVsRestClassifier` with routing on | `set_fit_request(sample_weight=True)` on the inner LR: the weights reach it (the fit moves by 0.065) |
+| The new class, weighted rows vs one row per child (`LogisticRegression(C=np.inf)`) | coefficients 2.8e-16 |
+| *Sub-task 3, revision 1:* weighted vs replicated rows, 5 simulated populations (all buildings; 189 training buildings, 571 weighted rows vs 4,543 per-child rows), held-out `COHORT_LOG_LOSS` (replicated / weighted; replicated − weighted per seed; fit seconds) | LR (`C=inf`) 1.0783 / 1.0783, 0; 0.005 / 0.003. HGB 1.0899 / 1.0869, −0.001 to +0.010; 3.7 / 1.3. LGBM 1.0884 / 1.0850, −0.002 to +0.006; 0.12 / 0.04. RF (300 trees) 1.0822 / 1.0817, −0.001 to +0.005; 0.38 / 0.19 |
+| Every scikit-learn 1.9 classifier fitted on 3 classes | all fit except `FixedThresholdClassifier`, `TunedThresholdClassifierCV` ("Only binary classification"); no `predict_proba`: `LinearSVC`, `NuSVC`/`SVC` (without `probability=True`), `Perceptron`, `PassiveAggressive`, `RidgeClassifier(CV)`, `SGDClassifier` (default hinge loss), `OneVsOne`, `OutputCode`; no `sample_weight` in `fit`: KNN, `RadiusNeighbors`, `NearestCentroid`, LDA, QDA, `GaussianProcessClassifier`, `LabelPropagation`/`LabelSpreading`, `OneVsRestClassifier`. `get_tags(...).classifier_tags.multi_class` is `True` for every one, `LGBMClassifier(objective="binary")` too |
+| LightGBM objectives on 3 classes | `"multiclass"`: rows sum to 1; `"multiclassova"`: rows sum to 0.67–1.28, no error; `"binary"`, `"cross_entropy"`: raise "Number of classes must be 1" |
+| `OneVsRestClassifier(...).fit(X, y, sample_weight=None)` without routing | raises (any extra keyword needs metadata routing): so `"per_child"` passes no keyword |
+| Held-out `COHORT_LOG_LOSS`, 5 simulated populations (seeds 0–4; buildings with a child; 4 standardized features; grouped 80/20 by neighborhood) | torch Dirichlet build **1.0819** (measured before any edit); the new model with `LogisticRegression(C=np.inf)` **1.0783** (1.0895, 1.0712, 1.0864, 1.0632, 1.0811) |
 
 ## 7. Target code shape
 
@@ -254,11 +264,12 @@ class CohortProbabilityModel(BaseAgeGroupModel):
     def __init__(self, *, estimator: Classifier, calibration_method: CalibrationMethod | None = None,
                  calibration_cv: int = 5, feature_transformer=None) -> None: ...
     @staticmethod
-    def to_categorical(y: pd.DataFrame) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    def multinomial_to_categorical(y: pd.DataFrame, replication: ReplicationType) -> tuple[np.ndarray, np.ndarray, np.ndarray | None]:
         """Row positions, cohort labels and counts of every positive (building, cohort) cell."""
     def fit(self, X, y: pd.DataFrame, exposure=None) -> Self:
         # unobserved cohort -> ValueError; feature_transformer, X = self._fit_features(X, y)
-        # positions, labels, weights = self.to_categorical(y); X_rep = X.iloc[positions]
+        # positions, labels, weights = self.multinomial_to_categorical(y, self.replication); X_rep = X.iloc[positions]
+        # "weighted": estimator.fit(X_rep, labels, sample_weight=weights); "per_child": estimator.fit(X_rep, labels)
         # estimator = clone(self.estimator)
         # if self.calibration_method is not None:
         #     splits = list(GroupKFold(self.calibration_cv).split(X_rep, labels, groups=positions))
@@ -490,7 +501,7 @@ Each ends at a stop (§3). "Verify" lists what the user can check.
   fit and at predict; no multiplication in the rate case; the template at predict). ruff, mypy
   clean; suite 1247 passed, 1 skipped, 1 xfailed; review: no code problem.
 
-### [ ] 3. `CohortProbabilityModel` on a classifier (no calibration yet)
+### [x] 3. `CohortProbabilityModel` on a classifier (no calibration yet)
 - Rewrite `modeling/cohort_probability.py`: `Classifier`, `to_categorical`,
   `fit`, `predict` (P5–P8, P13); delete `predict_logits`.
 - Tests (`test_modeling_cohort_probability.py`, rewritten): `to_categorical`
@@ -505,10 +516,154 @@ Each ends at a stop (§3). "Verify" lists what the user can check.
   buildings, not the replicated rows (a standardizing transformer: compare its
   fitted mean with the buildings'); refit equals fresh fit; contract `EXAMPLES`.
 - **Verify:** `COHORT_LOG_LOSS` of the new model on the simulated split vs the
-  torch Dirichlet build on the same split (a probe; both importable until
-  sub-task 5): report both numbers.
+  torch Dirichlet build on the same split: the torch number measured before the
+  first edit (the rewrite removes the torch class; record below).
+- **Record (2026-10-07):** baseline 1247 passed, 1 skipped, 1 xfailed. **Order (the user,
+  handoff §5's open question):** the rewrite changes the constructor (`estimator` required;
+  `solver`, `l2_penalty`, `max_iter`, `tol` gone), so every user of the torch class broke, not
+  only `predict_logits`'s; options shown (delete the dependents now; keep the torch class alive
+  under another name until sub-task 5; merge sub-tasks 3 and 5). Chosen: delete the dependents
+  now: `modeling/independent_total_probability.py`, `modeling/calibration.py`, their unit
+  tests, the `predict_logits` test of `test_modeling_feature_transformer.py`, the two names in
+  `modeling/__init__.py` and the contract `EXAMPLES`. `total_children.py` and `optimization.py`
+  (which never use the class) stay until sub-task 5. The torch baseline was measured first
+  (§6: 1.0819; the new model 1.0783 on the same splits, per seed identical to the prototype).
+  **Counts are not validated in the model (the user):** data values are validated where the
+  data is prepared (`preprocessing.py`, as `ExposureTransformer`); not in
+  `TotalTimesProbabilityModel` either, since the probability model is also fitted and tuned
+  alone and Model 1's cohorts take the same `y`. The docstring states the precondition
+  (non-negative, finite); measured why it matters (§6: a negative weight fits silently in LR,
+  HGB, LGBM). Follow-up in §10. **Column order:** `validate_data` kept at fit and predict, as in
+  the torch build: `LGBMClassifier` accepts reordered columns silently (§6). The same gap in
+  `CountModel` is a §10 follow-up. `y` must be a DataFrame (P1): the torch build's numbered
+  cohorts from an array are dropped. Files: `cohort_probability.py` rewritten (`Classifier`,
+  `to_categorical`, `fit`, `predict`); `Classifier` exported; the contract example on
+  `LogisticRegression()` (buildings without children allowed now); the feature-transformer
+  entry on `LogisticRegression()` and its fixture's `+ 1` child per building removed (only the
+  torch model needed it). Tests (`test_modeling_cohort_probability.py`, 19 after the review):
+  `to_categorical`'s cells; weighted = per child (2.8e-16); names like `y`, index like `X`;
+  five classifier kinds mapped by name (OvR with metadata routing); unobserved cohort; a building
+  without children; exposure ignored; the transformer fitted on the buildings; reordered columns
+  with `LGBMClassifier`; a failed refit (a NaN column) keeps the previous fit; the template stays
+  unfitted; beats the marginal shares. ruff, format, mypy (22 and 11 files) clean; changed tests
+  44 passed under `-W error`. Mutations (scratchpad `mutate.py`, md5-restored), all 11 caught:
+  labels out of step with positions; `sample_weight` dropped; weight = count/total; columns by
+  position; the transformer fitted on the replicated rows; `validate_data` dropped at predict;
+  the unobserved check dropped; state set before the classifier's fit; `clone` dropped; zero
+  cells kept; `X`'s index dropped.
+  **Review** (independent subagent; each finding reproduced before the fix): (1) a bug: the
+  feature names were recorded (`validate_data`, which can raise: column names of mixed types,
+  which LightGBM fits) after the state was set, so a failed refit left the new classifier beside
+  the old names; now recorded right after the classifier's fit, before the state.
+  (2) A bug: a `y` shorter than `X` fitted silently on `X`'s first rows (the rows are taken from
+  `y`'s cells); `check_consistent_length(X, y)` added. (3) A test gap: a transformer assigned
+  before the classifier's fit went unseen; a test with a classifier failing at `fit` added.
+  (4) My mistake: removing the `predict_logits` test also removed the generic
+  `test_predict_follows_the_transformer_fitted_at_fit` after it (a truncation); restored.
+  (5) Docstring: the count precondition no longer reads as if validated somewhere. New tests: a
+  refit rejected for its feature names; the transformer kept after a failed refit; `X` and `y`
+  of different lengths. Mutations re-run, all 14 caught (the 11 above, plus: the length check
+  dropped; the names recorded after the state; the transformer assigned before the classifier's
+  fit). ruff, format, mypy clean; changed tests 50 passed under `-W error`. **Suite 1214 passed,
+  1 skipped, 1 xfailed** (1247 less the deleted torch tests, plus the new ones).
+
+- **Revision 1 (2026-10-07, before the commit; the user):** "check if the estimator has a native
+  categorical loss, or we need to convert a binary classifier into multiclass (one-vs-rest)?";
+  "set two categorical representations... check both: replicated (one child per row) and weighted
+  replication (one row per age group in a building, with the sample weight)"; "`to_categorical` is
+  misleading: `multinomial_to_categorical`". Probes (§6): no detection is possible (the tag says
+  `multi_class=True` everywhere) or needed (only threshold meta-estimators and LightGBM's binary
+  objectives cannot fit 3 classes, and they raise); but LightGBM's `"multiclassova"` returns rows
+  not summing to 1, silently. Decided (the user): **`representation: Representation =
+  "weighted"`** (`Literal["weighted", "replicated"]`, exported); **no one-vs-rest wrap** (the caller
+  wraps); **`predict` raises if a row does not sum to 1** (atol 1e-6; the user asked whether both
+  boosting libraries have a valid softmax objective: yes, LightGBM `"multiclass"`, CatBoost
+  `"MultiClass"`, their defaults above 2 classes). Code: `multinomial_to_categorical(y,
+  representation)` with named cases (else raises); `fit` names both cases and passes no keyword
+  under `"replicated"`, so classifiers without `sample_weight` fit; the row-sum check before the
+  mapping. Tests (+8 functions, 3 parametrized over both representations; 50 → 63 changed tests):
+  the replicated rows; an unknown representation; the two representations fit the same LR; KNN and
+  OvR without routing under `"replicated"`; `"multiclassova"` raises. Mutations, all 19 caught: the
+  14 earlier ones (re-pointed at the new code) and the replicated rows not repeated,
+  `sample_weight` passed under `"replicated"`, the unknown representation not raised, the two cases
+  swapped, the row-sum check removed. ruff, format, mypy (22 and 11 files) clean.
+  Review: no correctness bug; two wordings fixed: the replicated rows need a numpy signed integer
+  dtype (`np.repeat` also rejects `uint64` and pandas' nullable `Int64`, loudly), and the row-sum
+  error shows the row sums' range, so NaN probabilities are not mistaken for a one-vs-all
+  objective. Suite **1227 passed, 1 skipped, 1 xfailed**.
+
+- **Revision 2 (2026-10-07, before the commit; the user's review of the code, seven questions):**
+  (1) "do all models have `sample_weight`?": no (§6: KNN, LDA, QDA, Gaussian process, nearest
+  centroid, label propagation, `OneVsRestClassifier` without routing; `sample_weight=None` fails
+  for them too), so the weighted case passes the counts and the per-child case no keyword.
+  (2) The user renamed the variables in `multinomial_to_categorical`; kept with general names (not
+  "building": the granularity may change): `sample_positions, cohort_positions` (scikit-learn's
+  "sample"; the repo's "positions"); the comments that named other variables removed. (3) **Renamed**
+  (the user): `Representation` → `ReplicationType`, `representation` → `replication`, `"replicated"`
+  → `"per_child"`. (4) `predict` uses `X.index` after the transform (the transformer keeps the
+  index, measured); the `getattr` served only a numpy `X`. (5) The unobserved-cohort and row-sum
+  checks are private static methods (`_check_every_cohort_observed`, `_check_rows_sum_to_one`), as
+  `_check_exposure`. (6) "Use best practice; remove checks that are not necessary": `validate_data`
+  stays (scikit-learn's API records and checks the feature names; it guards LightGBM without a
+  transformer, measured; redundant with one: identical predictions); every other check guards a
+  silent or late failure, none removed. (7) `cohorts_` stays: `y`'s order, lost by the sorted
+  `classes_`; `predict` selects by it. No behavior change; the unknown-value test now uses the stale
+  `"replicated"`. All 19 mutations re-pointed and caught; ruff, format, mypy clean; changed tests 64
+  passed under `-W error`. Review: no behavior change; two points fixed: the per-child dtype rule
+  (any integer dtype numpy casts safely to `int64`, e.g. `int32`, `uint8`, `bool`; not floats,
+  `uint64` or pandas' `Int64`), and the index test now also runs with a feature transformer (the
+  index is read after the transform). Suite **1228 passed, 1 skipped, 1 xfailed**.
+
+- **Revision 3 (2026-10-07, before the commit; the user):** "why does `multinomial_to_categorical`
+  return labels? we are interested in the label index, not the value"; "what if an estimator with no
+  sample weights uses `"weighted"`?"; "the difference between the classes order and `cohorts_`?".
+  (1) **Positions as labels** (the user's choice): names are sorted by every classifier into
+  `classes_` (`['el', 'hs', 'kg']` for `['kg', 'el', 'hs']`), which `predict` had to map back, and
+  mixed-type names fail sklearn's sort (`TypeError`); positions give `classes_ = [0, 1, 2]` (LR,
+  HGB, LGBM measured), `y`'s order, so `predict` is `DataFrame(probabilities, columns=cohorts_,
+  index=X.index)`. (2) **Left to the library** (the user's choice): KNN, LDA, Gaussian process raise
+  `TypeError`, OvR without routing and `Pipeline` raise `ValueError`, `BaggingClassifier` uses the
+  weights as sampling probabilities (P(class 0) 0.45 → 0.84); an up-front `has_fit_parameter` check
+  would refuse OvR with routing; one docstring line. (3) `classes_` is the classifier's sorted labels,
+  `cohorts_` is `y`'s order: with positions they coincide. Tests: expected labels as positions; the
+  order tests assert `classes_ == [0, 1, 2]` and compare with `predict_proba` directly; new: mixed-type
+  cohort names fit. Mutations, all 19 caught (new: the names as labels again, 17 tests fail; the
+  by-position-mapping mutation is gone with the mapping). ruff, format, mypy clean; changed tests 65
+  passed under `-W error`. **Review:** `classes_ == 0..K−1` (int64, `y`'s order) holds for LR, HGB,
+  LGBM, RF, OvR (with and without routing), KNN, `CalibratedClassifierCV` (`ensemble` False and True),
+  K = 2 too, and integer names colliding with positions (`[2, 0, 1]`). Fixed: (a) a classifier that
+  keeps its own labels (`FrozenEstimator`, measured: its `['x', 'y', 'z']` silently named `a, b, c`)
+  now raises: `_check_classes_are_cohort_positions` after the fit; (b) the observed check works by
+  position (`(y.to_numpy() > 0).any(axis=0)`), as duplicate names made the by-name lookup fail with
+  pandas' "truth value is ambiguous"; (c) a test with unsorted integer names (`[2, 0, 1]`), the one
+  case where a mapping by name would permute silently. Left: MultiIndex cohort names come back as
+  tuples (`list(y.columns)`); the per-child dtype rule is the library's. Mutations, all 21 caught
+  (+ the classes check removed, the observed check by name); changed tests 68. Suite **1232 passed, 1 skipped, 1 xfailed**.
+
+- **Revision 4 (2026-10-07, before the commit; the user):** "why do we need
+  `_check_classes_are_cohort_positions`?", "how can cohort names be duplicated?", "is `validate_data`
+  essential?", "is `check_consistent_length` safe to remove?"; the rule: remove what is not essential.
+  (1) **Classes check removed:** the classifier is always a clone fitted on the positions, so
+  `classes_` are `0..K−1`; the check only caught a `FrozenEstimator`, a misuse P9 already rules out
+  (revision 3's "silent misassignment" overstated it). (2) Duplicate names cannot arise here (`y` is
+  `table[COHORTS]`); the observed check stays position-based as code, its duplicate comment and test
+  removed. (3) **`validate_data` removed** (both calls): it mattered only without a transformer and with
+  LightGBM; nothing reads `feature_names_in_`; the gap joins `CountModel`'s in §10. (4)
+  **`check_consistent_length` kept:** `CountModel` gets the length check from its regressor; here
+  the classifier's rows come from `y`'s cells, so a shorter `y` fits silently (measured). Tests
+  removed: frozen classifier, duplicate names, reordered columns, refit rejected for mixed-type
+  names; the failed-refit test narrowed (a failing fit with renamed cohorts leaves `predict`
+  unchanged). Mutations, all 17 caught (new: the state set before the classifier's fit); ruff,
+  format, mypy clean; changed tests 64 passed under `-W error`.
 
 ### [ ] 4. Calibration
+- *From sub-task 3's review:* with `CalibratedClassifierCV(ensemble=False)` and grouped folds, a
+  training fold lacking a cohort raises for an estimator with `decision_function` (LR, LGBM):
+  "Only 2 class/es in training fold, but 3 in overall dataset" (loud; P10's risk). The groups are
+  the sample positions (repeated by count under `"per_child"`); `cv=int` would be stratified, not
+  grouped, and leak across samples.
+- *Since sub-task 3's revision 1:* under `replication="per_child"` the calibrated
+  estimator is fitted without `sample_weight`; the grouped folds still use the row positions.
 - `calibration_method`, `calibration_cv`, the `CalibratedClassifierCV` wrap
   with grouped splits (P9–P11). Invalid method names: let
   `CalibratedClassifierCV` raise (it validates `method`), unless it is silent.
@@ -523,9 +678,9 @@ Each ends at a stop (§3). "Verify" lists what the user can check.
   a table in the plan doc; expected: temperature ≈ none ± noise, isotonic worse.
 
 ### [ ] 5. `TotalTimesProbabilityModel`, deletions, exports
-- `modeling/total_times_probability.py` (P12); delete
-  `independent_total_probability.py`, `total_children.py`, `calibration.py`,
-  `optimization.py`, their tests and `tests/validation/test_total_children.py`;
+- `modeling/total_times_probability.py` (P12); delete `total_children.py`,
+  `optimization.py`, their tests and `tests/validation/test_total_children.py`
+  (`independent_total_probability.py` and `calibration.py` went in sub-task 3);
   update `modeling/__init__.py`, the contract test's `EXAMPLES`,
   `test_modeling_feature_transformer.py`;
   `grep -rn "TotalChildrenModel\|TemperatureCalibrator\|IndependentTotalProbabilityModel\|single_threaded_torch\|modeling.optimization" src tests --include='*.py'`
@@ -590,8 +745,13 @@ part also in `DIRECT_COHORT_MODEL.md` §0:
 4. **Data replication.** Multinomial → categorical: `Mult(Y_b, p_b)` ∝
    `Π_k p_{b,k}^{C_{b,k}}`, so one weighted row per positive cell with weight
    `C_{b,k}` is the same log-likelihood as one row per child; the 1.8e-15
-   check; why the weight is the count and not `count / total`; why one
-   representation suffices (P8's table); where the conversion is done and why
+   check; why the weight is the count and not `count / total`; the two
+   replications (`replication="weighted"` / `"per_child"`, P6): equal for a
+   weighted-likelihood estimator, different procedures for trees (rows counted by
+   `min_samples_leaf`, the bootstrap), the revision-1 table, the cost (rows ×
+   children per building), the integer counts the replicated rows need, and the
+   classifiers without `sample_weight` that only `"per_child"` admits; where the
+   conversion (`multinomial_to_categorical`) is done and why
    (the transformer on buildings, grouped folds, the contract); a building
    without children; an unobserved cohort.
 5. **Bagging and bootstrap under replication.** How a building's cohorts are
@@ -619,7 +779,15 @@ part also in `DIRECT_COHORT_MODEL.md` §0:
    here); every method returns rows summing to 1; the measured table from
    sub-task 4; `C` and the weights are per child.
 7. **Classifiers.** The `Classifier` protocol; multinomial vs OvR; `classes_`
-   mapping; `OneVsRestClassifier` and `sample_weight` through metadata routing.
+   mapping; `OneVsRestClassifier` and `sample_weight` through metadata routing
+   (none needed under `"per_child"`). The survey of §6: which classifiers fit a
+   softmax loss (LR, HGB, `GradientBoosting`, MLP, LightGBM `"multiclass"`,
+   CatBoost `"MultiClass"`, XGBoost `multi:softprob`), which are multiclass by
+   construction (trees, naive Bayes, neighbors, LDA/QDA), which reduce to binary
+   internally (`SGDClassifier`, `GaussianProcessClassifier` OvR; `SVC` OvO), which
+   are binary-only (the threshold meta-estimators; LightGBM `"binary"`); why the
+   model does not wrap (the tag cannot tell); and the row-sum rule (`predict`
+   raises; LightGBM `"multiclassova"`).
 8. **API, data flow, rules, errors** tables as the present §0.2–§0.5, updated.
 
 ## 10. Risks
@@ -660,10 +828,21 @@ part also in `DIRECT_COHORT_MODEL.md` §0:
   set (sub-task 1 record).
 
 - **Sub-task 3 removes `CohortProbabilityModel.predict_logits`** (found at the end of the
-  first implementing session): the torch `IndependentTotalProbabilityModel`, the
-  `TemperatureCalibrator` tests and a feature-transformer test still call it, and sub-task 3's
-  probe against the torch Dirichlet build assumed it stays importable until sub-task 5. **Open:**
-  settle the order with the user at sub-task 3's planning (evidence and options in the handoff §5).
+  first implementing session). **Resolved in sub-task 3:** its dependents were deleted there,
+  after the torch baseline was measured (sub-task 3 record).
+
+- **Follow-up: a counts validator in `preprocessing.py`** (found in sub-task 3). Negative or
+  NaN counts become negative or NaN weights in `CohortProbabilityModel`, which most classifiers
+  fit silently (§6). By the repo's rule the values are validated where the data is prepared,
+  like `ExposureTransformer`, once on the table before splitting; it serves every model. Not
+  in this PR's sub-tasks; the user decides when.
+- **Follow-up: `CountModel` and `CohortProbabilityModel` accept reordered columns silently** with
+  an estimator that does not check feature names (LightGBM; `CountModel` measured: 2.41
+  difference), but only **without a feature transformer**: the transformer selects columns by name,
+  and this repo's flow always uses one. `CohortProbabilityModel` checked it with `validate_data`
+  until sub-task 3's revision 4, which removed it as not essential (the user). If the design-matrix
+  path ever matters, one check in `BaseAgeGroupModel._fit_features` / `_transform_features` closes it
+  for every model.
 
 ## 11. Verification
 

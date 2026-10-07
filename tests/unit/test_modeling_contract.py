@@ -24,6 +24,7 @@ import pandas as pd
 import pytest
 from lightgbm import LGBMRegressor
 from sklearn.base import clone
+from sklearn.linear_model import LogisticRegression
 from sklearn.utils.estimator_checks import (
     check_do_not_raise_errors_in_init_or_set_params,
     check_no_attributes_set_in_init,
@@ -42,7 +43,6 @@ from age_group_prediction.modeling import (
     CohortProbabilityModel,
     CountModel,
     IndependentCohortModels,
-    IndependentTotalProbabilityModel,
     TotalChildrenModel,
 )
 
@@ -114,39 +114,15 @@ def _total_children_example() -> Example:
 
 
 def _cohort_probability_example() -> Example:
-    # Every building needs a child: the shares are the observation.
     rng = np.random.default_rng(0)
     X = pd.DataFrame({"x": rng.normal(size=200)})
     y = pd.DataFrame(
         {
-            "a": 1 + rng.poisson(np.exp(1 + 0.5 * X["x"])),
+            "a": rng.poisson(np.exp(1 + 0.5 * X["x"])),
             "b": rng.poisson(np.exp(0.5 - 0.3 * X["x"])),
         }
     )
-    return CohortProbabilityModel(), X, y
-
-
-def _independent_total_probability_example() -> Example:
-    # No exposure (the refit test calls fit(X, y)) and no calibrator (clone
-    # would drop its fit); every building has a child.
-    rng = np.random.default_rng(0)
-    X = pd.DataFrame({"x": rng.normal(size=200)})
-    y = pd.DataFrame(
-        {
-            "a": 1 + rng.poisson(np.exp(1 + 0.5 * X["x"])),
-            "b": rng.poisson(np.exp(0.5 - 0.3 * X["x"])),
-        }
-    )
-    features = FeatureTransformer(
-        (ColumnPlan(name="x", columns=("x",), transforms=(Center(),)),)
-    )
-    model = IndependentTotalProbabilityModel(
-        total_children_model=TotalChildrenModel(
-            use_exposure=False, feature_transformer=features
-        ),
-        cohort_probability_model=CohortProbabilityModel(feature_transformer=features),
-    )
-    return model, X, y
+    return CohortProbabilityModel(estimator=LogisticRegression()), X, y
 
 
 # Factories, so every test gets its own model and data and none is built at import.
@@ -155,7 +131,6 @@ EXAMPLES: dict[type[BaseAgeGroupModel], Callable[[], Example]] = {
     IndependentCohortModels: _independent_cohorts_example,
     TotalChildrenModel: _total_children_example,
     CohortProbabilityModel: _cohort_probability_example,
-    IndependentTotalProbabilityModel: _independent_total_probability_example,
 }
 
 CHECKS: list[Callable[[str, BaseAgeGroupModel], None]] = [
