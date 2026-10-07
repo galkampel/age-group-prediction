@@ -659,6 +659,12 @@ part also in `DIRECT_COHORT_MODEL.md` §0:
   `probe_end_to_end.py` and `probe_tuning_plan_s5.py` also name `DirectCohortModel`. **Decided in sub-task 1:** the folder is deleted and `testpaths = ["tests"]`
   set (sub-task 1 record).
 
+- **Sub-task 3 removes `CohortProbabilityModel.predict_logits`** (found at the end of the
+  first implementing session): the torch `IndependentTotalProbabilityModel`, the
+  `TemperatureCalibrator` tests and a feature-transformer test still call it, and sub-task 3's
+  probe against the torch Dirichlet build assumed it stays importable until sub-task 5. **Open:**
+  settle the order with the user at sub-task 3's planning (evidence and options in the handoff §5).
+
 ## 11. Verification
 
 - Per sub-task: the changed tests with `-W error`, the mutation checks, the
