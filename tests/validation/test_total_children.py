@@ -7,12 +7,11 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 import pytest
+import statsmodels.api as sm
 
 from age_group_prediction.modeling import TotalChildrenModel
 from age_group_prediction.preprocessing import ExposureTransformer, ShareTransformer
 from student_simulator import StudentPopulationSimulator, load_simulation_config
-
-sm = pytest.importorskip("statsmodels.api")
 
 FEATURES = [
     "ses",

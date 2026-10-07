@@ -28,6 +28,7 @@ dependencies = [
     { name = "scikit-learn" },
     { name = "scipy" },
     { name = "seaborn" },
+    { name = "statsmodels" },
     { name = "torch" },
 ]
 
@@ -46,9 +47,6 @@ test = [
 tracking = [
     { name = "mlflow" },
 ]
-validation = [
-    { name = "statsmodels" },
-]
 
 [package.metadata]
 requires-dist = [
@@ -62,6 +60,7 @@ requires-dist = [
     { name = "scikit-learn", specifier = ">=1.9.0" },
     { name = "scipy", specifier = ">=1.18.0" },
     { name = "seaborn", specifier = ">=0.13.2" },
+    { name = "statsmodels", specifier = ">=0.14.5" },
     { name = "torch", specifier = ">=2.8,<3" },
 ]
 
@@ -74,7 +73,6 @@ notebook = [
 ]
 test = [{ name = "pytest", specifier = ">=9.1.1" }]
 tracking = [{ name = "mlflow", specifier = ">=3.16,<4" }]
-validation = [{ name = "statsmodels", specifier = ">=0.14.5" }]
 
 [[package]]
 name = "aiohappyeyeballs"

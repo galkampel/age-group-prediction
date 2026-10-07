@@ -36,8 +36,8 @@ Model 2 (`modeling/independent_total_probability.py`, PR #11) predicts each coho
 |---|---|
 | Branch | Planning happened on `feat/hyperparameter-tuning` at `c966edb` (clean tree except the two new docs). Sub-task 0 creates `feat/total-times-probability-model` from it and a draft PR into it, like PRs #10–#12 |
 | Uncommitted | The plan and this handoff were committed with sub-task 0 (`02b7725`); each later sub-task is committed by the user at its stop |
-| Suite | after sub-task 1 (2026-10-07): **1230 passed, 1 skipped, 1 xfailed** (`uv run pytest -m "not slow"`; `testpaths = ["tests"]`) |
-| Next | Sub-tasks 0–1 are done (plan §8 records). **Sub-task 2** (`NegativeBinomialRegressor` and `CountModel`'s offset branch) next. Then 3–7, one per stop |
+| Suite | after sub-task 2 (2026-10-07): **1247 passed, 1 skipped, 1 xfailed** (`uv run pytest -m "not slow"`) |
+| Next | Sub-tasks 0–2 are done (plan §8 records). **Sub-task 3** (`CohortProbabilityModel` on a classifier) next. Then 4–7, one per stop |
 
 ## 3. Decisions the user made during planning (settled; do not reopen)
 
@@ -79,9 +79,7 @@ evidence, or drop it. Probes: `PYTHONPATH=src .venv/bin/python -c "..."` (do not
 
 ## 5. Files you will touch first
 
-Sub-tasks 0–1 are done (the rename: `modeling/count_model.py`, `CountModel`). Sub-task 2:
-- `pyproject.toml` (`statsmodels>=0.14.5` into `dependencies`).
-- New `src/age_group_prediction/modeling/negative_binomial.py`; `modeling/count_model.py`
-  (`OffsetRegressor`, the `has_fit_parameter` branch); `modeling/__init__.py`.
-- New `tests/unit/test_modeling_negative_binomial.py`; `tests/unit/test_modeling_count_model.py`.
+Sub-tasks 0–2 are done (`CountModel`, its offset branch, `NegativeBinomialRegressor`). Sub-task 3:
+- `src/age_group_prediction/modeling/cohort_probability.py` (rewritten on a classifier).
+- `tests/unit/test_modeling_cohort_probability.py` (rewritten); the contract test's `EXAMPLES`.
 - Memory to update at the end: `multi-cohort-models-plan.md` in the Claude memory directory.

@@ -6,11 +6,12 @@ conversation. This file is the source of truth: update its status line and the
 sub-task checkboxes in §8 as work finishes. Orientation for a new session:
 [TOTAL_TIMES_PROBABILITY_MODEL_HANDOFF.md](TOTAL_TIMES_PROBABILITY_MODEL_HANDOFF.md).
 
-**Status (2026-10-07):** approved by the user. **Sub-tasks 0–1 are done** (branch
-`feat/total-times-probability-model`; `DirectCohortModel` is now `CountModel`;
-non-slow suite 1230 passed, 1 skipped, 1 xfailed; records in §8). Sub-task 2
-(`NegativeBinomialRegressor`) is next. During planning the user revised it twice: NB2 goes through
-`CountModel` (the renamed `DirectCohortModel`) as an offset estimator; a
+**Status (2026-10-07):** approved by the user. **Sub-tasks 0–2 are done** (branch
+`feat/total-times-probability-model`; `DirectCohortModel` is now `CountModel`, with
+an exposure branch and NB2 as `NegativeBinomialRegressor`; non-slow suite 1247 passed,
+1 skipped, 1 xfailed; records in §8). Sub-task 3 (`CohortProbabilityModel` on a
+classifier) is next. During planning the user revised it twice: NB2 goes through
+`CountModel` (the renamed `DirectCohortModel`) as an estimator taking the exposure (an offset in the first plan; raw `exposure` since sub-task 2); a
 `replication` setting for row-resampling classifiers was considered and dropped
 on measurement (P6, P8).
 
@@ -115,20 +116,20 @@ them. In short:
 | `modeling/direct_cohort.py` | `DirectCohortModel(estimator: Regressor, use_exposure, feature_transformer)`; exposure as the weighted rate (`y / exposure`, `sample_weight=exposure`, `predict × exposure`) | **renamed `modeling/count_model.py`, `CountModel`**; an estimator whose `fit` takes `offset` gets `log(exposure)` as the offset instead of the rate (P3) |
 | `modeling/independent_cohorts.py` | Model 1, `IndependentCohortModels` (and its type alias `CohortModels`) | unchanged (it never names `DirectCohortModel`; only its test does) |
 | `modeling/total_children.py` | torch Poisson/NB2 GLM | **deleted** |
-| `modeling/negative_binomial.py` | — | **new:** `NegativeBinomialRegressor`, a scikit-learn regressor around statsmodels NB2 with `fit(X, y, offset=None)` and `predict(X, offset=None)` |
+| `modeling/negative_binomial.py` | — | **new:** `NegativeBinomialRegressor`, a scikit-learn regressor around statsmodels NB2 with `fit(X, y, exposure=None)` and `predict(X, exposure=None)` |
 | `modeling/cohort_probability.py` | torch Dirichlet regression, `predict_logits` | **rewritten:** a classifier on the categorical representation (one weighted row per building and cohort), optional `CalibratedClassifierCV` |
 | `modeling/calibration.py` | `TemperatureCalibrator` | **deleted** (`CalibratedClassifierCV(method="temperature")` replaces it) |
 | `modeling/optimization.py` | `Minimizer`, `Solver`, `single_threaded_torch` | **deleted** (only the two torch models use it; the old stack's `models/count_regression.py` has its own) |
 | `modeling/independent_total_probability.py` | `IndependentTotalProbabilityModel(total_children_model, cohort_probability_model, temperature_calibrator)` | **renamed** `modeling/total_times_probability.py`, `TotalTimesProbabilityModel(total_model, probability_model)` |
-| `modeling/__init__.py` | exports the above | `CountModel`, `Regressor`, `OffsetRegressor`, `NegativeBinomialRegressor`, `Classifier`, `CalibrationMethod`, `CohortProbabilityModel`, `TotalTimesProbabilityModel`, Model 1's names; gone: `DirectCohortModel`, `Solver`, `TemperatureCalibrator`, `TotalChildrenModel`, `IndependentTotalProbabilityModel` |
+| `modeling/__init__.py` | exports the above | `CountModel`, `Regressor`, `ExposureRegressor`, `NegativeBinomialRegressor`, `Classifier`, `CalibrationMethod`, `CohortProbabilityModel`, `TotalTimesProbabilityModel`, Model 1's names; gone: `DirectCohortModel`, `Solver`, `TemperatureCalibrator`, `TotalChildrenModel`, `IndependentTotalProbabilityModel` |
 | `pyproject.toml` | `statsmodels` only in the `validation` group | `statsmodels>=0.14.5` in `dependencies` |
 | `tests/unit/test_modeling_total_children.py`, `test_modeling_calibration.py`, `test_modeling_optimization.py`, `tests/validation/test_total_children.py` | tests of the deleted code | **deleted** |
-| `tests/unit/test_modeling_direct_cohort.py` | `DirectCohortModel` | renamed `test_modeling_count_model.py`; the offset branch added |
+| `tests/unit/test_modeling_direct_cohort.py` | `DirectCohortModel` | renamed `test_modeling_count_model.py`; the exposure branch added |
 | `tests/unit/test_modeling_cohort_probability.py`, `test_modeling_independent_total_probability.py` | tests of the torch builds | **rewritten** (`test_modeling_total_times_probability.py`) |
 | `tests/unit/test_modeling_negative_binomial.py` | — | **new** |
 | `tests/unit/test_modeling_contract.py` | `EXAMPLES` per concrete model (line 155) | entries renamed/added; a model without an example fails `test_every_shipped_model_has_an_example` |
 | `tests/unit/test_modeling_feature_transformer.py`, `test_modeling_independent_cohorts.py`, `tests/unit/test_hyperparameter_tuning_evaluator.py` (builds a `DirectCohortModel`: lines 40, 296, 435) | use the old names | updated |
-| `docs/DIRECT_COHORT_MODEL.md` §0 | `DirectCohortModel` | file name kept; §0 says the class is `CountModel`, used for a cohort and for the total, with the offset rule |
+| `docs/DIRECT_COHORT_MODEL.md` §0 | `DirectCohortModel` | file name kept; §0 says the class is `CountModel`, used for a cohort and for the total, with the exposure rule |
 | `docs/INDEPENDENT_TOTAL_PROBABILITY_MODEL.md` §0 | the torch build | §0 rewritten (the file keeps §1–§12 for the old stack until roadmap step 5 deletes it) |
 | `docs/FEATURE_TRANSFORMATIONS.md` §8.1–8.3, `docs/MODULE_REFERENCE.md`, `docs/README.md`, `docs/MODEL_REIMPLEMENTATION_PLAN.md` §5, `docs/HYPERPARAMETER_TUNING_PLAN.md`, `docs/DIRECT_COHORT_GENERALIZATION_PLAN.md` (a top note only) | name the old classes | updated |
 
@@ -150,8 +151,8 @@ untouched (deleted by roadmap step 5).
 |---|---|---|
 | P1 | **Inputs:** `X` raw table, `y` DataFrame of cohort counts (≥ 2 columns), `exposure` optional raw. Unchanged base contract | The user's specification; nothing else in the repo changes |
 | P2 | **`DirectCohortModel` is renamed `CountModel`** (`modeling/count_model.py`): a regression of one count column, a cohort's or the total, with any estimator and an optional exposure. **It is Model 2's total model**; `TotalChildrenModel` is deleted | The user: "this model and the direct model should be similar, can combine the two", and asked whether to rename once it serves the total too; `CountModel` chosen over `CountRegressionModel`. `DirectCohortModel` already gives Poisson and Gaussian losses with and without the exposure (the weighted rate is the Poisson offset model exactly; measured again, coefficient difference 2e-13). Its torch Poisson with `l2_penalty` is `PoissonRegressor(alpha=…)` (pinned to 3e-7 in PR #11's N6). "Model A" stays the docs' name for the direct approach |
-| P3 | **`CountModel` takes two kinds of estimator and tells them apart with sklearn's `has_fit_parameter(estimator, "offset")`.** An estimator whose `fit` has an `offset` parameter (`OffsetRegressor` protocol: `fit(X, y, offset=None)`, `predict(X, offset=None)`) is fitted with `offset=log(exposure)` and predicts with the same offset; any other (`Regressor`, as today) gets the weighted rate. Without `use_exposure` both are fitted plainly. The fitted copy decides at `predict` (the same test on `estimator_`) | The user: "DirectCohortModel should be able to use NB2 as well: identify the NB2 model and treat it differently". **Why not the rate for NB2:** the weighted-rate form is exact for Poisson only; for NB2 it fits a different model (measured: coefficients differ by 0.021), and statsmodels' NB accepts the non-integer `y / exposure` silently. **Why a signature test, not `isinstance`:** it is sklearn's own idiom for `sample_weight` (`has_fit_parameter`), it names the capability rather than one class, so any future offset estimator (a statsmodels GLM wrapper, say) gets the same treatment, and it is measured to say `False` for `PoissonRegressor` and `LGBMRegressor`. The offset is `log(exposure)`, the GLM offset with coefficient 1, so `predict` needs no multiplication |
-| P4 | **NB2 is `NegativeBinomialRegressor`** in `modeling/negative_binomial.py`: a scikit-learn regressor (`BaseEstimator`, `RegressorMixin`) around statsmodels' `discrete_model.NegativeBinomial(loglike_method="nb2", offset=…)`, `fit(method="bfgs", maxiter=max_iter, disp=0)`; fitted `intercept_`, `coef_`, `dispersion_` (α), `n_features_in_`/`feature_names_in_` (`validate_data`); `predict(X, offset=None)` = `exp(offset + b + Xβ)` (statsmodels' own `predict(offset=)`; measured equal to its exposure form to 1e-14). Unpenalized; `max_iter=500` is its one setting. A fit that does not converge raises. statsmodels moves to the main dependencies | The user asked for a scikit-learn wrapper of statsmodels' NB2 with an optional exposure offset and no torch. As a plain regressor it plugs into `CountModel` (P3), so Model 1's cohorts and Model 2's total get NB2 the same way. **"Can I predict using the exposure component?"** Yes: `results.predict(exog, offset=log e)` (equivalently `exposure=e`) returns `e · exp(b + Xβ)`. **Alternatives** (table in §9): statsmodels `GLM(family=NegativeBinomial(alpha))` (α must be fixed; L2 via `fit_regularized(L1_wt=0)`: a penalized variant for later if the smoke run needs one), the current torch objective (dropped: no torch), `glum` (not installed; θ fixed), LightGBM/XGBoost (no NB objective; a custom objective would re-create the torch code), scikit-learn (none: `TweedieRegressor` is not NB) |
+| P3 | **`CountModel` takes two kinds of estimator and tells them apart with sklearn's `has_fit_parameter(estimator, "exposure")`.** An estimator whose `fit` has an `exposure` parameter (`ExposureRegressor` protocol: `fit(X, y, exposure=None)`, `predict(X, exposure=None)`) is given the raw exposure at `fit` and `predict`; any other (`Regressor`, as today) gets the weighted rate. Without `use_exposure` both are fitted plainly. The fitted copy decides at `predict` (the same test on `estimator_`). *Revised by the user in sub-task 2 (2026-10-07): the argument is statsmodels' own raw `exposure`, not `offset=log(exposure)`* | The user: "DirectCohortModel should be able to use NB2 as well: identify the NB2 model and treat it differently". **Why not the rate for NB2:** the weighted-rate form is exact for Poisson only; for NB2 it fits a different model (measured: coefficients differ by 0.021), and statsmodels' NB accepts the non-integer `y / exposure` silently. **Why a signature test, not `isinstance`:** it is sklearn's own idiom for `sample_weight` (`has_fit_parameter`), it names the capability rather than one class, so any future estimator taking the exposure gets the same treatment, and it is measured to say `False` for `PoissonRegressor`, `LGBMRegressor`, `LinearRegression` and HGB. **Why the raw exposure, not an offset** (the user): it is what statsmodels calls `exposure` (the log is taken inside, coefficient 1) and what every model here takes ("raw, not its log"); measured identical to `offset=log(exposure)` (difference 0.0) |
+| P4 | **NB2 is `NegativeBinomialRegressor`** in `modeling/negative_binomial.py`: a scikit-learn regressor (`BaseEstimator`, `RegressorMixin`) around statsmodels' `discrete_model.NegativeBinomial(loglike_method="nb2", exposure=…)`, `fit(method="bfgs", maxiter=max_iter, disp=0)` (sub-task 2 adds the BFGS preliminary fit, `has_constant="add"`, `skip_hessian=True` and the warning handling: §8 record); fitted `intercept_`, `coef_`, `dispersion_` (α), `n_features_in_`/`feature_names_in_` (`validate_data`); `predict(X, exposure=None)` = `exposure · exp(b + Xβ)` from the stored coefficients (what statsmodels' `predict(exposure=)` computes), the exposure's shape checked. **Exposure only, no `offset`** (the user asked whether to allow both): no model here has a second fixed log-scale term, and two ways of giving the same thing add up silently if both are passed; an `offset` is one argument to add if ever needed. Unpenalized; `max_iter=500` is its one setting. A fit that does not converge raises. statsmodels moves to the main dependencies | The user asked for a scikit-learn wrapper of statsmodels' NB2 with an optional exposure and no torch. As a plain regressor it plugs into `CountModel` (P3), so Model 1's cohorts and Model 2's total get NB2 the same way. **"Can I predict using the exposure component?"** Yes: `results.predict(exog, exposure=e)` (equivalently `offset=log e`) returns `e · exp(b + Xβ)`. **Alternatives** (table in §9): statsmodels `GLM(family=NegativeBinomial(alpha))` (α must be fixed; L2 via `fit_regularized(L1_wt=0)`: a penalized variant for later if the smoke run needs one), the current torch objective (dropped: no torch), `glum` (not installed; θ fixed), LightGBM/XGBoost (no NB objective; a custom objective would re-create the torch code), scikit-learn (none: `TweedieRegressor` is not NB) |
 | P5 | **The categorical representation is built inside `CohortProbabilityModel.fit`,** by a static method `CohortProbabilityModel.to_categorical(y) -> (positions, labels, weights)`: one row per `(building, cohort)` with a positive count, `labels` the cohort name, `weights` the count (`np.nonzero(counts)`). `X` is the design matrix's rows at `positions`. The feature transformer is fitted on the **original** rows first | The user: inside only if both the raw and the categorical targets are needed there. They are: (a) the feature transformer must see one row per building, as in every other model (a replicated fit would weight the training statistics by children); (b) the calibration folds must keep a building's rows together (P10), which needs the original row ids; (c) `fit(X, y: counts)` keeps the base contract, so the probability model is fitted, scored (`COHORT_LOG_LOSS` on counts) and tuned on its own, and `TotalTimesProbabilityModel` only passes `y` on |
 | P6 | **Weighted replication only, weight = count (per child).** No `replication` setting; not one row per child; never `count / total` | The user's choice of weighting, and the evidence against a setting. For an estimator that fits a weighted likelihood the two replications are **equivalent:** a `sample_weight` of `c` multiplies that row's log-likelihood term by `c`, exactly what `c` identical rows contribute; measured on `LogisticRegression`: coefficient difference 1.8e-15 (442 weighted rows vs 1,325 per-child rows). For an estimator that **resamples rows** (RF) they are not identical fits, but the held-out quality is the same within noise (P8's table: 0.712 vs 0.708 against a seed spread of 0.57–0.86), so a setting would serve no measured purpose; it is a one-argument extension of `to_categorical` if real data ever shows one. The weighted rows are the multinomial likelihood of the counts given the total, the quantity `COHORT_LOG_LOSS` scores; `count / total` (one unit per building, the Dirichlet build's weighting) is a different estimator (coefficients move by 0.06) and not that likelihood |
 | P7 | **`estimator: Classifier`**, a `Protocol`: `fit(X, y, sample_weight=None)`, `predict_proba(X)`, `classes_`. Multinomial classifiers (`LogisticRegression`, whose lbfgs is multinomial in sklearn 1.9, `multi_class` is gone; `HistGradientBoostingClassifier`; `LGBMClassifier`, `objective_ = "multiclass"` when ≥ 3 labels; `RandomForestClassifier`) and `OneVsRestClassifier(binary)` alike. `predict` maps `predict_proba`'s columns **by `classes_`**, never by position, into `y`'s column order at fit | `classes_` are sorted labels (`['el', 'hs', 'kg']` for `['kg', 'el', 'hs']`): a positional mapping would permute cohorts silently. **Rows sum to 1** for all of them: `OneVsRestClassifier.predict_proba` normalizes in the multiclass case (measured 2e-16), as do HGB, LightGBM, RF and `CalibratedClassifierCV` (sigmoid and isotonic are per-class, then normalized; temperature is a softmax). The model asserts nothing about it: it is what the libraries do, and `COHORT_LOG_LOSS` renormalizes anyway. `OneVsRestClassifier.fit` takes `sample_weight` only through metadata routing (`set_fit_request(sample_weight=True)` on the inner estimator, `sklearn.set_config(enable_metadata_routing=True)`); documented, not special-cased |
@@ -192,42 +193,53 @@ with α = 0.1 and exposure 5–40.
 | statsmodels NB penalties | `NegativeBinomial.fit_regularized` is `method='l1'` only (`L1_wt` is swallowed by `**kwargs`); `GLM.fit_regularized(alpha, L1_wt=0)` gives L2 with α fixed |
 | statsmodels NB with non-integer `y` | fits silently (so a rate form would not fail) |
 | `glum` | not installed |
+| *Sub-task 2 probes:* NB2 offset fit on the simulator's table (245 rows, 7 features), BFGS | converged, 6 ms, α 0.1002, no warning under an "error" filter; BFGS vs Newton (`tol=1e-12`) 8.5e-8 |
+| A fit that does not converge (`max_iter=1`) | statsmodels **warns** (`HessianInversionWarning`, then `ConvergenceWarning`), `converged=False`; under an "error" filter the first is raised before any check of ours. statsmodels' import sets `simplefilter("always", ConvergenceWarning)`, which overrides `python -W error` but not pytest's per-test filter |
+| An all-zero or all-ones column, default preliminary fit (Newton) | `LinAlgError: Singular matrix`; with `optim_kwds_prelim={"method": "bfgs"}` both converge, the all-ones column's predictions equal the fit without it to 1.3e-5; the normal case unchanged |
+| `add_constant(X)` (default `has_constant="skip"`) on a design with an all-ones column | no intercept added (4 columns, not 5): the parameters shift by one, so `params[0]` would be a coefficient. Hence `has_constant="add"` |
+| Non-integer `y` (y + 0.5) | fits silently (α 0.038 instead of 0.096); negative `y` ends in non-convergence |
+| `has_fit_parameter(…, "offset")` | also `False` for `LinearRegression`, `HistGradientBoostingRegressor` |
+| *Sub-task 2 revision:* statsmodels NB2 `exposure=e` vs `offset=log e` | identical parameters (difference 0.0); statsmodels accepts both at once (they add up); an exposure of 0, negative or NaN ends in non-convergence |
+| `has_fit_parameter(…, "exposure")` | `False` for `PoissonRegressor`, `LinearRegression`, HGB, `LGBMRegressor` |
+| mypy 2.3.1, `TypeIs[ExposureRegressor]` on `Regressor \| ExposureRegressor` (`OffsetRegressor` then) | narrows the `True` branch only; the `False` branch stays the union (hence one `cast`) |
+| mypy 2.3.1, revision 2: two named checks on `Regressor \| ExposureRegressor` | `TypeIs` treats the protocols as overlapping (the first case stays the union, the second is marked unreachable); `TypeGuard` narrows each case to exactly its type: no `cast` |
+| `has_fit_parameter(…, "sample_weight")` | `True` for `LGBMRegressor`, HGB, `PoissonRegressor`, `LinearRegression`; `False` for `NegativeBinomialRegressor`, `Pipeline`, `TransformedTargetRegressor` (sklearn's `BaggingRegressor` uses the same test) |
 
 ## 7. Target code shape
 
 ```python
-# modeling/count_model.py  (sub-task 1: the rename; sub-task 2: the offset branch)
+# modeling/count_model.py  (sub-task 1: the rename; sub-task 2: the exposure branch)
 class Regressor(Protocol):        # as today
     def fit(self, X, y, sample_weight=None) -> Self: ...
     def predict(self, X) -> ArrayLike: ...
 
-class OffsetRegressor(Protocol):  # an estimator with a GLM offset, e.g. NegativeBinomialRegressor
-    def fit(self, X, y, offset=None) -> Self: ...
-    def predict(self, X, offset=None) -> ArrayLike: ...
+class ExposureRegressor(Protocol):  # takes the raw exposure itself, e.g. NegativeBinomialRegressor
+    def fit(self, X, y, exposure=None) -> Self: ...
+    def predict(self, X, exposure=None) -> ArrayLike: ...
 
 class CountModel(BaseAgeGroupModel):
-    """One regressor for one count column, a cohort's or the total; the exposure as a weighted rate or an offset."""
-    def __init__(self, *, estimator: Regressor | OffsetRegressor, use_exposure: bool = False,
+    """One regressor for one count column, a cohort's or the total; the exposure as a weighted rate or passed to the estimator."""
+    def __init__(self, *, estimator: Regressor | ExposureRegressor, use_exposure: bool = False,
                  feature_transformer=None) -> None: ...
     def fit(self, X, y, exposure=None) -> Self:
         # exposure_values = self._check_exposure(...); feature_transformer, X = self._fit_features(X, y)
         # estimator = clone(self.estimator)
         # if exposure_values is None: estimator.fit(X, y)
-        # elif has_fit_parameter(estimator, "offset"): estimator.fit(X, y, offset=np.log(exposure_values))
+        # elif has_fit_parameter(estimator, "exposure"): estimator.fit(X, y, exposure=exposure_values)
         # else: estimator.fit(X, y / exposure_values, sample_weight=exposure_values)
     def predict(self, X, exposure=None) -> np.ndarray:
-        # the same test on estimator_: predict(X, offset=log e), or predict(X) * e, or predict(X)
+        # the same test on estimator_: predict(X, exposure=e), or predict(X) * e, or predict(X)
 
 # modeling/negative_binomial.py  (sub-task 2)
 class NegativeBinomialRegressor(RegressorMixin, BaseEstimator):
-    """NB2 regression, log μ = offset + b + Xβ, Var = μ(1 + αμ), α by maximum likelihood; statsmodels inside."""
+    """NB2 regression, log μ = log(exposure) + b + Xβ, Var = μ(1 + αμ), α by maximum likelihood; statsmodels inside."""
     def __init__(self, *, max_iter: int = 500) -> None: ...
-    def fit(self, X, y, offset=None) -> Self:
-        # X = validate_data(self, X, y, reset=True); NegativeBinomial(y, add_constant(X), offset=offset)
+    def fit(self, X, y, exposure=None) -> Self:
+        # X = validate_data(self, X, y, reset=True); NegativeBinomial(y, add_constant(X), exposure=exposure)
         #   .fit(method="bfgs", maxiter=self.max_iter, disp=0); raise RuntimeError unless mle_retvals["converged"]
         # intercept_, coef_, dispersion_
-    def predict(self, X, offset=None) -> np.ndarray:
-        # validate_data(reset=False); exp((offset or 0) + intercept_ + X @ coef_)
+    def predict(self, X, exposure=None) -> np.ndarray:
+        # validate_data(reset=False); exp(intercept_ + X @ coef_) * (exposure or 1)
 
 # modeling/cohort_probability.py  (sub-tasks 3–4)
 type CalibrationMethod = Literal["temperature", "sigmoid", "isotonic"]
@@ -366,20 +378,20 @@ Each ends at a stop (§3). "Verify" lists what the user can check.
   the contract's `EXAMPLES` fails `test_every_shipped_model_has_an_example` (restored,
   md5 equal).
 
-### [ ] 2. `NegativeBinomialRegressor` and `CountModel`'s offset branch
+### [x] 2. `NegativeBinomialRegressor` and `CountModel`'s exposure branch
 - `pyproject.toml`: `statsmodels>=0.14.5` into `dependencies` (`uv lock`/`uv sync`
   by the user).
-- `modeling/negative_binomial.py` as in §7; `OffsetRegressor` and the
+- `modeling/negative_binomial.py` as in §7; `ExposureRegressor` and the
   `has_fit_parameter` branch in `count_model.py`; exports.
 - Tests, `test_modeling_negative_binomial.py`: recovers known parameters and α
-  on NB2 draws (slow-marked if > 1 s); the offset enters `predict`
-  (`predict(X, offset=log 2e) == 2 · predict(X, offset=log e)`); a
+  on NB2 draws (slow-marked if > 1 s); the exposure enters `predict`
+  (`predict(X, exposure=2e) == 2 · predict(X, exposure=e)`); a
   non-converged fit raises (`max_iter=1`); columns in another order raise at
   `predict`; `dispersion_` positive; sklearn's `check_estimator` subset the
   contract test already runs, applied here directly.
-  `test_modeling_count_model.py`: with an offset estimator and `use_exposure`,
-  `fit` passes `offset=log(exposure)` and no `sample_weight`, and `predict`
-  passes the same offset (a spy estimator); a `Regressor` still gets the rate;
+  `test_modeling_count_model.py`: with an exposure estimator and `use_exposure`,
+  `fit` passes the raw exposure and no `sample_weight`, and `predict`
+  passes the same exposure (a spy estimator); a `Regressor` still gets the rate;
   the fitted model follows `estimator_`, not a later `set_params(estimator=…)`;
   NB2 through `CountModel` equals statsmodels with `exposure=` directly
   (the two statsmodels forms, 1e-14). Contract `EXAMPLES` entry for the NB2 variant
@@ -389,6 +401,94 @@ Each ends at a stop (§3). "Verify" lists what the user can check.
   convergence check (`mle_retvals["converged"]`) vs its `ConvergenceWarning`.
 - **Verify:** mutation checks for each test; mypy clean; a `CountModel` with
   `NegativeBinomialRegressor` fits the simulated totals and its α is reported.
+- **Record (2026-10-07):** baseline 1230 passed. Decided with the user after the probes
+  (§6, "use best practices"): (1) inside `fit`, statsmodels' `ConvergenceWarning` is ignored and
+  non-convergence is raised as our `RuntimeError` (same information, one signal); the
+  Hessian, which only gives standard errors (unused, no effect on the result), is not
+  computed (`skip_hessian=True`, after the review found its `HessianInversionWarning`
+  on converged fits with an all-zero column too: identical parameters, no warning);
+  other warnings surface. `predict` raises on an offset whose shape is not `(n,)` (a
+  column `(n, 1)` broadcast silently to `(n, n)`; review finding). (2) BFGS only: the preliminary
+  Poisson fit too (`optim_kwds_prelim`), so an all-zero dummy (absent from a fold) or a
+  constant column fits instead of raising `LinAlgError`. (3) No validation of `y`:
+  targets are integer counts, `CountModel` never passes a rate, sklearn's
+  `PoissonRegressor` does not check integers either. Also `add_constant(…,
+  has_constant="add")` (§10). Files: new `modeling/negative_binomial.py`;
+  `count_model.py` (`OffsetRegressor`, `_takes_offset` as `TypeIs` over
+  `has_fit_parameter`, the offset branch in `fit` and `predict`, decided by
+  `estimator_`); exports; `pyproject.toml` (statsmodels in `dependencies`, the
+  `validation` group removed; the user runs `uv lock`); stale guards removed
+  (`README.md`, `tests/validation/helpers.py`, `test_recovery.py`,
+  `test_total_children.py`). Tests: `test_modeling_negative_binomial.py` (11:
+  recovery, offset at predict, offset shape at predict, non-convergence under `-W
+  error`, column order, all-zero/all-ones column under an "error" filter, the four
+  parameter checks); `test_modeling_count_model.py`
+  (offset spy, NB2 = statsmodels' `exposure=` to 1e-5, predict follows `estimator_`,
+  NB2 in the doubling and training-mean tests). Recovery on 5,000 draws: b −2.011
+  (true −2), β (0.302, −0.193, 0.099), α 0.1014 (0.1). Mutations, all caught: parameter
+  layout; offset dropped at predict; convergence check removed; warning filter removed;
+  `reset=True` at predict; Newton preliminary fit; `has_constant="skip"`; the rate for an
+  offset estimator; the template tested at predict; the offset prediction times the
+  exposure; after the review, `skip_hessian` removed, the `ConvergenceWarning` filter
+  removed, the shape check removed. Review: no correctness bug; its points fixed (the
+  two above, P4's wording, `CountModel`'s docstring summary naming NB2, a blank line). ruff, format, mypy (24 and 12 files) clean; changed tests 68 passed under
+  `-W error` (69 after the review); the slow validation files pass. **End to end:** `CountModel(estimator=
+  NegativeBinomialRegressor(), use_exposure=True)` on the simulated totals: α 0.1002,
+  mean prediction / mean y 1.005, Poisson deviance 3.10. Suite 1247 passed, 1 skipped,
+  1 xfailed.
+- **Revision (2026-10-07, before the commit; the user):** "the exposure input is the same
+  exposure in statsmodels, it is not offset", and "should the input allow both offset and
+  exposure?". `NegativeBinomialRegressor.fit/predict` take the raw `exposure` (statsmodels'
+  `exposure=`; `predict` = `exposure · exp(b + Xβ)`, its shape checked); `CountModel` detects
+  `has_fit_parameter(estimator, "exposure")` (`_takes_exposure`) and passes the raw exposure;
+  `OffsetRegressor` → `ExposureRegressor`. **Exposure only** (P4's reasons). Probes: `exposure=e`
+  and `offset=log e` give identical parameters; statsmodels accepts both at once (they add up).
+  Tests switched to `exposure=` (the spy asserts the raw exposure at fit and predict; the NB
+  predict test doubles the exposure). Mutations, all caught: `log(exposure)` passed at
+  `CountModel.fit` and at `predict`; the exposure applied twice; the rate for an exposure
+  estimator; the template tested at predict; the exposure ignored at NB `predict`; the
+  exposure passed to statsmodels as `offset=`; the shape check removed; and the earlier ten
+  still valid (layout, convergence, `ConvergenceWarning` filter, `skip_hessian`, Newton,
+  `has_constant`, `reset=True`). Suite 1247 passed, 1 skipped, 1 xfailed.
+  Review of the revision: no correctness bug (parameters equal statsmodels' `exposure=` fit to
+  2.5e-6; `predict` equals its `predict(exposure=)` to 3.4e-6); its points were wording, fixed:
+  a docstring line re-wrapped; the exposure's precondition (positive, one per row, validated
+  where the data is prepared) stated rather than checked at `fit` (a column exposure already
+  raises in statsmodels; a zero one ends in non-convergence); one test comment narrowed to what
+  it compares; `ExposureRegressor`'s docstring says it must be the `estimator` itself (inside a
+  `Pipeline` it is not detected, and `Pipeline.fit` rejects the `sample_weight`: loud, checked; since revision 2, `CountModel`'s own `TypeError`).
+- **Revision 2 (2026-10-07, before the commit; the user):** "Using else does not follow best
+  practices. What if I want to add another regressor family... change to elif and throw an
+  exception if nothing is satisfied"; "why cast(Regressor, estimator)?"; "Do the same for
+  predict... make sure the cases are clear". The cast existed because mypy does not narrow a
+  protocol union on a `TypeIs`'s False branch. Now `CountModel._fit_estimator` and
+  `_predict_estimator` name each case with one `return` (no exposure; the estimator takes
+  `exposure`; it takes `sample_weight`: the weighted rate) and end in `TypeError`; the checks
+  are `_takes_exposure` / `_takes_sample_weight`, `TypeGuard`s over `has_fit_parameter` (§6:
+  `TypeIs` does not narrow these protocols), so plain `estimator.fit(...)` type-checks, no
+  `cast`. **Behavior change:** under `use_exposure=True` an estimator taking neither argument
+  (e.g. a `Pipeline`) raises our `TypeError` naming both, not Python's or the `Pipeline`'s own
+  error; every estimator used here falls in exactly one case. The old
+  `test_a_regressor_without_sample_weight_surfaces_the_library_error` became
+  `test_an_estimator_taking_neither_exposure_nor_sample_weight_raises`. Mutations, all caught:
+  the final raise removed; the `sample_weight` check replaced by `True` (the old `else`); each
+  case dropped at fit and at predict; no multiplication in the rate case; the template at
+  predict. Swapping the two cases passes (disjoint, as measured). Suite 1247 passed.
+  Review: no correctness bug; one consequence documented in the class docstring: the cases
+  are read from the estimator's own `fit` signature, so a wrapper whose `fit` takes
+  `**fit_params` (`Pipeline`, `TransformedTargetRegressor`, `VotingRegressor`, `GridSearchCV`)
+  is refused under `use_exposure=True` even if it would forward `sample_weight` (measured:
+  `TransformedTargetRegressor` used to fit on the rate). None is used as an `estimator` here;
+  kept as an explicit refusal (pass the regressor itself), per the user's "no silent case".
+- **Revision 3 (2026-10-07, before the commit; the user: "isn't it better to use if-elif-else
+  with raise an exception?"):** yes: the objection was to an `else` that silently *handles* a
+  case, not to one that only raises. The helpers `_fit_estimator` / `_predict_estimator` (which
+  existed only to avoid `else`) are gone: `fit` and `predict` hold the cases inline as
+  `if / elif / elif / else: raise TypeError`, every handled case named, the `TypeGuard`s
+  narrowing each branch, no `cast`. Behavior unchanged. Mutations re-run, all caught (the
+  `raise` replaced by `pass`; the `sample_weight` check by `True`; the exposure case dropped at
+  fit and at predict; no multiplication in the rate case; the template at predict). ruff, mypy
+  clean; suite 1247 passed, 1 skipped, 1 xfailed; review: no code problem.
 
 ### [ ] 3. `CohortProbabilityModel` on a classifier (no calibration yet)
 - Rewrite `modeling/cohort_probability.py`: `Classifier`, `to_categorical`,
@@ -454,7 +554,7 @@ Each ends at a stop (§3). "Verify" lists what the user can check.
 
 ### [ ] 7. Docs and close
 - `docs/INDEPENDENT_TOTAL_PROBABILITY_MODEL.md` §0 rewritten for the new build
-  (§9 lists what it must explain); `docs/DIRECT_COHORT_MODEL.md` §0 (the offset
+  (§9 lists what it must explain); `docs/DIRECT_COHORT_MODEL.md` §0 (the exposure
   rule, NB2); `docs/FEATURE_TRANSFORMATIONS.md` §8.1–8.3 usage blocks;
   `docs/MODULE_REFERENCE.md`; `docs/README.md`; `docs/MODEL_REIMPLEMENTATION_PLAN.md`
   §5; `docs/HYPERPARAMETER_TUNING_PLAN.md` where it names Model 2's tunables;
@@ -476,13 +576,14 @@ part also in `DIRECT_COHORT_MODEL.md` §0:
 2. **The total model is `CountModel`.** Why one class serves a cohort and the
    total; the two exposure forms: the weighted rate (the Poisson offset model
    exactly; for a Gaussian or tree loss it is "mean = exposure × f(x)", not an
-   offset) and the offset (`log(exposure)` with coefficient 1, for any
-   estimator whose `fit` takes `offset`, detected with `has_fit_parameter`);
-   why NB2 needs the offset (the 0.021 difference; non-integer `y` accepted
-   silently); `alpha × mean(exposure)`.
+   offset) and the exposure passed as is (statsmodels' `exposure`: the offset
+   `log(exposure)` with coefficient 1, taken inside, for any estimator whose
+   `fit` takes `exposure`, detected with `has_fit_parameter`); why NB2 needs it
+   (the 0.021 difference; non-integer `y` accepted silently); why exposure only,
+   no `offset` (P4); `alpha × mean(exposure)`.
 3. **NB2 representation.** NB2 = `Var = μ(1 + αμ)`, α fitted jointly by
    maximum likelihood (statsmodels' `loglike_method="nb2"`); what
-   `predict(offset=)` computes and that it equals `exposure=`; the
+   `predict(exposure=)` computes and that it equals `offset=log(exposure)`; the
    alternatives table (statsmodels discrete NB, statsmodels GLM with fixed α
    and L2, torch, glum, LightGBM/XGBoost custom objective, scikit-learn: none)
    and why the first.
@@ -509,7 +610,7 @@ part also in `DIRECT_COHORT_MODEL.md` §0:
    building features do not change the case and an unobserved building
    effect or a need for intervals does; the two options then
    (`bootstrap=False`, a `GroupedBaggingClassifier` taking `groups`, passed
-   by `has_fit_parameter` like the NB2 offset); what to tune.
+   by `has_fit_parameter` like the NB2 exposure); what to tune.
 6. **Calibration.** `CalibratedClassifierCV`: cross-fitting (`ensemble=False`)
    vs the ensemble; why folds are grouped by building (and the neighborhood
    limitation); 5 folds (the (k−1)/k argument, the 50/50 bias); temperature
@@ -523,15 +624,17 @@ part also in `DIRECT_COHORT_MODEL.md` §0:
 
 ## 10. Risks
 
-- **statsmodels under `-W error`:** `NegativeBinomial.fit` runs a preliminary
-  Poisson fit; a `ConvergenceWarning` would become an error in the suite
-  before the model's own check. Measured clean on the probes; sub-task 2 probes
-  the simulated table and, if needed, sets `optim_kwds_prelim`.
-- **`add_constant` skips a constant column** (`has_constant="skip"`): a design
-  with an all-ones column would use it as the intercept silently (harmless);
-  two constant columns fail statsmodels' rank check. Document.
+- **statsmodels under `-W error`:** resolved in sub-task 2. A converged fit is clean;
+  a non-converged one warns before our check, so `fit` ignores the
+  `ConvergenceWarning` and raises, skips the Hessian, and uses BFGS for the
+  preliminary fit (§8 record).
+- **`add_constant` skips a constant column** (`has_constant="skip"`): corrected in
+  sub-task 2. It is not harmless: no intercept is added, the parameters shift by
+  one, and `params[0]` would be read as the intercept. `has_constant="add"` is used;
+  with the BFGS preliminary fit a constant column then fits (its share of the
+  intercept is arbitrary, the predictions are not).
 - **`has_fit_parameter` on a `Pipeline` or meta-estimator** inspects the outer
-  `fit`, so an offset estimator inside a `Pipeline` is not detected: documented
+  `fit`, so an exposure estimator inside a `Pipeline` is not detected: documented
   (the feature transformer belongs to `CountModel`, so no `Pipeline` is needed).
 - **`OneVsRestClassifier` + `sample_weight`** needs metadata routing; if the
   `Classifier` protocol cannot express it cleanly, document OvR as "enable

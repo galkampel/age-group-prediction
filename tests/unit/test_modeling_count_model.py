@@ -15,8 +15,15 @@ from sklearn.ensemble import HistGradientBoostingRegressor
 from sklearn.exceptions import NotFittedError
 from sklearn.linear_model import LinearRegression, PoissonRegressor
 from sklearn.utils.validation import check_is_fitted
+from statsmodels.discrete.discrete_model import NegativeBinomial
+from statsmodels.tools import add_constant
 
-from age_group_prediction.modeling import CountModel, Regressor
+from age_group_prediction.modeling import (
+    CountModel,
+    ExposureRegressor,
+    NegativeBinomialRegressor,
+    Regressor,
+)
 
 
 def _data(rows: int = 300) -> tuple[pd.DataFrame, pd.Series, np.ndarray]:
@@ -54,6 +61,8 @@ POISSON_ESTIMATORS = {
     # Unpenalized: its alpha would act as alpha * mean(exposure) in the offset
     # model (it normalizes sample_weight), shrinking ses almost to zero here.
     "poisson-glm": PoissonRegressor(alpha=0.0),
+    # The exposure estimator: the raw exposure passed itself, not the rate.
+    "nb2": NegativeBinomialRegressor(),
 }
 ESTIMATORS = {
     **POISSON_ESTIMATORS,
@@ -74,6 +83,21 @@ class _Recorder(BaseEstimator):
         return self
 
     def predict(self, X: pd.DataFrame) -> np.ndarray:
+        return np.ones(len(X))
+
+
+class _ExposureRecorder(BaseEstimator):
+    """An exposure regressor that keeps what ``fit`` and ``predict`` received; predicts 1."""
+
+    def fit(
+        self, X: pd.DataFrame, y: ArrayLike, exposure: ArrayLike | None = None
+    ) -> Self:
+        self.y_ = y
+        self.exposure_ = exposure
+        return self
+
+    def predict(self, X: pd.DataFrame, exposure: ArrayLike | None = None) -> np.ndarray:
+        self.predict_exposure_ = exposure
         return np.ones(len(X))
 
 
@@ -173,8 +197,55 @@ def test_fit_receives_the_rate_with_the_exposure_as_weight() -> None:
     np.testing.assert_array_equal(recorder.sample_weight_, EXPOSURE)
 
 
+def test_an_exposure_estimator_receives_the_raw_exposure_and_the_counts() -> None:
+    # The rate form is not the offset model for NB2: an exposure estimator
+    # given the rate, a sample_weight, log(exposure), or a prediction
+    # multiplied by the exposure (applied twice) would each fit or predict
+    # another model.
+    model = CountModel(estimator=_ExposureRecorder(), use_exposure=True).fit(
+        X, Y, exposure=EXPOSURE
+    )
+
+    predictions = model.predict(X, exposure=EXPOSURE)
+
+    recorder = model.estimator_
+    assert isinstance(recorder, _ExposureRecorder)
+    np.testing.assert_array_equal(recorder.y_, Y.to_numpy())
+    np.testing.assert_array_equal(recorder.exposure_, EXPOSURE)
+    np.testing.assert_array_equal(recorder.predict_exposure_, EXPOSURE)
+    np.testing.assert_array_equal(predictions, np.ones(len(X)))
+
+
+def test_nb2_through_the_model_equals_statsmodels_with_the_exposure() -> None:
+    # The NB2 fit against statsmodels' own exposure fit: catches the exposure
+    # misapplied at fit (its log passed) or the rate passed.
+    rng = np.random.default_rng(1)
+    mean = EXPOSURE * np.exp(-2 + 0.4 * X["ses"].to_numpy())
+    y = pd.Series(rng.negative_binomial(10, 10 / (10 + mean)))  # alpha = 0.1
+
+    model = CountModel(estimator=NegativeBinomialRegressor(), use_exposure=True).fit(
+        X, y, exposure=EXPOSURE
+    )
+    oracle = NegativeBinomial(
+        y.to_numpy(),
+        add_constant(X.to_numpy()),
+        loglike_method="nb2",
+        exposure=EXPOSURE,
+    ).fit(method="newton", tol=1e-12, disp=0)
+
+    estimator = model.estimator_
+    assert isinstance(estimator, NegativeBinomialRegressor)
+    np.testing.assert_allclose(
+        np.r_[estimator.intercept_, estimator.coef_, estimator.dispersion_],
+        oracle.params,
+        atol=1e-5,
+    )
+
+
 @pytest.mark.parametrize("estimator", ESTIMATORS.values(), ids=list(ESTIMATORS))
-def test_doubling_the_exposure_doubles_the_prediction(estimator: Regressor) -> None:
+def test_doubling_the_exposure_doubles_the_prediction(
+    estimator: Regressor | ExposureRegressor,
+) -> None:
     # Exact because the exposure is not a feature; fails if predict drops the
     # exposure, for every loss, the Gaussian one included.
     model = CountModel(estimator=estimator, use_exposure=True).fit(
@@ -193,12 +264,12 @@ def test_doubling_the_exposure_doubles_the_prediction(estimator: Regressor) -> N
     "estimator", POISSON_ESTIMATORS.values(), ids=list(POISSON_ESTIMATORS)
 )
 def test_training_mean_prediction_matches_the_target_mean(
-    estimator: Regressor, use_exposure: bool
+    estimator: Regressor | ExposureRegressor, use_exposure: bool
 ) -> None:
-    # A Poisson fit reproduces the training mean (within 0.2% here). Catches a
-    # prediction on the wrong scale, e.g. rates returned as counts or the
-    # exposure applied twice. The plain cases are the only cover of the path
-    # without exposure.
+    # A Poisson fit reproduces the training mean (within 0.2% here; NB2, nearly
+    # Poisson on these counts, within 0.03%). Catches a prediction on the
+    # wrong scale, e.g. rates returned as counts or the exposure applied
+    # twice. The plain cases are the only cover of the path without exposure.
     exposure = EXPOSURE if use_exposure else None
     model = CountModel(estimator=estimator, use_exposure=use_exposure).fit(
         X, Y, exposure=exposure
@@ -261,15 +332,26 @@ def test_predict_follows_how_the_model_was_fitted() -> None:
     )
 
 
-def test_a_regressor_without_sample_weight_surfaces_the_library_error() -> None:
-    # The model does not pre-check the estimator: Python's own error names the
-    # missing argument, so a check of ours would only repeat it.
-    model = CountModel(
-        estimator=_WithoutSampleWeight(),
-        use_exposure=True,
+def test_predict_follows_the_fitted_estimator() -> None:
+    # The exposure test runs on estimator_: testing the template instead would
+    # give a fitted NB2 the rate path after set_params(estimator=...).
+    model = CountModel(estimator=_ExposureRecorder(), use_exposure=True).fit(
+        X, Y, exposure=EXPOSURE
     )
+    model.set_params(estimator=PoissonRegressor())
 
-    with pytest.raises(TypeError, match="sample_weight"):
+    predictions = model.predict(X, exposure=EXPOSURE)
+
+    np.testing.assert_array_equal(predictions, np.ones(len(X)))
+
+
+def test_an_estimator_taking_neither_exposure_nor_sample_weight_raises() -> None:
+    # Each way of applying the exposure is a named case: an estimator that
+    # matches none (another family, or a wrapper taking **fit_params) must
+    # raise rather than fall into one silently.
+    model = CountModel(estimator=_WithoutSampleWeight(), use_exposure=True)
+
+    with pytest.raises(TypeError, match="neither `exposure` nor `sample_weight`"):
         model.fit(X, Y, exposure=EXPOSURE)
 
 

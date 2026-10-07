@@ -11,9 +11,10 @@ rebuilt here.
 from .base import BaseAgeGroupModel
 from .calibration import TemperatureCalibrator
 from .cohort_probability import CohortProbabilityModel
-from .count_model import CountModel, Regressor
+from .count_model import CountModel, ExposureRegressor, Regressor
 from .independent_cohorts import CohortModels, IndependentCohortModels
 from .independent_total_probability import IndependentTotalProbabilityModel
+from .negative_binomial import NegativeBinomialRegressor
 from .optimization import Solver
 from .total_children import TotalChildrenModel
 
@@ -22,8 +23,10 @@ __all__ = [
     "CohortModels",
     "CohortProbabilityModel",
     "CountModel",
+    "ExposureRegressor",
     "IndependentCohortModels",
     "IndependentTotalProbabilityModel",
+    "NegativeBinomialRegressor",
     "Regressor",
     "Solver",
     "TemperatureCalibrator",
