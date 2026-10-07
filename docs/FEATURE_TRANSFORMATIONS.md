@@ -11,7 +11,7 @@ coefficient means, and why the alternatives were rejected.
 
 | Label | Class | Stages and feature use |
 |---|---|---|
-| **A** | `DirectCohortModel` | One regressor per cohort (any estimator with a Poisson or Gaussian loss); raw features; optional exposure as a weighted rate |
+| **A** | `CountModel` | One regressor per cohort (any estimator with a Poisson or Gaussian loss); raw features; optional exposure as a weighted rate |
 | **B** | `IndependentTotalProbabilityModel` | Penalized Poisson/NB2 total with a log-exposure offset, plus a grouped multinomial composition stage |
 | **C** | `BayesianConditionalModel` | Hierarchical NB2 total plus a composition stage; uses B's frozen specs; `Normal(0, 0.5)` coefficient priors |
 
@@ -184,7 +184,7 @@ center also changes what the coefficients mean.
 
 ### 3.3 Exposure: add the offset **and** keep `n_apartments`
 
-For a Poisson loss, `DirectCohortModel(use_exposure=True)` fits the offset model
+For a Poisson loss, `CountModel(use_exposure=True)` fits the offset model
 
 $$
 \log \mu_{i,c} = \log n_i + f_c(\mathbf{x}_i),
@@ -536,7 +536,7 @@ daycare candidates comparable. How hard to shrink is the tuned penalty's job.
 
 ## 5. Model And Variation Catalogue
 
-### Model A: `DirectCohortModel`
+### Model A: `CountModel`
 
 One regressor per cohort (`n_kindergarten`, `n_elementary`,
 `n_highschool`). The hyperparameters are fixed per instance and tuned from
@@ -916,7 +916,7 @@ SCHOOL = OneHot(
 )
 ```
 
-### 8.1 Model A — `DirectCohortModel` (LightGBM)
+### 8.1 Model A — `CountModel` (LightGBM)
 
 Trees gain nothing from a monotone rescale (§3.1), so the numerics are passed
 through untouched and only the categorical is encoded.
@@ -952,11 +952,11 @@ rows it is fitted on.
 
 ```python
 from lightgbm import LGBMRegressor
-from age_group_prediction.modeling import DirectCohortModel
+from age_group_prediction.modeling import CountModel
 from age_group_prediction.preprocessing import ExposureTransformer
 
 exposure = ExposureTransformer("n_apartments").fit_transform(table)
-model = DirectCohortModel(
+model = CountModel(
     estimator=LGBMRegressor(objective="poisson", n_jobs=1, verbosity=-1),
     use_exposure=True,
     feature_transformer=tree,
@@ -978,7 +978,7 @@ from age_group_prediction.modeling import IndependentCohortModels
 
 COHORTS = ["n_kindergarten", "n_elementary", "n_highschool"]
 cohort_models = IndependentCohortModels({
-    cohort: DirectCohortModel(
+    cohort: CountModel(
         estimator=LGBMRegressor(objective="poisson", n_jobs=1, verbosity=-1),
         use_exposure=True,
         feature_transformer=tree,
@@ -1228,10 +1228,10 @@ open user-named `Interaction`s. **The rest still stand:**
    `FeatureSpec` in
    [fitted_features.py](../src/age_group_prediction/fitted_features.py) rather
    than on the declarations above, and moves when that module is retired.
-3. **`DirectCohortModel`:** done in the rebuilt
-   `modeling.DirectCohortModel`, which takes `use_exposure=True` and fits
+3. **`CountModel`:** done in the rebuilt
+   `modeling.CountModel`, which takes `use_exposure=True` and fits
    a weighted regression of the rate $y/n$ with weight $n$ (§3.3)
-   ([DIRECT_COHORT_MODEL.md §0](DIRECT_COHORT_MODEL.md#0-the-rebuilt-model-modelingdirect_cohortpy)).
+   ([DIRECT_COHORT_MODEL.md §0](DIRECT_COHORT_MODEL.md#0-the-rebuilt-model-modelingcount_modelpy)).
 4. **Model C:** no candidate changes of its own. Rerun the prior-predictive
    checks after any unit or baseline change, and revisit
    `total_intercept_loc = -2` against the observed log rate of about −0.5.

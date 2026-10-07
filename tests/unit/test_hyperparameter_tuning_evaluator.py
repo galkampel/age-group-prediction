@@ -37,7 +37,7 @@ from age_group_prediction.hyperparameter_tuning import (
     Mean,
     WeightedMean,
 )
-from age_group_prediction.modeling import BaseAgeGroupModel, DirectCohortModel
+from age_group_prediction.modeling import BaseAgeGroupModel, CountModel
 from age_group_prediction.scoring import (
     COHORT_LOG_LOSS,
     POISSON_DEVIANCE,
@@ -293,7 +293,7 @@ def test_an_exposure_not_one_per_row_is_rejected(exposure: np.ndarray) -> None:
 
 def test_a_missing_exposure_raises_the_models_error() -> None:
     evaluator = _evaluator(
-        model=DirectCohortModel(
+        model=CountModel(
             estimator=LGBMRegressor(objective="poisson", n_jobs=1, verbosity=-1),
             use_exposure=True,
         ),
@@ -432,7 +432,7 @@ def test_matches_a_hand_written_fold_loop() -> None:
         )
     )
     cv = Splitter("grouped").cv(n_splits=3, random_state=0)
-    model = DirectCohortModel(
+    model = CountModel(
         estimator=LGBMRegressor(objective="poisson", n_jobs=1, verbosity=-1),
         use_exposure=True,
         feature_transformer=tree,

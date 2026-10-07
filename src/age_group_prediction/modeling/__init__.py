@@ -11,7 +11,7 @@ rebuilt here.
 from .base import BaseAgeGroupModel
 from .calibration import TemperatureCalibrator
 from .cohort_probability import CohortProbabilityModel
-from .direct_cohort import DirectCohortModel, Regressor
+from .count_model import CountModel, Regressor
 from .independent_cohorts import CohortModels, IndependentCohortModels
 from .independent_total_probability import IndependentTotalProbabilityModel
 from .optimization import Solver
@@ -21,7 +21,7 @@ __all__ = [
     "BaseAgeGroupModel",
     "CohortModels",
     "CohortProbabilityModel",
-    "DirectCohortModel",
+    "CountModel",
     "IndependentCohortModels",
     "IndependentTotalProbabilityModel",
     "Regressor",

@@ -1,4 +1,4 @@
-"""Model A: one regressor for one cohort's child count, the exposure as a weighted rate."""
+"""Model A, and Model 2's total: one regressor for one count column, the exposure as a weighted rate."""
 
 from __future__ import annotations
 
@@ -13,7 +13,7 @@ from sklearn.utils.validation import check_is_fitted
 from ..feature_engineering import FeatureTransformer
 from .base import BaseAgeGroupModel
 
-__all__ = ["DirectCohortModel", "Regressor"]
+__all__ = ["CountModel", "Regressor"]
 
 
 class Regressor(Protocol):
@@ -26,8 +26,8 @@ class Regressor(Protocol):
     def predict(self, X: pd.DataFrame) -> ArrayLike: ...
 
 
-class DirectCohortModel(BaseAgeGroupModel):
-    """One regressor, with a Poisson or Gaussian loss, for one cohort's count.
+class CountModel(BaseAgeGroupModel):
+    """One regressor, with a Poisson or Gaussian loss, for one count column: a cohort's or the total.
 
     ``estimator`` carries its own loss and hyperparameters (``estimator__…``
     in ``set_params``). ``X`` is the raw table when ``feature_transformer`` is

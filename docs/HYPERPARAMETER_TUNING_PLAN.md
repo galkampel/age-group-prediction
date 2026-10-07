@@ -213,7 +213,7 @@ parallel jobs are allowed, and the result records which kind of run it was.
 The Optuna study is kept as `optuna_study_` for `optuna.visualization`. No
 `catch=` option in v1: a NaN fold score stops the study (§4.2).
 
-## 5. Worked example: `DirectCohortModel`
+## 5. Worked example: `CountModel`
 
 ```python
 parameters = [                                  # same bounds as [direct_cohort_search_space]
@@ -236,7 +236,7 @@ train_index, test_index = splitter.train_test_indices(
 train_df, Y_train = take_rows(df, train_index), take_rows(df[cohort_columns], train_index)
 g_train, exposure_train = take_rows(groups, train_index), take_rows(exposure, train_index)
 evaluator = CVHyperparameterEvaluator(
-    DirectCohortModel(
+    CountModel(
         # subsample_freq=1: LightGBM ignores subsample without it.
         estimator=LGBMRegressor(objective="poisson", subsample_freq=1, n_jobs=1, verbosity=-1),
         use_exposure=True, feature_transformer=tree),

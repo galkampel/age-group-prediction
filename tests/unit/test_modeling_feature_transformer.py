@@ -20,7 +20,7 @@ from age_group_prediction.feature_engineering import (
 from age_group_prediction.modeling import (
     BaseAgeGroupModel,
     CohortProbabilityModel,
-    DirectCohortModel,
+    CountModel,
     TotalChildrenModel,
 )
 
@@ -61,8 +61,8 @@ type Target = Callable[[pd.DataFrame], pd.Series | pd.DataFrame]
 
 # Each leaf model with the target it takes, from the cohort counts.
 MODELS: dict[str, tuple[Build, Target]] = {
-    "DirectCohortModel": (
-        lambda features: DirectCohortModel(
+    "CountModel": (
+        lambda features: CountModel(
             # One thread: more OpenMP threads crash alongside torch on macOS.
             estimator=LGBMRegressor(
                 objective="poisson", n_estimators=20, n_jobs=1, verbosity=-1

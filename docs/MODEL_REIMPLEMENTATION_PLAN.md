@@ -544,7 +544,7 @@ In order. Each step has its own plan and gated phases.
    `aee3e6a` (2026-09-24).
 2. **Resume the tuning package** at
    [HYPERPARAMETER_TUNING_PLAN.md §9](HYPERPARAMETER_TUNING_PLAN.md): switch
-   the evaluator to `BaseAgeGroupModel`, then tune `DirectCohortModel` per
+   the evaluator to `BaseAgeGroupModel`, then tune `CountModel` per
    cohort. Re-check the exposure offset once tuned; Step 2.4 found only weak
    evidence, untuned, and the multi-cohort plan's A4 re-run through
    `IndependentCohortModels` found the same.

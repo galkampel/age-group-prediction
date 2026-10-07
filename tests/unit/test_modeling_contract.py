@@ -40,7 +40,7 @@ from age_group_prediction.feature_engineering import (
 from age_group_prediction.modeling import (
     BaseAgeGroupModel,
     CohortProbabilityModel,
-    DirectCohortModel,
+    CountModel,
     IndependentCohortModels,
     IndependentTotalProbabilityModel,
     TotalChildrenModel,
@@ -76,11 +76,11 @@ def _lightgbm() -> LGBMRegressor:
     return LGBMRegressor(objective="poisson", n_jobs=1, verbosity=-1)
 
 
-def _direct_cohort_example() -> Example:
+def _count_model_example() -> Example:
     rng = np.random.default_rng(0)
     X = pd.DataFrame({"x": rng.normal(size=200)})
     y = pd.Series(rng.poisson(np.exp(1 + 0.5 * X["x"])))
-    return DirectCohortModel(estimator=_lightgbm()), X, y
+    return CountModel(estimator=_lightgbm()), X, y
 
 
 def _independent_cohorts_example() -> Example:
@@ -98,9 +98,7 @@ def _independent_cohorts_example() -> Example:
     )
     model = IndependentCohortModels(
         {
-            cohort: DirectCohortModel(
-                estimator=_lightgbm(), feature_transformer=features
-            )
+            cohort: CountModel(estimator=_lightgbm(), feature_transformer=features)
             for cohort in y
         }
     )
@@ -153,7 +151,7 @@ def _independent_total_probability_example() -> Example:
 
 # Factories, so every test gets its own model and data and none is built at import.
 EXAMPLES: dict[type[BaseAgeGroupModel], Callable[[], Example]] = {
-    DirectCohortModel: _direct_cohort_example,
+    CountModel: _count_model_example,
     IndependentCohortModels: _independent_cohorts_example,
     TotalChildrenModel: _total_children_example,
     CohortProbabilityModel: _cohort_probability_example,

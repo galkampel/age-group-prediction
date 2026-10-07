@@ -6,10 +6,10 @@ conversation. This file is the source of truth: update its status line and the
 sub-task checkboxes in §8 as work finishes. Orientation for a new session:
 [TOTAL_TIMES_PROBABILITY_MODEL_HANDOFF.md](TOTAL_TIMES_PROBABILITY_MODEL_HANDOFF.md).
 
-**Status (2026-10-07):** approved by the user. **Sub-task 0 is done** (branch
-`feat/total-times-probability-model`, baseline 1254 passed, 1 skipped, 1 xfailed;
-record in §8); sub-task 1 is next, after the open question in §10 (the PR #12
-validation tests). Nothing in `src` is implemented yet. During planning the user revised it twice: NB2 goes through
+**Status (2026-10-07):** approved by the user. **Sub-tasks 0–1 are done** (branch
+`feat/total-times-probability-model`; `DirectCohortModel` is now `CountModel`;
+non-slow suite 1230 passed, 1 skipped, 1 xfailed; records in §8). Sub-task 2
+(`NegativeBinomialRegressor`) is next. During planning the user revised it twice: NB2 goes through
 `CountModel` (the renamed `DirectCohortModel`) as an offset estimator; a
 `replication` setting for row-resampling classifiers was considered and dropped
 on measurement (P6, P8).
@@ -327,7 +327,7 @@ Each ends at a stop (§3). "Verify" lists what the user can check.
   `models/` rows are the old stack), `README.md`, `HYPERPARAMETER_TUNING_PLAN.md`,
   `MODEL_REIMPLEMENTATION_PLAN.md` §5 step 2; plus `docs/validation/pr12/` (§10).
 
-### [ ] 1. Rename `DirectCohortModel` → `CountModel`
+### [x] 1. Rename `DirectCohortModel` → `CountModel`
 - `modeling/direct_cohort.py` → `modeling/count_model.py`; class, docstring
   ("one count column, a cohort's or the total"), exports, every test and doc
   that names it (`DIRECT_COHORT_MODEL.md` keeps its file name with a note at
@@ -340,8 +340,31 @@ Each ends at a stop (§3). "Verify" lists what the user can check.
   `CROSS_VALIDATION_AND_SELECTION.md` and the like, and in code
   `src/age_group_prediction/{__init__.py,models,experiment,tracking}` and their
   tests). So `count_model.py` carries no "formerly `DirectCohortModel`" note; that
-  belongs in the docs. The suite passes at the baseline count (1254, or 1230 if the
-  user excludes `docs/validation/pr12/`, §10).
+  belongs in the docs. The suite passes at 1230 passed, 1 skipped, 1 xfailed
+  (the baseline 1254 less the 24 removed `docs/validation/pr12/` tests).
+- **Record (2026-10-07):** baseline 1254 passed, 1 skipped, 1 xfailed. Renamed
+  `modeling/direct_cohort.py` → `count_model.py` (class `CountModel`, docstrings "one
+  count column: a cohort's or the total") and `test_modeling_direct_cohort.py` →
+  `test_modeling_count_model.py`; the name updated in `modeling/__init__.py` and the
+  contract (`_count_model_example`), feature-transformer, independent-cohorts and
+  evaluator tests. No logic changed. Docs: `DIRECT_COHORT_MODEL.md` (top note, §0
+  heading with a rename note, §0.2, §0.6; its anchor changed, so the links in
+  `FEATURE_TRANSFORMATIONS.md` and `MODULE_REFERENCE.md` follow),
+  `FEATURE_TRANSFORMATIONS.md`, `MODULE_REFERENCE.md` (rebuilt-model rows),
+  `README.md`, `HYPERPARAMETER_TUNING_PLAN.md` §5, `MODEL_REIMPLEMENTATION_PLAN.md`
+  §5 step 2; dated records unchanged. **§10's open question, decided** (the user:
+  "best practices; in the end stale files and tests are removed"): the behaviors of
+  our code that `docs/validation/pr12/` pinned are in `tests/unit/` (constructor and
+  nested names, weighted rate = LightGBM offset, Gaussian WLS, predict follows the fit,
+  column order, evaluator on raw rows), except G2 (`estimator` has no default), which
+  only the signature now enforces; the rest checked library facts (G3b: sklearn's GLM
+  equals statsmodels' offset GLM; G3c: sklearn normalizes `sample_weight`, so `alpha`
+  acts as `alpha × mean(exposure)`) and PR #12's doc text. So the folder is deleted (kept in `c966edb`, noted at the top of
+  both PR #12 validation docs) and `testpaths = ["tests"]` is set, so nothing under
+  `docs/` is collected again. Checks: ruff, format, mypy (23 and 14 files) clean;
+  the changed tests pass under `-W error` (109); mutation: dropping `CountModel` from
+  the contract's `EXAMPLES` fails `test_every_shipped_model_has_an_example` (restored,
+  md5 equal).
 
 ### [ ] 2. `NegativeBinomialRegressor` and `CountModel`'s offset branch
 - `pyproject.toml`: `statsmodels>=0.14.5` into `dependencies` (`uv lock`/`uv sync`
@@ -530,7 +553,8 @@ part also in `DIRECT_COHORT_MODEL.md` §0:
   `TotalChildrenModel`, the torch `CohortProbabilityModel` and
   `IndependentTotalProbabilityModel`, which sub-tasks 3 and 5 rewrite or delete.
   Sub-tasks 1 and 5 break them unless decided first. The two uncollected scripts
-  `probe_end_to_end.py` and `probe_tuning_plan_s5.py` also name `DirectCohortModel`. **Open, for the user at sub-task 1.**
+  `probe_end_to_end.py` and `probe_tuning_plan_s5.py` also name `DirectCohortModel`. **Decided in sub-task 1:** the folder is deleted and `testpaths = ["tests"]`
+  set (sub-task 1 record).
 
 ## 11. Verification
 

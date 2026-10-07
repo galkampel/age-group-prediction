@@ -1,5 +1,10 @@
 # Validation plan: PR #12 (any regressor in `DirectCohortModel`; the feature transformer inside each model)
 
+> **2026-10-07:** the scripts and tests of `docs/validation/pr12/` were removed (the code they
+> checked is renamed and later rebuilt; the behaviors of ours they pinned are in `tests/unit/`, except that `estimator` has
+> no default, which the signature enforces).
+> They are kept in commit `c966edb`: `git show c966edb:docs/validation/pr12/<file>`.
+
 **For:** an independent validating session with no memory of the implementation. **Written:** 2026-10-05.
 **Under validation:** branch `feat/estimator-and-feature-transformer` (PR #12, draft, into
 `feat/hyperparameter-tuning`), which implemented

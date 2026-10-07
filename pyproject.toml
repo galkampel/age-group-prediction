@@ -81,6 +81,10 @@ disallow_untyped_defs = true
 pythonpath = [
     "src",
 ]
+# Tests live under tests/ only; a script or audit test elsewhere (docs/) is not collected.
+testpaths = [
+    "tests",
+]
 markers = [
     "calibration: canonical seed-sensitive calibration checks",
     "slow: slower coefficient-recovery, real-model, tracking, and notebook checks",

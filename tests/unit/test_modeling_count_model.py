@@ -1,4 +1,4 @@
-"""DirectCohortModel: each test names the mistake in our code it would catch."""
+"""CountModel: each test names the mistake in our code it would catch."""
 
 from __future__ import annotations
 
@@ -16,7 +16,7 @@ from sklearn.exceptions import NotFittedError
 from sklearn.linear_model import LinearRegression, PoissonRegressor
 from sklearn.utils.validation import check_is_fitted
 
-from age_group_prediction.modeling import DirectCohortModel, Regressor
+from age_group_prediction.modeling import CountModel, Regressor
 
 
 def _data(rows: int = 300) -> tuple[pd.DataFrame, pd.Series, np.ndarray]:
@@ -90,7 +90,7 @@ class _WithoutSampleWeight(BaseEstimator):
 def test_clone_and_set_params_change_only_the_copy() -> None:
     # A tuner builds each trial's model this way; it breaks if __init__ alters
     # or drops an argument, or if the copy shares the template's estimator.
-    model = DirectCohortModel(estimator=_lightgbm(50), use_exposure=True)
+    model = CountModel(estimator=_lightgbm(50), use_exposure=True)
 
     trial = clone(model).set_params(estimator__n_estimators=5)
 
@@ -104,7 +104,7 @@ def test_the_template_estimator_stays_unfitted() -> None:
     # the next and into the caller's later use.
     template = _lightgbm()
 
-    model = DirectCohortModel(estimator=template).fit(X, Y)
+    model = CountModel(estimator=template).fit(X, Y)
 
     assert model.estimator_ is not template
     with pytest.raises(NotFittedError):
@@ -128,7 +128,7 @@ def test_exposure_misuse_raises(exposure: np.ndarray | None, message: str) -> No
     # estimator. The values are checked by preprocessing.ExposureTransformer
     # and its tests.
     with pytest.raises(ValueError, match=message):
-        DirectCohortModel(estimator=_lightgbm(), use_exposure=True).fit(
+        CountModel(estimator=_lightgbm(), use_exposure=True).fit(
             X, Y, exposure=exposure
         )
 
@@ -139,7 +139,7 @@ def test_exposure_misuse_raises(exposure: np.ndarray | None, message: str) -> No
 def test_a_wrong_length_exposure_raises_at_predict(exposure: np.ndarray) -> None:
     # Without the check numpy would broadcast a length-1 exposure to every
     # building silently, and fail on another length with a broadcast error.
-    model = DirectCohortModel(estimator=_lightgbm(5), use_exposure=True).fit(
+    model = CountModel(estimator=_lightgbm(5), use_exposure=True).fit(
         X, Y, exposure=EXPOSURE
     )
 
@@ -150,7 +150,7 @@ def test_a_wrong_length_exposure_raises_at_predict(exposure: np.ndarray) -> None
 def test_an_unused_exposure_is_ignored() -> None:
     # A caller passes one exposure to every model; with use_exposure=False it
     # must not enter the fit or the prediction.
-    model = DirectCohortModel(estimator=_lightgbm())
+    model = CountModel(estimator=_lightgbm())
     without = clone(model).fit(X, Y).predict(X)
 
     with_exposure = clone(model).fit(X, Y, exposure=EXPOSURE)
@@ -163,7 +163,7 @@ def test_fit_receives_the_rate_with_the_exposure_as_weight() -> None:
     # The whole exposure model is this one call: a missing weight, the count
     # in place of the rate, or y * exposure would each fit another model, by a
     # margin a fitted estimator's mean can hide (0.5% without the weight).
-    model = DirectCohortModel(estimator=_Recorder(), use_exposure=True).fit(
+    model = CountModel(estimator=_Recorder(), use_exposure=True).fit(
         X, Y, exposure=EXPOSURE
     )
 
@@ -177,7 +177,7 @@ def test_fit_receives_the_rate_with_the_exposure_as_weight() -> None:
 def test_doubling_the_exposure_doubles_the_prediction(estimator: Regressor) -> None:
     # Exact because the exposure is not a feature; fails if predict drops the
     # exposure, for every loss, the Gaussian one included.
-    model = DirectCohortModel(estimator=estimator, use_exposure=True).fit(
+    model = CountModel(estimator=estimator, use_exposure=True).fit(
         X, Y, exposure=EXPOSURE
     )
 
@@ -200,7 +200,7 @@ def test_training_mean_prediction_matches_the_target_mean(
     # exposure applied twice. The plain cases are the only cover of the path
     # without exposure.
     exposure = EXPOSURE if use_exposure else None
-    model = DirectCohortModel(estimator=estimator, use_exposure=use_exposure).fit(
+    model = CountModel(estimator=estimator, use_exposure=use_exposure).fit(
         X, Y, exposure=exposure
     )
 
@@ -213,7 +213,7 @@ def test_the_weighted_rate_equals_lightgbms_offset() -> None:
     # Catches a reformulation that is not the offset model log(exposure): the
     # two are the same likelihood, so LightGBM grows the same trees (measured
     # agreement 1.7e-8, floating point only).
-    model = DirectCohortModel(estimator=_lightgbm(), use_exposure=True).fit(
+    model = CountModel(estimator=_lightgbm(), use_exposure=True).fit(
         X, Y, exposure=EXPOSURE
     )
     # The offset model by hand: LightGBM skips boost_from_average once given an
@@ -233,7 +233,7 @@ def test_the_gaussian_weighted_rate_is_least_squares_of_the_count() -> None:
     # proportional to the exposure, i.e. least squares of the count on
     # [exposure, exposure * x] with weights 1 / exposure. Catches a Gaussian
     # path that fits another model, e.g. without the weight.
-    model = DirectCohortModel(estimator=LinearRegression(), use_exposure=True).fit(
+    model = CountModel(estimator=LinearRegression(), use_exposure=True).fit(
         X, Y, exposure=EXPOSURE
     )
     design = np.column_stack([EXPOSURE, EXPOSURE[:, None] * X.to_numpy()])
@@ -249,7 +249,7 @@ def test_the_gaussian_weighted_rate_is_least_squares_of_the_count() -> None:
 def test_predict_follows_how_the_model_was_fitted() -> None:
     # Turning use_exposure off after fitting must not silently return rates per
     # apartment instead of counts.
-    model = DirectCohortModel(estimator=_lightgbm(5), use_exposure=True).fit(
+    model = CountModel(estimator=_lightgbm(5), use_exposure=True).fit(
         X, Y, exposure=EXPOSURE
     )
     model.set_params(use_exposure=False)
@@ -264,7 +264,7 @@ def test_predict_follows_how_the_model_was_fitted() -> None:
 def test_a_regressor_without_sample_weight_surfaces_the_library_error() -> None:
     # The model does not pre-check the estimator: Python's own error names the
     # missing argument, so a check of ours would only repeat it.
-    model = DirectCohortModel(
+    model = CountModel(
         estimator=_WithoutSampleWeight(),
         use_exposure=True,
     )
@@ -276,6 +276,6 @@ def test_a_regressor_without_sample_weight_surfaces_the_library_error() -> None:
 def test_an_all_zero_target_surfaces_lightgbms_error() -> None:
     # Pinned because the model deliberately leaves this check to the estimator.
     with pytest.raises(LightGBMError, match="sum of labels is zero"):
-        DirectCohortModel(estimator=_lightgbm(), use_exposure=True).fit(
+        CountModel(estimator=_lightgbm(), use_exposure=True).fit(
             X, Y * 0, exposure=EXPOSURE
         )

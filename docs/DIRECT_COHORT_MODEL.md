@@ -1,14 +1,19 @@
 # Direct Cohort Model (Model A)
 
 > **Two implementations.** §0 describes the rebuilt
-> `age_group_prediction.modeling.DirectCohortModel`, and §0.6 the classes that
+> `age_group_prediction.modeling.CountModel`, and §0.6 the classes that
 > fit every cohort from the raw table. They are built and tested, but nothing
 > calls them yet. §1–§10 describe the original
 > `models/direct_cohort.py`, which `experiment/` and `tracking/` still run.
 > That code is deleted once all three models are rebuilt
 > ([plan](MODEL_REIMPLEMENTATION_PLAN.md)).
 
-## 0. The Rebuilt Model (`modeling/direct_cohort.py`)
+## 0. The Rebuilt Model (`modeling/count_model.py`)
+
+> **2026-10-07:** the class is `CountModel`, renamed from `DirectCohortModel` because it fits
+> any one count column: a cohort's here, and Model 2's total
+> ([TOTAL_TIMES_PROBABILITY_MODEL_PLAN.md](TOTAL_TIMES_PROBABILITY_MODEL_PLAN.md) P2).
+> This file keeps its name; "Model A" stays the name of the direct approach.
 
 One regressor for **one** cohort's child count. Cohorts are independent, so
 each gets its own instance, features and hyperparameters.
@@ -171,7 +176,7 @@ The output $\hat\mu_b$ is an expected **count**, not a rate.
 
 | Member | What it takes or gives |
 |---|---|
-| `DirectCohortModel(*, estimator, use_exposure=False, feature_transformer=None)` | Settings only, stored verbatim. `estimator` is required: any object with `fit(X, y, sample_weight=None)` and `predict(X)` (the `Regressor` protocol). Build it with `n_jobs=1` for LightGBM, since more OpenMP threads crash alongside torch on macOS. LightGBM ignores `subsample` unless `subsample_freq >= 1` is set on the estimator too |
+| `CountModel(*, estimator, use_exposure=False, feature_transformer=None)` | Settings only, stored verbatim. `estimator` is required: any object with `fit(X, y, sample_weight=None)` and `predict(X)` (the `Regressor` protocol). Build it with `n_jobs=1` for LightGBM, since more OpenMP threads crash alongside torch on macOS. LightGBM ignores `subsample` unless `subsample_freq >= 1` is set on the estimator too |
 | `fit(X, y, exposure=None)` | `y` is the raw cohort count; `exposure` the raw $E$. With `use_exposure=False` a passed exposure is ignored, so one exposure can go to every model and a tuner can compare with and without |
 | `predict(X, exposure=None)` | Expected counts, a 1-D array. It follows how the model was fitted: an exposure is required if it was fitted with one, and ignored otherwise |
 | `evaluate(y_true, y_pred, metric)` | One `float`. `metric` is a `Metric`: `POISSON_DEVIANCE`, `RMSE`, `MAE`, or a custom `Metric(name, function, greater_is_better=False)` |
@@ -179,7 +184,7 @@ The output $\hat\mu_b$ is an expected **count**, not a rate.
 
 ```python
 from lightgbm import LGBMRegressor
-from age_group_prediction.modeling import DirectCohortModel
+from age_group_prediction.modeling import CountModel
 from age_group_prediction.preprocessing import ExposureTransformer
 from age_group_prediction.scoring import POISSON_DEVIANCE
 from age_group_prediction.utils import take_rows
@@ -189,7 +194,7 @@ from age_group_prediction.utils import take_rows
 # before the split and taken by the same positions (§0.6).
 exposure = ExposureTransformer("n_apartments").fit_transform(table)
 train_df, test_df = take_rows(table, train_index), take_rows(table, test_index)
-model = DirectCohortModel(
+model = CountModel(
     estimator=LGBMRegressor(objective="poisson", n_jobs=1, verbosity=-1),
     use_exposure=True,
     feature_transformer=tree,  # fitted on train_df inside fit
@@ -266,7 +271,7 @@ per-cohort numbers. The summed prediction's deviance against
 ### 0.6 Every Cohort From The Raw Table: `IndependentCohortModels`
 
 `IndependentCohortModels(cohort_models)` maps each cohort (a column of `y`) to
-its model, usually a `DirectCohortModel` with its own `feature_transformer`,
+its model, usually a `CountModel` with its own `feature_transformer`,
 so each cohort keeps its own features and hyperparameters. `fit` fits a copy
 of each on the raw table and its column of `y`, stored in `cohort_models_`;
 `predict` returns a DataFrame with one column per cohort, in `y`'s order,
@@ -291,7 +296,7 @@ exports the **original** classes of §1–§10.
 
 ```python
 from lightgbm import LGBMRegressor
-from age_group_prediction.modeling import DirectCohortModel, IndependentCohortModels
+from age_group_prediction.modeling import CountModel, IndependentCohortModels
 from age_group_prediction.preprocessing import ExposureTransformer, ShareTransformer
 from age_group_prediction.scoring import POISSON_DEVIANCE
 from age_group_prediction.splitting import Splitter
@@ -318,9 +323,9 @@ def lightgbm():
     return LGBMRegressor(objective="poisson", n_jobs=1, verbosity=-1)
 
 model = IndependentCohortModels({
-    "n_kindergarten": DirectCohortModel(estimator=lightgbm(), use_exposure=True, feature_transformer=tree),
-    "n_elementary": DirectCohortModel(estimator=lightgbm(), feature_transformer=tree),  # ignores the exposure
-    "n_highschool": DirectCohortModel(estimator=lightgbm(), use_exposure=True, feature_transformer=tree),
+    "n_kindergarten": CountModel(estimator=lightgbm(), use_exposure=True, feature_transformer=tree),
+    "n_elementary": CountModel(estimator=lightgbm(), feature_transformer=tree),  # ignores the exposure
+    "n_highschool": CountModel(estimator=lightgbm(), use_exposure=True, feature_transformer=tree),
 }).fit(X_train, Y_train, exposure=exposure_train)
 predictions = model.predict(X_test, exposure=exposure_test)  # a DataFrame
 scores = {
@@ -337,8 +342,8 @@ scores = {
 | **Rows are paired by position**, not by index, as in scikit-learn. Nothing checks the index | The splitter returns row positions, and every array is taken by them, the exposure included, as above |
 | **The keys of `cohort_models` equal `y`'s columns**, each once, or `fit` raises `ValueError` | A cohort would otherwise be dropped silently, or a duplicated column would reach its model as a DataFrame |
 | **The targets come from `y` only.** With the default `remainder="drop"`, as in `tree`, `X` may keep the target columns: each transformer reads only its plans' columns, and `predict` needs none. With `remainder="passthrough"`, drop the targets from `X` first | Otherwise the targets become features, and `predict` fails on a table without them |
-| **Each cohort is tuned on its own.** A nested name such as `cohort_models__n_kindergarten__estimator__learning_rate` raises `AttributeError`; tune each cohort's `DirectCohortModel` (whose nested names, e.g. `estimator__learning_rate`, work), then assemble the mapping, or replace it with `set_params(cohort_models=...)` | The cohorts are independent, so no study tunes them together |
-| **Set before `fit`.** `IndependentCohortModels` and each `DirectCohortModel` fit copies (of the cohort models, the estimator and the transformer), so a setting changed with `set_params` after `fit` reaches only the next `fit`; `predict` follows the fitted copies | The templates stay unfitted and can be reused |
+| **Each cohort is tuned on its own.** A nested name such as `cohort_models__n_kindergarten__estimator__learning_rate` raises `AttributeError`; tune each cohort's `CountModel` (whose nested names, e.g. `estimator__learning_rate`, work), then assemble the mapping, or replace it with `set_params(cohort_models=...)` | The cohorts are independent, so no study tunes them together |
+| **Set before `fit`.** `IndependentCohortModels` and each `CountModel` fit copies (of the cohort models, the estimator and the transformer), so a setting changed with `set_params` after `fit` reaches only the next `fit`; `predict` follows the fitted copies | The templates stay unfitted and can be reused |
 | **`cohort_models` is the template, `cohort_models_` the fitted copies**, as `estimator` and `estimator_`. A plain `dict` suffices: the output follows `y`'s column order at fit, whatever the mapping's order | scikit-learn's contract: `get_params`, `set_params` and `clone` read the template stored verbatim; fitting copies keeps it unfitted, so a refit equals a fresh fit. `OrderedDict` adds only order-sensitive `==` and `move_to_end`, neither used |
 | **Per-cohort scores are a loop**, as above; how to combine the cohorts is the caller's choice | `mean_poisson_deviance` takes one column |
 

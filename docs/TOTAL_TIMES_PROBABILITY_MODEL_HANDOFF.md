@@ -35,9 +35,9 @@ Model 2 (`modeling/independent_total_probability.py`, PR #11) predicts each coho
 | Item | State |
 |---|---|
 | Branch | Planning happened on `feat/hyperparameter-tuning` at `c966edb` (clean tree except the two new docs). Sub-task 0 creates `feat/total-times-probability-model` from it and a draft PR into it, like PRs #10–#12 |
-| Uncommitted | `docs/TOTAL_TIMES_PROBABILITY_MODEL_PLAN.md`, `docs/TOTAL_TIMES_PROBABILITY_MODEL_HANDOFF.md` (this file). The user commits them with sub-task 0 |
-| Suite | sub-task 0 baseline (2026-10-07): **1254 passed, 1 skipped, 1 xfailed** (`uv run pytest -m "not slow"`); PR #12's 1230 plus the 24 tests of `docs/validation/pr12/`, which the run collects (plan §10) |
-| Next | Sub-task 0 is done (plan §8 record). **Sub-task 1** (the rename) next, after the user decides plan §10's open question on `docs/validation/pr12/`. Then sub-tasks 2–7, one per stop |
+| Uncommitted | The plan and this handoff were committed with sub-task 0 (`02b7725`); each later sub-task is committed by the user at its stop |
+| Suite | after sub-task 1 (2026-10-07): **1230 passed, 1 skipped, 1 xfailed** (`uv run pytest -m "not slow"`; `testpaths = ["tests"]`) |
+| Next | Sub-tasks 0–1 are done (plan §8 records). **Sub-task 2** (`NegativeBinomialRegressor` and `CountModel`'s offset branch) next. Then 3–7, one per stop |
 
 ## 3. Decisions the user made during planning (settled; do not reopen)
 
@@ -79,9 +79,9 @@ evidence, or drop it. Probes: `PYTHONPATH=src .venv/bin/python -c "..."` (do not
 
 ## 5. Files you will touch first
 
-- `src/age_group_prediction/modeling/direct_cohort.py` → `count_model.py` (sub-task 1).
-- `src/age_group_prediction/modeling/__init__.py`, `tests/unit/test_modeling_direct_cohort.py`,
-  `tests/unit/test_modeling_contract.py` (`EXAMPLES`, line ~155), `docs/DIRECT_COHORT_MODEL.md`,
-  `docs/FEATURE_TRANSFORMATIONS.md` §8.1, `docs/MODULE_REFERENCE.md`, `docs/README.md`,
-  `docs/HYPERPARAMETER_TUNING_PLAN.md`.
+Sub-tasks 0–1 are done (the rename: `modeling/count_model.py`, `CountModel`). Sub-task 2:
+- `pyproject.toml` (`statsmodels>=0.14.5` into `dependencies`).
+- New `src/age_group_prediction/modeling/negative_binomial.py`; `modeling/count_model.py`
+  (`OffsetRegressor`, the `has_fit_parameter` branch); `modeling/__init__.py`.
+- New `tests/unit/test_modeling_negative_binomial.py`; `tests/unit/test_modeling_count_model.py`.
 - Memory to update at the end: `multi-cohort-models-plan.md` in the Claude memory directory.
