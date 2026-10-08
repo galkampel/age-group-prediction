@@ -6,8 +6,8 @@ conversation. This file is the source of truth: update its status line and the
 sub-task checkboxes in §8 as work finishes. Orientation for a new session:
 [TOTAL_TIMES_PROBABILITY_MODEL_HANDOFF.md](TOTAL_TIMES_PROBABILITY_MODEL_HANDOFF.md).
 
-**Status (2026-10-08):** approved by the user. **Sub-tasks 0–4 are done** (branch
-`feat/total-times-probability-model`; `DirectCohortModel` is now `CountModel`, with
+**Status (2026-10-08):** approved by the user. **Sub-tasks 0–4 are done and committed**
+(HEAD `fd843bc`, pushed; branch `feat/total-times-probability-model`; `DirectCohortModel` is now `CountModel`, with
 an exposure branch and NB2 as `NegativeBinomialRegressor`; `CohortProbabilityModel` is a
 classifier on weighted or per-child rows, optionally calibrated (`calibration_method`,
 `calibration_cv`), and the torch Model 2 and `TemperatureCalibrator` are deleted;
@@ -100,9 +100,16 @@ them. In short:
 6. **Justify every class, field and check**, or drop it. Validate only what
    would otherwise pass silently; leave to the library what it already
    raises. No default the user did not ask for: `estimator` is required.
-7. **Code style:** match `modeling/direct_cohort.py`. Docstrings keep what the
-   code does and its non-obvious constraint; derivations and motivation go in
-   the docs with a pointer at most. Inner-library quirks go in the docs.
+7. **Code style:** match `modeling/count_model.py`. **Docstrings and comments hold only
+   relevant information: concise but informative** (the user, 2026-10-08):
+   - a docstring says what the code does, its inputs and outputs, and the non-obvious
+     constraint a caller must know, in a few lines;
+   - a comment states only a "why" the code cannot show;
+   - derivations, measured figures, alternatives, history and library quirks go in the
+     docs (§9), with at most a pointer from the code;
+   - never restate the code or record revisions in it.
+
+   **Every decision's derivation is documented** in the model docs (§9, sub-task 7).
 8. **Probes** are read-only: `PYTHONPATH=src .venv/bin/python -c "..."`
    (`uv run` may re-sync the venv; `--no-sync` or the venv's python). Quote
    globs in zsh (`--include='*.py'`).
@@ -759,6 +766,8 @@ Each ends at a stop (§3). "Verify" lists what the user can check.
   nested `set_params` names (`probability_model__calibration_method`); refit
   equals fresh fit; works with each total variant (`CountModel` Poisson with
   and without exposure, `CountModel` with `NegativeBinomialRegressor`).
+- Docstrings and comments of the new class follow §3 rule 7 from the start (the older
+  ones are trimmed in sub-task 7).
 - **Verify:** `uv run pytest -m "not slow"` passes; the `grep` above; mypy
   clean; no `import torch` under `modeling/`.
 
@@ -780,16 +789,41 @@ Each ends at a stop (§3). "Verify" lists what the user can check.
   `docs/MODULE_REFERENCE.md`; `docs/README.md`; `docs/MODEL_REIMPLEMENTATION_PLAN.md`
   §5; `docs/HYPERPARAMETER_TUNING_PLAN.md` where it names Model 2's tunables;
   `docs/MULTI_COHORT_MODELS_PLAN.md` top note. Every code block run.
+- **Derivations (the user, 2026-10-08):** each §9 item is written as a derivation: the model
+  and its assumptions, each step, then the result the code relies on, with the formulas. Each
+  one names the code it justifies (class, method, setting) and ends with its measured check
+  (§6 or the §8 records).
+- **Trimming pass (the user, 2026-10-08):** every docstring and comment written in this PR is
+  cut to §3 rule 7: `count_model.py`, `negative_binomial.py`, `cohort_probability.py`,
+  `total_times_probability.py` and their tests' comments. Whatever is cut and still matters
+  moves to the docs. The main case is `CohortProbabilityModel`'s class docstring, about 45
+  lines today: replication, dtype rules, routing, calibration and the fold gap. No behavior
+  change: the suite and mypy pass unchanged.
 - Memory: update `multi-cohort-models-plan.md` (the state), note the decisions.
 - PR body drafted in the scratchpad; the user applies it and marks the PR ready.
 - **Verify:** `grep -rn "TotalChildrenModel\|TemperatureCalibrator\|Dirichlet\|DirectCohortModel" docs --include='*.md'`
-  hits only historical records (plan docs' step records, the old stack's §1–§12).
+  hits only historical records (plan docs' step records, the old stack's §1–§12). Every §9
+  item has its derivation. A review subagent checks the docstrings and comments against §3
+  rule 7, and that nothing was lost: each cut fact is in the docs.
 
 ## 9. Docs: what each decision's explanation must say
 
 In `INDEPENDENT_TOTAL_PROBABILITY_MODEL.md` §0 (the model doc), one subsection
-each, with the formulas and the measured figures of §6; the total model's
-part also in `DIRECT_COHORT_MODEL.md` §0:
+each, **derived step by step** (assumptions, steps, result, the code it
+justifies), with the formulas and the measured figures of §6; the total model's
+part also in `DIRECT_COHORT_MODEL.md` §0. Derivations expected at least:
+
+- the weighted rate equals the Poisson offset model, but not NB2;
+- statsmodels' `exposure` equals `offset = log(exposure)` with coefficient 1;
+- `alpha` acts as `alpha × mean(exposure)` under normalized `sample_weight`;
+- the multinomial likelihood equals the categorical rows' likelihood (weight = count, not
+  `count / total`);
+- `E[m_i] = 1` for every resampling unit;
+- cross-fitting (`ensemble=False`) vs the ensemble, and the (k−1)/k bias;
+- temperature vs sigmoid vs isotonic, and their parameter counts;
+- `Σ_k Ĉ_{b,k} = μ̂_b`.
+
+The sections:
 
 1. **The model.** `log μ_b = log A_b + b + x_bᵀβ` (Poisson, NB2, or any
    regressor's mean × exposure); `p_{b,k} = classifier(w_b)`;
@@ -926,3 +960,4 @@ part also in `DIRECT_COHORT_MODEL.md` §0:
   near Model 1 on deviance, better on composition.
 - `grep` for the deleted and renamed names and for `torch` under
   `src/age_group_prediction/modeling`.
+- The docs' derivations (§9) and the docstring and comment trimming pass (§3 rule 7, sub-task 7).
