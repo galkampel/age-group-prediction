@@ -18,8 +18,7 @@ from .cohort_probability import (
 from .count_model import CountModel, ExposureRegressor, Regressor
 from .independent_cohorts import CohortModels, IndependentCohortModels
 from .negative_binomial import NegativeBinomialRegressor
-from .optimization import Solver
-from .total_children import TotalChildrenModel
+from .total_times_probability import TotalTimesProbabilityModel
 
 __all__ = [
     "BaseAgeGroupModel",
@@ -33,6 +32,5 @@ __all__ = [
     "NegativeBinomialRegressor",
     "Regressor",
     "ReplicationType",
-    "Solver",
-    "TotalChildrenModel",
+    "TotalTimesProbabilityModel",
 ]

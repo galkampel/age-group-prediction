@@ -43,7 +43,7 @@ from age_group_prediction.modeling import (
     CohortProbabilityModel,
     CountModel,
     IndependentCohortModels,
-    TotalChildrenModel,
+    TotalTimesProbabilityModel,
 )
 
 
@@ -105,15 +105,7 @@ def _independent_cohorts_example() -> Example:
     return model, X, y
 
 
-def _total_children_example() -> Example:
-    # No exposure: the refit test calls fit(X, y), so the default offset would raise.
-    rng = np.random.default_rng(0)
-    X = pd.DataFrame({"x": rng.normal(size=200)})
-    y = pd.Series(rng.poisson(np.exp(1 + 0.5 * X["x"])))
-    return TotalChildrenModel(use_exposure=False), X, y
-
-
-def _cohort_probability_example() -> Example:
+def _cohort_counts() -> tuple[pd.DataFrame, pd.DataFrame]:
     rng = np.random.default_rng(0)
     X = pd.DataFrame({"x": rng.normal(size=200)})
     y = pd.DataFrame(
@@ -122,15 +114,30 @@ def _cohort_probability_example() -> Example:
             "b": rng.poisson(np.exp(0.5 - 0.3 * X["x"])),
         }
     )
+    return X, y
+
+
+def _cohort_probability_example() -> Example:
+    X, y = _cohort_counts()
     return CohortProbabilityModel(estimator=LogisticRegression()), X, y
+
+
+def _total_times_probability_example() -> Example:
+    # No exposure: the refit test calls fit(X, y).
+    X, y = _cohort_counts()
+    model = TotalTimesProbabilityModel(
+        total_model=CountModel(estimator=_lightgbm()),
+        probability_model=CohortProbabilityModel(estimator=LogisticRegression()),
+    )
+    return model, X, y
 
 
 # Factories, so every test gets its own model and data and none is built at import.
 EXAMPLES: dict[type[BaseAgeGroupModel], Callable[[], Example]] = {
     CountModel: _count_model_example,
     IndependentCohortModels: _independent_cohorts_example,
-    TotalChildrenModel: _total_children_example,
     CohortProbabilityModel: _cohort_probability_example,
+    TotalTimesProbabilityModel: _total_times_probability_example,
 }
 
 CHECKS: list[Callable[[str, BaseAgeGroupModel], None]] = [

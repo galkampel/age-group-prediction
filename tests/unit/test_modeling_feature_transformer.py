@@ -22,7 +22,6 @@ from age_group_prediction.modeling import (
     BaseAgeGroupModel,
     CohortProbabilityModel,
     CountModel,
-    TotalChildrenModel,
 )
 
 # Centered x only. The table also holds columns the transformer drops, and x
@@ -71,10 +70,6 @@ MODELS: dict[str, tuple[Build, Target]] = {
             feature_transformer=features,
         ),
         lambda counts: counts["a"],
-    ),
-    "TotalChildrenModel": (
-        lambda features: TotalChildrenModel(feature_transformer=features),
-        lambda counts: counts.sum(axis=1),
     ),
     "CohortProbabilityModel": (
         lambda features: CohortProbabilityModel(

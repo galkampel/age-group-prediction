@@ -11,7 +11,7 @@ sub-task checkboxes in §8 as work finishes. Orientation for a new session:
 an exposure branch and NB2 as `NegativeBinomialRegressor`; `CohortProbabilityModel` is a
 classifier on weighted or per-child rows, optionally calibrated (`calibration_method`,
 `calibration_cv`), and the torch Model 2 and `TemperatureCalibrator` are deleted;
-records in §8). Sub-task 5 (`TotalTimesProbabilityModel`) is next. During planning the user revised it twice: NB2 goes through
+records in §8). **Sub-task 5 is done, awaiting the user's commit:** `TotalTimesProbabilityModel` added, `total_children.py` and `optimization.py` deleted (no torch left in `modeling/`). Sub-task 6 (smoke run) is next. During planning the user revised it twice: NB2 goes through
 `CountModel` (the renamed `DirectCohortModel`) as an estimator taking the exposure (an offset in the first plan; raw `exposure` since sub-task 2); a
 `replication` setting for row-resampling classifiers was considered and dropped
 on measurement (P6, P8).
@@ -135,7 +135,7 @@ them. In short:
 | `tests/unit/test_modeling_direct_cohort.py` | `DirectCohortModel` | renamed `test_modeling_count_model.py`; the exposure branch added |
 | `tests/unit/test_modeling_cohort_probability.py`, `test_modeling_independent_total_probability.py` | tests of the torch builds | the first **rewritten** (sub-task 3); the second **deleted** in sub-task 3, `test_modeling_total_times_probability.py` new in sub-task 5 |
 | `tests/unit/test_modeling_negative_binomial.py` | — | **new** |
-| `tests/unit/test_modeling_contract.py` | `EXAMPLES` per concrete model (line 153 after sub-task 3) | entries renamed/added; a model without an example fails `test_every_shipped_model_has_an_example` |
+| `tests/unit/test_modeling_contract.py` | `EXAMPLES` per concrete model (line 136 after sub-task 5) | entries renamed/added; a model without an example fails `test_every_shipped_model_has_an_example` |
 | `tests/unit/test_modeling_feature_transformer.py`, `test_modeling_independent_cohorts.py`, `tests/unit/test_hyperparameter_tuning_evaluator.py` (builds a `DirectCohortModel`: lines 40, 296, 435) | use the old names | updated |
 | `docs/DIRECT_COHORT_MODEL.md` §0 | `DirectCohortModel` | file name kept; §0 says the class is `CountModel`, used for a cohort and for the total, with the exposure rule |
 | `docs/INDEPENDENT_TOTAL_PROBABILITY_MODEL.md` §0 | the torch build | §0 rewritten (the file keeps §1–§12 for the old stack until roadmap step 5 deletes it) |
@@ -168,7 +168,7 @@ untouched (deleted by roadmap step 5).
 | P9 | **Calibration is `CalibratedClassifierCV` inside `CohortProbabilityModel`:** `calibration_method: CalibrationMethod \| None = None` (`Literal["temperature", "sigmoid", "isotonic"]`, `None` = the estimator's own probabilities), `calibration_cv: int = 5`. `fit` wraps the cloned estimator as `CalibratedClassifierCV(estimator, method=…, cv=<grouped splits>, ensemble=False)` and fits it with the weights. **No `TemperatureCalibrator`** | The user's specification. `ensemble=False` is **cross-fitting**: the estimator is fitted on each of `k` folds, its out-of-fold probabilities for **every** row are collected, **one** calibrator is fitted on them, then the estimator is refitted on all rows; `predict` is that one model through that one map. `ensemble=True` (sklearn's default for a non-frozen estimator) averages `k` calibrated fold models and never fits on all rows. Cross-fitting is the user's preference and what the previous build did by hand (the B6 loop). `TemperatureCalibrator` duplicated sklearn's `_TemperatureScaling`, whose objective it was pinned to; the calibration now sits in the model, so clones and tuning (`probability_model__calibration_method`) carry it, and no `FrozenEstimator` idiom is needed |
 | P10 | *Revised by the user in sub-task 4 (2026-10-08): the samples are split **before** the categorical rows, round-robin (sample `i` in fold `i mod calibration_cv`), and each row goes to its sample's fold (`PredefinedSplit(sample_folds[sample_positions])`), so both replications calibrate on the same folds (folds of rows balanced cells under `"weighted"` and children under `"per_child"`: different partitions, `beta_` 0.963 vs 0.970 for the same unpenalized LR; now equal to 2e-13).* As first planned: **Calibration folds: `GroupKFold(n_splits=calibration_cv)` over the categorical rows with `groups=sample_positions`** (the building; under `"per_child"` repeated by count), unshuffled, passed as a list of splits | A building's rows carry its known composition; with plain `KFold` the same building sits in a fit fold and its calibration fold, and the calibrator sees in-sample confidence. Grouping by building removes that; grouping by **neighborhood** (the repo's evaluation unit) would need `groups` at `fit`, which the base contract does not carry: documented as the limitation (the tuner's outer folds are by neighborhood regardless). Unshuffled `GroupKFold` is deterministic, so no `random_state` setting (round-robin likewise, and each fold spans the table even if it is sorted) |
 | P11 | **Folds: 5. Isotonic is allowed but documented as inappropriate here** | **How many:** the calibrator must map the **final** model's probabilities, but it is fitted on fold models trained on `(k−1)/k` of the rows, which are less confident than the final one; `k = 2` (50/50) calibrates a model fitted on half the data and biases the temperature toward sharpening; larger `k` approaches the final model at the cost of `k` fits; with ~245 buildings per training set, 5 (sklearn's default) leaves ~200 buildings per fold fit and uses every row for calibration. **How much is enough:** temperature fits 1 parameter and sigmoid 2 per class, so every row of a 5-fold cross-fit (~1,300 child-weighted rows) is ample; isotonic is non-parametric per class and sklearn advises it only well above ~1,000 samples per class, so it overfits here (the previous plan's N12 said the same). Measured: all three run on the categorical rows; on the simulator the fitted inverse temperature (`beta_`, `softmax(beta_ · logits)`) is 0.88 for unpenalized LR and 0.47 for default LightGBM (sub-task 4 table) |
-| P12 | **`TotalTimesProbabilityModel(total_model, probability_model)`** in `modeling/total_times_probability.py`: `fit` clones and fits `total_model` on `y.sum(axis=1)` and `probability_model` on `y`, both with `exposure`; `predict` = `total[:, None] × probabilities`, a DataFrame with `y`'s columns at fit, indexed like `X`; raises if the probability model's columns differ from `cohorts_`. No calibrator argument | The user's name (chosen over `TotalSplitModel`, `TotalCompositionModel`): it names the prediction. Settings named for their role (`total_model`, `probability_model`); nested names reach both (`total_model__estimator__alpha`, `probability_model__estimator__C`, `probability_model__calibration_method`) |
+| P12 | **`TotalTimesProbabilityModel(total_model, probability_model)`** in `modeling/total_times_probability.py`: `fit` clones and fits `total_model` on `y.sum(axis=1)` and `probability_model` on `y`, both with `exposure`; `predict` = `total[:, None] × probabilities`, a DataFrame with `y`'s columns at fit, indexed like `X`; raises if the probability model's columns differ from `cohorts_`. No calibrator argument. *Revised in sub-task 5 (2026-10-08; the user: "compare the two, choose by best practice, do not overcomplicate"):* **no column check, no `cohorts_`**: `probability_model: CohortProbabilityModel` and `predict` = `probabilities * total[:, None]`, so the columns and index are the probability model's own DataFrame's (`y`'s columns at fit, `X`'s index) and nothing can be mislabelled; the check could fire only for another probability model reordering its columns, which does not exist (widening the type is one line if one is ever written) | The user's name (chosen over `TotalSplitModel`, `TotalCompositionModel`): it names the prediction. Settings named for their role (`total_model`, `probability_model`); nested names reach both (`total_model__estimator__alpha`, `probability_model__estimator__C`, `probability_model__calibration_method`) |
 | P13 | **A building with no children contributes to the total model only** (it has no row in the categorical representation). **A cohort with no child in `y` raises at `fit`** | The classifier cannot learn an absent class, and `predict` would lack its column: raise early with the cohort's name, as today. The Dirichlet build's "every building needs a child" rule disappears |
 | P14 | **No torch in `modeling/`;** `torch` stays a dependency of the old stack (`pyro`). The contract test's single-thread LightGBM note stays until the old stack goes | The user: "Do not use torch". Deleting `optimization.py` removes the OpenMP guard with the code that needed it; LightGBM alone did not crash |
 | P15 | **Penalty settings are the estimators' own** (`PoissonRegressor(alpha)`, `LogisticRegression(C)`, LightGBM's); `NegativeBinomialRegressor` has none | `DirectCohortModel`'s rule since PR #12. The docs note that sklearn's penalized GLMs normalize `sample_weight`, so `alpha` acts as `alpha × mean(exposure)` under the rate form, and that `C` on the replicated rows is per **child** |
@@ -299,13 +299,13 @@ class CohortProbabilityModel(BaseAgeGroupModel):
 
 # modeling/total_times_probability.py  (sub-task 5)
 class TotalTimesProbabilityModel(BaseAgeGroupModel):
-    def __init__(self, *, total_model: BaseAgeGroupModel, probability_model: BaseAgeGroupModel) -> None: ...
+    def __init__(self, *, total_model: BaseAgeGroupModel, probability_model: CohortProbabilityModel) -> None: ...
     def fit(self, X, y: pd.DataFrame, exposure=None) -> Self:
         # clone(total_model).fit(X, y.sum(axis=1), exposure=exposure); clone(probability_model).fit(X, y, exposure=exposure)
-        # total_model_, probability_model_, cohorts_
+        # total_model_, probability_model_ (set together, once both succeeded)
     def predict(self, X, exposure=None) -> pd.DataFrame:
-        # probabilities = probability_model_.predict(X, exposure=exposure); columns must equal cohorts_
-        # total = np.asarray(total_model_.predict(X, exposure=exposure)); total[:, None] * probabilities
+        # total = np.asarray(total_model_.predict(X, exposure=exposure), dtype=float)
+        # probability_model_.predict(X, exposure=exposure) * total[:, None]   (P12 revision: no column check)
 ```
 
 Usage (the doc's §0.3 block, to be run):
@@ -750,19 +750,21 @@ Each ends at a stop (§3). "Verify" lists what the user can check.
   previous `GroupKFold` row folds). Changed tests 74 passed under `-W error`; ruff, format,
   mypy (22 and 9 files) clean. **Suite 1238 passed, 1 skipped, 1 xfailed.**
 
-### [ ] 5. `TotalTimesProbabilityModel`, deletions, exports
+### [x] 5. `TotalTimesProbabilityModel`, deletions, exports
 - `modeling/total_times_probability.py` (P12); delete `total_children.py`,
   `optimization.py`, their tests and `tests/validation/test_total_children.py`
   (`independent_total_probability.py` and `calibration.py` went in sub-task 3);
   update `modeling/__init__.py`, the contract test's `EXAMPLES`,
   `test_modeling_feature_transformer.py`;
   `grep -rn "TotalChildrenModel\|TemperatureCalibrator\|IndependentTotalProbabilityModel\|single_threaded_torch\|modeling.optimization" src tests --include='*.py'`
-  must hit only the old stack (`models/`, `experiment/`, `tracking/`, their tests).
+  must hit only the old stack's own `IndependentTotalProbabilityModel` (`models/`, `experiment/`,
+  `tracking/`, `modeling_config.py`, the package root `__init__.py`, and their tests, e.g.
+  `bundle_spy.py`, `test_experiment.py`, `test_final_*.py`, `test_gate8_tracking.py`).
 - Tests (`test_modeling_total_times_probability.py`): `fit` gives the row sum
   to the total model and `y` to the probability model (spies); `predict` =
   total × probabilities, columns in `y`'s order, index of `X`; rows of
-  `predict` sum to the total's prediction; a probability model with other
-  columns raises; exposure reaches both; templates stay unfitted (clones);
+  `predict` sum to the total's prediction; ~~a probability model with other
+  columns raises~~ (dropped with the check, P12 revision); exposure reaches both; templates stay unfitted (clones);
   nested `set_params` names (`probability_model__calibration_method`); refit
   equals fresh fit; works with each total variant (`CountModel` Poisson with
   and without exposure, `CountModel` with `NegativeBinomialRegressor`).
@@ -770,6 +772,43 @@ Each ends at a stop (§3). "Verify" lists what the user can check.
   ones are trimmed in sub-task 7).
 - **Verify:** `uv run pytest -m "not slow"` passes; the `grep` above; mypy
   clean; no `import torch` under `modeling/`.
+- **Record (2026-10-08):** baseline 1238 passed, 1 skipped, 1 xfailed. Re-verified: the five
+  paths to delete exist; `total_children` / `optimization` are imported only by
+  `modeling/__init__.py`, each other, their tests, and the contract and feature-transformer
+  tests; `tests/validation/helpers.py` names only the simulator's `TotalChildrenSimulator`
+  (unrelated); old-stack tests still import torch, so the single-thread LightGBM notes stay (P14).
+  Stale facts fixed: §4's `EXAMPLES` line; the grep's expected hits (above). **P12 revised (the
+  user: "compare the two, choose by best practice, do not overcomplicate"):** no column check,
+  no `cohorts_` (P12 note). Code: new `modeling/total_times_probability.py`
+  (`TotalTimesProbabilityModel`, Model 1's shape: clones, state set together, `check_is_fitted`;
+  the total through `np.asarray`, since a total with its own index would realign `mul` into NaN);
+  exports (`Solver`, `TotalChildrenModel` out; `TotalTimesProbabilityModel` in); the contract's
+  `_total_times_probability_example` (`CountModel` on LightGBM + `CohortProbabilityModel` on LR;
+  `_cohort_counts` shared with the probability example); the feature-transformer entry removed
+  (the total is a `CountModel`, already there). Deleted (`git rm`): `total_children.py`,
+  `optimization.py`, `test_modeling_total_children.py`, `test_modeling_optimization.py`,
+  `tests/validation/test_total_children.py`. Tests (`test_modeling_total_times_probability.py`,
+  7 functions, 9 cases): row sums to the total and `y` to the probabilities, exposure to both
+  (spies); exposure at predict (spies); `predict` = the halves fitted alone, `y`'s unsorted columns,
+  `X`'s non-default index; rows sum to the total for Poisson with and without exposure and NB2;
+  templates unfitted; a failing half keeps the previous fit; nested `set_params` reach the fit.
+  ruff, format, mypy (21 and 10 files) clean; changed tests 37 passed under `-W error`. Mutations
+  (scratchpad `mutate.py`, md5-restored), all 11 caught: total from one column; exposure dropped
+  at fit (each half) and at predict (each half); the total not broadcast along rows; index
+  dropped; `clone` dropped (each half); the total's state set before the probability fit; the
+  contract entry removed. **Review** (independent subagent; findings reproduced): no correctness
+  bug (row alignment by position with duplicated, string and reordered indexes; NaN counts raise
+  in the probability model's fit; contract and nested names). Fixed: the `predict` comment moved to
+  the `np.asarray` line (its real "why", reproduced: a Series total gives all NaN); the docstring's
+  "(e.g. a `CountModel`)" placed on `total_model`; the dropped column-check test struck above.
+  Noted for sub-task 7: `MODULE_REFERENCE.md` and `FEATURE_TRANSFORMATIONS.md` still name
+  `TotalChildrenModel`, `Solver`, `optimization.py`. **Suite 1200 passed, 1 skipped, 1 xfailed**
+  (1238 − 44 deleted unit tests − 3 feature-transformer cases + 9 new; 2 slow validation tests gone).
+- **Revision (2026-10-08, before the commit; the user asked whether `mul(total, axis=0)` is faster
+  than `probabilities * total`):** bare `* total` aligns a 1-D array with the **columns** (60 rows:
+  `ValueError`; rows == cohorts: silent, rows no longer sum to the total); `mul(total, axis=0)`
+  55.5 µs and `* total[:, None]` 30.5 µs on 245 rows, both correct. The user chose
+  `probabilities * total[:, None]`.
 
 ### [ ] 6. Smoke run (as PR #11's B7)
 - Script in the scratchpad, recipe in the plan doc: ten simulated populations,
