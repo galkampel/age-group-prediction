@@ -10,6 +10,7 @@ import pytest
 import sklearn
 from lightgbm import LGBMClassifier
 from sklearn.base import clone
+from sklearn.calibration import CalibratedClassifierCV
 from sklearn.ensemble import HistGradientBoostingClassifier, RandomForestClassifier
 from sklearn.exceptions import NotFittedError
 from sklearn.linear_model import LogisticRegression
@@ -23,6 +24,7 @@ from age_group_prediction.feature_engineering import (
     FeatureTransformer,
 )
 from age_group_prediction.modeling import (
+    CalibrationMethod,
     Classifier,
     CohortProbabilityModel,
     ReplicationType,
@@ -138,11 +140,19 @@ def test_both_replications_fit_the_same_likelihood() -> None:
     ],
     ids=["k-neighbors", "one-vs-rest"],
 )
+@pytest.mark.parametrize("calibration_method", [None, "temperature"])
+@pytest.mark.filterwarnings("error")
 def test_per_child_rows_fit_a_classifier_without_sample_weight(
-    build: Callable[[], Classifier],
+    build: Callable[[], Classifier], calibration_method: CalibrationMethod | None
 ) -> None:
-    # Passing sample_weight (even None) would fail for these classifiers.
-    model = CohortProbabilityModel(estimator=build(), replication="per_child")
+    # Passing sample_weight (even None) would fail for these classifiers;
+    # through the calibration, weights would only warn and be dropped for the
+    # classifier.
+    model = CohortProbabilityModel(
+        estimator=build(),
+        replication="per_child",
+        calibration_method=calibration_method,
+    )
 
     probabilities = model.fit(X, Y).predict(X)
 
@@ -387,3 +397,102 @@ def test_probabilities_that_do_not_sum_to_one_raise() -> None:
 
     with pytest.raises(ValueError, match="LGBMClassifier's probabilities do not sum"):
         model.predict(X)
+
+
+def test_without_a_calibration_method_the_classifier_is_used_as_is() -> None:
+    # Calibrating by default would change every uncalibrated model's
+    # probabilities and cost calibration_cv extra fits.
+    model = CohortProbabilityModel(estimator=_logistic()).fit(X, Y)
+
+    assert isinstance(model.estimator_, LogisticRegression)
+
+
+@pytest.mark.parametrize("method", ["temperature", "sigmoid", "isotonic"])
+def test_calibration_fits_one_model_on_all_rows_with_the_given_method(
+    method: CalibrationMethod,
+) -> None:
+    # ensemble=True would average the fold models, never fitted on all rows;
+    # a method other than the setting would be tuned silently.
+    model = CohortProbabilityModel(
+        estimator=_logistic(), calibration_method=method
+    ).fit(X, Y)
+
+    calibrated = model.estimator_
+    assert isinstance(calibrated, CalibratedClassifierCV)
+    assert calibrated.method == method
+    assert len(calibrated.calibrated_classifiers_) == 1
+    np.testing.assert_array_equal(calibrated.classes_, [0, 1, 2])
+    pd.testing.assert_frame_equal(
+        model.predict(X),
+        pd.DataFrame(calibrated.predict_proba(X), columns=COHORTS, index=X.index),
+    )
+
+
+@pytest.mark.parametrize("replication", REPLICATIONS)
+def test_calibration_folds_keep_each_sample_on_one_side(
+    replication: ReplicationType,
+) -> None:
+    # Ungrouped folds (cv=int is stratified by cohort) would put a sample's
+    # rows in a fit fold and its calibration fold; a fixed fold count would
+    # ignore calibration_cv.
+    model = CohortProbabilityModel(
+        estimator=_logistic(),
+        replication=replication,
+        calibration_method="temperature",
+        calibration_cv=3,
+    ).fit(X, Y)
+    sample_positions, _, _ = CohortProbabilityModel.multinomial_to_categorical(
+        Y, replication
+    )
+
+    calibrated = model.estimator_
+    assert isinstance(calibrated, CalibratedClassifierCV)
+    splits = list(calibrated.cv.split())
+    assert len(splits) == 3
+    for fit_rows, calibration_rows in splits:
+        assert not set(sample_positions[fit_rows]) & set(
+            sample_positions[calibration_rows]
+        )
+
+
+def test_the_weights_reach_the_calibrated_classifier() -> None:
+    # Dropping sample_weight would fit the classifier and the temperature
+    # on one row per cell, each cell counting once whatever its children.
+    model = CohortProbabilityModel(
+        estimator=_logistic(), calibration_method="temperature"
+    ).fit(X, Y)
+    positions, labels, weights = CohortProbabilityModel.multinomial_to_categorical(
+        Y, "weighted"
+    )
+    calibrated = model.estimator_
+    assert isinstance(calibrated, CalibratedClassifierCV)
+    splits = list(calibrated.cv.split())
+
+    def inverse_temperature(sample_weight: np.ndarray | None) -> float:
+        reference = CalibratedClassifierCV(
+            _logistic(), method="temperature", cv=splits, ensemble=False
+        ).fit(X.iloc[positions], labels, sample_weight=sample_weight)
+        return float(reference.calibrated_classifiers_[0].calibrators[0].beta_)
+
+    fitted = float(calibrated.calibrated_classifiers_[0].calibrators[0].beta_)
+    assert fitted == pytest.approx(inverse_temperature(weights), rel=1e-9)
+    assert fitted != pytest.approx(inverse_temperature(None), rel=1e-3)
+
+
+def test_both_replications_calibrate_on_the_same_folds() -> None:
+    # Folds of categorical rows balance cells under "weighted" and children
+    # under "per_child", so the two would calibrate on different samples and
+    # their comparison would mix the replication with the folds.
+    def inverse_temperature(replication: ReplicationType) -> float:
+        model = CohortProbabilityModel(
+            estimator=_logistic(),
+            replication=replication,
+            calibration_method="temperature",
+        ).fit(X, Y)
+        calibrated = model.estimator_
+        assert isinstance(calibrated, CalibratedClassifierCV)
+        return float(calibrated.calibrated_classifiers_[0].calibrators[0].beta_)
+
+    assert inverse_temperature("per_child") == pytest.approx(
+        inverse_temperature("weighted"), rel=1e-9
+    )

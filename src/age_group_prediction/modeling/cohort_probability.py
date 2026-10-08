@@ -8,16 +8,25 @@ import numpy as np
 import pandas as pd
 from numpy.typing import ArrayLike
 from sklearn.base import clone
+from sklearn.calibration import CalibratedClassifierCV
+from sklearn.model_selection import PredefinedSplit
 from sklearn.utils.validation import check_consistent_length, check_is_fitted
 
 from ..feature_engineering import FeatureTransformer
 from ..utils import take_rows
 from .base import BaseAgeGroupModel
 
-__all__ = ["Classifier", "CohortProbabilityModel", "ReplicationType"]
+__all__ = [
+    "CalibrationMethod",
+    "Classifier",
+    "CohortProbabilityModel",
+    "ReplicationType",
+]
 
 # How the cohort counts become categorical rows (see CohortProbabilityModel).
 type ReplicationType = Literal["per_child", "weighted"]
+# scikit-learn's CalibratedClassifierCV methods.
+type CalibrationMethod = Literal["temperature", "sigmoid", "isotonic"]
 
 
 class Classifier(Protocol):
@@ -49,7 +58,8 @@ class CohortProbabilityModel(BaseAgeGroupModel):
 
     - ``"weighted"``: one row per sample and cohort with a child, weighted by
       its count (``sample_weight``); a classifier without ``sample_weight``
-      raises here;
+      raises here, but under a calibration method scikit-learn only warns
+      and fits it unweighted, so use ``"per_child"`` for it;
     - ``"per_child"``: one row per child, unweighted, so a classifier without
       ``sample_weight`` fits too; the counts must be of an integer dtype that
       numpy casts safely to ``int64`` (``np.repeat`` rejects floats,
@@ -61,10 +71,23 @@ class CohortProbabilityModel(BaseAgeGroupModel):
     transformer is fitted on the samples first; a sample with no children
     adds no row. ``predict`` returns the classifier's probabilities with
     ``y``'s columns at fit, and raises if a row does not sum to 1 (a
-    one-vs-all objective such as LightGBM's ``"multiclassova"``).
+    one-vs-all objective such as LightGBM's ``"multiclassova"``, unless a
+    calibration method renormalizes it).
     A ``OneVsRestClassifier`` receives the weights only with scikit-learn's
-    metadata routing enabled. The model has no exposure, so a passed one is
-    ignored.
+    metadata routing enabled; with routing on and a calibration method, any
+    classifier needs ``set_fit_request(sample_weight=True)``. The model has
+    no exposure, so a passed one is ignored.
+
+    ``calibration_method`` (``None``: the classifier's own probabilities)
+    wraps the copy in ``CalibratedClassifierCV(ensemble=False)``: one
+    calibrator fitted on out-of-fold predictions, over the classifier
+    refitted on all rows. The ``calibration_cv`` folds split the samples
+    round-robin before the categorical rows, so a sample's rows stay
+    together and both replications get the same folds; ``calibration_cv``
+    is unused without a method. A training fold lacking a cohort raises
+    for a classifier with ``decision_function`` and only warns for one with
+    ``predict_proba`` alone, whose calibrator then sees that cohort at 0;
+    this happens only for a cohort seen in a few samples.
     """
 
     def __init__(
@@ -72,11 +95,15 @@ class CohortProbabilityModel(BaseAgeGroupModel):
         *,
         estimator: Classifier,
         replication: ReplicationType = "weighted",
+        calibration_method: CalibrationMethod | None = None,
+        calibration_cv: int = 5,
         feature_transformer: FeatureTransformer | None = None,
     ) -> None:
         # Stored verbatim: set_params assigns attributes without re-entering here.
         self.estimator = estimator
         self.replication = replication
+        self.calibration_method = calibration_method
+        self.calibration_cv = calibration_cv
         self.feature_transformer = feature_transformer
 
     @staticmethod
@@ -145,6 +172,18 @@ class CohortProbabilityModel(BaseAgeGroupModel):
         X_categorical = take_rows(X, sample_positions)
         # A copy, so the caller's template stays unfitted across folds.
         estimator: Classifier = clone(self.estimator)
+        if self.calibration_method is not None:
+            # Folds of samples, not rows: a sample's rows on both sides would
+            # show the calibrator in-sample confidence (cv=int would), and
+            # folds of rows would differ between the replications.
+            # Round-robin: deterministic, each fold spanning the table.
+            sample_folds = np.arange(len(y)) % self.calibration_cv
+            estimator = CalibratedClassifierCV(
+                estimator,
+                method=self.calibration_method,
+                cv=PredefinedSplit(sample_folds[sample_positions]),
+                ensemble=False,
+            )
         if self.replication == "weighted":
             estimator.fit(X_categorical, cohort_positions, sample_weight=weights)
         elif self.replication == "per_child":

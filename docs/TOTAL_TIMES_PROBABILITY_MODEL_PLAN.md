@@ -6,11 +6,12 @@ conversation. This file is the source of truth: update its status line and the
 sub-task checkboxes in §8 as work finishes. Orientation for a new session:
 [TOTAL_TIMES_PROBABILITY_MODEL_HANDOFF.md](TOTAL_TIMES_PROBABILITY_MODEL_HANDOFF.md).
 
-**Status (2026-10-07):** approved by the user. **Sub-tasks 0–3 are done** (branch
+**Status (2026-10-08):** approved by the user. **Sub-tasks 0–4 are done** (branch
 `feat/total-times-probability-model`; `DirectCohortModel` is now `CountModel`, with
 an exposure branch and NB2 as `NegativeBinomialRegressor`; `CohortProbabilityModel` is a
-classifier on weighted rows, and the torch Model 2 and `TemperatureCalibrator` are deleted;
-records in §8). Sub-task 4 (calibration) is next. During planning the user revised it twice: NB2 goes through
+classifier on weighted or per-child rows, optionally calibrated (`calibration_method`,
+`calibration_cv`), and the torch Model 2 and `TemperatureCalibrator` are deleted;
+records in §8). Sub-task 5 (`TotalTimesProbabilityModel`) is next. During planning the user revised it twice: NB2 goes through
 `CountModel` (the renamed `DirectCohortModel`) as an estimator taking the exposure (an offset in the first plan; raw `exposure` since sub-task 2); a
 `replication` setting for row-resampling classifiers was considered and dropped
 on measurement (P6, P8).
@@ -158,8 +159,8 @@ untouched (deleted by roadmap step 5).
 | P7 | *Revision 3 (the user):* with position labels, `classes_` is `0..K−1` in `y`'s order (every cohort observed), so `predict` names the columns with `cohorts_` directly; no by-name mapping, and cohort names of mixed types work (as names they fail sklearn's sort). *Revised by the user in sub-task 3, revision 1 (2026-10-07):* **no one-vs-rest detection or wrap** (the user, after the survey in §6: no common classifier lacks a multiclass fit; binary-only ones raise; scikit-learn's `multi_class` tag is `True` for every classifier, so it cannot tell); the caller wraps explicitly. **`predict` raises if a row of probabilities does not sum to 1** (atol 1e-6; softmax classifiers measured within 2.2e-16): LightGBM's `objective="multiclassova"` returns rows summing to 0.67–1.28 silently, and Model 2 would then predict cohorts that miss its total; the valid objectives are LightGBM's `"multiclass"` (its default above 2 classes), CatBoost's `"MultiClass"` and XGBoost's `multi:softprob` (both from the docs, not installed). This replaces "the model asserts nothing" below. As first planned: **`estimator: Classifier`**, a `Protocol`: `fit(X, y, sample_weight=None)`, `predict_proba(X)`, `classes_`. Multinomial classifiers (`LogisticRegression`, whose lbfgs is multinomial in sklearn 1.9, `multi_class` is gone; `HistGradientBoostingClassifier`; `LGBMClassifier`, `objective_ = "multiclass"` when ≥ 3 labels; `RandomForestClassifier`) and `OneVsRestClassifier(binary)` alike. `predict` maps `predict_proba`'s columns **by `classes_`**, never by position, into `y`'s column order at fit (until revision 3: now the labels are positions) | `classes_` are sorted labels (`['el', 'hs', 'kg']` for `['kg', 'el', 'hs']`): a positional mapping would permute cohorts silently. **Rows sum to 1** for all of them: `OneVsRestClassifier.predict_proba` normalizes in the multiclass case (measured 2e-16), as do HGB, LightGBM, RF and `CalibratedClassifierCV` (sigmoid and isotonic are per-class, then normalized; temperature is a softmax). The model asserts nothing about it: it is what the libraries do, and `COHORT_LOG_LOSS` renormalizes anyway. `OneVsRestClassifier.fit` takes `sample_weight` only through metadata routing (`set_fit_request(sample_weight=True)` on the inner estimator, `sklearn.set_config(enable_metadata_routing=True)`); documented, not special-cased |
 | P8 | *Revised by the user in sub-task 3, revision 1 (2026-10-07):* the per-child representation now exists as `replication="per_child"` (P6), so "no representation switch" below no longer holds; grouped bagging is still not built. As first planned: **Bagging and bootstrap under replication: nothing is built; the estimators' own resampling is left as the user sets it.** The docs explain the units and give the measured table | **The user's question:** the cohorts of a building are connected (they share `x_b`, sum to `Y_b`, and their proportions sum to one), so should a resample keep the building's rows together? **The answer in three parts.** (1) The sum-to-one constraint is on the model's output `p_b`, which every classifier's `predict_proba` (and `CalibratedClassifierCV`) enforces by softmax or normalization; it is not a dependence between rows. (2) Under the conditional multinomial model `C_b \| Y_b ~ Mult(Y_b, p_b)` is `Y_b` independent categorical draws, so the exchangeable unit is the **child**; the weighted representation merely compresses identical child rows into one cell per cohort. A row resampler then draws **cells** (a bag can hold building b's kindergarten cell and drop its elementary cell) instead of children (a bag thins each building's composition at random); neither keeps a building whole; only a bootstrap **by building** does, which scikit-learn and LightGBM do not offer. (3) **Measured** (RF, 300 trees, 5 seeds, held-out cross-entropy against the true `p`): weighted + bootstrap 0.712, per-child + bootstrap 0.708, weighted without bootstrap 0.716, per-child without bootstrap 0.717, a hand-made bootstrap by building 0.717, against a seed-to-seed spread of 0.57–0.86: **all the same within noise**. So no representation switch and no grouped bagging is justified. **What the libraries do** (the user's "permutation" is not it): LightGBM's bagging is subsampling **without replacement** (`subsample`, active only with `subsample_freq > 0`; off by default); `HistGradientBoostingClassifier` has **no** row subsampling and its early stopping is off under 10,000 rows; `LogisticRegression` has none; `RandomForestClassifier` bootstraps **with replacement**, on by default (with `sample_weight`, sklearn multiplies the weight by the draw count); XGBoost (not a dependency; from its parameter docs) uses **all rows** by default, `subsample=1.0`, and subsamples without replacement per round only when set below 1. So RF is the only common estimator that resamples by default, and the user chose to leave it as is. **Observed building features** (type, year) change nothing: every row of a building shares its whole `x_b` already, and conditioning on more of it makes the conditional independence of its children more plausible, not less; the grouped unit becomes the right one only for an **unobserved** building effect (a random building intercept in the generator, or a generated characteristic withheld from the model) or for uncertainty intervals. **If real data shows extra-multinomial variation between buildings** (the case where the building is the right unit): `bootstrap=False` on RF removes the resampling (randomness then comes from `max_features`), or a bootstrap-by-building aggregator over `CohortProbabilityModel` (the ten-line probe above), added only then. The folds that must be grouped are the calibration folds (by building, P10) and the tuner's (by neighborhood, `Splitter`) |
 | P9 | **Calibration is `CalibratedClassifierCV` inside `CohortProbabilityModel`:** `calibration_method: CalibrationMethod \| None = None` (`Literal["temperature", "sigmoid", "isotonic"]`, `None` = the estimator's own probabilities), `calibration_cv: int = 5`. `fit` wraps the cloned estimator as `CalibratedClassifierCV(estimator, method=…, cv=<grouped splits>, ensemble=False)` and fits it with the weights. **No `TemperatureCalibrator`** | The user's specification. `ensemble=False` is **cross-fitting**: the estimator is fitted on each of `k` folds, its out-of-fold probabilities for **every** row are collected, **one** calibrator is fitted on them, then the estimator is refitted on all rows; `predict` is that one model through that one map. `ensemble=True` (sklearn's default for a non-frozen estimator) averages `k` calibrated fold models and never fits on all rows. Cross-fitting is the user's preference and what the previous build did by hand (the B6 loop). `TemperatureCalibrator` duplicated sklearn's `_TemperatureScaling`, whose objective it was pinned to; the calibration now sits in the model, so clones and tuning (`probability_model__calibration_method`) carry it, and no `FrozenEstimator` idiom is needed |
-| P10 | **Calibration folds: `GroupKFold(n_splits=calibration_cv)` over the replicated rows with `groups=positions`** (the building), unshuffled, passed as a list of splits | A building's rows carry its known composition; with plain `KFold` the same building sits in a fit fold and its calibration fold, and the calibrator sees in-sample confidence. Grouping by building removes that; grouping by **neighborhood** (the repo's evaluation unit) would need `groups` at `fit`, which the base contract does not carry: documented as the limitation (the tuner's outer folds are by neighborhood regardless). Unshuffled `GroupKFold` is deterministic, so no `random_state` setting |
-| P11 | **Folds: 5. Isotonic is allowed but documented as inappropriate here** | **How many:** the calibrator must map the **final** model's probabilities, but it is fitted on fold models trained on `(k−1)/k` of the rows, which are less confident than the final one; `k = 2` (50/50) calibrates a model fitted on half the data and biases the temperature toward sharpening; larger `k` approaches the final model at the cost of `k` fits; with ~245 buildings per training set, 5 (sklearn's default) leaves ~200 buildings per fold fit and uses every row for calibration. **How much is enough:** temperature fits 1 parameter and sigmoid 2 per class, so every row of a 5-fold cross-fit (~1,300 child-weighted rows) is ample; isotonic is non-parametric per class and sklearn advises it only well above ~1,000 samples per class, so it overfits here (the previous plan's N12 said the same). Measured: all three run on the replicated data; temperature fits `T ≈ 1.00` on well-specified simulated data |
+| P10 | *Revised by the user in sub-task 4 (2026-10-08): the samples are split **before** the categorical rows, round-robin (sample `i` in fold `i mod calibration_cv`), and each row goes to its sample's fold (`PredefinedSplit(sample_folds[sample_positions])`), so both replications calibrate on the same folds (folds of rows balanced cells under `"weighted"` and children under `"per_child"`: different partitions, `beta_` 0.963 vs 0.970 for the same unpenalized LR; now equal to 2e-13).* As first planned: **Calibration folds: `GroupKFold(n_splits=calibration_cv)` over the categorical rows with `groups=sample_positions`** (the building; under `"per_child"` repeated by count), unshuffled, passed as a list of splits | A building's rows carry its known composition; with plain `KFold` the same building sits in a fit fold and its calibration fold, and the calibrator sees in-sample confidence. Grouping by building removes that; grouping by **neighborhood** (the repo's evaluation unit) would need `groups` at `fit`, which the base contract does not carry: documented as the limitation (the tuner's outer folds are by neighborhood regardless). Unshuffled `GroupKFold` is deterministic, so no `random_state` setting (round-robin likewise, and each fold spans the table even if it is sorted) |
+| P11 | **Folds: 5. Isotonic is allowed but documented as inappropriate here** | **How many:** the calibrator must map the **final** model's probabilities, but it is fitted on fold models trained on `(k−1)/k` of the rows, which are less confident than the final one; `k = 2` (50/50) calibrates a model fitted on half the data and biases the temperature toward sharpening; larger `k` approaches the final model at the cost of `k` fits; with ~245 buildings per training set, 5 (sklearn's default) leaves ~200 buildings per fold fit and uses every row for calibration. **How much is enough:** temperature fits 1 parameter and sigmoid 2 per class, so every row of a 5-fold cross-fit (~1,300 child-weighted rows) is ample; isotonic is non-parametric per class and sklearn advises it only well above ~1,000 samples per class, so it overfits here (the previous plan's N12 said the same). Measured: all three run on the categorical rows; on the simulator the fitted inverse temperature (`beta_`, `softmax(beta_ · logits)`) is 0.88 for unpenalized LR and 0.47 for default LightGBM (sub-task 4 table) |
 | P12 | **`TotalTimesProbabilityModel(total_model, probability_model)`** in `modeling/total_times_probability.py`: `fit` clones and fits `total_model` on `y.sum(axis=1)` and `probability_model` on `y`, both with `exposure`; `predict` = `total[:, None] × probabilities`, a DataFrame with `y`'s columns at fit, indexed like `X`; raises if the probability model's columns differ from `cohorts_`. No calibrator argument | The user's name (chosen over `TotalSplitModel`, `TotalCompositionModel`): it names the prediction. Settings named for their role (`total_model`, `probability_model`); nested names reach both (`total_model__estimator__alpha`, `probability_model__estimator__C`, `probability_model__calibration_method`) |
 | P13 | **A building with no children contributes to the total model only** (it has no row in the categorical representation). **A cohort with no child in `y` raises at `fit`** | The classifier cannot learn an absent class, and `predict` would lack its column: raise early with the cohort's name, as today. The Dirichlet build's "every building needs a child" rule disappears |
 | P14 | **No torch in `modeling/`;** `torch` stays a dependency of the old stack (`pyro`). The contract test's single-thread LightGBM note stays until the old stack goes | The user: "Do not use torch". Deleting `optimization.py` removes the OpenMP guard with the code that needed it; LightGBM alone did not crash |
@@ -178,7 +179,7 @@ with α = 0.1 and exposure 5–40.
 | `RandomForestClassifier(300, min_samples_leaf=5)` on weighted rows vs per-child rows | `predict_proba` differs pointwise by up to 0.26 with bootstrap on (two different forests), but **held-out cross-entropy against the true `p`** (5 seeds, 2,000 test buildings): weighted + bootstrap **0.712**, per-child + bootstrap **0.708**, weighted `bootstrap=False` 0.716, per-child `bootstrap=False` 0.717, hand-made bootstrap by building (300 trees on resampled buildings) 0.717; seed spread 0.57–0.86. No difference beyond noise |
 | `has_fit_parameter(estimator, "offset")` | `True` for a class with `fit(X, y, offset=None)`; `False` for `PoissonRegressor`, `LGBMRegressor` |
 | `OneVsRestClassifier(LogisticRegression)`, HGB, `LGBMClassifier` row sums of `predict_proba` | all within 2.2e-16 of 1; `LGBMClassifier.objective_ == "multiclass"` |
-| `CalibratedClassifierCV(…, cv=list(GroupKFold(5, shuffle=True).split(X_rep, labels, groups=building)), ensemble=False).fit(X_rep, labels, sample_weight=weights)` | runs for temperature, sigmoid and isotonic; one calibrated model (`len(calibrated_classifiers_) == 1`); rows sum to 1; `classes_ == ['el', 'hs', 'kg']`; fitted `T = 1.00006` |
+| `CalibratedClassifierCV(…, cv=list(GroupKFold(5, shuffle=True).split(X_rep, labels, groups=building)), ensemble=False).fit(X_rep, labels, sample_weight=weights)` (planning; name labels, shuffled folds: superseded by the sub-task 4 rows) | runs for temperature, sigmoid and isotonic; one calibrated model (`len(calibrated_classifiers_) == 1`); rows sum to 1; `classes_ == ['el', 'hs', 'kg']`; fitted `beta_ = 1.00006` (an inverse temperature) |
 | `CalibratedClassifierCV` signature | `(estimator=None, *, method='sigmoid', cv=None, n_jobs=None, ensemble='auto')`; `fit(X, y, sample_weight=None, **fit_params)`; `_TemperatureScaling.fit(X, y, sample_weight=None)` |
 | `OneVsRestClassifier.fit` | `(X, y, **fit_params)`: `sample_weight` needs metadata routing (P7) |
 | LightGBM bagging defaults | `subsample=1.0`, `subsample_freq=0`; `bagging_by_query` is not in the Python parameter list |
@@ -214,6 +215,12 @@ with α = 0.1 and exposure 5–40.
 | LightGBM objectives on 3 classes | `"multiclass"`: rows sum to 1; `"multiclassova"`: rows sum to 0.67–1.28, no error; `"binary"`, `"cross_entropy"`: raise "Number of classes must be 1" |
 | `OneVsRestClassifier(...).fit(X, y, sample_weight=None)` without routing | raises (any extra keyword needs metadata routing): so `"per_child"` passes no keyword |
 | Held-out `COHORT_LOG_LOSS`, 5 simulated populations (seeds 0–4; buildings with a child; 4 standardized features; grouped 80/20 by neighborhood) | torch Dirichlet build **1.0819** (measured before any edit); the new model with `LogisticRegression(C=np.inf)` **1.0783** (1.0895, 1.0712, 1.0864, 1.0632, 1.0811) |
+| *Sub-task 4 probes (2026-10-08):* `CalibratedClassifierCV(…, cv=list(GroupKFold(5).split(…, groups=sample_positions)), ensemble=False)` on position labels, LR, LGBM, RF × temperature, sigmoid, isotonic | one calibrated model; `classes_ == [0, 1, 2]` (int64); rows sum to 1 within 2.2e-16; no sample on both sides of a split. An invalid `method` raises `InvalidParameterError`; `GroupKFold(1)` and more splits than groups raise. With a list as `cv` sklearn's "fewer than n_folds examples per class" pre-check is skipped; `cv=int` would be stratified, not grouped |
+| Folds of categorical rows vs folds of samples (P10 revision; unpenalized LR, temperature, the unit tests' data) | `GroupKFold` over the rows: `beta_` weighted 0.962802, per-child 0.969523 (different partitions). Samples first, round-robin: 0.968229 both (2.2e-13); `KFold` blocks: 0.972192 both. 57–60 samples per calibration fold. Round-robin fold counts: 1, 0 and negative raise (sklearn: "Found array with 0 sample(s)", "only works for partitions"); more folds than samples give one fold per sample (1000 → 296 splits), slower, not wrong |
+| With calibration (review) | `"weighted"` + a classifier without `sample_weight` (KNN, OvR without routing) only warns and fits it unweighted (without calibration it raises); with metadata routing on, every calibrated classifier needs `set_fit_request(sample_weight=True)` (`UnsetMetadataPassedError`, loud); LightGBM `"multiclassova"` is renormalized by every method (rows 1 ± 2e-16), so the row-sum check does not fire |
+| `CalibratedClassifierCV`'s response method | `decision_function` when the estimator has it, else `predict_proba`: the calibrator sees logits for LR, LGBM, HGB, probabilities for RF, KNN |
+| Weights through the calibration (`sample_weight` = counts vs none, LR, temperature) | `beta_` 0.9655 vs 0.9615: the weights reach the classifier's fits and the calibrator. An estimator without `sample_weight` given weights only **warns** ("sample weights will only be used for the calibration itself"), hence no keyword under `"per_child"`; KNN and OvR without routing fit then |
+| A grouped training fold lacking a cohort (one cohort in one sample) | `decision_function` estimators (LR, LGBM, HGB) raise "Only 2 class/es in training fold, but 3 in overall dataset", every method; `predict_proba`-only ones (RF, KNN) fit with a `RuntimeWarning` ("Number of classes in training fold (2) does not match…"), the cohort's out-of-fold column 0, rows still summing to 1. On the simulator's training sets (seeds 0–9, grouped 80/20) every cohort is in 174+ of 179–206 samples; 0 of 150 training folds (k = 2, 5, 10) lack one |
 
 ## 7. Target code shape
 
@@ -251,7 +258,8 @@ class NegativeBinomialRegressor(RegressorMixin, BaseEstimator):
     def predict(self, X, exposure=None) -> np.ndarray:
         # validate_data(reset=False); exp(intercept_ + X @ coef_) * (exposure or 1)
 
-# modeling/cohort_probability.py  (sub-tasks 3–4)
+# modeling/cohort_probability.py  (sub-tasks 3–4; as built, see the code for the checks)
+type ReplicationType = Literal["per_child", "weighted"]
 type CalibrationMethod = Literal["temperature", "sigmoid", "isotonic"]
 
 class Classifier(Protocol):
@@ -261,24 +269,26 @@ class Classifier(Protocol):
 
 class CohortProbabilityModel(BaseAgeGroupModel):
     """Each cohort's probability for a building: a classifier on one weighted row per (building, cohort)."""
-    def __init__(self, *, estimator: Classifier, calibration_method: CalibrationMethod | None = None,
-                 calibration_cv: int = 5, feature_transformer=None) -> None: ...
+    def __init__(self, *, estimator: Classifier, replication: ReplicationType = "weighted",
+                 calibration_method: CalibrationMethod | None = None, calibration_cv: int = 5,
+                 feature_transformer=None) -> None: ...
     @staticmethod
     def multinomial_to_categorical(y: pd.DataFrame, replication: ReplicationType) -> tuple[np.ndarray, np.ndarray, np.ndarray | None]:
-        """Row positions, cohort labels and counts of every positive (building, cohort) cell."""
+        """Sample positions, cohort positions (the labels) and counts of the categorical rows."""
     def fit(self, X, y: pd.DataFrame, exposure=None) -> Self:
-        # unobserved cohort -> ValueError; feature_transformer, X = self._fit_features(X, y)
-        # positions, labels, weights = self.multinomial_to_categorical(y, self.replication); X_rep = X.iloc[positions]
-        # "weighted": estimator.fit(X_rep, labels, sample_weight=weights); "per_child": estimator.fit(X_rep, labels)
-        # estimator = clone(self.estimator)
+        # check_consistent_length(X, y); unobserved cohort -> ValueError; feature_transformer, X = self._fit_features(X, y)
+        # sample_positions, cohort_positions, weights = self.multinomial_to_categorical(y, self.replication)
+        # X_categorical = take_rows(X, sample_positions); estimator = clone(self.estimator)
         # if self.calibration_method is not None:
-        #     splits = list(GroupKFold(self.calibration_cv).split(X_rep, labels, groups=positions))
-        #     estimator = CalibratedClassifierCV(estimator, method=..., cv=splits, ensemble=False)
-        # estimator.fit(X_rep, labels, sample_weight=weights)
+        #     sample_folds = np.arange(len(y)) % self.calibration_cv   # samples first, round-robin
+        #     estimator = CalibratedClassifierCV(estimator, method=..., ensemble=False,
+        #                                        cv=PredefinedSplit(sample_folds[sample_positions]))
+        # "weighted": estimator.fit(X_categorical, cohort_positions, sample_weight=weights)
+        # "per_child": estimator.fit(X_categorical, cohort_positions)
         # estimator_, cohorts_ (list(y.columns)), feature_transformer_
     def predict(self, X, exposure=None) -> pd.DataFrame:
-        # probabilities = estimator_.predict_proba(self._transform_features(X));
-        # DataFrame(probabilities, columns=estimator_.classes_)[self.cohorts_], index=X.index
+        # probabilities = estimator_.predict_proba(self._transform_features(X)); rows must sum to 1
+        # DataFrame(probabilities, columns=self.cohorts_, index=X.index)  (classes_ are 0..K−1)
 
 # modeling/total_times_probability.py  (sub-task 5)
 class TotalTimesProbabilityModel(BaseAgeGroupModel):
@@ -656,7 +666,7 @@ Each ends at a stop (§3). "Verify" lists what the user can check.
   unchanged). Mutations, all 17 caught (new: the state set before the classifier's fit); ruff,
   format, mypy clean; changed tests 64 passed under `-W error`.
 
-### [ ] 4. Calibration
+### [x] 4. Calibration
 - *From sub-task 3's review:* with `CalibratedClassifierCV(ensemble=False)` and grouped folds, a
   training fold lacking a cohort raises for an estimator with `decision_function` (LR, LGBM):
   "Only 2 class/es in training fold, but 3 in overall dataset" (loud; P10's risk). The groups are
@@ -676,6 +686,62 @@ Each ends at a stop (§3). "Verify" lists what the user can check.
 - **Verify:** on the simulated split, `COHORT_LOG_LOSS` for `None`,
   `"temperature"`, `"sigmoid"`, `"isotonic"` over seeds 0–9 (the B7 recipe):
   a table in the plan doc; expected: temperature ≈ none ± noise, isotonic worse.
+- **Record (2026-10-08):** baseline 1228 passed, 1 skipped, 1 xfailed. Re-verified (§6, sub-task
+  4 rows): the signature, `method` validated by the library, one calibrated model, `classes_ ==
+  [0, 1, 2]`, rows summing to 1, the weights reaching the calibrator. **Open point (handoff §5),
+  decided by the user: documented only.** A grouped training fold lacking a cohort raises for a
+  `decision_function` classifier and only warns for a `predict_proba`-only one (zero-filled); it
+  never occurred on the simulator (0 of 150 folds), so no check (§10). Code
+  (`cohort_probability.py`): `CalibrationMethod` (exported), `calibration_method=None`,
+  `calibration_cv=5`; `fit` wraps the clone in `CalibratedClassifierCV(estimator,
+  method=calibration_method, cv=PredefinedSplit(sample_folds[sample_positions]),
+  ensemble=False)` when a method is set (`sample_folds = arange(len(y)) % calibration_cv`, since
+  the review: first `GroupKFold` over the rows), then the existing weighted / per-child cases
+  fit it; `predict` unchanged. No check of ours: the method and the fold count
+  raise in the library. Tests (+4 functions, 6 cases; the per-child test parametrized over `None`
+  and `"temperature"` under an "error" warning filter): the classifier used as is without a
+  method; one model on all rows with the given method, `predict` = its probabilities with `y`'s
+  columns; the folds keep each sample on one side, `calibration_cv` splits, both replications;
+  the weights reach the calibrated classifier (`beta_` equal to a direct weighted fit, unequal
+  to an unweighted one). ruff, format, mypy (22 and 9 files) clean; changed tests 73 passed
+  under `-W error`. Mutations (scratchpad `mutate.py`, md5-restored), all 8 caught: wrapped
+  when the method is None; `ensemble=True`; the method hard-coded; `cv=int`; grouped by cohort;
+  the fold count fixed at 5; `sample_weight` dropped in the weighted case; `sample_weight`
+  passed under per-child.
+  **Table** (held-out `COHORT_LOG_LOSS`; seeds 0–9; the simulator, grouped 80/20 by
+  neighborhood, all training buildings, test buildings with a child; 4 standardized features;
+  5 grouped folds; mean ± sd over seeds; fitted `beta_` for temperature; fit seconds):
+
+  | Estimator | None | temperature | sigmoid | isotonic |
+  |---|---|---|---|---|
+  | `LogisticRegression(C=inf)` | 1.0831 ± 0.0098 | 1.0827 ± 0.0090 (`beta_` 0.89) | 1.0829 ± 0.0092 | 1.0849 ± 0.0090 |
+  | `LGBMClassifier()` defaults | 1.0888 ± 0.0104 | 1.0876 ± 0.0062 (`beta_` 0.48) | 1.0868 ± 0.0085 | 1.0874 ± 0.0082 |
+
+  (Final folds, samples first; the first run on `GroupKFold` row folds read the same within
+  0.0008.) Per seed, method − None: LR temperature −0.0022 to +0.0010 (mean −0.0005), sigmoid
+  −0.0028 to +0.0034 (−0.0002), isotonic −0.0019 to +0.0059 (+0.0018); LGBM temperature
+  −0.0093 to +0.0066 (−0.0012), sigmoid −0.0118 to +0.0046 (−0.0020), isotonic −0.0110 to
+  +0.0039 (−0.0014). Fit time ×1.6 (LR, 0.018 → 0.028 s) and ×4 (LGBM, 0.06 → 0.23 s).
+  **Reading:** every method is within noise of `None` (seed sd ≈ 0.01). Temperature is the
+  steadiest (narrowest per-seed range for LR). Isotonic is the worst for LR, as expected, but
+  not for LGBM. LightGBM's defaults are overconfident (`beta_` 0.48, i.e. T ≈ 2.1), and
+  temperature narrows its seed spread (sd 0.0104 → 0.0062), yet its mean gains only 0.001.
+  The unpenalized LR is slightly overconfident too (`beta_` 0.89). So on this data the setting
+  matters little; the smoke run (sub-task 6) compares None and temperature per variant.
+  **Review** (independent subagent; each finding reproduced): no correctness bug in the wiring
+  (row alignment, weights in the out-of-fold and final fits, feature names, `get_params` /
+  nested `set_params`, failed refit). (1) Under a calibration method, `"weighted"` with a
+  classifier lacking `sample_weight` only warns and fits it unweighted: **the user: a note**
+  (KNN is to be used under `"per_child"`). (3) Folds of categorical rows differ between the
+  replications (beta 0.963 vs 0.970): **the user: split the samples before the categorical
+  rows, round-robin** (P10 revision; new test `test_both_replications_calibrate_on_the_same_folds`).
+  Wording fixed: (2) routing on + calibration needs `set_fit_request(sample_weight=True)`;
+  (4) `"multiclassova"` is renormalized under calibration, so `predict` raises only without a
+  method; (5) the per-child test's comment (weights through the calibration warn; `None` is
+  silent: the mutation was caught because it passed real weights); (6) a docstring "it".
+  Mutations re-run, all 10 caught (the 8 above re-pointed, plus folds of rows ungrouped and the
+  previous `GroupKFold` row folds). Changed tests 74 passed under `-W error`; ruff, format,
+  mypy (22 and 9 files) clean. **Suite 1238 passed, 1 skipped, 1 xfailed.**
 
 ### [ ] 5. `TotalTimesProbabilityModel`, deletions, exports
 - `modeling/total_times_probability.py` (P12); delete `total_children.py`,
@@ -807,9 +873,12 @@ part also in `DIRECT_COHORT_MODEL.md` §0:
 - **`OneVsRestClassifier` + `sample_weight`** needs metadata routing; if the
   `Classifier` protocol cannot express it cleanly, document OvR as "enable
   routing" rather than special-case it.
-- **`CalibratedClassifierCV` with a fold lacking a class:** grouped folds over
-  ~245 buildings always contain every cohort in practice; a rare cohort could
-  break a fold, and sklearn raises. Left to the library.
+- **`CalibratedClassifierCV` with a training fold lacking a cohort** (re-measured in sub-task
+  4, §6): a classifier with `decision_function` (LR, LGBM, HGB) raises; one with
+  `predict_proba` alone (RF, KNN) only warns, and the calibrator sees that cohort at 0 out of
+  fold. It needs a cohort seen in a few samples only; on the simulator every cohort is in
+  174+ of ~180–206 training samples and no fold lacked one. **Decided (the user, sub-task 4):
+  documented only** (the class docstring, the model doc's calibration section), no check.
 - **The rename touches many files:** done first and alone (sub-task 1) so the
   behavior changes afterwards are reviewable.
 - **Tuning package:** `hyperparameter_tuning` names nothing of Model 2 in code

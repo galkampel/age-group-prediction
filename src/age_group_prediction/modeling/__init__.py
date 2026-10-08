@@ -9,7 +9,12 @@ rebuilt here.
 """
 
 from .base import BaseAgeGroupModel
-from .cohort_probability import Classifier, CohortProbabilityModel, ReplicationType
+from .cohort_probability import (
+    CalibrationMethod,
+    Classifier,
+    CohortProbabilityModel,
+    ReplicationType,
+)
 from .count_model import CountModel, ExposureRegressor, Regressor
 from .independent_cohorts import CohortModels, IndependentCohortModels
 from .negative_binomial import NegativeBinomialRegressor
@@ -18,6 +23,7 @@ from .total_children import TotalChildrenModel
 
 __all__ = [
     "BaseAgeGroupModel",
+    "CalibrationMethod",
     "Classifier",
     "CohortModels",
     "CohortProbabilityModel",

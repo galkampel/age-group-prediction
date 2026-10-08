@@ -1,8 +1,9 @@
 # Handoff: rebuild Model 2 as `TotalTimesProbabilityModel`
 
 **For:** the implementing session (Claude Opus 5.5). **Written:** 2026-10-07 at the end of
-the planning session; **updated 2026-10-07 at the end of the second implementing session:
-sub-tasks 0–3 are done and committed; sub-task 4 (calibration) is next.**
+the planning session; **updated 2026-10-08 at the end of the third implementing session:
+sub-tasks 0–4 are done (4 awaiting the user's commit); sub-task 5 (`TotalTimesProbabilityModel`)
+is next.**
 **Plan (source of truth):** [TOTAL_TIMES_PROBABILITY_MODEL_PLAN.md](TOTAL_TIMES_PROBABILITY_MODEL_PLAN.md).
 Read it in full before the first edit (its §8 records say what each sub-task did and why,
 including sub-task 3's four revisions); this file only orients you.
@@ -28,9 +29,11 @@ cohort probability** with hand-written torch objectives. The user wants it rebui
    child, no `sample_weight` keyword. The classifier is fitted on the cohorts' **column
    positions** (0..K−1), so its `classes_` are `y`'s order and `predict` names the columns with
    `cohorts_`; `predict` raises if a row of probabilities does not sum to 1 (LightGBM's
-   `"multiclassova"`). **Sub-task 4 adds** `calibration_method` (`None` default; temperature,
-   sigmoid, isotonic) and `calibration_cv` (5): `CalibratedClassifierCV(ensemble=False)` with
-   folds grouped by sample (plan P9–P11). The torch `IndependentTotalProbabilityModel` and
+   `"multiclassova"`). **Sub-task 4 added** `calibration_method` (`None` default; temperature,
+   sigmoid, isotonic) and `calibration_cv` (5): `CalibratedClassifierCV(ensemble=False)` on
+   folds of **samples**, split round-robin before the categorical rows
+   (`PredefinedSplit(sample_folds[sample_positions])`), so both replications share them (plan
+   P9–P11, P10 revised). The torch `IndependentTotalProbabilityModel` and
    `TemperatureCalibrator` were deleted in sub-task 3.
 3. **Combined (sub-task 5):** `TotalTimesProbabilityModel(total_model, probability_model)`
    (plan P12); delete `total_children.py`, `optimization.py` and their tests.
@@ -43,8 +46,9 @@ cohort probability** with hand-written torch objectives. The user wants it rebui
 | Branch | `feat/total-times-probability-model`, HEAD **`b525954`**, pushed, tree clean |
 | Commits | `02b7725` plan + handoff (0); `9f9fb58` the rename (1); `732e465` NB2 and `CountModel`'s exposure cases (2); `1e2bc66` handoff; **`b525954` `CohortProbabilityModel` on a classifier, the torch Model 2 and `TemperatureCalibrator` deleted (3, with its four revisions)** |
 | PR | Draft **#13** into `feat/hyperparameter-tuning`; its body has the sub-task checklist (the user ticks it) |
-| Suite | **1228 passed, 1 skipped, 1 xfailed** (`uv run pytest -m "not slow"`; pytest collects only `tests/`) |
-| Next | **Sub-task 4** (calibration, P9–P11; §5 below). Then 5–7, one per stop |
+| Uncommitted | **Sub-task 4** (calibration): `modeling/cohort_probability.py`, `modeling/__init__.py`, `tests/unit/test_modeling_cohort_probability.py`, the plan, this file; the user commits |
+| Suite | **1238 passed, 1 skipped, 1 xfailed** after sub-task 4 (`uv run pytest -m "not slow"`; pytest collects only `tests/`) |
+| Next | **Sub-task 5** (`TotalTimesProbabilityModel`, deletions; §5 below). Then 6–7, one per stop |
 
 ## 3. Decisions (settled; do not reopen)
 
@@ -96,6 +100,15 @@ From sub-task 3 (the user's answers; plan §8, the sub-task 3 record and revisio
   reordered columns pass silently for `CountModel` and `CohortProbabilityModel` with LightGBM and
   no feature transformer.
 
+From sub-task 4 (the user's answers; plan §8, the sub-task 4 record):
+- **A calibration fold lacking a cohort: documented only** (`decision_function` classifiers
+  raise; `predict_proba`-only ones warn and see the cohort at 0; never on the simulator).
+- **Folds of samples, before the categorical rows, round-robin** (`i mod calibration_cv`): folds
+  of rows differed between the replications. No check on `calibration_cv` (bad values raise in
+  sklearn; more folds than samples gives one per sample).
+- **`"weighted"` + a classifier without `sample_weight` under calibration** only warns and fits
+  unweighted: a docstring note (KNN goes under `"per_child"`).
+
 ## 4. Working rules (the user's; plan §3, plus what the sessions learned)
 
 - Plan mode at the start of every sub-task (and of every revision the user asks for). **Right
@@ -125,25 +138,17 @@ From sub-task 3 (the user's answers; plan §8, the sub-task 3 record and revisio
   (`ReplicationType`); the library's and the repo's vocabulary; comments concise, keeping the "why".
 - Correct your own earlier wrong claims explicitly in the next message.
 
-## 5. Sub-task 4 (calibration): files, what to re-verify, what to raise
+## 5. Sub-task 5 (`TotalTimesProbabilityModel`): files, what to re-verify
 
-Files: `src/age_group_prediction/modeling/cohort_probability.py`,
-`tests/unit/test_modeling_cohort_probability.py`, the plan doc (sub-task 4's bullets, §6, P9–P11).
-
-The plan's sub-task 4 section has the tests and the Verify table (`COHORT_LOG_LOSS` for `None`,
-temperature, sigmoid, isotonic over seeds 0–9). Re-verify before relying on it:
-- **`CalibratedClassifierCV(estimator, method=…, cv=<list of splits>, ensemble=False)`**: its
-  signature, `fit(X, y, sample_weight=None, **fit_params)`, that it validates `method` itself,
-  `len(calibrated_classifiers_) == 1`, `classes_ == [0..K−1]` with position labels (sub-task 3's
-  review measured this for LR, LGBM and RF).
-- **Folds:** `GroupKFold(n_splits=calibration_cv)` over the categorical rows with
-  `groups=sample_positions` (under `"per_child"` these are already repeated by count), passed as a
-  list of splits; `cv=int` would be stratified, not grouped, and leak a sample across folds.
-- **Weights:** under `"weighted"` the calibrated estimator gets `sample_weight`; under
-  `"per_child"` no keyword (the same named cases as today's `fit`).
-- **A training fold lacking a cohort** raises for an estimator with `decision_function` (LR,
-  LGBM): "Only 2 class/es in training fold, but 3 in overall dataset" (loud; plan §10 risk).
-  Decide with the user whether that needs anything beyond documentation.
-- The row-sum check and the cohort-position labels must still hold for the calibrated estimator.
+Files: new `modeling/total_times_probability.py` and `tests/unit/test_modeling_total_times_probability.py`;
+delete `modeling/total_children.py`, `modeling/optimization.py`, `tests/unit/test_modeling_total_children.py`,
+`tests/unit/test_modeling_optimization.py`, `tests/validation/test_total_children.py`; update
+`modeling/__init__.py` (drop `Solver`, `TotalChildrenModel`; add `TotalTimesProbabilityModel`), the
+contract test's `EXAMPLES`, `test_modeling_feature_transformer.py`. Plan P12 and the sub-task 5 bullets.
+Re-verify before relying on them: every path above exists; who imports `total_children` /
+`optimization` (the plan's `grep`); `tests/validation/helpers.py` and other validation files that
+may name the deleted classes; the contract test's single-thread LightGBM note (P14 keeps it).
+At the stop, `git add` the new files and stage the deletions with `git rm` (or `git add -A` on
+existing directories only): a deleted path given to `git add` aborts it.
 
 Memory to update at each stop: `multi-cohort-models-plan.md` in the Claude memory directory.
