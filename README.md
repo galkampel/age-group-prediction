@@ -193,10 +193,9 @@ Run the fast suite with:
 uv run pytest -m "not calibration and not slow"
 ```
 
-Run coefficient recovery after installing the validation dependency group:
+Run coefficient recovery:
 
 ```bash
-uv sync --group validation
 uv run pytest -m slow tests/validation/test_recovery.py -v
 ```
 

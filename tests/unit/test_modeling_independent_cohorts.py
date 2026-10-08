@@ -15,7 +15,7 @@ from age_group_prediction.feature_engineering import (
     FeatureTransformer,
 )
 from age_group_prediction.modeling import (
-    DirectCohortModel,
+    CountModel,
     IndependentCohortModels,
 )
 
@@ -52,16 +52,16 @@ def _table(n_rows: int = 200) -> tuple[pd.DataFrame, pd.DataFrame, pd.Series]:
     return table, table[COHORTS], exposure
 
 
-def _cohort_models() -> dict[str, DirectCohortModel]:
+def _cohort_models() -> dict[str, CountModel]:
     """Different features and offsets per cohort, in another order than y's columns."""
     return {
-        "n_highschool": DirectCohortModel(
+        "n_highschool": CountModel(
             estimator=_lightgbm(), use_exposure=True, feature_transformer=_features("x")
         ),
-        "n_elementary": DirectCohortModel(
+        "n_elementary": CountModel(
             estimator=_lightgbm(), feature_transformer=_features("z")
         ),
-        "n_kindergarten": DirectCohortModel(
+        "n_kindergarten": CountModel(
             estimator=_lightgbm(), use_exposure=True, feature_transformer=_features("x")
         ),
     }
@@ -160,7 +160,7 @@ def test_doubling_the_exposure_doubles_only_the_cohorts_with_an_offset() -> None
     np.testing.assert_array_equal(double["n_elementary"], single["n_elementary"])
 
 
-class _SeriesPredictions(DirectCohortModel):
+class _SeriesPredictions(CountModel):
     """A cohort model whose predictions carry their own default index."""
 
     def predict(self, X: pd.DataFrame, exposure: ArrayLike | None = None) -> pd.Series:

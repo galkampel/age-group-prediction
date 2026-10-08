@@ -1,135 +1,183 @@
-"""Model 2's second half: a Dirichlet regression of a building's cohort shares."""
+"""Model 2's second half: each cohort's probability for a sample, from a classifier."""
 
 from __future__ import annotations
 
-from typing import Self
+from typing import Literal, Protocol, Self
 
 import numpy as np
 import pandas as pd
-import torch
 from numpy.typing import ArrayLike
-from scipy.special import softmax
-from sklearn.utils.validation import check_is_fitted, check_X_y, validate_data
-from torch.distributions import Dirichlet
+from sklearn.base import clone
+from sklearn.calibration import CalibratedClassifierCV
+from sklearn.model_selection import PredefinedSplit
+from sklearn.utils.validation import check_consistent_length, check_is_fitted
 
 from ..feature_engineering import FeatureTransformer
+from ..utils import take_rows
 from .base import BaseAgeGroupModel
-from .optimization import Minimizer, Solver, single_threaded_torch
 
-__all__ = ["CohortProbabilityModel"]
+__all__ = [
+    "CalibrationMethod",
+    "Classifier",
+    "CohortProbabilityModel",
+    "ReplicationType",
+]
+
+# How the cohort counts become categorical rows (see CohortProbabilityModel).
+type ReplicationType = Literal["per_child", "weighted"]
+# scikit-learn's CalibratedClassifierCV methods.
+type CalibrationMethod = Literal["temperature", "sigmoid", "isotonic"]
+
+
+class Classifier(Protocol):
+    """What ``estimator`` must do: scikit-learn's classifier API; ``sample_weight`` for the weighted rows."""
+
+    classes_: np.ndarray
+
+    def fit(
+        self, X: pd.DataFrame, y: ArrayLike, sample_weight: ArrayLike | None = None
+    ) -> Self: ...
+
+    def predict_proba(self, X: pd.DataFrame) -> ArrayLike: ...
 
 
 class CohortProbabilityModel(BaseAgeGroupModel):
-    """A Dirichlet regression of the cohort shares, ``s_b ~ Dirichlet(α_b)``.
+    """Each cohort's probability for a sample: a classifier on the children, labelled by cohort position.
 
-    ``X`` is the raw table when ``feature_transformer`` is given, otherwise
-    the finished design matrix, and ``y`` the cohort counts, one
-    column per cohort (at least two), at least one child per building and
-    no negative count. The building's composition ``s_b = y_b / Σ_k y_bk`` is modelled
-    as a Dirichlet with ``α_bk = exp(a_k + x_b β_k)``; the predicted share is
-    the Dirichlet mean ``α_bk / Σ_j α_bj``, which Model 2 multiplies by the
-    predicted total. A share of 0 has no density, so the shares are compressed
-    toward the centre, ``(s (N − 1) + 1/K) / N`` (Smithson & Verkuilen 2006,
-    the standard in Dirichlet regression).
-
-    ``l2_penalty`` multiplies ``½‖W‖²``, added to the mean negative
-    log-density per building; the intercepts are not penalized. ``solver``,
-    ``max_iter`` and ``tol`` are :class:`~age_group_prediction.modeling.optimization.Minimizer`'s.
-    Calibration is fitted afterwards on :meth:`predict_logits`. The model has
-    no offset, so a passed exposure is ignored.
+    ``estimator`` is any scikit-learn multi-class classifier (``estimator__…``
+    in ``set_params``). ``X`` is the raw table when ``feature_transformer`` is
+    given, otherwise the finished design matrix; ``y`` is a DataFrame of
+    cohort counts (one column per cohort, at least two, every cohort with a
+    child); an exposure is ignored. ``fit`` builds the categorical rows itself
+    (:meth:`multinomial_to_categorical`), by ``replication``: ``"weighted"``,
+    one row per sample and cohort with a child, ``sample_weight`` = the count;
+    ``"per_child"``, one row per child and no ``sample_weight``, the way to use
+    a classifier without it (the counts must be of an integer dtype). A row's
+    label is its cohort's column position in ``y``, so ``classes_`` are
+    ``0 … K−1`` in ``y``'s order. ``calibration_method`` (``None``: the
+    classifier's own probabilities) wraps the classifier in
+    ``CalibratedClassifierCV(ensemble=False)`` over ``calibration_cv``
+    round-robin folds of samples. ``predict`` returns the probabilities with
+    ``y``'s columns and raises if a row does not sum to 1 (a one-vs-all
+    objective). Derivations and the library details:
+    ``docs/TOTAL_TIMES_PROBABILITY_MODEL.md`` §3.
     """
 
     def __init__(
         self,
         *,
-        solver: Solver = "lbfgs",
-        l2_penalty: float = 0.0,
-        max_iter: int = 500,
-        tol: float = 1e-6,
+        estimator: Classifier,
+        replication: ReplicationType = "weighted",
+        calibration_method: CalibrationMethod | None = None,
+        calibration_cv: int = 5,
         feature_transformer: FeatureTransformer | None = None,
     ) -> None:
-        self.solver = solver
-        self.l2_penalty = l2_penalty
-        self.max_iter = max_iter
-        self.tol = tol
+        # Stored verbatim: set_params assigns attributes without re-entering here.
+        self.estimator = estimator
+        self.replication = replication
+        self.calibration_method = calibration_method
+        self.calibration_cv = calibration_cv
         self.feature_transformer = feature_transformer
 
     @staticmethod
-    def _objective(
-        parameters: np.ndarray, X: torch.Tensor, shares: torch.Tensor, l2_penalty: float
-    ) -> tuple[float, np.ndarray]:
-        """The penalized mean negative Dirichlet log-density and its gradient.
+    def multinomial_to_categorical(
+        y: pd.DataFrame, replication: ReplicationType
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray | None]:
+        """The sample positions in ``y``, cohort positions (the labels) and weights of the categorical rows.
 
-        scipy's optimizer calls it with a numpy point ``[a, W]``; torch gives
-        the vectorized density and its exact gradient.
+        ``"weighted"``: every non-zero cell, its count the weight.
+        ``"per_child"``: each cell repeated by its count, no weights.
         """
-        n_cohorts = shares.shape[1]
-        params = torch.tensor(parameters, requires_grad=True)
-        coefficients = params[n_cohorts:].reshape(-1, n_cohorts)
-        alpha = torch.exp(params[:n_cohorts] + X @ coefficients)
-        value = (
-            -Dirichlet(alpha).log_prob(shares).mean()
-            + 0.5 * l2_penalty * (coefficients * coefficients).sum()
-        )
-        value.backward()
-        assert params.grad is not None
-        return value.item(), params.grad.numpy()
+        counts = y.to_numpy()
+        sample_positions, cohort_positions = np.nonzero(counts)
+        cell_counts = counts[sample_positions, cohort_positions]
+        if replication == "weighted":
+            return sample_positions, cohort_positions, cell_counts
+        elif replication == "per_child":
+            return (
+                np.repeat(sample_positions, cell_counts),
+                np.repeat(cohort_positions, cell_counts),
+                None,
+            )
+        else:
+            raise ValueError(
+                f"replication must be 'weighted' or 'per_child', got {replication!r}"
+            )
 
-    def fit(
-        self, X: pd.DataFrame, y: pd.DataFrame, exposure: ArrayLike | None = None
-    ) -> Self:
-        """Fit ``a`` and ``W`` on ``X`` and the cohort counts ``y``; ``exposure`` is ignored."""
-        if self.l2_penalty < 0:
-            raise ValueError(f"l2_penalty must be at least 0, got {self.l2_penalty}")
-        feature_transformer, X = self._fit_features(X, y)
-        X_values, counts = check_X_y(X, y, multi_output=True, y_numeric=True)
-        cohorts = list(getattr(y, "columns", range(counts.shape[1])))
-        # A cohort never observed would be fitted to the compressed floor silently.
-        unobserved = [c for c, total in zip(cohorts, counts.sum(axis=0)) if total <= 0]
+    @staticmethod
+    def _check_every_cohort_observed(y: pd.DataFrame) -> None:
+        """Raise naming the cohorts without a child: the classifier would never predict them."""
+        observed = (y.to_numpy() > 0).any(axis=0)
+        unobserved = list(y.columns[~observed])
+        # predict would lack their columns, and fail only there.
         if unobserved:
             raise ValueError(
                 f"no child is observed in cohorts {unobserved}; drop them from y"
             )
-        n_rows, n_cohorts = counts.shape
-        shares = counts / counts.sum(axis=1, keepdims=True)
-        shares = (shares * (n_rows - 1) + 1 / n_cohorts) / n_rows
-        with single_threaded_torch():
-            X_tensor = torch.tensor(X_values, dtype=torch.float64)
-            shares_tensor = torch.tensor(shares, dtype=torch.float64)
-            parameters = Minimizer(self.solver, self.max_iter, self.tol).minimize(
-                lambda candidate: self._objective(
-                    candidate, X_tensor, shares_tensor, self.l2_penalty
-                ),
-                np.zeros(n_cohorts * (1 + X_values.shape[1])),
-            )
-        self.intercept_: np.ndarray = parameters[:n_cohorts]
-        self.coef_: np.ndarray = parameters[n_cohorts:].reshape(-1, n_cohorts)
-        self.cohorts_: list[object] = cohorts
-        self.feature_transformer_ = feature_transformer
-        # Recorded after success, so a failed refit leaves the previous fit whole.
-        validate_data(self, X, reset=True, skip_check_array=True)
-        return self
 
-    def predict_logits(self, X: pd.DataFrame) -> pd.DataFrame:
-        """``log α = a + XW``, one column per cohort; what a calibrator is fitted on."""
-        check_is_fitted(self)
-        # Rejects columns in another order, which would be silent.
-        X_values = validate_data(self, self._transform_features(X), reset=False)
-        return pd.DataFrame(
-            self.intercept_ + X_values @ self.coef_,
-            columns=self.cohorts_,
-            index=getattr(X, "index", None),
+    @staticmethod
+    def _check_rows_sum_to_one(
+        probabilities: np.ndarray, estimator: Classifier
+    ) -> None:
+        """Raise if a row does not sum to 1, which Model 2 would multiply by the total silently."""
+        row_sums = probabilities.sum(axis=1)
+        # A one-vs-all objective (LightGBM's "multiclassova") scores each cohort alone.
+        if not np.allclose(row_sums, 1.0, rtol=0.0, atol=1e-6):
+            raise ValueError(
+                f"{type(estimator).__name__}'s probabilities do not sum to 1 "
+                f"in every row (row sums {np.min(row_sums)} to {np.max(row_sums)}; "
+                "nan if any is nan); use a softmax objective (e.g. LightGBM's "
+                "'multiclass') or wrap the classifier in OneVsRestClassifier"
+            )
+
+    def fit(
+        self, X: pd.DataFrame, y: pd.DataFrame, exposure: ArrayLike | None = None
+    ) -> Self:
+        """Fit a copy of ``estimator`` on ``X`` and the cohort counts ``y``; ``exposure`` is ignored."""
+        # The rows are taken from y's cells, so a shorter y would drop X's last rows silently.
+        check_consistent_length(X, y)
+        self._check_every_cohort_observed(y)
+        # On the samples: the categorical rows would weight its statistics by children.
+        feature_transformer, X = self._fit_features(X, y)
+        sample_positions, cohort_positions, weights = self.multinomial_to_categorical(
+            y, self.replication
         )
+        X_categorical = take_rows(X, sample_positions)
+        # A copy, so the caller's template stays unfitted across folds.
+        estimator: Classifier = clone(self.estimator)
+        if self.calibration_method is not None:
+            # Folds of samples, not rows: a sample on both sides of a split would
+            # show the calibrator in-sample confidence. Split before the rows, so
+            # both replications get the same folds.
+            sample_folds = np.arange(len(y)) % self.calibration_cv
+            estimator = CalibratedClassifierCV(
+                estimator,
+                method=self.calibration_method,
+                cv=PredefinedSplit(sample_folds[sample_positions]),
+                ensemble=False,
+            )
+        if self.replication == "weighted":
+            estimator.fit(X_categorical, cohort_positions, sample_weight=weights)
+        elif self.replication == "per_child":
+            # No keyword: a classifier without sample_weight fits too.
+            estimator.fit(X_categorical, cohort_positions)
+        else:
+            # Unreachable: multinomial_to_categorical raised for it.
+            raise ValueError(f"unknown replication {self.replication!r}")
+        # Set together, only once fitting succeeded.
+        self.estimator_ = estimator
+        self.cohorts_: list[object] = list(y.columns)
+        self.feature_transformer_ = feature_transformer
+        return self
 
     def predict(
         self, X: pd.DataFrame, exposure: ArrayLike | None = None
     ) -> pd.DataFrame:
-        """Each cohort's predicted share, the Dirichlet mean; ``exposure`` is ignored."""
-        # The raw X: predict_logits transforms it. A second transform here would
-        # pass silently, since the design keeps the raw column names.
-        logits = self.predict_logits(X)
-        return pd.DataFrame(
-            softmax(logits.to_numpy(), axis=1),
-            columns=logits.columns,
-            index=logits.index,
-        )
+        """Each cohort's probability for each row of ``X``; ``exposure`` is ignored."""
+        check_is_fitted(self)
+        X = self._transform_features(X)
+        probabilities = np.asarray(self.estimator_.predict_proba(X), dtype=float)
+        self._check_rows_sum_to_one(probabilities, self.estimator_)
+        # classes_ are the cohort positions 0 … K−1, y's order: the classifier
+        # was fitted on them, and every cohort was observed.
+        return pd.DataFrame(probabilities, columns=self.cohorts_, index=X.index)

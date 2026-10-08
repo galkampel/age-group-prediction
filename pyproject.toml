@@ -19,6 +19,7 @@ dependencies = [
     "scikit-learn>=1.9.0",
     "scipy>=1.18.0",
     "seaborn>=0.13.2",
+    "statsmodels>=0.14.5",
     "torch>=2.8,<3",
 ]
 
@@ -36,9 +37,6 @@ test = [
 ]
 tracking = [
     "mlflow>=3.16,<4",
-]
-validation = [
-    "statsmodels>=0.14.5",
 ]
 
 [tool.hatch.build.targets.wheel]
@@ -80,6 +78,10 @@ disallow_untyped_defs = true
 [tool.pytest.ini_options]
 pythonpath = [
     "src",
+]
+# Tests live under tests/ only; a script or audit test elsewhere (docs/) is not collected.
+testpaths = [
+    "tests",
 ]
 markers = [
     "calibration: canonical seed-sensitive calibration checks",

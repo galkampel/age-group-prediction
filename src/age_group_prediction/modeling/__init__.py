@@ -9,23 +9,28 @@ rebuilt here.
 """
 
 from .base import BaseAgeGroupModel
-from .calibration import TemperatureCalibrator
-from .cohort_probability import CohortProbabilityModel
-from .direct_cohort import DirectCohortModel, Regressor
+from .cohort_probability import (
+    CalibrationMethod,
+    Classifier,
+    CohortProbabilityModel,
+    ReplicationType,
+)
+from .count_model import CountModel, ExposureRegressor, Regressor
 from .independent_cohorts import CohortModels, IndependentCohortModels
-from .independent_total_probability import IndependentTotalProbabilityModel
-from .optimization import Solver
-from .total_children import TotalChildrenModel
+from .negative_binomial import NegativeBinomialRegressor
+from .total_times_probability import TotalTimesProbabilityModel
 
 __all__ = [
     "BaseAgeGroupModel",
+    "CalibrationMethod",
+    "Classifier",
     "CohortModels",
     "CohortProbabilityModel",
-    "DirectCohortModel",
+    "CountModel",
+    "ExposureRegressor",
     "IndependentCohortModels",
-    "IndependentTotalProbabilityModel",
+    "NegativeBinomialRegressor",
     "Regressor",
-    "Solver",
-    "TemperatureCalibrator",
-    "TotalChildrenModel",
+    "ReplicationType",
+    "TotalTimesProbabilityModel",
 ]

@@ -5,6 +5,11 @@ into `feat/hyperparameter-tuning` at `1ea99e9`. **Date:** 2026-10-05. **Brief:**
 [DIRECT_COHORT_GENERALIZATION_VALIDATION.md](DIRECT_COHORT_GENERALIZATION_VALIDATION.md).
 **Scripts and tests:** `docs/validation/pr12/` (§5). Nothing under validation was changed.
 
+> **2026-10-07:** the scripts and tests of `docs/validation/pr12/` were removed (the code they
+> checked is renamed and later rebuilt; the behaviors of ours they pinned are in `tests/unit/`, except that `estimator` has
+> no default, which the signature enforces).
+> They are kept in commit `c966edb`: `git show c966edb:docs/validation/pr12/<file>`.
+
 ## 1. Verdict: ACCEPT WITH NOTES
 
 The code implements every decision of the plan's §2 as stated, and each one is backed by a probe

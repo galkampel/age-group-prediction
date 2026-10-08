@@ -24,6 +24,7 @@ import pandas as pd
 import pytest
 from lightgbm import LGBMRegressor
 from sklearn.base import clone
+from sklearn.linear_model import LogisticRegression
 from sklearn.utils.estimator_checks import (
     check_do_not_raise_errors_in_init_or_set_params,
     check_no_attributes_set_in_init,
@@ -40,10 +41,9 @@ from age_group_prediction.feature_engineering import (
 from age_group_prediction.modeling import (
     BaseAgeGroupModel,
     CohortProbabilityModel,
-    DirectCohortModel,
+    CountModel,
     IndependentCohortModels,
-    IndependentTotalProbabilityModel,
-    TotalChildrenModel,
+    TotalTimesProbabilityModel,
 )
 
 
@@ -76,11 +76,11 @@ def _lightgbm() -> LGBMRegressor:
     return LGBMRegressor(objective="poisson", n_jobs=1, verbosity=-1)
 
 
-def _direct_cohort_example() -> Example:
+def _count_model_example() -> Example:
     rng = np.random.default_rng(0)
     X = pd.DataFrame({"x": rng.normal(size=200)})
     y = pd.Series(rng.poisson(np.exp(1 + 0.5 * X["x"])))
-    return DirectCohortModel(estimator=_lightgbm()), X, y
+    return CountModel(estimator=_lightgbm()), X, y
 
 
 def _independent_cohorts_example() -> Example:
@@ -98,66 +98,46 @@ def _independent_cohorts_example() -> Example:
     )
     model = IndependentCohortModels(
         {
-            cohort: DirectCohortModel(
-                estimator=_lightgbm(), feature_transformer=features
-            )
+            cohort: CountModel(estimator=_lightgbm(), feature_transformer=features)
             for cohort in y
         }
     )
     return model, X, y
 
 
-def _total_children_example() -> Example:
-    # No exposure: the refit test calls fit(X, y), so the default offset would raise.
+def _cohort_counts() -> tuple[pd.DataFrame, pd.DataFrame]:
     rng = np.random.default_rng(0)
     X = pd.DataFrame({"x": rng.normal(size=200)})
-    y = pd.Series(rng.poisson(np.exp(1 + 0.5 * X["x"])))
-    return TotalChildrenModel(use_exposure=False), X, y
+    y = pd.DataFrame(
+        {
+            "a": rng.poisson(np.exp(1 + 0.5 * X["x"])),
+            "b": rng.poisson(np.exp(0.5 - 0.3 * X["x"])),
+        }
+    )
+    return X, y
 
 
 def _cohort_probability_example() -> Example:
-    # Every building needs a child: the shares are the observation.
-    rng = np.random.default_rng(0)
-    X = pd.DataFrame({"x": rng.normal(size=200)})
-    y = pd.DataFrame(
-        {
-            "a": 1 + rng.poisson(np.exp(1 + 0.5 * X["x"])),
-            "b": rng.poisson(np.exp(0.5 - 0.3 * X["x"])),
-        }
-    )
-    return CohortProbabilityModel(), X, y
+    X, y = _cohort_counts()
+    return CohortProbabilityModel(estimator=LogisticRegression()), X, y
 
 
-def _independent_total_probability_example() -> Example:
-    # No exposure (the refit test calls fit(X, y)) and no calibrator (clone
-    # would drop its fit); every building has a child.
-    rng = np.random.default_rng(0)
-    X = pd.DataFrame({"x": rng.normal(size=200)})
-    y = pd.DataFrame(
-        {
-            "a": 1 + rng.poisson(np.exp(1 + 0.5 * X["x"])),
-            "b": rng.poisson(np.exp(0.5 - 0.3 * X["x"])),
-        }
-    )
-    features = FeatureTransformer(
-        (ColumnPlan(name="x", columns=("x",), transforms=(Center(),)),)
-    )
-    model = IndependentTotalProbabilityModel(
-        total_children_model=TotalChildrenModel(
-            use_exposure=False, feature_transformer=features
-        ),
-        cohort_probability_model=CohortProbabilityModel(feature_transformer=features),
+def _total_times_probability_example() -> Example:
+    # No exposure: the refit test calls fit(X, y).
+    X, y = _cohort_counts()
+    model = TotalTimesProbabilityModel(
+        total_model=CountModel(estimator=_lightgbm()),
+        probability_model=CohortProbabilityModel(estimator=LogisticRegression()),
     )
     return model, X, y
 
 
 # Factories, so every test gets its own model and data and none is built at import.
 EXAMPLES: dict[type[BaseAgeGroupModel], Callable[[], Example]] = {
-    DirectCohortModel: _direct_cohort_example,
+    CountModel: _count_model_example,
     IndependentCohortModels: _independent_cohorts_example,
-    TotalChildrenModel: _total_children_example,
     CohortProbabilityModel: _cohort_probability_example,
-    IndependentTotalProbabilityModel: _independent_total_probability_example,
+    TotalTimesProbabilityModel: _total_times_probability_example,
 }
 
 CHECKS: list[Callable[[str, BaseAgeGroupModel], None]] = [

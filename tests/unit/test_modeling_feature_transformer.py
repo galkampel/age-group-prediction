@@ -10,6 +10,7 @@ import pytest
 from lightgbm import LGBMRegressor
 from sklearn.base import clone
 from sklearn.exceptions import NotFittedError
+from sklearn.linear_model import LogisticRegression
 from sklearn.utils.validation import check_is_fitted
 
 from age_group_prediction.feature_engineering import (
@@ -20,8 +21,7 @@ from age_group_prediction.feature_engineering import (
 from age_group_prediction.modeling import (
     BaseAgeGroupModel,
     CohortProbabilityModel,
-    DirectCohortModel,
-    TotalChildrenModel,
+    CountModel,
 )
 
 # Centered x only. The table also holds columns the transformer drops, and x
@@ -48,8 +48,7 @@ def _table(n_rows: int = 200) -> tuple[pd.DataFrame, pd.Series, pd.DataFrame]:
     counts = pd.DataFrame(
         {
             "a": rng.poisson(rate * np.exp(0.5 * (table["x"] - 2))),
-            # At least one child per building, as the share model needs.
-            "b": rng.poisson(rate * np.exp(-0.3 * (table["x"] - 2))) + 1,
+            "b": rng.poisson(rate * np.exp(-0.3 * (table["x"] - 2))),
         },
         index=index,
     )
@@ -61,8 +60,8 @@ type Target = Callable[[pd.DataFrame], pd.Series | pd.DataFrame]
 
 # Each leaf model with the target it takes, from the cohort counts.
 MODELS: dict[str, tuple[Build, Target]] = {
-    "DirectCohortModel": (
-        lambda features: DirectCohortModel(
+    "CountModel": (
+        lambda features: CountModel(
             # One thread: more OpenMP threads crash alongside torch on macOS.
             estimator=LGBMRegressor(
                 objective="poisson", n_estimators=20, n_jobs=1, verbosity=-1
@@ -72,12 +71,10 @@ MODELS: dict[str, tuple[Build, Target]] = {
         ),
         lambda counts: counts["a"],
     ),
-    "TotalChildrenModel": (
-        lambda features: TotalChildrenModel(feature_transformer=features),
-        lambda counts: counts.sum(axis=1),
-    ),
     "CohortProbabilityModel": (
-        lambda features: CohortProbabilityModel(feature_transformer=features),
+        lambda features: CohortProbabilityModel(
+            estimator=LogisticRegression(), feature_transformer=features
+        ),
         lambda counts: counts,
     ),
 }
@@ -127,22 +124,6 @@ def test_the_template_transformer_stays_unfitted(build: Build, target: Target) -
     assert model.feature_transformer_ is not template
     with pytest.raises(NotFittedError):
         check_is_fitted(template)
-
-
-def test_predict_logits_transforms_the_table_like_predict() -> None:
-    # A calibrator is fitted on predict_logits, the one output predict reaches
-    # only through softmax: on a raw table it must give the logits of the
-    # hand-built design matrix, e.g. not of rows transformed twice.
-    table, _, counts = _table()
-    model = CohortProbabilityModel(feature_transformer=FEATURES).fit(table, counts)
-    features = clone(FEATURES).fit(table)
-    by_hand = CohortProbabilityModel().fit(features.transform(table), counts)
-
-    pd.testing.assert_frame_equal(
-        model.predict_logits(table),
-        by_hand.predict_logits(features.transform(table)),
-        rtol=1e-12,
-    )
 
 
 @pytest.mark.parametrize(("build", "target"), MODELS.values(), ids=list(MODELS))

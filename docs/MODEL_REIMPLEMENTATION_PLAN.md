@@ -8,7 +8,7 @@
 Step 2.6. The non-slow suite gives **956 passed**. PR #6 was squash-merged into `feat/hyperparameter-tuning` as `aee3e6a`. Next: roadmap
 step 2 (§5). *2026-10-01: roadmap step 3 is done too (Models A and B rebuilt,
 PRs #10 and #11; suite 1221); step 2 (the tuning package) and step 4 (Model C)
-are next.*
+are next. 2026-10-08: Model B rebuilt again on library estimators, PR #13.*
 
 **Workflow**
 - Every step in §4 is a validation stop.
@@ -50,7 +50,7 @@ models are rebuilt.
 
 ## 2. The exposure offset in LightGBM
 
-> *Superseded 2026-10-05:* the `init_score` offset and `base_log_rate_` below were replaced by a weighted regression of the rate (`y / exposure`, `sample_weight=exposure`), the same likelihood for any regressor; see [DIRECT_COHORT_MODEL.md §0.1](DIRECT_COHORT_MODEL.md#01-the-model-the-exposure-as-a-weighted-regression-of-the-per-apartment-rate).
+> *Superseded 2026-10-05:* the `init_score` offset and `base_log_rate_` below were replaced by a weighted regression of the rate (`y / exposure`, `sample_weight=exposure`), the same likelihood for any regressor; see [Independent cohort models §2.1](INDEPENDENT_COHORT_MODELS.md#21-the-exposure-as-a-weighted-rate).
 
 **Terms.** The *exposure* $n_i$ (apartments) is the size the expected count
 scales with. That's the standard Poisson-GLM term, as in person-years at risk.
@@ -70,7 +70,7 @@ log rate per apartment (see "In equations" below).
   strictly positive value per row of `X`, in the same order, e.g.
   `exposure=df["n_apartments"]`. *(2026-09-30: build it instead with
   `ExposureTransformer`, on the full table before splitting; see
-  [Direct cohort model §0.6](DIRECT_COHORT_MODEL.md#06-every-cohort-from-the-raw-table-independentcohortmodels).)*
+  [Independent cohort models §3](INDEPENDENT_COHORT_MODELS.md#3-independentcohortmodels).)*
   It is the raw count, not `log n`, because the
   model needs `Σn` for the starting rate below. statsmodels follows the same
   convention: `exposure=` is raw and logged internally, while `offset=` is
@@ -105,7 +105,7 @@ log rate per apartment (see "In equations" below).
 ### In equations
 
 The equations, the derivation of $b$, and the correct inputs now live in
-[DIRECT_COHORT_MODEL.md §0.1](DIRECT_COHORT_MODEL.md#01-the-model-the-exposure-as-a-weighted-regression-of-the-per-apartment-rate), the
+[Independent cohort models §2.1](INDEPENDENT_COHORT_MODELS.md#21-the-exposure-as-a-weighted-rate), the
 reference for the rebuilt model. They were moved there in Step 2.6a so that
 there is one copy.
 
@@ -185,7 +185,7 @@ class DirectCohortModel(BaseAgeGroupModel):
 Usage: transform first, then one instance per cohort. *(2026-09-30: this is
 the Phase 2 form. The current one builds the exposure with
 `ExposureTransformer` and fits every cohort with `IndependentCohortModels`;
-see [Direct cohort model §0.6](DIRECT_COHORT_MODEL.md#06-every-cohort-from-the-raw-table-independentcohortmodels).)*
+see [Independent cohort models §3](INDEPENDENT_COHORT_MODELS.md#3-independentcohortmodels).)*
 
 ```python
 features = clone(tree).fit(train_df)
@@ -544,7 +544,7 @@ In order. Each step has its own plan and gated phases.
    `aee3e6a` (2026-09-24).
 2. **Resume the tuning package** at
    [HYPERPARAMETER_TUNING_PLAN.md §9](HYPERPARAMETER_TUNING_PLAN.md): switch
-   the evaluator to `BaseAgeGroupModel`, then tune `DirectCohortModel` per
+   the evaluator to `BaseAgeGroupModel`, then tune `CountModel` per
    cohort. Re-check the exposure offset once tuned; Step 2.4 found only weak
    evidence, untuned, and the multi-cohort plan's A4 re-run through
    `IndependentCohortModels` found the same.
@@ -552,14 +552,20 @@ In order. Each step has its own plan and gated phases.
    (`IndependentTotalProbabilityModel`) in `modeling/`. Plan:
    [MULTI_COHORT_MODELS_PLAN.md](MULTI_COHORT_MODELS_PLAN.md) (there, Model 1
    and Model 2). ✓ Model A is complete: PR #10, merged as `27459eb` (steps A0–A4;
-   [Direct cohort model §0.6](DIRECT_COHORT_MODEL.md#06-every-cohort-from-the-raw-table-independentcohortmodels)).
+   [Independent cohort models §3](INDEPENDENT_COHORT_MODELS.md#3-independentcohortmodels)).
    ✓ Model B is rebuilt: PR #11 (steps B0–B9; `TotalChildrenModel`,
    `CohortProbabilityModel`, `TemperatureCalibrator`,
    `IndependentTotalProbabilityModel`;
-   [Independent total and probability model §0](INDEPENDENT_TOTAL_PROBABILITY_MODEL.md#0-the-rebuilt-model-modelingindependent_total_probabilitypy)).
+   [Total times probability model](TOTAL_TIMES_PROBABILITY_MODEL.md), now the rebuild below).
    B's feature declarations are in
    [FEATURE_TRANSFORMATIONS.md §8.2–8.5](FEATURE_TRANSFORMATIONS.md). The
-   plan's B7 smoke run compares the two models untuned.
+   plan's B7 smoke run compares the two models untuned. *2026-10-07:* Model B is
+   rebuilt again on scikit-learn classifiers and a statsmodels NB2, without
+   torch, as `TotalTimesProbabilityModel` (`CountModel` for the total,
+   `CohortProbabilityModel` on any classifier with calibration inside):
+   [TOTAL_TIMES_PROBABILITY_MODEL_PLAN.md](TOTAL_TIMES_PROBABILITY_MODEL_PLAN.md);
+   ✓ done 2026-10-08 (PR #13; the torch classes are deleted; derivations in
+   [Total times probability model](TOTAL_TIMES_PROBABILITY_MODEL.md)).
 4. **Rebuild Model C** (`BayesianConditionalModel`). *Needs step 3*: C reuses
    B's frozen feature forms.
 5. **Delete the old stack:** `modeling_config.py`, `models/`,

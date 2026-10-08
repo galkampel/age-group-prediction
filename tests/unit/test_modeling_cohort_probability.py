@@ -2,271 +2,383 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Iterator
-from typing import Any
+from collections.abc import Callable
 
 import numpy as np
 import pandas as pd
 import pytest
-import torch
-from scipy.optimize import approx_fprime
-from scipy.special import softmax
-from scipy.stats import dirichlet
+import sklearn
+from lightgbm import LGBMClassifier
+from sklearn.base import clone
+from sklearn.calibration import CalibratedClassifierCV
+from sklearn.ensemble import HistGradientBoostingClassifier, RandomForestClassifier
+from sklearn.exceptions import NotFittedError
+from sklearn.linear_model import LogisticRegression
+from sklearn.multiclass import OneVsRestClassifier
+from sklearn.neighbors import KNeighborsClassifier
+from sklearn.utils.validation import check_is_fitted
 
-from age_group_prediction.modeling import CohortProbabilityModel
+from age_group_prediction.feature_engineering import (
+    Center,
+    ColumnPlan,
+    FeatureTransformer,
+)
+from age_group_prediction.modeling import (
+    CalibrationMethod,
+    Classifier,
+    CohortProbabilityModel,
+    ReplicationType,
+)
 from age_group_prediction.scoring import cohort_log_loss
 
-COHORTS = ["n_kindergarten", "n_elementary", "n_highschool", "n_other"]
-INTERCEPTS = np.array([1.0, 1.5, 0.5, 1.0])
+# Not in sorted order, so a mapping by position from the sorted classes_
+# ("el", "hs", "kg") would permute the cohorts.
+COHORTS = ["kg", "el", "hs"]
 
 
-def _data(
-    rows: int, n_cohorts: int = 3, seed: int = 0, total: int | None = None
-) -> tuple[pd.DataFrame, pd.DataFrame, np.ndarray, np.ndarray]:
-    """Counts whose composition is Dirichlet, with a known intercept and W.
+def _data(rows: int, seed: int = 0) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Multinomial counts whose probabilities move with ``u`` and ``v``, on a non-default index.
 
-    Two of three features move the concentration; the totals are this data's
-    (``2 + Poisson(17)``) unless ``total`` fixes them, large for recovery.
+    The totals are ``Poisson(4)``, so some buildings have no children; the
+    composition is a softmax of known logits (``kg`` the reference).
     """
     rng = np.random.default_rng(seed)
+    index = pd.RangeIndex(100, 100 + rows)
     X = pd.DataFrame(
-        {
-            "ses": rng.normal(size=rows),
-            "size": rng.normal(size=rows),
-            "noise": rng.normal(size=rows),
-        }
+        {"u": rng.normal(size=rows), "v": rng.normal(size=rows)}, index=index
     )
-    intercepts = INTERCEPTS[:n_cohorts]
-    coefficients = rng.normal(scale=0.5, size=(3, n_cohorts))
-    coefficients[2] = 0.0
-    concentration = np.exp(intercepts + X.to_numpy() @ coefficients)
-    shares = np.vstack([rng.dirichlet(row) for row in concentration])
-    totals = np.full(rows, total) if total else 2 + rng.poisson(17, size=rows)
-    counts = np.vstack([rng.multinomial(n, s) for n, s in zip(totals, shares)])
-    return (
-        X,
-        pd.DataFrame(counts, columns=COHORTS[:n_cohorts]),
-        intercepts,
-        coefficients,
+    logits = np.column_stack([np.zeros(rows), 0.5 + 0.8 * X["u"], -0.3 + 0.6 * X["v"]])
+    probabilities = np.exp(logits) / np.exp(logits).sum(axis=1, keepdims=True)
+    counts = np.vstack(
+        [
+            rng.multinomial(total, p)
+            for total, p in zip(rng.poisson(4, rows), probabilities)
+        ]
     )
+    return X, pd.DataFrame(counts, columns=COHORTS, index=index)
 
 
-X, Y, _, _ = _data(300)
+X, Y = _data(300)
 
 
-@pytest.fixture(autouse=True, scope="module")
-def _torch_single_threaded() -> Iterator[None]:
-    # The suite loads LightGBM before torch, and torch's threaded kernels then
-    # crash. fit sets one thread; the tests that call _objective directly
-    # need it too.
-    previous = torch.get_num_threads()
-    torch.set_num_threads(1)
-    yield
-    torch.set_num_threads(previous)
+def _logistic() -> LogisticRegression:
+    # Unpenalized: the categorical rows then fit the multinomial likelihood exactly.
+    return LogisticRegression(C=np.inf, max_iter=1000)
 
 
-def _compressed_shares(counts: pd.DataFrame) -> np.ndarray:
-    """The shares as fit sees them: Smithson & Verkuilen's compression."""
-    values = counts.to_numpy()
-    rows, n_cohorts = values.shape
-    shares = values / values.sum(axis=1, keepdims=True)
-    return (shares * (rows - 1) + 1 / n_cohorts) / rows
+REPLICATIONS: list[ReplicationType] = ["weighted", "per_child"]
+CELLS = pd.DataFrame({"kg": [2, 0, 0], "el": [0, 0, 3], "hs": [1, 0, 0]})
 
 
-def _objective_at(point: np.ndarray, l2_penalty: float) -> tuple[float, np.ndarray]:
-    X_tensor = torch.tensor(X.to_numpy(), dtype=torch.float64)
-    shares = torch.tensor(_compressed_shares(Y), dtype=torch.float64)
-    return CohortProbabilityModel._objective(point, X_tensor, shares, l2_penalty)
-
-
-def test_the_objective_is_the_mean_dirichlet_log_density() -> None:
-    # Another density, a sum where the mean belongs, or a penalty on another
-    # scale than N8's (per building) still fits something.
-    n_cohorts = Y.shape[1]
-    point = np.random.default_rng(1).normal(scale=0.3, size=n_cohorts * 4)
-    coefficients = point[n_cohorts:].reshape(-1, n_cohorts)
-    concentration = np.exp(point[:n_cohorts] + X.to_numpy() @ coefficients)
-    expected = (
-        -np.mean(
-            [
-                dirichlet.logpdf(share, row)
-                for share, row in zip(_compressed_shares(Y), concentration)
-            ]
-        )
-        + 0.25 * (coefficients**2).sum()
+def test_the_weighted_rows_are_the_non_zero_cells_with_their_counts() -> None:
+    # A zero cell kept as a row, a label from another column, or a weight
+    # other than the count would fit another likelihood. The labels are the
+    # cohorts' column positions: kg 0, el 1, hs 2.
+    positions, labels, weights = CohortProbabilityModel.multinomial_to_categorical(
+        CELLS, "weighted"
     )
 
-    value, _ = _objective_at(point, 0.5)
-
-    assert value == pytest.approx(expected, rel=1e-10)
-
-
-def test_the_gradient_matches_the_objective() -> None:
-    # The fit trusts the autograd gradient; one of another value than the one
-    # returned (e.g. a term added after backward) can still "converge".
-    point = np.random.default_rng(2).normal(scale=0.3, size=Y.shape[1] * 4)
-
-    _, gradient = _objective_at(point, 0.5)
-
-    numerical = approx_fprime(point, lambda p: _objective_at(p, 0.5)[0], 1e-7)
-    np.testing.assert_allclose(gradient, numerical, atol=1e-5)
+    np.testing.assert_array_equal(positions, [0, 0, 2])
+    np.testing.assert_array_equal(labels, [0, 2, 1])
+    np.testing.assert_array_equal(weights, [2, 1, 3])
 
 
-@pytest.mark.parametrize("n_cohorts", [2, 3, 4])
-def test_known_parameters_are_recovered(n_cohorts: int) -> None:
-    # Shares not normalized, exp missing, or a cohort count hard-coded to 3
-    # all miss the parameters that generated the composition.
-    X_big, Y_big, intercepts, coefficients = _data(2000, n_cohorts, seed=1, total=1000)
-
-    model = CohortProbabilityModel().fit(X_big, Y_big)
-
-    np.testing.assert_allclose(model.intercept_, intercepts, atol=0.15)
-    np.testing.assert_allclose(model.coef_, coefficients, atol=0.15)
-
-
-def test_shares_on_the_boundary_are_compressed() -> None:
-    # This data has buildings with a zero cohort; a raw share of 0 has no
-    # Dirichlet density, so the fit would end non-finite.
-    assert (Y.to_numpy() == 0).any(axis=1).sum() > 0
-
-    model = CohortProbabilityModel().fit(X, Y)
-
-    assert np.isfinite(model.coef_).all()
-
-
-def test_fit_compresses_the_shares_as_the_pinned_objective_does() -> None:
-    # The objective test feeds its own compressed shares; fit's own
-    # compression could differ (another floor or scale) and every other test
-    # still pass. At fit's point the pinned objective must be stationary.
-    model = CohortProbabilityModel(tol=1e-8).fit(X, Y)
-    point = np.concatenate([model.intercept_, model.coef_.ravel()])
-
-    _, gradient = _objective_at(point, 0.0)
-
-    assert np.abs(gradient).max() < 1e-6
-
-
-def test_scaling_every_count_leaves_the_fit_unchanged() -> None:
-    # The observation is the composition: counts where shares should be would
-    # move the fit.
-    model = CohortProbabilityModel().fit(X, Y)
-    scaled = CohortProbabilityModel().fit(X, 10 * Y)
-
-    np.testing.assert_allclose(scaled.coef_, model.coef_, atol=1e-6)
-    np.testing.assert_allclose(scaled.intercept_, model.intercept_, atol=1e-6)
-
-
-def test_a_huge_penalty_leaves_the_intercept_only_fit() -> None:
-    # Every coefficient goes to 0 but the intercepts must not: they are
-    # unpenalized, so the fit is the one without features.
-    model = CohortProbabilityModel(l2_penalty=1e8).fit(X, Y)
-    intercept_only = CohortProbabilityModel().fit(X * 0, Y)
-
-    np.testing.assert_allclose(model.intercept_, intercept_only.intercept_, atol=1e-5)
-    assert np.abs(model.coef_).max() < 1e-6
-
-
-def test_probabilities_are_named_like_y_and_indexed_like_x() -> None:
-    # Misnamed columns or misaligned rows would be combined with the wrong
-    # cohort or building by Model 2; logits out of step with the
-    # probabilities would miscalibrate.
-    X_new = X.iloc[:5].set_index(pd.Index([10, 20, 30, 40, 50]))
-    model = CohortProbabilityModel().fit(X, Y)
-
-    probabilities = model.predict(X_new)
-
-    assert list(probabilities.columns) == list(Y.columns)
-    assert probabilities.index.equals(X_new.index)
-    np.testing.assert_allclose(probabilities.sum(axis=1), 1.0, rtol=1e-12)
-    np.testing.assert_allclose(
-        probabilities.to_numpy(),
-        softmax(model.predict_logits(X_new).to_numpy(), axis=1),
-        rtol=1e-12,
+def test_the_per_child_rows_are_one_unweighted_row_per_child() -> None:
+    # A cell not repeated by its count, or weights kept as well, would count
+    # each child other than once.
+    positions, labels, weights = CohortProbabilityModel.multinomial_to_categorical(
+        CELLS, "per_child"
     )
 
+    np.testing.assert_array_equal(positions, [0, 0, 0, 2, 2, 2])
+    np.testing.assert_array_equal(labels, [0, 0, 2, 1, 1, 1])
+    assert weights is None
 
-def test_cohorts_from_an_array_are_numbered() -> None:
-    # Reading .columns from an array y would fail; the names must come from
-    # what y has.
-    model = CohortProbabilityModel().fit(X, Y.to_numpy())
 
-    assert model.cohorts_ == [0, 1, 2]
-    assert list(model.predict(X).columns) == [0, 1, 2]
+def test_an_unknown_replication_raises() -> None:
+    # Falling back to one replication would hide a typo or a stale value in a
+    # tuned setting.
+    with pytest.raises(ValueError, match="got 'replicated'"):
+        CohortProbabilityModel.multinomial_to_categorical(CELLS, "replicated")  # type: ignore[arg-type]
+
+
+def test_the_weighted_fit_equals_a_fit_on_one_row_per_child() -> None:
+    # The weight as count/total, no weight, or labels out of step with the
+    # rows fits another model than the multinomial likelihood of the counts.
+    model = CohortProbabilityModel(estimator=_logistic()).fit(X, Y)
+    counts = Y.to_numpy()
+    building = np.repeat(np.arange(len(Y)), counts.sum(axis=1))
+    labels = np.concatenate([np.repeat(np.arange(len(COHORTS)), row) for row in counts])
+
+    per_child = _logistic().fit(X.iloc[building], labels)
+
+    weighted = model.estimator_
+    assert isinstance(weighted, LogisticRegression)
+    np.testing.assert_allclose(weighted.coef_, per_child.coef_, atol=1e-10)
+    np.testing.assert_allclose(weighted.intercept_, per_child.intercept_, atol=1e-10)
+
+
+def test_both_replications_fit_the_same_likelihood() -> None:
+    # Each child counts once in either: a replication that drops, repeats
+    # or reweights children fits another logistic regression.
+    weighted = CohortProbabilityModel(estimator=_logistic()).fit(X, Y)
+    per_child = CohortProbabilityModel(
+        estimator=_logistic(), replication="per_child"
+    ).fit(X, Y)
+
+    pd.testing.assert_frame_equal(
+        per_child.predict(X), weighted.predict(X), rtol=0, atol=1e-10
+    )
 
 
 @pytest.mark.parametrize(
-    ("run", "message"),
+    "build",
     [
-        (
-            lambda: CohortProbabilityModel().fit(X, Y.assign(n_highschool=0)),
-            r"no child.*\['n_highschool'\]",
-        ),
-        (lambda: CohortProbabilityModel(l2_penalty=-0.01).fit(X, Y), "l2_penalty"),
-        (
-            lambda: (
-                CohortProbabilityModel().fit(X, Y).predict(X[["noise", "size", "ses"]])
-            ),
-            "feature names",
-        ),
+        lambda: KNeighborsClassifier(n_neighbors=25),
+        # Without metadata routing, which only the weights need.
+        lambda: OneVsRestClassifier(LogisticRegression()),
     ],
-    ids=["unobserved-cohort", "negative-penalty", "reordered-columns"],
+    ids=["k-neighbors", "one-vs-rest"],
 )
-def test_input_that_would_fit_silently_raises(
-    run: Callable[[], object], message: str
+@pytest.mark.parametrize("calibration_method", [None, "temperature"])
+@pytest.mark.filterwarnings("error")
+def test_per_child_rows_fit_a_classifier_without_sample_weight(
+    build: Callable[[], Classifier], calibration_method: CalibrationMethod | None
 ) -> None:
-    # An unobserved cohort would be fitted to the compressed floor; a negative
-    # penalty rewards large coefficients and still converges; reordered
-    # columns would meet the wrong coefficients.
-    with pytest.raises(ValueError, match=message):
-        run()
+    # Passing sample_weight (even None) would fail for these classifiers;
+    # through the calibration, weights would only warn and be dropped for the
+    # classifier.
+    model = CohortProbabilityModel(
+        estimator=build(),
+        replication="per_child",
+        calibration_method=calibration_method,
+    )
+
+    probabilities = model.fit(X, Y).predict(X)
+
+    np.testing.assert_allclose(probabilities.sum(axis=1), 1.0, rtol=1e-12)
 
 
-def test_non_convergence_raises() -> None:
-    # A fit that stopped halfway, used silently, is a wrong composition.
-    with pytest.raises(RuntimeError, match="did not converge"):
-        CohortProbabilityModel(max_iter=1).fit(X, Y)
+@pytest.mark.parametrize("with_features", [False, True], ids=["design", "raw-table"])
+def test_probabilities_are_named_like_y_and_indexed_like_x(with_features: bool) -> None:
+    # Labels that the classifier sorts (the names, not y's column positions)
+    # would give a cohort another cohort's probability; misaligned rows would
+    # be multiplied by another building's total in Model 2. With a
+    # transformer, the index is read from the transformed rows, which must
+    # keep the raw table's.
+    X_new = X.iloc[:5].set_index(pd.Index([10, 20, 30, 40, 50]))
+    features = FeatureTransformer(
+        tuple(
+            ColumnPlan(name=column, columns=(column,), transforms=(Center(),))
+            for column in ("u", "v")
+        )
+    )
+    model = CohortProbabilityModel(
+        estimator=_logistic(), feature_transformer=features if with_features else None
+    ).fit(X, Y)
+
+    probabilities = model.predict(X_new)
+
+    assert list(probabilities.columns) == COHORTS
+    assert probabilities.index.equals(X_new.index)
+    design = (
+        X_new
+        if model.feature_transformer_ is None
+        else model.feature_transformer_.transform(X_new)
+    )
+    np.testing.assert_array_equal(model.estimator_.classes_, [0, 1, 2])
+    np.testing.assert_array_equal(
+        probabilities.to_numpy(), model.estimator_.predict_proba(design)
+    )
+
+
+CLASSIFIERS: dict[str, Callable[[], Classifier]] = {
+    "logistic": _logistic,
+    "hist-gradient-boosting": HistGradientBoostingClassifier,
+    "lightgbm": lambda: LGBMClassifier(n_estimators=20, n_jobs=1, verbosity=-1),
+    "random-forest": lambda: RandomForestClassifier(n_estimators=20, random_state=0),
+    # The weights reach the binary classifiers only through metadata routing.
+    "one-vs-rest": lambda: OneVsRestClassifier(
+        LogisticRegression().set_fit_request(sample_weight=True)
+    ),
+}
+
+
+@pytest.mark.parametrize("replication", REPLICATIONS)
+@pytest.mark.parametrize("build", CLASSIFIERS.values(), ids=list(CLASSIFIERS))
+def test_every_classifier_kind_keeps_the_cohort_order(
+    build: Callable[[], Classifier], replication: ReplicationType
+) -> None:
+    # The protocol must hold for multinomial, tree and one-vs-rest
+    # classifiers alike: each must order its classes as y's columns, and a
+    # column dropped, repeated or permuted breaks the cohorts or their sum.
+    with sklearn.config_context(enable_metadata_routing=True):
+        model = CohortProbabilityModel(estimator=build(), replication=replication).fit(
+            X, Y
+        )
+        probabilities = model.predict(X)
+        by_class = model.estimator_.predict_proba(X)
+
+    np.testing.assert_array_equal(model.estimator_.classes_, [0, 1, 2])
+    np.testing.assert_array_equal(probabilities.to_numpy(), by_class)
+    np.testing.assert_allclose(probabilities.sum(axis=1), 1.0, rtol=1e-12)
+
+
+@pytest.mark.parametrize(
+    "names", [["kg", 1, 2.5], [2, 0, 1]], ids=["mixed-types", "integers-unsorted"]
+)
+def test_cohort_names_of_any_type_name_the_columns_in_order(
+    names: list[object],
+) -> None:
+    # Names as labels would be sorted by the classifier: a str beside a number
+    # fails, and unsorted integer names would be permuted silently.
+    model = CohortProbabilityModel(estimator=_logistic()).fit(
+        X, Y.set_axis(names, axis=1)
+    )
+
+    probabilities = model.predict(X)
+
+    assert list(probabilities.columns) == names
+    np.testing.assert_array_equal(
+        probabilities.to_numpy(), model.estimator_.predict_proba(X)
+    )
+
+
+def test_an_unobserved_cohort_raises_naming_it() -> None:
+    # The classifier would never predict it, and predict would lack its column.
+    with pytest.raises(ValueError, match=r"no child.*\['hs'\]"):
+        CohortProbabilityModel(estimator=_logistic()).fit(X, Y.assign(hs=0))
+
+
+@pytest.mark.parametrize("replication", REPLICATIONS)
+def test_a_building_without_children_adds_nothing_and_is_still_predicted(
+    replication: ReplicationType,
+) -> None:
+    # Its row has no child to label; fitting on it anyway (a zero-weight row
+    # or a made-up label) would change the fit.
+    empty = Y.sum(axis=1) == 0
+    assert empty.any()
+    template = CohortProbabilityModel(estimator=_logistic(), replication=replication)
+
+    model = clone(template).fit(X, Y)
+    without = clone(template).fit(X[~empty], Y[~empty])
+
+    assert isinstance(model.estimator_, LogisticRegression)
+    assert isinstance(without.estimator_, LogisticRegression)
+    np.testing.assert_array_equal(model.estimator_.coef_, without.estimator_.coef_)
+    assert model.predict(X[empty]).notna().all().all()
+
+
+def test_a_passed_exposure_is_ignored() -> None:
+    # A caller passes one exposure to every model; this one has no exposure.
+    exposure = np.arange(1.0, len(X) + 1)
+    model = CohortProbabilityModel(estimator=_logistic()).fit(X, Y)
+    with_exposure = CohortProbabilityModel(estimator=_logistic()).fit(
+        X, Y, exposure=exposure
+    )
+
+    pd.testing.assert_frame_equal(
+        with_exposure.predict(X, exposure=exposure), model.predict(X)
+    )
+
+
+@pytest.mark.parametrize("replication", REPLICATIONS)
+def test_the_feature_transformer_is_fitted_on_the_buildings(
+    replication: ReplicationType,
+) -> None:
+    # Fitted on the categorical rows, its statistics would be weighted by each
+    # building's children: here the centre of u moves, since buildings with a
+    # large u have more children.
+    rng = np.random.default_rng(1)
+    X_raw = pd.DataFrame({"u": rng.normal(loc=2.0, size=300)})
+    totals = rng.poisson(np.exp(X_raw["u"] - 1))
+    y = pd.DataFrame(
+        np.vstack([rng.multinomial(t, [0.3, 0.4, 0.3]) for t in totals]),
+        columns=COHORTS,
+    )
+    features = FeatureTransformer(
+        (ColumnPlan(name="u", columns=("u",), transforms=(Center(),)),)
+    )
+
+    model = CohortProbabilityModel(
+        estimator=_logistic(),
+        replication=replication,
+        feature_transformer=features,
+    ).fit(X_raw, y)
+
+    assert model.feature_transformer_ is not None
+    pd.testing.assert_frame_equal(
+        model.feature_transformer_.transform(X_raw),
+        clone(features).fit(X_raw).transform(X_raw),
+    )
 
 
 def test_a_failed_refit_leaves_the_previous_fit_intact() -> None:
-    # A refit on other columns that fails must not leave their names beside
-    # the old coefficients: predict would then accept the new columns.
-    model = CohortProbabilityModel().fit(X, Y)
+    # State set before the classifier's fit succeeds would leave an unfitted
+    # classifier, or name the old one's columns after the new cohorts.
+    model = CohortProbabilityModel(estimator=_logistic()).fit(X, Y)
     before = model.predict(X)
-    renamed = X.rename(columns={"ses": "a", "size": "b", "noise": "c"})
 
-    with pytest.raises(RuntimeError, match="did not converge"):
-        model.set_params(max_iter=1).fit(renamed, Y)
+    with pytest.raises(ValueError, match="NaN"):
+        model.fit(X.assign(u=np.nan), Y.set_axis(["a", "b", "c"], axis=1))
 
     pd.testing.assert_frame_equal(model.predict(X), before)
-    with pytest.raises(ValueError, match="feature names"):
-        model.predict(renamed)
 
 
-def test_the_solver_setting_picks_the_scipy_method(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    # Both methods reach the same fit, so only the call shows which one ran.
-    from age_group_prediction.modeling import optimization
+class _FailingClassifier(LogisticRegression):
+    """Fails at ``fit``, after the feature transformer was fitted."""
 
-    methods: list[str] = []
-    scipy_minimize = optimization.minimize
+    def fit(self, *args: object, **kwargs: object) -> _FailingClassifier:
+        raise RuntimeError("classifier failed")
 
-    def recording_minimize(*args: object, **kwargs: Any) -> object:
-        methods.append(kwargs["method"])
-        return scipy_minimize(*args, **kwargs)
 
-    monkeypatch.setattr(optimization, "minimize", recording_minimize)
-    CohortProbabilityModel(solver="bfgs").fit(X, Y)
+def test_a_failed_refit_keeps_the_previous_feature_transformer() -> None:
+    # A transformer set before the classifier's fit succeeds would centre new
+    # rows on the failed refit's statistics, beside the old classifier.
+    features = FeatureTransformer(
+        tuple(
+            ColumnPlan(name=column, columns=(column,), transforms=(Center(),))
+            for column in ("u", "v")
+        )
+    )
+    model = CohortProbabilityModel(
+        estimator=_logistic(), feature_transformer=features
+    ).fit(X, Y)
+    before = model.predict(X)
 
-    assert methods == ["BFGS"]
+    with pytest.raises(RuntimeError, match="classifier failed"):
+        model.set_params(estimator=_FailingClassifier()).fit(
+            X.assign(u=X["u"] + 5.0), Y
+        )
+
+    pd.testing.assert_frame_equal(model.predict(X), before)
+
+
+def test_x_and_y_of_different_lengths_raise() -> None:
+    # The rows are taken from y's cells, so a shorter y would fit on X's
+    # first rows and drop the rest silently.
+    with pytest.raises(ValueError, match="inconsistent numbers of samples"):
+        CohortProbabilityModel(estimator=_logistic()).fit(X, Y.iloc[:-50])
+
+
+def test_the_template_estimator_stays_unfitted() -> None:
+    # Fitting the caller's estimator in place would carry one fold's fit into
+    # the next and into the caller's later use.
+    template = _logistic()
+
+    model = CohortProbabilityModel(estimator=template).fit(X, Y)
+
+    assert model.estimator_ is not template
+    with pytest.raises(NotFittedError):
+        check_is_fitted(template)
 
 
 def test_the_model_beats_the_marginal_shares_on_new_buildings() -> None:
-    # A fit that never left its start point predicts equal shares; one that
-    # ignores the features predicts the marginal shares.
-    X_all, Y_all, _, _ = _data(2000, seed=3)
+    # A fit that ignores the features, or pairs labels with other buildings'
+    # rows, predicts no better than the marginal shares.
+    X_all, Y_all = _data(2000, seed=3)
     X_fit, Y_fit, X_new, Y_new = X_all[:1000], Y_all[:1000], X_all[1000:], Y_all[1000:]
-    model = CohortProbabilityModel().fit(X_fit, Y_fit)
+    model = CohortProbabilityModel(estimator=_logistic()).fit(X_fit, Y_fit)
     marginal = np.tile(Y_fit.sum() / Y_fit.to_numpy().sum(), (len(X_new), 1))
 
     model_loss = cohort_log_loss(Y_new.to_numpy(), model.predict(X_new).to_numpy())
@@ -274,26 +386,113 @@ def test_the_model_beats_the_marginal_shares_on_new_buildings() -> None:
     assert model_loss < 0.95 * cohort_log_loss(Y_new.to_numpy(), marginal)
 
 
-def test_a_passed_exposure_is_ignored() -> None:
-    # A caller passes one exposure to every model; this one has no offset.
-    model = CohortProbabilityModel().fit(X, Y)
-    with_exposure = CohortProbabilityModel().fit(X, Y, exposure=np.ones(len(X)))
+def test_probabilities_that_do_not_sum_to_one_raise() -> None:
+    # LightGBM's one-vs-all objective scores each cohort on its own; its rows
+    # would reach Model 2 unnormalized, and the cohorts would miss the total.
+    model = CohortProbabilityModel(
+        estimator=LGBMClassifier(
+            objective="multiclassova", n_estimators=20, n_jobs=1, verbosity=-1
+        )
+    ).fit(X, Y)
 
-    np.testing.assert_array_equal(with_exposure.coef_, model.coef_)
+    with pytest.raises(ValueError, match="LGBMClassifier's probabilities do not sum"):
+        model.predict(X)
+
+
+def test_without_a_calibration_method_the_classifier_is_used_as_is() -> None:
+    # Calibrating by default would change every uncalibrated model's
+    # probabilities and cost calibration_cv extra fits.
+    model = CohortProbabilityModel(estimator=_logistic()).fit(X, Y)
+
+    assert isinstance(model.estimator_, LogisticRegression)
+
+
+@pytest.mark.parametrize("method", ["temperature", "sigmoid", "isotonic"])
+def test_calibration_fits_one_model_on_all_rows_with_the_given_method(
+    method: CalibrationMethod,
+) -> None:
+    # ensemble=True would average the fold models, never fitted on all rows;
+    # a method other than the setting would be tuned silently.
+    model = CohortProbabilityModel(
+        estimator=_logistic(), calibration_method=method
+    ).fit(X, Y)
+
+    calibrated = model.estimator_
+    assert isinstance(calibrated, CalibratedClassifierCV)
+    assert calibrated.method == method
+    assert len(calibrated.calibrated_classifiers_) == 1
+    np.testing.assert_array_equal(calibrated.classes_, [0, 1, 2])
     pd.testing.assert_frame_equal(
-        with_exposure.predict(X, exposure=np.ones(len(X))), model.predict(X)
+        model.predict(X),
+        pd.DataFrame(calibrated.predict_proba(X), columns=COHORTS, index=X.index),
     )
 
 
-def test_the_thread_count_is_restored_after_the_fit_even_a_failed_one() -> None:
-    # The fit runs torch single-threaded; leaving it so would slow every
-    # later torch user in the process, silently.
-    torch.set_num_threads(3)
-    try:
-        CohortProbabilityModel().fit(X, Y)
-        assert torch.get_num_threads() == 3
-        with pytest.raises(RuntimeError):
-            CohortProbabilityModel(max_iter=1).fit(X, Y)
-        assert torch.get_num_threads() == 3
-    finally:
-        torch.set_num_threads(1)  # the module fixture's setting
+@pytest.mark.parametrize("replication", REPLICATIONS)
+def test_calibration_folds_keep_each_sample_on_one_side(
+    replication: ReplicationType,
+) -> None:
+    # Ungrouped folds (cv=int is stratified by cohort) would put a sample's
+    # rows in a fit fold and its calibration fold; a fixed fold count would
+    # ignore calibration_cv.
+    model = CohortProbabilityModel(
+        estimator=_logistic(),
+        replication=replication,
+        calibration_method="temperature",
+        calibration_cv=3,
+    ).fit(X, Y)
+    sample_positions, _, _ = CohortProbabilityModel.multinomial_to_categorical(
+        Y, replication
+    )
+
+    calibrated = model.estimator_
+    assert isinstance(calibrated, CalibratedClassifierCV)
+    splits = list(calibrated.cv.split())
+    assert len(splits) == 3
+    for fit_rows, calibration_rows in splits:
+        assert not set(sample_positions[fit_rows]) & set(
+            sample_positions[calibration_rows]
+        )
+
+
+def test_the_weights_reach_the_calibrated_classifier() -> None:
+    # Dropping sample_weight would fit the classifier and the temperature
+    # on one row per cell, each cell counting once whatever its children.
+    model = CohortProbabilityModel(
+        estimator=_logistic(), calibration_method="temperature"
+    ).fit(X, Y)
+    positions, labels, weights = CohortProbabilityModel.multinomial_to_categorical(
+        Y, "weighted"
+    )
+    calibrated = model.estimator_
+    assert isinstance(calibrated, CalibratedClassifierCV)
+    splits = list(calibrated.cv.split())
+
+    def inverse_temperature(sample_weight: np.ndarray | None) -> float:
+        reference = CalibratedClassifierCV(
+            _logistic(), method="temperature", cv=splits, ensemble=False
+        ).fit(X.iloc[positions], labels, sample_weight=sample_weight)
+        return float(reference.calibrated_classifiers_[0].calibrators[0].beta_)
+
+    fitted = float(calibrated.calibrated_classifiers_[0].calibrators[0].beta_)
+    assert fitted == pytest.approx(inverse_temperature(weights), rel=1e-9)
+    assert fitted != pytest.approx(inverse_temperature(None), rel=1e-3)
+
+
+def test_both_replications_calibrate_on_the_same_folds() -> None:
+    # Folds of categorical rows balance cells under "weighted" and children
+    # under "per_child", so the two would calibrate on different samples and
+    # their comparison would mix the replication with the folds.
+    def inverse_temperature(replication: ReplicationType) -> float:
+        model = CohortProbabilityModel(
+            estimator=_logistic(),
+            replication=replication,
+            calibration_method="temperature",
+        ).fit(X, Y)
+        calibrated = model.estimator_
+        assert isinstance(calibrated, CalibratedClassifierCV)
+        return float(calibrated.calibrated_classifiers_[0].calibrators[0].beta_)
+
+    assert inverse_temperature("per_child") == pytest.approx(
+        inverse_temperature("weighted"), rel=1e-9
+    )
