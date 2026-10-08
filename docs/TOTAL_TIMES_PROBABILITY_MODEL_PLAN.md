@@ -11,7 +11,10 @@ sub-task checkboxes in §8 as work finishes. Orientation for a new session:
 an exposure branch and NB2 as `NegativeBinomialRegressor`; `CohortProbabilityModel` is a
 classifier on weighted or per-child rows, optionally calibrated (`calibration_method`,
 `calibration_cv`), and the torch Model 2 and `TemperatureCalibrator` are deleted;
-records in §8). **Sub-task 5 is done, awaiting the user's commit:** `TotalTimesProbabilityModel` added, `total_children.py` and `optimization.py` deleted (no torch left in `modeling/`). Sub-task 6 (smoke run) is next. During planning the user revised it twice: NB2 goes through
+records in §8). **Sub-task 5 is committed (`99d4dd0`):** `TotalTimesProbabilityModel` added,
+`total_children.py` and `optimization.py` deleted (no torch left in `modeling/`). **Sub-task 6 (the
+smoke run) is done, docs only, awaiting the user's commit;** its tables and reading are in §8.
+Sub-task 7 (docs and close) is next. During planning the user revised it twice: NB2 goes through
 `CountModel` (the renamed `DirectCohortModel`) as an estimator taking the exposure (an offset in the first plan; raw `exposure` since sub-task 2); a
 `replication` setting for row-resampling classifiers was considered and dropped
 on measurement (P6, P8).
@@ -810,7 +813,7 @@ Each ends at a stop (§3). "Verify" lists what the user can check.
   55.5 µs and `* total[:, None]` 30.5 µs on 245 rows, both correct. The user chose
   `probabilities * total[:, None]`.
 
-### [ ] 6. Smoke run (as PR #11's B7)
+### [x] 6. Smoke run (as PR #11's B7)
 - Script in the scratchpad, recipe in the plan doc: ten simulated populations,
   grouped 80/20 split, class defaults (untuned). Compare Model 1 (PR #12's
   `IndependentCohortModels` with LightGBM) against Model 2 variants:
@@ -820,6 +823,123 @@ Each ends at a stop (§3). "Verify" lists what the user can check.
   calibration ∈ {None, temperature}. Metrics: per-cohort and total
   Poisson deviance, `COHORT_LOG_LOSS`. Record the table and the fitted NB2 α.
 - **Verify:** the table; a one-paragraph reading (what won, by how much, noise).
+- **Record (2026-10-08):** HEAD `99d4dd0`, tree clean. Re-verified: the simulator is
+  `src/student_simulator` (`PYTHONPATH=src`; the 245-row table's `n_children_total` equals the cohort
+  sum); `FEATURE_TRANSFORMATIONS.md` §8.0–8.3's `tree`, `total_base`, `cohort_probability_base`;
+  `Splitter("grouped")`, `ExposureTransformer`, `take_rows`, `POISSON_DEVIANCE`, `COHORT_LOG_LOSS`;
+  every variant below runs at the class defaults under `-W error` (`LogisticRegression()` converges at
+  its default `max_iter`). **Recipe:** per seed 0–9,
+  `StudentPopulationSimulator(load_simulation_config("configs/simulation.toml")).run(rng=np.random.default_rng(seed))`;
+  §8.0 `ShareTransformer`; `ExposureTransformer("n_apartments")` on the full table;
+  `Splitter("grouped").train_test_indices(table, table["neighborhood_id"], test_size=0.2,
+  random_state=seed)`, every array by `take_rows`; fit on all training buildings (179–206), score on
+  all test buildings (33–53; a building without children adds nothing to the log loss). Baseline:
+  the constant rate per cohort `Σy_train / Σexposure_train × exposure_test`, its sum for the total,
+  its rows the training marginal shares. Model 1: `IndependentCohortModels` of
+  `CountModel(LGBMRegressor(objective="poisson", n_jobs=1, verbosity=-1), use_exposure=True,
+  feature_transformer=tree)`. Model 2: `TotalTimesProbabilityModel(total_model=CountModel(T,
+  use_exposure=True, feature_transformer=total_base), probability_model=CohortProbabilityModel(P,
+  calibration_method=M, feature_transformer=cohort_probability_base))`, T ∈ {`PoissonRegressor()`,
+  `NegativeBinomialRegressor()`, `LGBMRegressor(objective="poisson", n_jobs=1, verbosity=-1)`}
+  (labelled poisson / nb2 / lgbm), P ∈ {`LogisticRegression()`, `LGBMClassifier(n_jobs=1,
+  verbosity=-1)`, `HistGradientBoostingClassifier()`, `RandomForestClassifier(n_jobs=1,
+  random_state=seed)`}, M ∈ {None, "temperature"}; everything else at the class defaults (untuned,
+  as B7 decided). Each composite's `predict` rows were asserted to sum to the total model's
+  prediction (§11). Scratchpad `smoke_run.py` (per-session; rebuild from this recipe), ≈ 6 min.
+
+  **Mean ± SD over the 10 populations; lower is better.** The total's deviance depends on T only.
+
+  | Model | `n_kindergarten` | `n_elementary` | `n_highschool` | total | cohort log loss |
+  |---|---|---|---|---|---|
+  | baseline | 2.739 ± 0.680 | 2.532 ± 0.492 | 2.936 ± 0.909 | 5.277 ± 1.722 | 1.089 ± 0.007 |
+  | Model 1 | 2.628 ± 0.877 | 2.128 ± 0.499 | 2.572 ± 0.710 | 4.215 ± 1.450 | 1.093 ± 0.010 |
+  | poisson/LR/none | 2.485 ± 0.531 | 2.159 ± 0.453 | 2.324 ± 0.618 | 4.318 ± 1.272 | 1.082 ± 0.010 |
+  | poisson/LR/temperature | 2.428 ± 0.543 | 2.160 ± 0.446 | 2.344 ± 0.629 | 4.318 ± 1.272 | 1.082 ± 0.008 |
+  | poisson/LGBM/none | 2.825 ± 0.641 | 2.344 ± 0.487 | 2.660 ± 0.548 | 4.318 ± 1.272 | 1.101 ± 0.014 |
+  | poisson/LGBM/temperature | 2.512 ± 0.620 | 2.191 ± 0.432 | 2.612 ± 0.681 | 4.318 ± 1.272 | 1.090 ± 0.006 |
+  | poisson/HGB/none | 3.013 ± 0.662 | 2.372 ± 0.575 | 2.640 ± 0.567 | 4.318 ± 1.272 | 1.106 ± 0.013 |
+  | poisson/HGB/temperature | 2.547 ± 0.633 | 2.186 ± 0.443 | 2.594 ± 0.682 | 4.318 ± 1.272 | 1.091 ± 0.005 |
+  | poisson/RF/none | 2.634 ± 0.571 | 2.276 ± 0.488 | 2.524 ± 0.633 | 4.318 ± 1.272 | 1.093 ± 0.011 |
+  | poisson/RF/temperature | 2.495 ± 0.605 | 2.205 ± 0.449 | 2.573 ± 0.661 | 4.318 ± 1.272 | 1.089 ± 0.006 |
+  | nb2/LR/none | 2.554 ± 0.498 | 2.159 ± 0.568 | 2.285 ± 0.553 | 4.347 ± 1.306 | 1.082 ± 0.010 |
+  | nb2/LR/temperature | 2.519 ± 0.506 | 2.148 ± 0.565 | 2.294 ± 0.559 | 4.347 ± 1.306 | 1.082 ± 0.008 |
+  | nb2/LGBM/none | 2.828 ± 0.495 | 2.374 ± 0.543 | 2.657 ± 0.655 | 4.347 ± 1.306 | 1.101 ± 0.014 |
+  | nb2/LGBM/temperature | 2.608 ± 0.535 | 2.168 ± 0.523 | 2.567 ± 0.718 | 4.347 ± 1.306 | 1.090 ± 0.006 |
+  | nb2/HGB/none | 3.025 ± 0.656 | 2.438 ± 0.594 | 2.591 ± 0.669 | 4.347 ± 1.306 | 1.106 ± 0.013 |
+  | nb2/HGB/temperature | 2.654 ± 0.608 | 2.176 ± 0.524 | 2.526 ± 0.710 | 4.347 ± 1.306 | 1.091 ± 0.005 |
+  | nb2/RF/none | 2.735 ± 0.451 | 2.289 ± 0.621 | 2.438 ± 0.607 | 4.347 ± 1.306 | 1.093 ± 0.011 |
+  | nb2/RF/temperature | 2.627 ± 0.535 | 2.192 ± 0.591 | 2.483 ± 0.656 | 4.347 ± 1.306 | 1.089 ± 0.006 |
+  | lgbm/LR/none | 2.614 ± 0.679 | 2.173 ± 0.594 | 2.375 ± 0.609 | 4.512 ± 1.603 | 1.082 ± 0.010 |
+  | lgbm/LR/temperature | 2.592 ± 0.687 | 2.166 ± 0.594 | 2.368 ± 0.623 | 4.512 ± 1.603 | 1.082 ± 0.008 |
+  | lgbm/LGBM/none | 2.887 ± 0.825 | 2.363 ± 0.599 | 2.774 ± 0.593 | 4.512 ± 1.603 | 1.101 ± 0.014 |
+  | lgbm/LGBM/temperature | 2.698 ± 0.768 | 2.180 ± 0.575 | 2.631 ± 0.694 | 4.512 ± 1.603 | 1.090 ± 0.006 |
+  | lgbm/HGB/none | 3.076 ± 0.885 | 2.404 ± 0.657 | 2.739 ± 0.618 | 4.512 ± 1.603 | 1.106 ± 0.013 |
+  | lgbm/HGB/temperature | 2.744 ± 0.769 | 2.178 ± 0.582 | 2.598 ± 0.693 | 4.512 ± 1.603 | 1.091 ± 0.005 |
+  | lgbm/RF/none | 2.823 ± 0.741 | 2.289 ± 0.651 | 2.515 ± 0.642 | 4.512 ± 1.603 | 1.093 ± 0.011 |
+  | lgbm/RF/temperature | 2.734 ± 0.746 | 2.203 ± 0.623 | 2.530 ± 0.692 | 4.512 ± 1.603 | 1.089 ± 0.006 |
+
+  **Model 2 minus Model 1, paired by population** (mean ± SD; t = mean / (SD/√10); populations
+  where Model 2 is lower), the Poisson total; the nb2 and lgbm rows read the same on the cohorts
+  and the log loss (the probability half is independent of T).
+
+  | Variant | `n_kindergarten` | `n_elementary` | `n_highschool` | cohort log loss |
+  |---|---|---|---|---|
+  | poisson/LR/none | −0.142 ± 0.421 (t −1.1; 7/10) | +0.031 ± 0.245 (t +0.4; 4/10) | −0.249 ± 0.398 (t −2.0; 7/10) | −0.010 ± 0.006 (t −5.4; 9/10) |
+  | poisson/LR/temperature | −0.199 ± 0.402 (t −1.6; 8/10) | +0.032 ± 0.243 (t +0.4; 4/10) | −0.228 ± 0.408 (t −1.8; 6/10) | −0.011 ± 0.006 (t −5.8; 9/10) |
+  | poisson/LGBM/none | +0.198 ± 0.439 (t +1.4; 3/10) | +0.216 ± 0.331 (t +2.1; 2/10) | +0.088 ± 0.319 (t +0.9; 5/10) | +0.009 ± 0.008 (t +3.3; 1/10) |
+  | poisson/LGBM/temperature | −0.116 ± 0.392 (t −0.9; 6/10) | +0.063 ± 0.256 (t +0.8; 3/10) | +0.040 ± 0.474 (t +0.3; 4/10) | −0.002 ± 0.007 (t −1.0; 6/10) |
+  | poisson/HGB/none | +0.385 ± 0.325 (t +3.8; 1/10) | +0.245 ± 0.377 (t +2.1; 3/10) | +0.068 ± 0.259 (t +0.8; 3/10) | +0.013 ± 0.007 (t +6.2; 0/10) |
+  | poisson/HGB/temperature | −0.081 ± 0.416 (t −0.6; 6/10) | +0.058 ± 0.246 (t +0.7; 5/10) | +0.022 ± 0.463 (t +0.2; 5/10) | −0.002 ± 0.008 (t −0.8; 7/10) |
+  | poisson/RF/none | +0.006 ± 0.478 (t +0.0; 5/10) | +0.148 ± 0.203 (t +2.3; 3/10) | −0.048 ± 0.369 (t −0.4; 5/10) | −0.000 ± 0.006 (t −0.0; 6/10) |
+  | poisson/RF/temperature | −0.132 ± 0.435 (t −1.0; 7/10) | +0.077 ± 0.193 (t +1.3; 4/10) | +0.001 ± 0.460 (t +0.0; 4/10) | −0.003 ± 0.006 (t −1.8; 7/10) |
+
+  Total minus Model 1's: poisson +0.103 ± 0.600 (t +0.5; 5/10), nb2 +0.132 ± 1.066 (t +0.4; 4/10),
+  lgbm +0.297 ± 0.470 (t +2.0; 3/10). Total by population (baseline / Model 1 / poisson / nb2 /
+  lgbm): seed 1 4.69 / 3.58 / 3.60 / 6.05 / 4.13; seed 5 9.71 / 7.31 / 7.29 / 5.54 / 7.81; seed 2
+  4.60 / 4.86 / 4.45 / 5.36 / 5.85; seed 7 4.22 / 5.04 / 4.15 / 4.83 / 4.52.
+
+  **Temperature minus None, paired** (the Poisson total; the other totals within 0.001 of these on
+  the log loss): LR −0.0007 ± 0.0014 (t −1.5; 7/10), LGBM −0.0109 ± 0.0091 (t −3.8; 9/10), HGB
+  −0.0148 ± 0.0098 (t −4.8; 9/10), RF −0.0032 ± 0.0053 (t −1.9; 8/10); on kindergarten's deviance
+  LR −0.057 (t −2.3), LGBM −0.314 (t −3.0), HGB −0.466 (t −5.8), RF −0.139 (t −2.3); on elementary's
+  LGBM −0.153 (t −3.1), HGB −0.186 (t −2.5), RF −0.071 (t −2.5), LR 0; on high school's none (|t| ≤
+  0.6). **Against the marginal shares** (log loss, Poisson total): LR −0.0067 ± 0.0058 (t −3.6; 9/10)
+  raw and −0.0074 ± 0.0050 (t −4.6; 10/10) calibrated; LGBM +0.0123 (t +3.4; 0/10) raw, +0.0014
+  (t +0.6) calibrated; HGB +0.0165 (t +4.6; 0/10) raw, +0.0016 (t +0.8) calibrated; RF +0.0036
+  (t +1.5) raw, +0.0003 (t +0.2) calibrated. **Fitted:** NB2 α 0.103 ± 0.014 (per seed 0.081–0.121);
+  `beta_` (inverse temperature) LR 0.82 ± 0.05, RF 0.55 ± 0.11, LGBM 0.43 ± 0.10, HGB 0.39 ± 0.09.
+  Fit seconds per composite, none / temperature: LR 0.03 / 0.05, LGBM 0.08 / 0.26, RF 0.12 / 0.53,
+  HGB 1.4 / 6.9.
+
+  **Reading.** (1) *The recipe is B7's:* Model 1 and the baseline reproduce it to the third
+  decimal (2.628 / 2.128 / 2.572, total 4.215 ± 1.450; 2.739 / 2.532 / 2.936, 5.277 ± 1.722, log
+  loss 1.089 ± 0.007), and so does NB2 (α 0.103 ± 0.014 as the torch build's; total 4.347 ± 1.306
+  against 4.348 ± 1.306): statsmodels' NB2 through `CountModel` is the torch NB2. (2) *On the total
+  Model 2 and Model 1 are level* for the two GLM totals (t +0.5 and +0.4, lower in 4–5 of 10); the
+  LightGBM total is worse (t +2.0, lower in 3 of 10: at the defaults, on `total_base`'s six
+  standardized features, it is a weaker total than Model 1's three LightGBMs on `tree`, which keep
+  `n_apartments` as a feature). sklearn's `PoissonRegressor()` default `alpha=1` is a penalized fit,
+  unlike B7's unpenalized torch Poisson: the seed-1 overfit B7 saw (6.90) is gone (3.60), the mean
+  moved from 4.448 to 4.318, and its SD from 1.434 to 1.272. NB2 is unpenalized and keeps the
+  seed-1 outlier (6.05). (3) *On the composition `LogisticRegression()` wins, by a small amount:*
+  its cohort log loss is below Model 1's by 0.010–0.011 (t −5.4 raw, −5.8 calibrated, 9 of 10) and
+  below the marginal shares by 0.007 (t −3.6 raw, −4.6 calibrated, 9–10 of 10); 1.082 against the
+  torch Dirichlet's 1.086 raw and 1.083 calibrated. It also lowers kindergarten's and high school's
+  deviance (t −1.1 to −2.0; −2.0 to −2.4 under NB2) and is level on elementary's. The gain stays
+  under 1 % per child: the shares are close to unpredictable from these features. (4) *The tree
+  classifiers at their defaults are overconfident:* `beta_` 0.39–0.55 (T ≈ 1.8–2.6; LR 0.82), and
+  raw they are worse than the marginal shares (LGBM +0.012, HGB +0.017, t > 3, better in 0 of 10)
+  and than Model 1 (t +3.3 and +6.2), with kindergarten's deviance up by 0.2–0.4. (5) *Temperature
+  calibration repairs most of that* (LGBM −0.011, HGB −0.015, RF −0.003 on the log loss, t −1.9 to
+  −4.8, lower in 8–9 of 10; kindergarten −0.14 to −0.47) and narrows the seed spread (SD 0.013–0.014
+  → 0.005–0.006), bringing the trees back to the marginal shares (within +0.002, |t| < 1) and to
+  Model 1 (−0.002, |t| ≤ 1), not beyond. For LR it is within noise (−0.0007, t −1.5), as the
+  sub-task 4 table found. The calibrated LR and the calibrated trees differ by 0.007–0.009 in LR's
+  favour. (6) *Nothing here calls for a code change:* every variant fits and predicts as the class
+  contracts say, the rows sum to the total, and the losses are the untuned defaults' (tuning is the
+  next PR's job: the trees' depth and learning rate, LR's `C`, the GLM penalties). For the docs
+  (sub-task 7): the default-overconfidence of the tree classifiers and what temperature does to it;
+  that sklearn's Poisson default is penalized; the LightGBM total's feature base.
 
 ### [ ] 7. Docs and close
 - `docs/INDEPENDENT_TOTAL_PROBABILITY_MODEL.md` §0 rewritten for the new build

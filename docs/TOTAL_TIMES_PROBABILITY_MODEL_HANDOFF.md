@@ -3,8 +3,8 @@
 **For:** the implementing session (Claude Opus 5.5). **Written:** 2026-10-07 at the end of
 the planning session; updated 2026-10-08 at the end of the third implementing session
 (sub-tasks 0–4 committed, HEAD `fd843bc`); **updated 2026-10-08 in the fourth session: sub-task 5
-(`TotalTimesProbabilityModel`, the torch deletions) is done, awaiting the user's commit; sub-task 6
-(smoke run) is next.**
+(`TotalTimesProbabilityModel`, the torch deletions) is committed (`99d4dd0`) and sub-task 6 (the
+smoke run) is done, docs only, awaiting the user's commit; sub-task 7 (docs and close) is next.**
 **Plan (source of truth):** [TOTAL_TIMES_PROBABILITY_MODEL_PLAN.md](TOTAL_TIMES_PROBABILITY_MODEL_PLAN.md).
 Read it in full before the first edit (its §8 records say what each sub-task did and why,
 including sub-task 3's four revisions); this file only orients you.
@@ -39,17 +39,22 @@ cohort probability** with hand-written torch objectives. The user wants it rebui
 3. **Combined (sub-task 5, done):** `TotalTimesProbabilityModel(total_model, probability_model:
    CohortProbabilityModel)` (plan P12, revised: no column check, `predict` =
    `probabilities * total[:, None]`); `total_children.py`, `optimization.py` and their tests deleted.
-4. **Smoke run and docs (sub-tasks 6–7)** explaining every decision (plan §9).
+4. **Smoke run (sub-task 6, done; plan §8 record):** Model 1 and the baseline reproduce PR #11's B7
+   exactly; NB2 α 0.103 as the torch build's; `LogisticRegression()` wins the composition (log loss
+   1.082, 0.010 below Model 1, t −5.4); the tree classifiers are overconfident at their defaults
+   (`beta_` 0.39–0.55) and temperature brings them back to the marginal shares; the GLM totals are
+   level with Model 1, the LightGBM total worse (t +2.0). **Docs (sub-task 7)** explaining every
+   decision (plan §9).
 
 ## 2. State at handoff
 
 | Item | State |
 |---|---|
-| Branch | `feat/total-times-probability-model`, HEAD `3282b8a` (docs after `fd843bc`); **sub-task 5 in the working tree, deletions staged, awaiting the user's commit** |
+| Branch | `feat/total-times-probability-model`, HEAD **`99d4dd0`** (sub-task 5), pushed; **sub-task 6's record (this file and the plan doc) in the working tree, awaiting the user's commit** |
 | Commits | `02b7725` plan + handoff (0); `9f9fb58` the rename (1); `732e465` NB2 and `CountModel`'s exposure cases (2); `1e2bc66` handoff; `b525954` `CohortProbabilityModel` on a classifier, the torch Model 2 and `TemperatureCalibrator` deleted (3, with its four revisions); `048059d` handoff; **`fd843bc` calibration (4)** |
 | PR | Draft **#13** into `feat/hyperparameter-tuning`; its body has the sub-task checklist (the user ticks it) |
 | Suite | **1200 passed, 1 skipped, 1 xfailed** after sub-task 5 (1238 after 4, less the deleted torch tests; `uv run pytest -m "not slow"`; pytest collects only `tests/`) |
-| Next | **Sub-task 6** (smoke run; §5 below). Then 7, one per stop |
+| Next | **Sub-task 7** (docs and close; §5 below), the last |
 
 ## 3. Decisions (settled; do not reopen)
 
@@ -146,19 +151,24 @@ From sub-task 4 (the user's answers; plan §8, the sub-task 4 record):
   the docs (`CohortProbabilityModel`'s ~45-line class docstring first).
 - Correct your own earlier wrong claims explicitly in the next message.
 
-## 5. Sub-task 6 (smoke run): what to do, what to re-verify
+## 5. Sub-task 7 (docs and close): what to do, what to re-verify
 
-Plan §8 sub-task 6: a scratchpad script, ten simulated populations, grouped 80/20 split, class
-defaults (untuned); Model 1 (`IndependentCohortModels` on LightGBM) against Model 2 variants (total
-∈ Poisson / NB2 / LightGBM Poisson, all with exposure; probability ∈ LR / LGBM / HGB / RF;
-calibration ∈ None / temperature). Metrics: per-cohort and total Poisson deviance,
-`COHORT_LOG_LOSS`; record the table, the NB2 α and a one-paragraph reading in the plan doc.
-Re-verify before relying on them: the simulator recipe of plan §11 (`StudentPopulationSimulator`,
-`load_simulation_config`, `ShareTransformer`, `ExposureTransformer`, `Splitter("grouped")`,
-`take_rows`) and the feature bases `total_base` / `cohort_probability_base`
-(`FEATURE_TRANSFORMATIONS.md` §8); PR #11's B7 numbers for comparison
-(`MULTI_COHORT_MODELS_PLAN.md`). No code change in `src/` is expected; if the run suggests one,
-stop and show the options. Sub-task 7 must also clear `TotalChildrenModel`, `Solver` and
-`optimization.py` from `MODULE_REFERENCE.md` and `FEATURE_TRANSFORMATIONS.md` (the review of 5).
+Plan §8 sub-task 7 and §9. Docs: `INDEPENDENT_TOTAL_PROBABILITY_MODEL.md` §0 rewritten (§9's eight
+sections, each decision derived step by step with its formulas, the §6 figures and the sub-task 4
+and 6 tables; the file keeps §1–§12 for the old stack); `DIRECT_COHORT_MODEL.md` §0 (the exposure
+rule, NB2); `FEATURE_TRANSFORMATIONS.md` §8.1–8.3 usage blocks (still name `TotalChildrenModel`
+and `IndependentTotalProbabilityModel`; the review of sub-task 5 also found `Solver` and
+`optimization.py` at its lines 1051–1257 region) and `MODULE_REFERENCE.md` (lines ≈ 92–105 name
+the deleted classes); `README.md`; `MODEL_REIMPLEMENTATION_PLAN.md` §5; `HYPERPARAMETER_TUNING_PLAN.md`
+where it names Model 2's tunables; `MULTI_COHORT_MODELS_PLAN.md` top note. Every code block run
+(plan §11's end-to-end check: the §7 usage block on the simulator). The **trimming pass** over this
+PR's docstrings and comments (`count_model.py`, `negative_binomial.py`, `cohort_probability.py`,
+`total_times_probability.py`, their tests) to §3 rule 7, moving what still matters to the docs;
+no behavior change (suite 1200 and mypy unchanged). Findings of the smoke run to carry into the
+docs: the tree classifiers' default overconfidence and temperature's effect; sklearn's
+`PoissonRegressor()` default `alpha=1` is penalized (B7's torch Poisson was not); the LightGBM
+total on `total_base` vs Model 1's `tree`. Re-verify before relying on them: each file and section
+named exists (line numbers drift); the plan's §9 list; the review subagent checks rule 7 and that
+no cut fact is lost. PR body drafted in the scratchpad; the user applies it and marks the PR ready.
 
 Memory to update at each stop: `multi-cohort-models-plan.md` in the Claude memory directory.
