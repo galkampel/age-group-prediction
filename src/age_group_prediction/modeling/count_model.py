@@ -38,9 +38,9 @@ class ExposureRegressor(Protocol):
     ) -> ArrayLike: ...
 
 
-# scikit-learn's own test of an estimator's fit signature (as BaggingRegressor
-# uses it for sample_weight). TypeGuard, not TypeIs: mypy treats the two
-# protocols as overlapping, so TypeIs would not narrow a case to its type.
+# scikit-learn's own test of an estimator's fit signature. TypeGuard, not
+# TypeIs: mypy treats the two protocols as overlapping, so TypeIs would not
+# narrow a case to its type.
 def _takes_exposure(
     estimator: Regressor | ExposureRegressor,
 ) -> TypeGuard[ExposureRegressor]:
@@ -67,17 +67,12 @@ class CountModel(BaseAgeGroupModel):
       ``fit`` and ``predict``;
     - it takes ``sample_weight`` (``Regressor``): the weighted rate, ``y /
       exposure`` with ``sample_weight=exposure``, the prediction multiplied by
-      the exposure. For a Poisson loss this is the offset model
-      ``log(exposure)`` (``docs/DIRECT_COHORT_MODEL.md`` §0.1), for NB2 it is
-      not, hence the first case. A penalized scikit-learn GLM normalizes
-      ``sample_weight``, so its ``alpha`` acts as ``alpha * mean(exposure)``;
-    - neither: ``fit`` raises ``TypeError``. The cases are read from the
-      estimator's own ``fit`` signature (``has_fit_parameter``), so a wrapper
-      whose ``fit`` takes ``**fit_params`` (``Pipeline``,
-      ``TransformedTargetRegressor``, ``GridSearchCV``) is refused even if it
-      would forward ``sample_weight``: pass the regressor itself.
+      the exposure;
+    - neither: ``fit`` raises ``TypeError``; a wrapper whose ``fit`` takes
+      ``**fit_params`` (``Pipeline``) is refused too: pass the regressor itself.
 
-    Without ``use_exposure`` a passed exposure is ignored.
+    Without ``use_exposure`` a passed exposure is ignored. Why each case, and
+    the penalty under the rate: ``docs/INDEPENDENT_COHORT_MODELS.md`` §2.
     """
 
     def __init__(

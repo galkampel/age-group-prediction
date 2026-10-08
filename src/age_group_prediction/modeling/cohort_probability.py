@@ -1,4 +1,4 @@
-"""Model 2's second half: each cohort's probability for a building, from a classifier."""
+"""Model 2's second half: each cohort's probability for a sample, from a classifier."""
 
 from __future__ import annotations
 
@@ -42,52 +42,25 @@ class Classifier(Protocol):
 
 
 class CohortProbabilityModel(BaseAgeGroupModel):
-    """Each cohort's probability for a building: a classifier on the children, labelled by cohort position.
+    """Each cohort's probability for a sample: a classifier on the children, labelled by cohort position.
 
-    ``estimator`` is any multi-class classifier, with its own hyperparameters
-    (``estimator__…`` in ``set_params``). ``X`` is the raw table when
-    ``feature_transformer`` is given, otherwise the finished design matrix;
-    ``y`` is a DataFrame of cohort counts, one column per cohort (at least
-    two), non-negative and finite: not checked here, since a data value
-    belongs where the data is prepared, yet a negative count would be a
-    negative weight, which most classifiers fit silently. Rows are paired by
-    position.
-
-    ``fit`` turns the counts into categorical rows
-    (:meth:`multinomial_to_categorical`), by ``replication``:
-
-    - ``"weighted"``: one row per sample and cohort with a child, weighted by
-      its count (``sample_weight``); a classifier without ``sample_weight``
-      raises here, but under a calibration method scikit-learn only warns
-      and fits it unweighted, so use ``"per_child"`` for it;
-    - ``"per_child"``: one row per child, unweighted, so a classifier without
-      ``sample_weight`` fits too; the counts must be of an integer dtype that
-      numpy casts safely to ``int64`` (``np.repeat`` rejects floats,
-      ``uint64`` and pandas' ``Int64``).
-
-    Either way each child counts once. A row's label is its cohort's column
-    position in ``y``, so the classifier's ``classes_`` are ``0 … K−1`` in
-    ``y``'s order (cohort names of any type, never sorted). The feature
-    transformer is fitted on the samples first; a sample with no children
-    adds no row. ``predict`` returns the classifier's probabilities with
-    ``y``'s columns at fit, and raises if a row does not sum to 1 (a
-    one-vs-all objective such as LightGBM's ``"multiclassova"``, unless a
-    calibration method renormalizes it).
-    A ``OneVsRestClassifier`` receives the weights only with scikit-learn's
-    metadata routing enabled; with routing on and a calibration method, any
-    classifier needs ``set_fit_request(sample_weight=True)``. The model has
-    no exposure, so a passed one is ignored.
-
-    ``calibration_method`` (``None``: the classifier's own probabilities)
-    wraps the copy in ``CalibratedClassifierCV(ensemble=False)``: one
-    calibrator fitted on out-of-fold predictions, over the classifier
-    refitted on all rows. The ``calibration_cv`` folds split the samples
-    round-robin before the categorical rows, so a sample's rows stay
-    together and both replications get the same folds; ``calibration_cv``
-    is unused without a method. A training fold lacking a cohort raises
-    for a classifier with ``decision_function`` and only warns for one with
-    ``predict_proba`` alone, whose calibrator then sees that cohort at 0;
-    this happens only for a cohort seen in a few samples.
+    ``estimator`` is any scikit-learn multi-class classifier (``estimator__…``
+    in ``set_params``). ``X`` is the raw table when ``feature_transformer`` is
+    given, otherwise the finished design matrix; ``y`` is a DataFrame of
+    cohort counts (one column per cohort, at least two, every cohort with a
+    child); an exposure is ignored. ``fit`` builds the categorical rows itself
+    (:meth:`multinomial_to_categorical`), by ``replication``: ``"weighted"``,
+    one row per sample and cohort with a child, ``sample_weight`` = the count;
+    ``"per_child"``, one row per child and no ``sample_weight``, the way to use
+    a classifier without it (the counts must be of an integer dtype). A row's
+    label is its cohort's column position in ``y``, so ``classes_`` are
+    ``0 … K−1`` in ``y``'s order. ``calibration_method`` (``None``: the
+    classifier's own probabilities) wraps the classifier in
+    ``CalibratedClassifierCV(ensemble=False)`` over ``calibration_cv``
+    round-robin folds of samples. ``predict`` returns the probabilities with
+    ``y``'s columns and raises if a row does not sum to 1 (a one-vs-all
+    objective). Derivations and the library details:
+    ``docs/TOTAL_TIMES_PROBABILITY_MODEL.md`` §3.
     """
 
     def __init__(
@@ -173,10 +146,9 @@ class CohortProbabilityModel(BaseAgeGroupModel):
         # A copy, so the caller's template stays unfitted across folds.
         estimator: Classifier = clone(self.estimator)
         if self.calibration_method is not None:
-            # Folds of samples, not rows: a sample's rows on both sides would
-            # show the calibrator in-sample confidence (cv=int would), and
-            # folds of rows would differ between the replications.
-            # Round-robin: deterministic, each fold spanning the table.
+            # Folds of samples, not rows: a sample on both sides of a split would
+            # show the calibrator in-sample confidence. Split before the rows, so
+            # both replications get the same folds.
             sample_folds = np.arange(len(y)) % self.calibration_cv
             estimator = CalibratedClassifierCV(
                 estimator,

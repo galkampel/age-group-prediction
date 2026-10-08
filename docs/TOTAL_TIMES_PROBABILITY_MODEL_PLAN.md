@@ -3,8 +3,10 @@
 **Written for:** the implementing model (Claude Opus 5.5) and the user who
 validates each sub-task. Self-contained: it assumes no memory of the planning
 conversation. This file is the source of truth: update its status line and the
-sub-task checkboxes in §8 as work finishes. Orientation for a new session:
-[TOTAL_TIMES_PROBABILITY_MODEL_HANDOFF.md](TOTAL_TIMES_PROBABILITY_MODEL_HANDOFF.md).
+sub-task checkboxes in §8 as work finishes. The session handoff that
+accompanied this plan was deleted at the close (2026-10-08, the user's rule);
+the model docs are [INDEPENDENT_COHORT_MODELS.md](INDEPENDENT_COHORT_MODELS.md)
+and [TOTAL_TIMES_PROBABILITY_MODEL.md](TOTAL_TIMES_PROBABILITY_MODEL.md).
 
 **Status (2026-10-08):** approved by the user. **Sub-tasks 0–4 are done and committed**
 (HEAD `fd843bc`, pushed; branch `feat/total-times-probability-model`; `DirectCohortModel` is now `CountModel`, with
@@ -13,9 +15,10 @@ classifier on weighted or per-child rows, optionally calibrated (`calibration_me
 `calibration_cv`), and the torch Model 2 and `TemperatureCalibrator` are deleted;
 records in §8). **Sub-task 5 is committed (`99d4dd0`):** `TotalTimesProbabilityModel` added,
 `total_children.py` and `optimization.py` deleted (no torch left in `modeling/`). **Sub-task 6 (the
-smoke run) is committed (`c9002b1`);** its tables and reading are in §8. **Sub-task 7 is split
-in two stops (the user, 2026-10-08): 7a, the docs with every derivation, done and awaiting the
-user's commit; 7b, the docstring trimming pass and the close, next.** During planning the user revised it twice: NB2 goes through
+smoke run) is committed (`c9002b1`);** its tables and reading are in §8. **Sub-task 7 was split in
+two stops (the user, 2026-10-08): 7a, one doc per rebuilt model with every derivation, committed
+(`adf10ea`); 7b, the docstring trimming pass, the PR body and the close, done and awaiting the
+user's commit. The PR is complete.** During planning the user revised it twice: NB2 goes through
 `CountModel` (the renamed `DirectCohortModel`) as an estimator taking the exposure (an offset in the first plan; raw `exposure` since sub-task 2); a
 `replication` setting for row-resampling classifiers was considered and dropped
 on measurement (P6, P8).
@@ -942,7 +945,7 @@ Each ends at a stop (§3). "Verify" lists what the user can check.
   (sub-task 7): the default-overconfidence of the tree classifiers and what temperature does to it;
   that sklearn's Poisson default is penalized; the LightGBM total's feature base.
 
-### [ ] 7. Docs and close (7a done; 7b next)
+### [x] 7. Docs and close (7a `adf10ea`; 7b the close)
 - `docs/INDEPENDENT_TOTAL_PROBABILITY_MODEL.md` §0 rewritten for the new build
   (§9 lists what it must explain); `docs/DIRECT_COHORT_MODEL.md` §0 (the exposure
   rule, NB2); `docs/FEATURE_TRANSFORMATIONS.md` §8.1–8.3 usage blocks;
@@ -1050,6 +1053,32 @@ Each ends at a stop (§3). "Verify" lists what the user can check.
   model, (A)–(C), its own check) and (b) the Gaussian loss ((D1)–(D4), its own check, the full-ML
   figure restored), then (c) why not a residual, the Why and the Code; §2.2 (NB2) unchanged. No
   figure or heading changed.
+- **Record, 7b (2026-10-08):** HEAD `adf10ea`. **Trimming pass** (§3 rule 7), no behavior change:
+  `cohort_probability.py`'s class docstring 45 → 19 lines (what `estimator`, `X`, `y` are; the two
+  replications and the integer-dtype constraint; positions as labels; calibration in one sentence;
+  the row-sum rule; a pointer to `TOTAL_TIMES_PROBABILITY_MODEL.md` §3), its fold comment 4 → 3
+  lines; `count_model.py`'s docstring keeps the three cases and the wrapper refusal in one line, a
+  pointer to `INDEPENDENT_COHORT_MODELS.md` §2; `negative_binomial.py` loses the "validated where the
+  data is prepared" clause; the two figure-bearing comments of `test_modeling_count_model.py` cite
+  the doc. **Cut facts, each checked present in a doc before the cut:** the negative-count-as-weight
+  reasoning, the routing sentences, the fold-lacking-a-cohort paragraph, the warn-under-calibration
+  note, "names of any type", `np.repeat`'s dtype list (Model 2 doc §3.1, §3.2, §3.4); the Poisson
+  offset remark with its stale `DIRECT_COHORT_MODEL.md` citation, `alpha × mean(exposure)`, the
+  wrapper list (Model 1 doc §2.1–§2.2); "validated where the data is prepared" (Model 1 doc §6);
+  the 0.2 % / 0.03 % / 1.7e-8 figures (the tests' own tolerances stay). **Close:** the handoff
+  deleted (`git rm`; the user's rule) and its pointer at the top of this plan replaced; the PR body
+  drafted in the scratchpad (`pr_body.md`) for the user to apply: what the PR did as built, the
+  docs, the smoke-run one-liner, the checklist (the user ticks), no footer. **Checks:** ruff,
+  format, mypy (21 and 11 files) clean; the four modeling test files 94 passed under `-W error`; no
+  mutations (no behavior change). **Suite 1200 passed, 1 skipped, 1 xfailed** (unchanged). **Review**
+  (independent subagent; every finding reproduced): nothing lost (each cut fact traced to a doc
+  line), every docstring accurate, the pointers resolve, the PR body matches the code and the
+  records; fixed, all low: a ragged docstring after the cut (`negative_binomial.py`), the module
+  docstring still said "building", a measured figure (0.5 %) and two derivation restatements left
+  in the test comments and one library detail in a code comment (now pointers to the Model 1 doc
+  §2.1), "exactly" → "to the third decimal" in the PR body. Noted, not changed: "counts non-negative
+  and finite" and "`calibration_cv` unused without a method" are now implicit in the docstring
+  (both in the Model 2 doc). The memory file keeps its historical mentions of the handoff.
 - **Verify:** `grep -rn "TotalChildrenModel\|TemperatureCalibrator\|Dirichlet\|DirectCohortModel" docs --include='*.md'`
   hits only historical records (plan docs' step records, the old stack's §1–§12). Every §9
   item has its derivation. A review subagent checks the docstrings and comments against §3

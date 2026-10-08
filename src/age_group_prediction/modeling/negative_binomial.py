@@ -22,9 +22,8 @@ class NegativeBinomialRegressor(RegressorMixin, BaseEstimator):
     ``y`` is a count. ``exposure`` is raw, as statsmodels' own (the log is
     taken inside, with coefficient 1), positive, one value per row, at ``fit``
     and ``predict`` alike; ``CountModel`` passes it when ``use_exposure`` is
-    on, validated where the data is prepared. statsmodels fits it with BFGS,
-    its preliminary Poisson fit included; a fit that does not converge in
-    ``max_iter`` iterations raises ``RuntimeError``.
+    on. statsmodels fits it with BFGS, its preliminary Poisson fit included; a
+    fit that does not converge in ``max_iter`` iterations raises ``RuntimeError``.
     """
 
     def __init__(self, *, max_iter: int = 500) -> None:

@@ -58,8 +58,8 @@ POISSON_ESTIMATORS = {
     "hist-gradient-boosting": HistGradientBoostingRegressor(
         loss="poisson", max_iter=20, random_state=0
     ),
-    # Unpenalized: its alpha would act as alpha * mean(exposure) in the offset
-    # model (it normalizes sample_weight), shrinking ses almost to zero here.
+    # Unpenalized: under the rate form alpha is rescaled by the mean exposure
+    # (docs/INDEPENDENT_COHORT_MODELS.md §2.1) and would shrink ses to zero here.
     "poisson-glm": PoissonRegressor(alpha=0.0),
     # The exposure estimator: the raw exposure passed itself, not the rate.
     "nb2": NegativeBinomialRegressor(),
@@ -186,7 +186,7 @@ def test_an_unused_exposure_is_ignored() -> None:
 def test_fit_receives_the_rate_with_the_exposure_as_weight() -> None:
     # The whole exposure model is this one call: a missing weight, the count
     # in place of the rate, or y * exposure would each fit another model, by a
-    # margin a fitted estimator's mean can hide (0.5% without the weight).
+    # margin a fitted estimator's mean can hide.
     model = CountModel(estimator=_Recorder(), use_exposure=True).fit(
         X, Y, exposure=EXPOSURE
     )
@@ -266,10 +266,10 @@ def test_doubling_the_exposure_doubles_the_prediction(
 def test_training_mean_prediction_matches_the_target_mean(
     estimator: Regressor | ExposureRegressor, use_exposure: bool
 ) -> None:
-    # A Poisson fit reproduces the training mean (within 0.2% here; NB2, nearly
-    # Poisson on these counts, within 0.03%). Catches a prediction on the
-    # wrong scale, e.g. rates returned as counts or the exposure applied
-    # twice. The plain cases are the only cover of the path without exposure.
+    # A Poisson fit reproduces the training mean (NB2 nearly so on these
+    # counts). Catches a prediction on the wrong scale, e.g. rates returned as
+    # counts or the exposure applied twice. The plain cases are the only cover
+    # of the path without exposure.
     exposure = EXPOSURE if use_exposure else None
     model = CountModel(estimator=estimator, use_exposure=use_exposure).fit(
         X, Y, exposure=exposure
@@ -282,8 +282,8 @@ def test_training_mean_prediction_matches_the_target_mean(
 
 def test_the_weighted_rate_equals_lightgbms_offset() -> None:
     # Catches a reformulation that is not the offset model log(exposure): the
-    # two are the same likelihood, so LightGBM grows the same trees (measured
-    # agreement 1.7e-8, floating point only).
+    # two are the same likelihood, so LightGBM grows the same trees
+    # (docs/INDEPENDENT_COHORT_MODELS.md §2.1); only floating point differs.
     model = CountModel(estimator=_lightgbm(), use_exposure=True).fit(
         X, Y, exposure=EXPOSURE
     )
@@ -300,10 +300,10 @@ def test_the_weighted_rate_equals_lightgbms_offset() -> None:
 
 
 def test_the_gaussian_weighted_rate_is_least_squares_of_the_count() -> None:
-    # The Gaussian model with an exposure: mean exposure * f(x), variance
-    # proportional to the exposure, i.e. least squares of the count on
-    # [exposure, exposure * x] with weights 1 / exposure. Catches a Gaussian
-    # path that fits another model, e.g. without the weight.
+    # The Gaussian model with an exposure is least squares of the count on
+    # [exposure, exposure * x] with weights 1 / exposure
+    # (docs/INDEPENDENT_COHORT_MODELS.md §2.1 (b)). Catches a Gaussian path
+    # that fits another model, e.g. without the weight.
     model = CountModel(estimator=LinearRegression(), use_exposure=True).fit(
         X, Y, exposure=EXPOSURE
     )
