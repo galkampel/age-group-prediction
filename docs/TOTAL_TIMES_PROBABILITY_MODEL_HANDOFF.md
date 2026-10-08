@@ -4,7 +4,10 @@
 the planning session; updated 2026-10-08 at the end of the third implementing session
 (sub-tasks 0–4 committed, HEAD `fd843bc`); **updated 2026-10-08 in the fourth session: sub-task 5
 (`TotalTimesProbabilityModel`, the torch deletions) is committed (`99d4dd0`) and sub-task 6 (the
-smoke run) is done, docs only, awaiting the user's commit; sub-task 7 (docs and close) is next.**
+smoke run) is committed (`c9002b1`); sub-task 7 is split in two stops: 7a (the docs: one per
+rebuilt model, `INDEPENDENT_COHORT_MODELS.md` and `TOTAL_TIMES_PROBABILITY_MODEL.md`, every
+derivation) is done and awaits the user's commit; 7b (the docstring trimming pass, the PR body,
+deleting this file, the close) is next.**
 **Plan (source of truth):** [TOTAL_TIMES_PROBABILITY_MODEL_PLAN.md](TOTAL_TIMES_PROBABILITY_MODEL_PLAN.md).
 Read it in full before the first edit (its §8 records say what each sub-task did and why,
 including sub-task 3's four revisions); this file only orients you.
@@ -50,11 +53,11 @@ cohort probability** with hand-written torch objectives. The user wants it rebui
 
 | Item | State |
 |---|---|
-| Branch | `feat/total-times-probability-model`, HEAD **`99d4dd0`** (sub-task 5), pushed; **sub-task 6's record (this file and the plan doc) in the working tree, awaiting the user's commit** |
+| Branch | `feat/total-times-probability-model`, HEAD **`c9002b1`** (sub-task 6), pushed; **7a's docs in the working tree, awaiting the user's commit** |
 | Commits | `02b7725` plan + handoff (0); `9f9fb58` the rename (1); `732e465` NB2 and `CountModel`'s exposure cases (2); `1e2bc66` handoff; `b525954` `CohortProbabilityModel` on a classifier, the torch Model 2 and `TemperatureCalibrator` deleted (3, with its four revisions); `048059d` handoff; **`fd843bc` calibration (4)** |
 | PR | Draft **#13** into `feat/hyperparameter-tuning`; its body has the sub-task checklist (the user ticks it) |
 | Suite | **1200 passed, 1 skipped, 1 xfailed** after sub-task 5 (1238 after 4, less the deleted torch tests; `uv run pytest -m "not slow"`; pytest collects only `tests/`) |
-| Next | **Sub-task 7** (docs and close; §5 below), the last |
+| Next | **Sub-task 7b** (the trimming pass and the close; §5 below), the last |
 
 ## 3. Decisions (settled; do not reopen)
 
@@ -151,24 +154,27 @@ From sub-task 4 (the user's answers; plan §8, the sub-task 4 record):
   the docs (`CohortProbabilityModel`'s ~45-line class docstring first).
 - Correct your own earlier wrong claims explicitly in the next message.
 
-## 5. Sub-task 7 (docs and close): what to do, what to re-verify
+## 5. Sub-task 7b (trimming pass and close): what to do, what to re-verify
 
-Plan §8 sub-task 7 and §9. Docs: `INDEPENDENT_TOTAL_PROBABILITY_MODEL.md` §0 rewritten (§9's eight
-sections, each decision derived step by step with its formulas, the §6 figures and the sub-task 4
-and 6 tables; the file keeps §1–§12 for the old stack); `DIRECT_COHORT_MODEL.md` §0 (the exposure
-rule, NB2); `FEATURE_TRANSFORMATIONS.md` §8.1–8.3 usage blocks (still name `TotalChildrenModel`
-and `IndependentTotalProbabilityModel`; the review of sub-task 5 also found `Solver` and
-`optimization.py` at its lines 1051–1257 region) and `MODULE_REFERENCE.md` (lines ≈ 92–105 name
-the deleted classes); `README.md`; `MODEL_REIMPLEMENTATION_PLAN.md` §5; `HYPERPARAMETER_TUNING_PLAN.md`
-where it names Model 2's tunables; `MULTI_COHORT_MODELS_PLAN.md` top note. Every code block run
-(plan §11's end-to-end check: the §7 usage block on the simulator). The **trimming pass** over this
-PR's docstrings and comments (`count_model.py`, `negative_binomial.py`, `cohort_probability.py`,
-`total_times_probability.py`, their tests) to §3 rule 7, moving what still matters to the docs;
-no behavior change (suite 1200 and mypy unchanged). Findings of the smoke run to carry into the
-docs: the tree classifiers' default overconfidence and temperature's effect; sklearn's
-`PoissonRegressor()` default `alpha=1` is penalized (B7's torch Poisson was not); the LightGBM
-total on `total_base` vs Model 1's `tree`. Re-verify before relying on them: each file and section
-named exists (line numbers drift); the plan's §9 list; the review subagent checks rule 7 and that
-no cut fact is lost. PR body drafted in the scratchpad; the user applies it and marks the PR ready.
+The docs are written (7a: `TOTAL_TIMES_PROBABILITY_MODEL.md` holds Model 2's derivations by
+component; `INDEPENDENT_COHORT_MODELS.md` Model 1's, with `CountModel` and NB2 explained once). 7b, plan §8 sub-task 7's
+**trimming pass** (§3 rule 7): cut every docstring and comment written in this PR to what the code
+does, its inputs and outputs, and the non-obvious constraint; a comment only for a "why".
+Files: `count_model.py` (the class docstring's derivation lines: the Poisson identity, `alpha ×
+mean(exposure)`, the wrapper list, and its stale citation of `docs/DIRECT_COHORT_MODEL.md` §0.1 at L71 → `INDEPENDENT_COHORT_MODELS.md` §2.1–§2.2), `negative_binomial.py` (short already;
+the three "why" comments stay), `cohort_probability.py` (the ~45-line class docstring → ~12 lines:
+what `replication`, `calibration_method`, `calibration_cv` do, the integer-dtype and
+`sample_weight` constraints, the row-sum rule; the routing, fold-gap and warning details →
+`TOTAL_TIMES_PROBABILITY_MODEL.md` §3.2, §3.4), `total_times_probability.py` (already to the rule), and the tests' figure-bearing
+comments (`test_modeling_count_model.py` L270 and L285–286: the measured agreements → `INDEPENDENT_COHORT_MODELS.md` §2.1).
+The OpenMP/torch notes in the tests stay (plan P14: old-stack tests still import torch). For
+each cut fact, check it is in 7a's docs before cutting; the review subagent checks rule 7 and
+that nothing is lost. No behavior change: ruff, mypy (both runs), the changed tests under `-W
+error`, the non-slow suite at **1200 passed, 1 skipped, 1 xfailed**. Then the PR body
+(scratchpad `pr_body.md`: PR #13's body is stale: offset → raw exposure, no `replication`,
+"folds grouped by building" → round-robin folds of samples; the checklist is the user's), the
+plan doc's status and 7b record, memory; **delete this file** (`git rm`, the user's rule: the handoff
+goes once the work is complete) and its pointer at the top of the plan doc. The user marks the PR
+ready.
 
 Memory to update at each stop: `multi-cohort-models-plan.md` in the Claude memory directory.

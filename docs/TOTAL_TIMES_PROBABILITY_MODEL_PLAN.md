@@ -13,8 +13,9 @@ classifier on weighted or per-child rows, optionally calibrated (`calibration_me
 `calibration_cv`), and the torch Model 2 and `TemperatureCalibrator` are deleted;
 records in §8). **Sub-task 5 is committed (`99d4dd0`):** `TotalTimesProbabilityModel` added,
 `total_children.py` and `optimization.py` deleted (no torch left in `modeling/`). **Sub-task 6 (the
-smoke run) is done, docs only, awaiting the user's commit;** its tables and reading are in §8.
-Sub-task 7 (docs and close) is next. During planning the user revised it twice: NB2 goes through
+smoke run) is committed (`c9002b1`);** its tables and reading are in §8. **Sub-task 7 is split
+in two stops (the user, 2026-10-08): 7a, the docs with every derivation, done and awaiting the
+user's commit; 7b, the docstring trimming pass and the close, next.** During planning the user revised it twice: NB2 goes through
 `CountModel` (the renamed `DirectCohortModel`) as an estimator taking the exposure (an offset in the first plan; raw `exposure` since sub-task 2); a
 `replication` setting for row-resampling classifiers was considered and dropped
 on measurement (P6, P8).
@@ -140,8 +141,8 @@ them. In short:
 | `tests/unit/test_modeling_negative_binomial.py` | — | **new** |
 | `tests/unit/test_modeling_contract.py` | `EXAMPLES` per concrete model (line 136 after sub-task 5) | entries renamed/added; a model without an example fails `test_every_shipped_model_has_an_example` |
 | `tests/unit/test_modeling_feature_transformer.py`, `test_modeling_independent_cohorts.py`, `tests/unit/test_hyperparameter_tuning_evaluator.py` (builds a `DirectCohortModel`: lines 40, 296, 435) | use the old names | updated |
-| `docs/DIRECT_COHORT_MODEL.md` §0 | `DirectCohortModel` | file name kept; §0 says the class is `CountModel`, used for a cohort and for the total, with the exposure rule |
-| `docs/INDEPENDENT_TOTAL_PROBABILITY_MODEL.md` §0 | the torch build | §0 rewritten (the file keeps §1–§12 for the old stack until roadmap step 5 deletes it) |
+| `docs/DIRECT_COHORT_MODEL.md` §0 | `DirectCohortModel` | file name kept; §0 says the class is `CountModel`, used for a cohort and for the total, with the exposure rule. *7a revision 1 (the user): §0 is a pointer; the rebuilt model has its own doc, `docs/INDEPENDENT_COHORT_MODELS.md`* |
+| `docs/INDEPENDENT_TOTAL_PROBABILITY_MODEL.md` §0 | the torch build | §0 rewritten (the file keeps §1–§12 for the old stack until roadmap step 5 deletes it). *7a revision 1 (the user): §0 is a pointer; the rebuilt model has its own doc, `docs/TOTAL_TIMES_PROBABILITY_MODEL.md`, 400–500 lines* |
 | `docs/FEATURE_TRANSFORMATIONS.md` §8.1–8.3, `docs/MODULE_REFERENCE.md`, `docs/README.md`, `docs/MODEL_REIMPLEMENTATION_PLAN.md` §5, `docs/HYPERPARAMETER_TUNING_PLAN.md`, `docs/DIRECT_COHORT_GENERALIZATION_PLAN.md` (a top note only) | name the old classes | updated |
 
 Reused as is: `BaseAgeGroupModel._fit_features` / `_transform_features` /
@@ -170,7 +171,7 @@ untouched (deleted by roadmap step 5).
 | P8 | *Revised by the user in sub-task 3, revision 1 (2026-10-07):* the per-child representation now exists as `replication="per_child"` (P6), so "no representation switch" below no longer holds; grouped bagging is still not built. As first planned: **Bagging and bootstrap under replication: nothing is built; the estimators' own resampling is left as the user sets it.** The docs explain the units and give the measured table | **The user's question:** the cohorts of a building are connected (they share `x_b`, sum to `Y_b`, and their proportions sum to one), so should a resample keep the building's rows together? **The answer in three parts.** (1) The sum-to-one constraint is on the model's output `p_b`, which every classifier's `predict_proba` (and `CalibratedClassifierCV`) enforces by softmax or normalization; it is not a dependence between rows. (2) Under the conditional multinomial model `C_b \| Y_b ~ Mult(Y_b, p_b)` is `Y_b` independent categorical draws, so the exchangeable unit is the **child**; the weighted representation merely compresses identical child rows into one cell per cohort. A row resampler then draws **cells** (a bag can hold building b's kindergarten cell and drop its elementary cell) instead of children (a bag thins each building's composition at random); neither keeps a building whole; only a bootstrap **by building** does, which scikit-learn and LightGBM do not offer. (3) **Measured** (RF, 300 trees, 5 seeds, held-out cross-entropy against the true `p`): weighted + bootstrap 0.712, per-child + bootstrap 0.708, weighted without bootstrap 0.716, per-child without bootstrap 0.717, a hand-made bootstrap by building 0.717, against a seed-to-seed spread of 0.57–0.86: **all the same within noise**. So no representation switch and no grouped bagging is justified. **What the libraries do** (the user's "permutation" is not it): LightGBM's bagging is subsampling **without replacement** (`subsample`, active only with `subsample_freq > 0`; off by default); `HistGradientBoostingClassifier` has **no** row subsampling and its early stopping is off under 10,000 rows; `LogisticRegression` has none; `RandomForestClassifier` bootstraps **with replacement**, on by default (with `sample_weight`, sklearn multiplies the weight by the draw count); XGBoost (not a dependency; from its parameter docs) uses **all rows** by default, `subsample=1.0`, and subsamples without replacement per round only when set below 1. So RF is the only common estimator that resamples by default, and the user chose to leave it as is. **Observed building features** (type, year) change nothing: every row of a building shares its whole `x_b` already, and conditioning on more of it makes the conditional independence of its children more plausible, not less; the grouped unit becomes the right one only for an **unobserved** building effect (a random building intercept in the generator, or a generated characteristic withheld from the model) or for uncertainty intervals. **If real data shows extra-multinomial variation between buildings** (the case where the building is the right unit): `bootstrap=False` on RF removes the resampling (randomness then comes from `max_features`), or a bootstrap-by-building aggregator over `CohortProbabilityModel` (the ten-line probe above), added only then. The folds that must be grouped are the calibration folds (by building, P10) and the tuner's (by neighborhood, `Splitter`) |
 | P9 | **Calibration is `CalibratedClassifierCV` inside `CohortProbabilityModel`:** `calibration_method: CalibrationMethod \| None = None` (`Literal["temperature", "sigmoid", "isotonic"]`, `None` = the estimator's own probabilities), `calibration_cv: int = 5`. `fit` wraps the cloned estimator as `CalibratedClassifierCV(estimator, method=…, cv=<grouped splits>, ensemble=False)` and fits it with the weights. **No `TemperatureCalibrator`** | The user's specification. `ensemble=False` is **cross-fitting**: the estimator is fitted on each of `k` folds, its out-of-fold probabilities for **every** row are collected, **one** calibrator is fitted on them, then the estimator is refitted on all rows; `predict` is that one model through that one map. `ensemble=True` (sklearn's default for a non-frozen estimator) averages `k` calibrated fold models and never fits on all rows. Cross-fitting is the user's preference and what the previous build did by hand (the B6 loop). `TemperatureCalibrator` duplicated sklearn's `_TemperatureScaling`, whose objective it was pinned to; the calibration now sits in the model, so clones and tuning (`probability_model__calibration_method`) carry it, and no `FrozenEstimator` idiom is needed |
 | P10 | *Revised by the user in sub-task 4 (2026-10-08): the samples are split **before** the categorical rows, round-robin (sample `i` in fold `i mod calibration_cv`), and each row goes to its sample's fold (`PredefinedSplit(sample_folds[sample_positions])`), so both replications calibrate on the same folds (folds of rows balanced cells under `"weighted"` and children under `"per_child"`: different partitions, `beta_` 0.963 vs 0.970 for the same unpenalized LR; now equal to 2e-13).* As first planned: **Calibration folds: `GroupKFold(n_splits=calibration_cv)` over the categorical rows with `groups=sample_positions`** (the building; under `"per_child"` repeated by count), unshuffled, passed as a list of splits | A building's rows carry its known composition; with plain `KFold` the same building sits in a fit fold and its calibration fold, and the calibrator sees in-sample confidence. Grouping by building removes that; grouping by **neighborhood** (the repo's evaluation unit) would need `groups` at `fit`, which the base contract does not carry: documented as the limitation (the tuner's outer folds are by neighborhood regardless). Unshuffled `GroupKFold` is deterministic, so no `random_state` setting (round-robin likewise, and each fold spans the table even if it is sorted) |
-| P11 | **Folds: 5. Isotonic is allowed but documented as inappropriate here** | **How many:** the calibrator must map the **final** model's probabilities, but it is fitted on fold models trained on `(k−1)/k` of the rows, which are less confident than the final one; `k = 2` (50/50) calibrates a model fitted on half the data and biases the temperature toward sharpening; larger `k` approaches the final model at the cost of `k` fits; with ~245 buildings per training set, 5 (sklearn's default) leaves ~200 buildings per fold fit and uses every row for calibration. **How much is enough:** temperature fits 1 parameter and sigmoid 2 per class, so every row of a 5-fold cross-fit (~1,300 child-weighted rows) is ample; isotonic is non-parametric per class and sklearn advises it only well above ~1,000 samples per class, so it overfits here (the previous plan's N12 said the same). Measured: all three run on the categorical rows; on the simulator the fitted inverse temperature (`beta_`, `softmax(beta_ · logits)`) is 0.88 for unpenalized LR and 0.47 for default LightGBM (sub-task 4 table) |
+| P11 | **Folds: 5. Isotonic is allowed but documented as inappropriate here** | **How many:** the calibrator must map the **final** model's probabilities, but it is fitted on fold models trained on `(k−1)/k` of the rows, which are less confident than the final one; `k = 2` (50/50) calibrates a model fitted on half the data and biases the temperature toward sharpening; larger `k` approaches the final model at the cost of `k` fits; with ~245 buildings per training set, 5 (sklearn's default) leaves ~200 buildings per fold fit and uses every row for calibration *(stale, found in 7a's review: 245 is the whole table; the grouped 80/20 training sets hold 179–206 buildings, 143–165 per fold fit)*. **How much is enough:** temperature fits 1 parameter and sigmoid 2 per class, so every row of a 5-fold cross-fit (~1,300 child-weighted rows) is ample; isotonic is non-parametric per class and sklearn advises it only well above ~1,000 samples per class, so it overfits here (the previous plan's N12 said the same). Measured: all three run on the categorical rows; on the simulator the fitted inverse temperature (`beta_`, `softmax(beta_ · logits)`) is 0.88 for unpenalized LR and 0.47 for default LightGBM (sub-task 4 table) |
 | P12 | **`TotalTimesProbabilityModel(total_model, probability_model)`** in `modeling/total_times_probability.py`: `fit` clones and fits `total_model` on `y.sum(axis=1)` and `probability_model` on `y`, both with `exposure`; `predict` = `total[:, None] × probabilities`, a DataFrame with `y`'s columns at fit, indexed like `X`; raises if the probability model's columns differ from `cohorts_`. No calibrator argument. *Revised in sub-task 5 (2026-10-08; the user: "compare the two, choose by best practice, do not overcomplicate"):* **no column check, no `cohorts_`**: `probability_model: CohortProbabilityModel` and `predict` = `probabilities * total[:, None]`, so the columns and index are the probability model's own DataFrame's (`y`'s columns at fit, `X`'s index) and nothing can be mislabelled; the check could fire only for another probability model reordering its columns, which does not exist (widening the type is one line if one is ever written) | The user's name (chosen over `TotalSplitModel`, `TotalCompositionModel`): it names the prediction. Settings named for their role (`total_model`, `probability_model`); nested names reach both (`total_model__estimator__alpha`, `probability_model__estimator__C`, `probability_model__calibration_method`) |
 | P13 | **A building with no children contributes to the total model only** (it has no row in the categorical representation). **A cohort with no child in `y` raises at `fit`** | The classifier cannot learn an absent class, and `predict` would lack its column: raise early with the cohort's name, as today. The Dirichlet build's "every building needs a child" rule disappears |
 | P14 | **No torch in `modeling/`;** `torch` stays a dependency of the old stack (`pyro`). The contract test's single-thread LightGBM note stays until the old stack goes | The user: "Do not use torch". Deleting `optimization.py` removes the OpenMP guard with the code that needed it; LightGBM alone did not crash |
@@ -916,8 +917,8 @@ Each ends at a stop (§3). "Verify" lists what the user can check.
   loss 1.089 ± 0.007), and so does NB2 (α 0.103 ± 0.014 as the torch build's; total 4.347 ± 1.306
   against 4.348 ± 1.306): statsmodels' NB2 through `CountModel` is the torch NB2. (2) *On the total
   Model 2 and Model 1 are level* for the two GLM totals (t +0.5 and +0.4, lower in 4–5 of 10); the
-  LightGBM total is worse (t +2.0, lower in 3 of 10: at the defaults, on `total_base`'s six
-  standardized features, it is a weaker total than Model 1's three LightGBMs on `tree`, which keep
+  LightGBM total is worse (t +2.0, lower in 3 of 10: at the defaults, on `total_base`'s nine
+  scaled columns (six plans), it is a weaker total than Model 1's three LightGBMs on `tree`, which keep
   `n_apartments` as a feature). sklearn's `PoissonRegressor()` default `alpha=1` is a penalized fit,
   unlike B7's unpenalized torch Poisson: the seed-1 overfit B7 saw (6.90) is gone (3.60), the mean
   moved from 4.448 to 4.318, and its SD from 1.434 to 1.272. NB2 is unpenalized and keeps the
@@ -941,12 +942,13 @@ Each ends at a stop (§3). "Verify" lists what the user can check.
   (sub-task 7): the default-overconfidence of the tree classifiers and what temperature does to it;
   that sklearn's Poisson default is penalized; the LightGBM total's feature base.
 
-### [ ] 7. Docs and close
+### [ ] 7. Docs and close (7a done; 7b next)
 - `docs/INDEPENDENT_TOTAL_PROBABILITY_MODEL.md` §0 rewritten for the new build
   (§9 lists what it must explain); `docs/DIRECT_COHORT_MODEL.md` §0 (the exposure
   rule, NB2); `docs/FEATURE_TRANSFORMATIONS.md` §8.1–8.3 usage blocks;
   `docs/MODULE_REFERENCE.md`; `docs/README.md`; `docs/MODEL_REIMPLEMENTATION_PLAN.md`
-  §5; `docs/HYPERPARAMETER_TUNING_PLAN.md` where it names Model 2's tunables;
+  §5; ~~`docs/HYPERPARAMETER_TUNING_PLAN.md` where it names Model 2's tunables~~ (re-verified in
+  7a: it names none; L405–413 is a historical note; no edit);
   `docs/MULTI_COHORT_MODELS_PLAN.md` top note. Every code block run.
 - **Derivations (the user, 2026-10-08):** each §9 item is written as a derivation: the model
   and its assumptions, each step, then the result the code relies on, with the formulas. Each
@@ -960,6 +962,94 @@ Each ends at a stop (§3). "Verify" lists what the user can check.
   change: the suite and mypy pass unchanged.
 - Memory: update `multi-cohort-models-plan.md` (the state), note the decisions.
 - PR body drafted in the scratchpad; the user applies it and marks the PR ready.
+- **Record, 7a (2026-10-08):** HEAD `c9002b1`. The user split sub-task 7 into two stops: **7a** the
+  docs, **7b** the trimming pass, the PR body and the close. Re-verified by a survey of `docs/`
+  (line numbers at `c9002b1`): the Model 2 doc's §0 (L11–238) was the torch build throughout, with
+  stale notes at L3–9, L343–347, L535–539; `DIRECT_COHORT_MODEL.md` §0 lacked NB2 and said "NB2
+  removed" (L238), its L28 anchor was broken; `FEATURE_TRANSFORMATIONS.md` L15, L740, the §8.2–8.3
+  blocks and the §8.7 penalty note; `MODULE_REFERENCE.md` L87–113; `README.md` L16–20, L42–43 and
+  no row for this plan; `MODEL_REIMPLEMENTATION_PLAN.md` L9–11, L562–565; the §0 anchor of the
+  Model 2 doc is linked from three docs (fixed with the heading). Figures re-run 2026-10-08:
+  Poisson offset vs rate 1.5e-12; NB2 offset vs rate 0.012 (another draw than §6's 0.021);
+  `exposure=` vs `offset=log e` 0.0; `NegativeBinomialRegressor` vs statsmodels 0.0; weights scaled
+  by a constant 1.4e-17; weighted vs per-child LR 6.1e-16. **Written:**
+  `INDEPENDENT_TOTAL_PROBABILITY_MODEL.md` §0 rewritten as §0.1–§0.13 (the model; the total as
+  `CountModel`, with the Poisson identity, the NB2 non-identity derived from the log-likelihood,
+  statsmodels' exposure, the `has_fit_parameter` cases, `alpha × mean(exposure)`; the NB2
+  representation with the alternatives table; data replication with the likelihood identity,
+  count vs count/total, the two replications and their table, positions as labels, the edge cases;
+  bagging and bootstrap, P8 in full with `E[m_i] = 1` and the five-variant table; calibration:
+  cross-fitting, folds of buildings split before the rows, five folds, the three methods, the
+  sub-task 4 table and the smoke run's `beta_`, the documented-only cases; the classifiers survey
+  and the row-sum rule; the API, data flow (the §7 usage block, run on seed 0: 1.855 / 1.958 /
+  2.250, total 3.587, composition 1.084, α 0.0876), rules and errors tables; what changed; the
+  smoke-run evidence), heading and the three links renamed to
+  `#0-the-rebuilt-model-modelingtotal_times_probabilitypy`; the two later notes updated.
+  `DIRECT_COHORT_MODEL.md` §0: the exposure case as §0.1 (F) (the NB2 derivation, statsmodels'
+  exposure, the signature test, wrappers refused), the API rows (`ExposureRegressor`,
+  `NegativeBinomialRegressor`; the `n_jobs=1` rationale), the errors (`TypeError` neither;
+  `RuntimeError` NB2), §0.4 (NB2 back), §0.5 (the NB2 evidence), the L28 anchor; §0.1's heading kept
+  (four links). `FEATURE_TRANSFORMATIONS.md`: row B, L740, the §8.2 / §8.3 / combining blocks on
+  the new classes with a prose note on the two exposure cases, the §8.7 penalty note (the
+  estimators' own penalties; `C` per child; the `l2_penalty` figures as history).
+  `MODULE_REFERENCE.md`: the modeling intro and table (seven current modules), the link, the date.
+  `README.md`: the in-progress bullet, both model rows, an Active Plans row for this plan.
+  `MODEL_REIMPLEMENTATION_PLAN.md`: the status note and §5 step 3 (done, PR #13).
+  `MULTI_COHORT_MODELS_PLAN.md` L9: "done 2026-10-08, PR #13". **Checks:** every rewritten code
+  block executed as written, pulled from the files, under `-W error` (scratchpad `run_blocks.py`:
+  the §8.0–8.3 blocks, the combining block, the §0.9 block, the direct model's §0.2 and §0.6
+  blocks); the rows of every combined prediction equal the total model's; the stale-name grep over
+  the five reference docs hits only history sentences and old-stack rows; every markdown anchor in
+  `docs/` resolves (the sub-task 1 anchor script; the reports left are source-line links and two
+  older plan docs' relative paths). No `.py` change: no suite run. **Review** (independent
+  subagent; every finding reproduced): no error in the derivations' mathematics or in the traced
+  figures (it re-traced every number to §6 / §8 and re-ran the §0.9 block); fixed: (1) §0.2 (e)'s
+  intermediate sentence compared the weighted objective with an *unnormalized* offset objective
+  (that gives `alpha × ΣE`); it is scikit-learn's (1/n)-normalized one that gives `alpha × mean(E)`,
+  the stated conclusion; (2) two cited test names; (3) §0.6 (d)'s "~1,300 rows, ~450 per class"
+  was §6's synthetic set, now the simulator's (~4,200 children in ~570 cells per training set,
+  1,200–1,600 per cohort: at isotonic's threshold, not far below it); (4) P11's "~245 buildings"
+  (the whole table) noted stale, the doc cites the smoke run's 179–206; (5) "the tree classifiers
+  raw worse than the marginal shares (t > 3)" overgeneralized to RF (t +1.5): LightGBM and HGB
+  named; (6) `total_base` has nine columns from six plans, not "six standardized features" (here
+  too); (7) the sub-task 4 table and the smoke run are on different features and test sets: said.
+  Kept by design: the NB2 non-identity and the signature-test paragraph appear in both model docs
+  (§9: the total model's part in both), each pointing at the other.
+- **Revision 1 of 7a (2026-10-08, before the commit; the user: "create a doc for each model,
+  describing each component along the way (formula, derivation, motivation)"; "one doc per model;
+  since the count model is shared, you do not need to explain it twice"; the Model 2 doc "up to
+  400–500 lines"; "the handoff should be removed once completed"):** the 7a §0 content moved into
+  two new docs, compacted and restructured by component (what, formula, derivation, why, code,
+  check): `docs/INDEPENDENT_COHORT_MODELS.md` (Model 1: the model; `CountModel` with the weighted
+  rate (A)–(E) in short, the penalty under normalized weights, the exposure passed to the
+  estimator with the NB2 non-identity, `NegativeBinomialRegressor` with its fit choices and the
+  alternatives; `IndependentCohortModels` with its rules as text; API, data flow, errors,
+  evidence) and `docs/TOTAL_TIMES_PROBABILITY_MODEL.md` (Model 2: the model; the total in one
+  paragraph pointing at the Model 1 doc; `CohortProbabilityModel` by component: the categorical
+  rows, the classifier, bagging under replication, calibration; `TotalTimesProbabilityModel`; API,
+  data flow, errors, what changed, evidence). `DIRECT_COHORT_MODEL.md` §0 and
+  `INDEPENDENT_TOTAL_PROBABILITY_MODEL.md` §0 are pointers (their §1+ untouched); every link into
+  the old §0 anchors re-pointed (`FEATURE_TRANSFORMATIONS.md`, `MODEL_REIMPLEMENTATION_PLAN.md`,
+  `MODULE_REFERENCE.md`, `README.md`, which also gets rows for the two docs). The handoff is
+  deleted in 7b (its pointer at the top of this plan with it). **Checks:** both docs' code blocks
+  executed as written under `-W error` (the Model 1 block's seed-0 scores 1.903 / 2.011 / 2.404,
+  the Model 2 block's as before); every markdown anchor resolves; the old names appear only in
+  history sentences; no link into the old §0 anchors remains. **Review** (independent subagent;
+  every finding reproduced): the derivations and every figure correct after compaction; nothing
+  explained twice; fixed: two torch-era rules still valid (rows by position; targets from `y`
+  only) restored in the Model 2 doc §6; the Model 1 doc gained its "what changed" list (§7), §3's
+  check, the Gaussian "can be negative" caveat and a `Code` label; "reproducible trees" (an
+  unmeasured rationale) dropped; "`y` is not validated" → "not checked to be integer"; link
+  texts in three docs still read "DIRECT_COHORT_MODEL.md §0.1"; the cuts it suggested to bring
+  the Model 2 doc under 500 lines (the §3.4 restatement of §9, the data-flow steps 1–2 and the
+  three `CountModel` error rows as links to the Model 1 doc, the classifier survey and the
+  library list condensed, a repeated routing sentence). `count_model.py`'s docstring citation of
+  `DIRECT_COHORT_MODEL.md` §0.1 goes to 7b with the trimming.
+- **Revision 2 of 7a (2026-10-08; the user: "you didn't separate between Poisson and Gaussian (I
+  think NB2 is OK)"):** `INDEPENDENT_COHORT_MODELS.md` §2.1 rewritten as (a) the Poisson loss (the
+  model, (A)–(C), its own check) and (b) the Gaussian loss ((D1)–(D4), its own check, the full-ML
+  figure restored), then (c) why not a residual, the Why and the Code; §2.2 (NB2) unchanged. No
+  figure or heading changed.
 - **Verify:** `grep -rn "TotalChildrenModel\|TemperatureCalibrator\|Dirichlet\|DirectCohortModel" docs --include='*.md'`
   hits only historical records (plan docs' step records, the old stack's §1–§12). Every §9
   item has its derivation. A review subagent checks the docstrings and comments against §3
@@ -970,7 +1060,11 @@ Each ends at a stop (§3). "Verify" lists what the user can check.
 In `INDEPENDENT_TOTAL_PROBABILITY_MODEL.md` §0 (the model doc), one subsection
 each, **derived step by step** (assumptions, steps, result, the code it
 justifies), with the formulas and the measured figures of §6; the total model's
-part also in `DIRECT_COHORT_MODEL.md` §0. Derivations expected at least:
+part also in `DIRECT_COHORT_MODEL.md` §0. *7a revision 1 (the user, 2026-10-08): one doc
+per rebuilt model instead, `docs/INDEPENDENT_COHORT_MODELS.md` (Model 1, where `CountModel`
+and NB2 are explained once) and `docs/TOTAL_TIMES_PROBABILITY_MODEL.md` (Model 2), each
+component with its formula, derivation and motivation; the two §0s are pointers.*
+Derivations expected at least:
 
 - the weighted rate equals the Poisson offset model, but not NB2;
 - statsmodels' `exposure` equals `offset = log(exposure)` with coefficient 1;

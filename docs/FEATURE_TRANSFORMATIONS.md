@@ -12,7 +12,7 @@ coefficient means, and why the alternatives were rejected.
 | Label | Class | Stages and feature use |
 |---|---|---|
 | **A** | `CountModel` | One regressor per cohort (any estimator with a Poisson or Gaussian loss); raw features; optional exposure as a weighted rate |
-| **B** | `IndependentTotalProbabilityModel` | Penalized Poisson/NB2 total with a log-exposure offset, plus a grouped multinomial composition stage |
+| **B** | `TotalTimesProbabilityModel` | A Poisson/NB2 total with the exposure as an offset (`CountModel`), times a classifier of the cohort probabilities (`CohortProbabilityModel`) |
 | **C** | `BayesianConditionalModel` | Hierarchical NB2 total plus a composition stage; uses B's frozen specs; `Normal(0, 0.5)` coefficient priors |
 
 **Reference statistics.** All numbers below come from simulated populations
@@ -196,7 +196,7 @@ with `sample_weight` $n_i$, and `predict` multiplies by $n_i$. That has the
 same likelihood as the offset, works for any regressor that takes
 `sample_weight`, and starts from the average rate $\sum_i y_{i,c} / \sum_i n_i$.
 The derivation, and the Gaussian case, are in
-[DIRECT_COHORT_MODEL.md §0.1](DIRECT_COHORT_MODEL.md#01-the-model-the-exposure-as-a-weighted-regression-of-the-per-apartment-rate).
+[Independent cohort models §2.1](INDEPENDENT_COHORT_MODELS.md#21-the-exposure-as-a-weighted-rate).
 
 - **Why the offset:** child counts grow roughly in proportion to $n$. Trees
   approximate that with step functions, need many splits to do so, and cannot
@@ -208,7 +208,7 @@ The derivation, and the Gaussian case, are in
 - **With a Gaussian loss too:** the weighted rate is then least squares of the
   count with a mean proportional to $n$ and a variance proportional to $n$, as
   a count's variance grows
-  ([DIRECT_COHORT_MODEL.md §0.1 (D)](DIRECT_COHORT_MODEL.md#01-the-model-the-exposure-as-a-weighted-regression-of-the-per-apartment-rate)).
+  ([Independent cohort models §2.1 (D)](INDEPENDENT_COHORT_MODELS.md#21-the-exposure-as-a-weighted-rate)).
 
 ---
 
@@ -737,10 +737,10 @@ One structural note before the options. In the composition model **every
 feature already gets its own coefficient per cohort**, so a feature × cohort
 interaction is automatic and free. The consequence is that this stage is
 $K$ times as parameter-hungry as the total stage for the same design matrix
-(one intercept and coefficient column per cohort in the rebuilt Dirichlet
-regression, §8.3; the old multinomial logit with a reference cohort had
-$K-1$, "roughly twice" for three cohorts), and parsimony should bind harder
-here.
+(one intercept and coefficient column per cohort in a multinomial logistic
+regression, the rebuilt `CohortProbabilityModel` with `LogisticRegression`,
+§8.3; the old multinomial logit with a reference cohort had $K-1$, "roughly
+twice" for three cohorts), and parsimony should bind harder here.
 
 | Option | Verdict | What it buys you |
 |---|---|---|
@@ -971,7 +971,7 @@ of the transformer, held by `IndependentCohortModels`, which fits and predicts
 on the raw table and returns one column per cohort. The same exposure goes to
 every cohort; a model without the offset ignores it. The data flow and the
 rules are in
-[Direct cohort model §0.6](DIRECT_COHORT_MODEL.md#06-every-cohort-from-the-raw-table-independentcohortmodels).
+[Independent cohort models §3](INDEPENDENT_COHORT_MODELS.md#3-independentcohortmodels).
 
 ```python
 from age_group_prediction.modeling import IndependentCohortModels
@@ -1048,52 +1048,69 @@ a predictor, and forms the offset $\log n$ itself. Build it with
 `ExposureTransformer` on the full table before splitting, as in §8.1.
 
 ```python
-from age_group_prediction.modeling import TotalChildrenModel
+from age_group_prediction.modeling import CountModel, NegativeBinomialRegressor
 from age_group_prediction.preprocessing import ExposureTransformer
 
 exposure = ExposureTransformer("n_apartments").fit_transform(table)
-total_model = TotalChildrenModel(feature_transformer=total_base).fit(  # family="poisson" or "nb2"
-    fit_df, fit_df["n_children_total"], exposure=exposure.loc[fit_df.index]
-)
+total_model = CountModel(
+    estimator=NegativeBinomialRegressor(),  # or PoissonRegressor(alpha=...): the same CountModel
+    use_exposure=True,
+    feature_transformer=total_base,
+).fit(fit_df, fit_df["n_children_total"], exposure=exposure.loc[fit_df.index])
 total_mean = total_model.predict(valid_df, exposure=exposure.loc[valid_df.index])
 ```
+
+The total model is the same `CountModel` as Model A's, given the total column.
+An estimator whose `fit` takes `exposure` (`NegativeBinomialRegressor`) gets the
+raw exposure and forms the offset itself; one taking `sample_weight`
+(`PoissonRegressor`, LightGBM) gets the weighted per-apartment rate, which is the
+Poisson offset model exactly ([Independent cohort models §2.1](INDEPENDENT_COHORT_MODELS.md#21-the-exposure-as-a-weighted-rate)).
 
 ### 8.3 Model B — composition stage
 
 **The same plans, and a model with no exposure** (§4.7): age-group shares do
-not depend on building size. The model is a Dirichlet regression of the
-cohort shares (`CohortProbabilityModel`), with one intercept and one
-coefficient per feature **for every cohort**, so this stage has $K$ times the
-total stage's parameters for the same design matrix and parsimony binds
-harder (§6.3). *Renamed from `composition_base` on 2026-10-01, after the
-model it feeds.*
+not depend on building size. The model is a multi-class classifier of the
+cohort probabilities (`CohortProbabilityModel`), fitted on the children as
+categorical rows, one weighted row per (building, cohort); with
+`LogisticRegression` it has one intercept and one coefficient per feature
+**for every cohort**, so this stage has $K$ times the total stage's
+parameters for the same design matrix and parsimony binds harder (§6.3).
+*Renamed from `composition_base` on 2026-10-01, after the model it feeds.*
 
 ```python
+from sklearn.linear_model import LogisticRegression
 from age_group_prediction.modeling import CohortProbabilityModel
 
 cohort_probability_base = FeatureTransformer(
     plans=total_base.plans,      # identical; only the model differs, taking no exposure
 )
-probability_model = CohortProbabilityModel(feature_transformer=cohort_probability_base).fit(
-    fit_df, fit_df[["n_kindergarten", "n_elementary", "n_highschool"]]
-)
+probability_model = CohortProbabilityModel(
+    estimator=LogisticRegression(),  # or LGBMClassifier(...), RandomForestClassifier(...)
+    calibration_method="temperature",  # None: the classifier's own probabilities
+    feature_transformer=cohort_probability_base,
+).fit(fit_df, fit_df[["n_kindergarten", "n_elementary", "n_highschool"]])
 shares = probability_model.predict(valid_df)  # a DataFrame; rows sum to 1
 ```
 
-**Combining the two.** `IndependentTotalProbabilityModel` holds both
-models, fits them on the raw table (the total on the row sum of `y`) and
-predicts `total × shares`, one column per cohort. The same exposure goes to
-both; the probability model ignores it. The data flow, the post-hoc
-temperature calibration of the shares and the rules are in
-[Independent total and probability model §0](INDEPENDENT_TOTAL_PROBABILITY_MODEL.md#0-the-rebuilt-model-modelingindependent_total_probabilitypy).
+**Combining the two.** `TotalTimesProbabilityModel` holds both models, fits
+them on the raw table (the total on the row sum of `y`) and predicts
+`total × probabilities`, one column per cohort. The same exposure goes to
+both; the probability model ignores it. The derivations (the categorical
+rows, the calibration folds, the exposure cases), the data flow and the
+rules are in
+[Total times probability model](TOTAL_TIMES_PROBABILITY_MODEL.md).
 
 ```python
-from age_group_prediction.modeling import IndependentTotalProbabilityModel
+from age_group_prediction.modeling import TotalTimesProbabilityModel
 
 COHORTS = ["n_kindergarten", "n_elementary", "n_highschool"]
-model_2 = IndependentTotalProbabilityModel(
-    total_children_model=TotalChildrenModel(feature_transformer=total_base),
-    cohort_probability_model=CohortProbabilityModel(feature_transformer=cohort_probability_base),
+model_2 = TotalTimesProbabilityModel(
+    total_model=CountModel(
+        estimator=NegativeBinomialRegressor(), use_exposure=True, feature_transformer=total_base
+    ),
+    probability_model=CohortProbabilityModel(
+        estimator=LogisticRegression(), feature_transformer=cohort_probability_base
+    ),
 ).fit(fit_df, fit_df[COHORTS], exposure=exposure.loc[fit_df.index])
 predictions = model_2.predict(valid_df, exposure=exposure.loc[valid_df.index])
 ```
@@ -1231,7 +1248,7 @@ open user-named `Interaction`s. **The rest still stand:**
 3. **`CountModel`:** done in the rebuilt
    `modeling.CountModel`, which takes `use_exposure=True` and fits
    a weighted regression of the rate $y/n$ with weight $n$ (§3.3)
-   ([DIRECT_COHORT_MODEL.md §0](DIRECT_COHORT_MODEL.md#0-the-rebuilt-model-modelingcount_modelpy)).
+   ([INDEPENDENT_COHORT_MODELS.md](INDEPENDENT_COHORT_MODELS.md#2-countmodel)).
 4. **Model C:** no candidate changes of its own. Rerun the prior-predictive
    checks after any unit or baseline change, and revisit
    `total_intercept_loc = -2` against the observed log rate of about −0.5.
@@ -1249,18 +1266,19 @@ open user-named `Interaction`s. **The rest still stand:**
    to about 4.00 there, more than any scaling choice moved it. The audit
    scored on independent populations, not on the project's cross-validation,
    so this is a prompt to check the ranges in the tuning work, not a
-   conclusion. *In the rebuilt models (2026-10-01) one `l2_penalty` has one
-   meaning in both stages: it multiplies $\tfrac12\|\beta\|^2$ added to the
-   **mean** negative log-likelihood per building, intercepts unpenalized
-   ([plan N8](MULTI_COHORT_MODELS_PLAN.md)). The old total penalty had that
-   meaning, so `total_l2_penalty = 1.0` is `l2_penalty = 1.0` on
-   `TotalChildrenModel`; the old `probability_c` was scikit-learn's inverse
-   `C` per child, and its range $[0.01, 100]$ is about `l2_penalty`
-   $[2\times10^{-6}, 2\times10^{-2}]$ at ~4,500 training children, before the
-   composition model became a Dirichlet regression per building. A second
-   prompt: in the plan's B7 smoke run the unpenalized Poisson total overfits
-   one population of ten (deviance 6.90 against the constant rate's 4.69), and
-   `l2_penalty = 1.0` pulls it back to 5.29 (NB2: 3.96).*
+   conclusion. *In the rebuilt models (2026-10-08) the penalties are the
+   estimators' own: `PoissonRegressor(alpha)` on the total, where under the
+   weighted rate `alpha` acts as `alpha × mean(exposure)` of the offset model
+   (scikit-learn normalizes `sample_weight`;
+   [Independent cohort models §2.1](INDEPENDENT_COHORT_MODELS.md#21-the-exposure-as-a-weighted-rate));
+   `NegativeBinomialRegressor` is unpenalized; `LogisticRegression(C)` on the
+   probability model is per **child**, as the old `probability_c` was (its
+   range $[0.01, 100]$ applies again). History: PR #11's torch build had one
+   `l2_penalty` per building in both stages, and its B7 smoke run found the
+   unpenalized Poisson total overfitting one population of ten (deviance 6.90
+   against the constant rate's 4.69; `l2_penalty = 1.0` pulled it back to
+   5.29). With sklearn's `PoissonRegressor()` default `alpha=1` that population
+   gives 3.60 ([plan, sub-task 6](TOTAL_TIMES_PROBABILITY_MODEL_PLAN.md)).*
 
 ## 9. Related Documents
 

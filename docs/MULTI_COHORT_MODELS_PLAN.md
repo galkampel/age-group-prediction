@@ -6,7 +6,7 @@ This file is the source of truth: update its status line and checkboxes as steps
 
 > **2026-10-05, [DIRECT_COHORT_GENERALIZATION_PLAN.md](DIRECT_COHORT_GENERALIZATION_PLAN.md) (PR #12):** `DirectCohortModel` takes any regressor as `estimator`, with the exposure as a weighted rate (`objective`, the ten LightGBM hyperparameters, `init_score`, `regressor_` and `base_log_rate_` are gone); each leaf model takes its own `feature_transformer`, and `ModelPipeline` is removed. This plan's record below is kept as it was.
 
-> **2026-10-07, [TOTAL_TIMES_PROBABILITY_MODEL_PLAN.md](TOTAL_TIMES_PROBABILITY_MODEL_PLAN.md):** Model 2 is rebuilt again on library estimators (`TotalTimesProbabilityModel`: `CountModel`, the renamed `DirectCohortModel`, for the total, with NB2 as statsmodels' `NegativeBinomialRegressor`; a scikit-learn classifier for the cohort probabilities; no torch). The §9 B-steps below (the torch build) are superseded; their record is kept as it was.
+> **2026-10-07, [TOTAL_TIMES_PROBABILITY_MODEL_PLAN.md](TOTAL_TIMES_PROBABILITY_MODEL_PLAN.md):** Model 2 is rebuilt again on library estimators (`TotalTimesProbabilityModel`: `CountModel`, the renamed `DirectCohortModel`, for the total, with NB2 as statsmodels' `NegativeBinomialRegressor`; a scikit-learn classifier for the cohort probabilities; no torch; done 2026-10-08, PR #13). The §9 B-steps below (the torch build) are superseded; their record is kept as it was.
 
 **Status (2026-09-30):** **PR A is merged** (PR #10, merge commit `27459eb`
 into `feat/hyperparameter-tuning`; steps A0–A4 and the close-out `01837d4`).

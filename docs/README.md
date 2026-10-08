@@ -17,7 +17,9 @@ implementation details conflict, the model specification controls behavior.
     (Models A and B done; see the [plan](MODEL_REIMPLEMENTATION_PLAN.md));
   - the multi-cohort models: Model A's cohorts combined in one object (done in
     PR #10, merged), then Model B rebuilt as `IndependentTotalProbabilityModel`
-    (done in PR #11; see the [plan](MULTI_COHORT_MODELS_PLAN.md));
+    (PR #11; see the [plan](MULTI_COHORT_MODELS_PLAN.md)) and rebuilt again on
+    library estimators as `TotalTimesProbabilityModel`, without torch (PR #13;
+    see the [plan](TOTAL_TIMES_PROBABILITY_MODEL_PLAN.md));
   - the `hyperparameter_tuning` package (the evaluator is done; see its
     [plan](HYPERPARAMETER_TUNING_PLAN.md));
   - the `splitting` package (built and tested, not yet wired).
@@ -39,8 +41,10 @@ implementation details conflict, the model specification controls behavior.
 
 | Document | Authority |
 |---|---|
-| [Direct cohort model](DIRECT_COHORT_MODEL.md) | Model A. §0: the rebuilt `modeling.CountModel` (any regressor; the exposure as a weighted rate, with the derivation; API); §0.6: `IndependentCohortModels`, every cohort from the raw table. §1–§10: the current per-cohort LightGBM families, tuning, marginal scoring, bootstrap uncertainty, persistence |
-| [Independent total and probability model](INDEPENDENT_TOTAL_PROBABILITY_MODEL.md) | Model B. §0: the rebuilt `modeling.IndependentTotalProbabilityModel` (a Poisson or NB2 total with the exposure offset, a Dirichlet regression of the cohort shares, post-hoc temperature calibration; equations, API, data flow, rules). §1–§12: the current NB2/Poisson total, grouped multinomial composition, gated calibration, joint scoring, bootstrap uncertainty |
+| [Independent cohort models](INDEPENDENT_COHORT_MODELS.md) | Model 1, rebuilt in `modeling`: `CountModel` (any regressor; the exposure as a weighted rate, with the derivation, or passed raw to an estimator that takes it; `NegativeBinomialRegressor`, statsmodels' NB2) and `IndependentCohortModels`, each component with its formula, derivation and motivation; API, data flow, errors |
+| [Total times probability model](TOTAL_TIMES_PROBABILITY_MODEL.md) | Model 2, rebuilt in `modeling`: a `CountModel` total times `CohortProbabilityModel` (any scikit-learn classifier on the children as categorical rows; bagging under replication; calibration inside the model) in `TotalTimesProbabilityModel`, each component with its formula, derivation and motivation; API, data flow, errors, the smoke run |
+| [Direct cohort model](DIRECT_COHORT_MODEL.md) | Model A, the original `models/direct_cohort.py` (§1–§10): per-cohort LightGBM families, tuning, marginal scoring, bootstrap uncertainty, persistence; §0 points at the rebuilt model |
+| [Independent total and probability model](INDEPENDENT_TOTAL_PROBABILITY_MODEL.md) | Model B, the original `models/independent_total_probability.py` (§1–§12): NB2/Poisson total, grouped multinomial composition, gated calibration, joint scoring, bootstrap uncertainty; §0 points at the rebuilt model |
 | [Bayesian conditional model overview](BAYESIAN_CONDITIONAL_MODEL_OVERVIEW.md) | Model C in brief: statistical model, fitting and diagnostics, prediction, selection, persistence, configuration |
 | [Bayesian NB2 + Dirichlet-Multinomial guide](BAYESIAN_CONDITIONAL_MODEL.md) | Model C: selection and comparison, persistence, configuration, metadata, and a technical explanation of the model's statistics, Pyro syntax, tensor shapes, estimator/component/inference ownership, prediction, diagnostics, and runtime workarounds |
 | [Feature transformations](FEATURE_TRANSFORMATIONS.md) | Which transformation each feature gets in each model and why; the per-model declarations built with the `feature_engineering` package |
@@ -59,6 +63,7 @@ implementation details conflict, the model specification controls behavior.
 |---|---|
 | [Model re-implementation plan](MODEL_REIMPLEMENTATION_PLAN.md) | Decisions and step-by-step record for the scikit-learn-style `modeling` package |
 | [Multi-cohort models plan](MULTI_COHORT_MODELS_PLAN.md) | Decisions, steps and evidence for `IndependentCohortModels` (Model A's cohorts in one object; PR #10) and the rebuilt Model B in `modeling` (PR #11), with the smoke run comparing them |
+| [Total times probability model plan](TOTAL_TIMES_PROBABILITY_MODEL_PLAN.md) | Model B rebuilt again on library estimators (PR #13): `CountModel` with NB2 as `NegativeBinomialRegressor`, `CohortProbabilityModel` on any classifier with calibration inside, `TotalTimesProbabilityModel`; decisions P1–P15, measured evidence, the sub-task records and the smoke run |
 | [Hyperparameter tuning plan](HYPERPARAMETER_TUNING_PLAN.md) | Decisions, design and remaining work for the `hyperparameter_tuning` package |
 | [Direct cohort generalization plan](DIRECT_COHORT_GENERALIZATION_PLAN.md) | Any regressor in `DirectCohortModel` (the exposure as a weighted rate, with the derivation), the `feature_transformer` inside each model in place of `ModelPipeline`, and the tuning evaluator on the raw table |
 
