@@ -5,10 +5,27 @@ sub-task. Self-contained: it assumes no memory of the planning conversation.
 This file is the source of truth: update its status line and the sub-task
 checkboxes in §8 as work finishes.
 
-**Status (2026-10-10):** approved by the user. Sub-task 0 is done in the
-working tree (this doc, the `shap` dependency, the probes in §6); the user commits and runs `uv lock`. **Next:** sub-task 1
+**Status (2026-10-10):** approved by the user. Sub-task 0 is committed and
+pushed as `0785aca`: this doc, `shap>=0.53,<1` and `uv.lock`. The branch is
+`feat/model-inspection`, and draft
+[PR #14](https://github.com/galkampel/age-group-prediction/pull/14) targets
+`feat/hyperparameter-tuning`. No code exists yet. **Next:** sub-task 1
 (`BootstrapEvaluator`). After this plan closes, tuning resumes at
 [HYPERPARAMETER_TUNING_PLAN.md](HYPERPARAMETER_TUNING_PLAN.md) 3.1.
+
+**To resume (new session):**
+1. Run `uv sync`. shap is in `uv.lock` but was not yet installed in `.venv`
+   (`import shap` raised `ModuleNotFoundError` at the handoff).
+2. Run the baseline, `uv run pytest -m "not slow"`. Expect 1200 passed,
+   1 skipped, 1 xfailed; if it differs, stop and report (§3 rule 2).
+3. Read §3 (how to work), §5 (decisions; do not re-ask them), §6 (evidence),
+   §7 (code shape) and §8 sub-task 1.
+4. Read the patterns to match: `hyperparameter_tuning/evaluator.py` (a
+   pydantic dataclass with `InstanceOf[Metric]`, settings vs method data),
+   `modeling/base.py`, `scoring.py`, `utils.py` (`take_rows`, aliases), and a
+   test such as `tests/unit/test_hyperparameter_tuning_evaluator.py`.
+5. Start sub-task 1 in plan mode: re-verify the facts, ask the open choices,
+   and summarize the step in chat before asking for approval.
 
 ## Contents
 
@@ -42,8 +59,10 @@ Out of scope:
 ## 2. Branch and PR
 
 The branch `feat/model-inspection` is cut from `feat/hyperparameter-tuning` at
-`3c4c028`. Its draft PR targets `feat/hyperparameter-tuning`. The user commits
-and pushes; commit messages carry no `Co-Authored-By` line.
+`3c4c028`. Its draft PR is
+[#14](https://github.com/galkampel/age-group-prediction/pull/14), which targets
+`feat/hyperparameter-tuning`. The user commits and pushes; commit messages carry
+no `Co-Authored-By` line.
 
 ## 3. How to work
 
@@ -80,9 +99,8 @@ The user's standing rules, as
      non-obvious constraint, in a few lines.
    - A comment states only a "why" the code cannot show.
    - Derivations, measured figures and library quirks go in the docs (§9).
-8. **Probes** are read-only: `PYTHONPATH=src .venv/bin/python -c "..."`.
-   Until the user runs `uv lock`, shap probes run in an overlay with
-   `uv run --frozen --with shap`.
+8. **Probes** are read-only: `PYTHONPATH=src .venv/bin/python -c "..."`
+   (`uv run` may re-sync the venv). Quote globs in zsh.
 9. **Tests:** each test's name and comment state the mistake it catches. No
    test may only check a library.
 
@@ -219,7 +237,9 @@ Each sub-task ends at a stop (§3). **Verify** lists what the user can check.
   required with shap's `max_evals` default (I10).
 - The mypy entries moved to sub-task 1: mypy fails on the missing package
   path.
-- The user commits, runs `uv lock`, pushes and opens the draft PR.
+- Committed and pushed as `0785aca` (with `uv.lock`). Draft PR #14 was
+  opened against `main` and retargeted to `feat/hyperparameter-tuning` at the
+  handoff.
 
 ### [ ] 1. `BootstrapEvaluator`
 
