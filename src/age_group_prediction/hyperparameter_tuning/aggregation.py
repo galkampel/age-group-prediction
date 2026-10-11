@@ -9,8 +9,8 @@ evaluator, and returns a number.
   per-row score, the measure the test set reports.
 - :class:`Mean`: the plain mean, as ``cross_val_score(...).mean()``.
 - :class:`UpperBound`: the weighted mean plus ``z`` standard errors, a loss's
-  pessimistic bound, to prefer stable settings over the best average. Its ranking is noisier: the SE is
-  estimated from only K scores.
+  pessimistic bound, to prefer stable settings over the best average. Its
+  ranking is noisier: the SE is estimated from only K scores.
 
 Subclass :class:`Aggregation` for another rule, e.g. a median.
 """
@@ -41,11 +41,14 @@ def corrected_std_error(scores: Sequence[float]) -> float:
     """The Nadeau–Bengio corrected standard error of the mean fold score.
 
     ``s * sqrt(1/K + 1/(K-1))``, ``s`` the scores' std (ddof=1): the K-fold
-    form (Bouckaert & Frank, 2004). The naive ``s/sqrt(K)`` is too small
-    because the folds share most of their training rows. Exact when every row
-    is validated once (``random``, ``grouped``); slightly conservative under
-    ``stratified_by_group``, which never validates a row alone in its stratum.
-    Needs at least 2 folds.
+    form (Bouckaert & Frank, 2004) of ``s * sqrt(1/K + n_val/n_train)``. The
+    naive ``s/sqrt(K)`` ignores that the folds share most of their training
+    rows, so it understates the variation between repeated runs of the whole
+    CV on new data. The ``1/(K-1)`` holds when every row is validated once
+    (``random``, ``grouped``); ``stratified_by_group`` never validates a row
+    alone in its stratum, so there the ratio is a little smaller. An
+    approximation either way: it overstates for a model whose predictions do
+    not depend on the training rows. Needs at least 2 folds.
     """
     k = len(scores)
     if k < 2:
@@ -108,9 +111,11 @@ class Mean(Aggregation):
 class UpperBound(Aggregation):
     """The weighted mean plus ``z`` corrected standard errors: a loss's pessimistic bound.
 
-    ``z=1`` is the one-SE rule; ``z=1.645`` roughly a one-sided 95% bound. The
-    SE is the unweighted mean's (:func:`corrected_std_error`), an
-    approximation when the fold sizes differ.
+    A penalty on each candidate's own uncertainty, not the one-SE rule (the
+    simplest model within one SE of the best): a noisy candidate loses even
+    when its mean lies inside the best one's interval. ``z=1.645`` is roughly
+    a one-sided 95% bound. The SE is the unweighted mean's
+    (:func:`corrected_std_error`), an approximation when the fold sizes differ.
     """
 
     z: Annotated[float, Field(gt=0)] = 1.0

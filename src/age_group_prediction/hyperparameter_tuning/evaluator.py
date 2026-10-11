@@ -16,7 +16,7 @@ from typing import Annotated, Any
 import numpy as np
 import optuna
 from optuna.trial import BaseTrial
-from pydantic import AfterValidator, ConfigDict, Field, InstanceOf
+from pydantic import AfterValidator, ConfigDict, InstanceOf
 from pydantic.dataclasses import dataclass as pydantic_dataclass
 from sklearn.base import clone
 from sklearn.model_selection import BaseCrossValidator
@@ -57,6 +57,8 @@ class CVHyperparameterEvaluator:
     position, so take its training rows by the positions
     ``Splitter.train_test_indices`` returned, the ones that gave ``X``.
     A greater-is-better metric is negated, so the study always minimizes.
+    An empty ``parameters`` scores the model as given, so pair it with
+    ``n_trials=1``: more trials would repeat the same fit.
     The model transforms its own features (its ``feature_transformer``),
     fitted on each fold's training rows. ``aggregation`` combines the fold
     scores into the trial value.
@@ -66,10 +68,9 @@ class CVHyperparameterEvaluator:
 
     model: BaseAgeGroupModel
     # A list or tuple, stored as a tuple; a set is rejected, since its order
-    # (and so a seeded study's draws) varies between runs.
-    parameters: Annotated[
-        Sequence[Parameter], Field(min_length=1), AfterValidator(_unique_names)
-    ]
+    # (and so a seeded study's draws) varies between runs. Empty is allowed:
+    # a model without hyperparameters is scored as it is, in one trial.
+    parameters: Annotated[Sequence[Parameter], AfterValidator(_unique_names)]
     _: KW_ONLY
     cv: BaseCrossValidator
     # InstanceOf: lax pydantic would otherwise build a Metric from a dict.
@@ -147,8 +148,8 @@ class CVHyperparameterEvaluator:
         """An unfitted copy of the template, with ``params`` set.
 
         Called once per trial and for the final refit. A copy, so the
-        template stays unfitted and parallel trials share nothing; one copy
-        serves every fold, because ``fit`` replaces all fitted state.
+        template stays unfitted; one copy serves every fold, because ``fit``
+        replaces all fitted state.
         """
         model: BaseAgeGroupModel = clone(self.model).set_params(**params)
         return model

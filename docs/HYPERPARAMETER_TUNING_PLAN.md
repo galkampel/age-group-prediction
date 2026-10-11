@@ -6,9 +6,9 @@ are done; 3.1 (the study's constructor and defaults, `study.py`) is committed
 (`1f4ed67`); 3.2 (`optimize`, the best trial) is committed (`81f8896`); 3.3
 (`TrialRecord`, the full `TuningResult`; the study minimizes, D12 reversed) is
 committed (`b0d436c`); 3.4 (the slow integration test) and 3.5 (pruner
-guidance) are done and await the user's commit. The sub-tasks are driven from
+guidance) are committed (`80fd068`); A4b (the external review: the empty search space, scalar choices, the study's unused settings dropped, one sign on the result) is done and awaits the user's commit. The sub-tasks are driven from
 [EXPERIMENT_NOTEBOOK_PLAN.md](EXPERIMENT_NOTEBOOK_PLAN.md) §6 (A1–A6).
-**Next:** **Phase 4** (4.1 the user doc `docs/HYPERPARAMETER_TUNING.md`, 4.2 links, 4.3 final check). The §6 task "Evaluator on the raw table" was done by [DIRECT_COHORT_GENERALIZATION_PLAN.md](DIRECT_COHORT_GENERALIZATION_PLAN.md) Step 5 (PR #12).
+**Next:** **Phase 4** (4.1 the user doc `docs/HYPERPARAMETER_TUNING.md`, 4.2 links, 4.3 final check), sub-task A5 of [EXPERIMENT_NOTEBOOK_PLAN.md](EXPERIMENT_NOTEBOOK_PLAN.md). The §6 task "Evaluator on the raw table" was done by [DIRECT_COHORT_GENERALIZATION_PLAN.md](DIRECT_COHORT_GENERALIZATION_PLAN.md) Step 5 (PR #12).
 The history of each step is in the git log and the commit messages.
 **To resume:** read this doc (§2 decisions, §4 design, §6 remaining work, §7
 working notes), then the package code and its tests; start the next sub-task
@@ -44,12 +44,15 @@ experiment runner.
 | D9 | No conditional or derived parameters in v1 | the LightGBM example (§5) doesn't need them |
 | D10 | Settings in the constructor; data (`X, y, groups, exposure`) as arguments of the named method `evaluate` | the sklearn convention; one evaluator scores many targets; Optuna's one-argument objective is a lambda |
 | D11 | The evaluator tunes a `BaseAgeGroupModel`: per trial, `build_model(params)` makes a copy (`clone`, `set_params`); each fold refits it on the raw rows, predicts, and scores with `model.evaluate(y, y_pred, metric)` | the repo's models get `clone`/`set_params` from `BaseEstimator`; a misspelled parameter raises at `set_params` |
-| D12 | One direction: the score is the metric's value, or its negation if `greater_is_better`; the study always **minimizes** | no sign to get wrong; every metric in the repo is a loss (`POISSON_DEVIANCE`, `RMSE`, `MAE`, `COHORT_LOG_LOSS`), so for all of them the score *is* the metric, in Optuna's plots too; Optuna's `create_study()` minimizes by default, hyperopt only minimizes. `UpperBound`'s mean + z·SE and the tie rule need no sign. Each `TrialRecord` and the `TuningResult` still carry both the score and the value (the metric in its own sign, from the `greater_is_better` the evaluator records on that trial), which differ only for a greater-is-better metric. **Reversed 2026-10-11** (user's choice, folded into 3.3): it was "always maximize" (scikit-learn's `neg_*` convention), which negated every repo metric |
+| D12 | One direction: the evaluator's score is the metric's value, or its negation if `greater_is_better`; the study always **minimizes**; the result reports the metric in its own sign only (`value`, `fold_values`, `best_value`, from the `greater_is_better` the evaluator records on each trial) | no sign to get wrong; every metric in the repo is a loss (`POISSON_DEVIANCE`, `RMSE`, `MAE`, `COHORT_LOG_LOSS`), so for all of them the score *is* the metric, in Optuna's plots too; Optuna's `create_study()` minimizes by default, hyperopt only minimizes. `UpperBound`'s mean + z·SE and the tie rule need no sign. The search-side numbers stay in `optuna_study_`. **Reversed 2026-10-11** (user's choice, folded into 3.3): it was "always maximize" (scikit-learn's `neg_*` convention), which negated every repo metric; the duplicate `score`/`fold_scores`/`best_score` fields and the per-record `metric_name` went in A4b (2026-10-11) |
 | D13 | A required `feature_transformer: FeatureTransformer`, fitted per fold on the training rows and targets | a transformer fitted on all rows would leak validation statistics; a `Pipeline` was rejected (its `fit` and `predict` name the exposure differently, and it has no `evaluate`). **Superseded** by [DIRECT_COHORT_GENERALIZATION_PLAN.md](DIRECT_COHORT_GENERALIZATION_PLAN.md) F1/F3: the model owns its `feature_transformer` and fits it inside its own `fit`, on each fold's training rows; the evaluator has no transformer |
 | D14 | `exposure=None` is part of `BaseAgeGroupModel.fit`/`predict`; the evaluator slices it per fold and always passes it | typed calls (mypy); the model decides whether it needs one |
 | D15 | `evaluate(trial, X, y, groups=None, *, exposure=None)`; `X` is the raw table | the exposure is data (D10) |
 | D16 | `Metric` and the ready-made metrics live in the top-level `scoring.py` | models and tuning both use them |
 | D17 | Only `modeling.BaseAgeGroupModel`s are tunable; a contract test runs sklearn's parameter checks over every one | the old models can't be cloned; a rebuilt model gets `clone`/`set_params` if it stores its settings verbatim and validates in `fit` |
+| D18 | Categorical choices are Optuna's scalar choice types only: `None`, `bool`, `int`, `float`, `str` (A4b) | Optuna only warns about others and hands a choice back by reference, so a list choice edited through a result changed the kept study and the parameter's own `choices` (measured); scalars make every `params` dict copy-safe with one `dict()` and JSON-native. No planned client uses non-scalar choices (D4's `calibration_method` is `None`/strings) |
+| D19 | The study runs trials one after the other, a fixed `n_trials`; no `timeout_seconds`, `n_jobs`, `initial_params` or `is_reproducible` (A4b) | no planned client uses them (E12 of `EXPERIMENT_NOTEBOOK_PLAN.md`); the rule that dropped `storage`/`study_name` in 3.1: add a field with its first use. Sequential trials make a seeded sampler reproduce the search, and the tie rule needs no parallel case |
+| D20 | An empty search space is allowed: the evaluator scores the model as given (A4b) | D4 item 3 of `EXPERIMENT_NOTEBOOK_PLAN.md` tunes NB2, which has no hyperparameters, as a one-trial study logged like the others; with more trials every trial repeats the same fit (measured: three equal values), a waste, not a wrong answer, so the user pairs it with `n_trials=1` |
 
 D2 (sklearn estimators) and D6 (sklearn scorers) were superseded by D11–D13.
 
@@ -93,7 +96,7 @@ pydantic's default ignores, leaving the intended setting at its default.
 ```python
 FloatParameter("learning_rate", 0.01, 0.2, log=True)   # -> trial.suggest_float
 IntParameter("max_depth", 3, 8)                        # -> trial.suggest_int
-CategoricalParameter("layers", [[32], [64, 32]])       # -> trial.suggest_categorical
+CategoricalParameter("calibration_method", [None, "temperature", "sigmoid"])  # -> trial.suggest_categorical
 ```
 - Arguments mirror Optuna: name, low and high are positional; `log` and
   `step` are keyword-only.
@@ -105,8 +108,12 @@ CategoricalParameter("layers", [[32], [64, 32]])       # -> trial.suggest_catego
 - Three rules Optuna lets through, added here: a step that doesn't divide the
   range (Optuna quietly lowers `high`), duplicate choices (double weight),
   and duplicate parameter names (in the evaluator).
-- Choices may be any objects and are passed unchanged. A list is stored as a
-  tuple; a set is rejected, since its order varies between runs.
+- Choices are Optuna's scalar types, `None`, `bool`, `int`, `float` and `str`
+  (D18), checked with `isinstance` against Optuna's own alias and left as
+  given (a `np.float64` is a `float`; a `np.int64` is rejected, like a numpy
+  bound: a strict pydantic union would have turned it into `7.0` silently).
+  A list is stored as a tuple; a set is rejected, since its order varies
+  between runs.
 
 ### 4.2 Evaluator (`evaluator.py`)
 
@@ -114,8 +121,7 @@ CategoricalParameter("layers", [[32], [64, 32]])       # -> trial.suggest_catego
 @pydantic_dataclass(frozen=True, config=ConfigDict(arbitrary_types_allowed=True))
 class CVHyperparameterEvaluator:
     model: BaseAgeGroupModel
-    parameters: Annotated[Sequence[Parameter], Field(min_length=1),
-                          AfterValidator(_unique_names)]   # stored as a tuple
+    parameters: Annotated[Sequence[Parameter], AfterValidator(_unique_names)]   # stored as a tuple; may be empty (D20)
     _: KW_ONLY
     cv: BaseCrossValidator                     # from Splitter.cv(...)
     metric: InstanceOf[Metric]
@@ -137,10 +143,11 @@ and return `aggregation.aggregate(scores, fold_sizes)`.
 
 - **Settings are validated when the evaluator is built** (pydantic). Each
   check prevents a silent or late failure (measured): a string metric failed
-  after 1 fold was fitted, a string aggregation after every fold; an empty
-  search space gave identical trials; duplicate
+  after 1 fold was fitted, a string aggregation after every fold; duplicate
   names made Optuna reuse the first value; a set of parameters would make a
-  seeded study's order vary between runs. `model` (D17) and `cv` (always a
+  seeded study's order vary between runs. An empty search space is allowed
+  (D20): the model is scored as given, one trial; more trials repeat the same
+  fit. `model` (D17) and `cv` (always a
   `Splitter.cv` validator) are type-checked too. `InstanceOf[Metric]`: lax
   pydantic would otherwise build a `Metric` from a dict.
 - **Data checks in `evaluate`:** an exposure that isn't one value per row of
@@ -153,7 +160,7 @@ and return `aggregation.aggregate(scores, fold_sizes)`.
   3.3 review; a check here was added, then removed by the user's choice).
 - **A copy once per trial, refits per fold:** `fit` replaces all fitted state
   (a contract test checks it), so one copy serves every fold; the copy keeps
-  the template unfitted and parallel trials (`n_jobs > 1`) independent.
+  the template unfitted.
 - **Pruning** sees each fold's own score (`step` = fold number), the contract
   of Optuna's `WilcoxonPruner`, which pairs fold k across trials. Measured,
   on 10 folds of unequal difficulty with a bad trial that ties on fold 0:
@@ -194,7 +201,7 @@ and return `aggregation.aggregate(scores, fold_sizes)`.
 |---|---|---|
 | `WeightedMean()` (default) | `Σ n_k·score_k / Σ n_k` | almost always; for a per-row mean metric (MAE, Poisson deviance) it is the pooled score the test set reports |
 | `Mean()` | `mean(score_k)` | to match `cross_val_score(...).mean()` |
-| `UpperBound(z=1.0)` | `weighted mean + z·SE` | a loss's pessimistic bound, to prefer stable settings; `z=1` is the one-SE rule, `z=1.645` roughly a one-sided 95% bound. Its ranking is noisier: the SE comes from K scores |
+| `UpperBound(z=1.0)` | `weighted mean + z·SE` | a loss's pessimistic bound, to prefer stable settings: a penalty on each candidate's own uncertainty, **not** the one-SE rule (the simplest model within one SE of the best; measured: a simple model at 1.03 inside the best one's 1.00 ± 0.05 still loses, 1.23 vs 1.05). `z=1.645` is roughly a one-sided 95% bound. Its ranking is noisier: the SE comes from K scores |
 
 - `aggregate(scores, fold_sizes)` rejects no folds and unequal lengths with a
   clear `ValueError` (numpy's own errors are unclear), and returns a float.
@@ -206,17 +213,24 @@ and return `aggregation.aggregate(scores, fold_sizes)`.
   fold's variance (leans toward easy folds) and by neighborhoods (a different
   target from the test-set metric).
 - **SE** (`corrected_std_error(scores)`): Nadeau–Bengio in its K-fold form,
-  `s·sqrt(1/K + 1/(K−1))`. Exact when every row is validated once (`random`,
-  `grouped`); under `stratified_by_group`, rows alone in their stratum are
-  never validated, so it is slightly conservative (measured: 7% at 20%
-  singletons, small next to the SE's own ~35% sampling error at K=5). Under
+  `s·sqrt(1/K + n_val/n_train)` with `n_val/n_train = 1/(K−1)`. The naive
+  `s/sqrt(K)` ignores that the folds share most of their training rows, so
+  it understates the variation between repeated runs of the whole CV on new
+  data; the correction is an approximation of that variance, not an exact
+  formula. The `1/(K−1)` identity holds when every row is validated once
+  (`random`, `grouped`); under `stratified_by_group`, rows alone in their
+  stratum are never validated, so the true ratio is a little smaller
+  (measured: 7% at 20% singletons, small next to the SE's own ~35% sampling
+  error at K=5). For a predictor that does not depend on the training rows
+  there is nothing to correct and it overstates (measured, a fixed
+  predictor on 5 folds: true SE 0.061, corrected 0.090, naive 0.060). Under
   `UpperBound` it is the unweighted mean's SE, an approximation on unequal
   folds. It needs at least 2 folds (`Splitter.cv` guarantees them, D3). The study stores
   it per trial, as `TrialRecord.std_error` (3.3).
 
 ### 4.4 Study (`study.py`, Phase 3)
 
-Settled 2026-10-11 (sub-tasks 3.1, 3.2), measured on optuna 4.9.0 / pydantic 2.13.4.
+Settled 2026-10-11 (sub-tasks 3.1–3.3, A4b), measured on optuna 4.9.0 / pydantic 2.13.4.
 
 ```python
 # A strict pydantic dataclass (the package's _STRICT config, plus
@@ -225,18 +239,12 @@ Settled 2026-10-11 (sub-tasks 3.1, 3.2), measured on optuna 4.9.0 / pydantic 2.1
 @pydantic_dataclass(kw_only=True, config=ConfigDict(**_STRICT, arbitrary_types_allowed=True))
 class HyperparameterStudy:
     seed: int                                          # seeds the default sampler only
-    n_trials: int | None = 50
-    timeout_seconds: float | None = None
-    n_jobs: int = 1
+    n_trials: int = 50
     sampler: BaseSampler | None = None                 # None -> TPESampler(seed=seed, multivariate=True)
     pruner: BasePruner | None = None                   # None -> NopPruner()
-    initial_params: Sequence[Mapping[str, Any]] = ()
 
     def __post_init__(self) -> None:
-        # ValueError: "n_trials and timeout_seconds are both None: the study would never stop"
         # ValueError: "n_trials must be at least 1, got {n_trials}"
-        # ValueError: "timeout_seconds must be positive, got {timeout_seconds}"
-        # ValueError: "initial_params holds {k} trials but n_trials is {n}: the rest would never run"
 
     def _create_optuna_study(self) -> optuna.Study:
         # optuna.create_study(direction="minimize", sampler=..., pruner=...), the
@@ -244,39 +252,27 @@ class HyperparameterStudy:
 
     def optimize(self, objective: Callable[[optuna.Trial], float]) -> TuningResult:
         study = self._create_optuna_study()
-        for params in self.initial_params:
-            study.enqueue_trial(dict(params))
         self.optuna_study_ = study     # before running: a failed trial stays inspectable
-        study.optimize(objective, n_trials=self.n_trials, timeout=self.timeout_seconds,
-                       n_jobs=self.n_jobs, callbacks=[self._check_initial_params])
+        study.optimize(objective, n_trials=self.n_trials)
         complete = study.get_trials(deepcopy=False, states=(TrialState.COMPLETE,))
         if len(complete) == 0:
-            raise RuntimeError("no trial completed: every trial was pruned or the timeout came first")
+            raise RuntimeError("no trial completed: every trial was pruned")
         best = min(complete, key=lambda trial: trial.values[0])  # number order: a tie keeps the lowest
         ran = study.get_trials(deepcopy=False, states=(TrialState.COMPLETE, TrialState.PRUNED, TrialState.FAIL))
         return TuningResult(
             best_params=dict(best.params),                  # a copy: see below
-            best_score=best.values[0], best_value=_sign(best) * best.values[0],
+            best_value=_sign(best) * best.values[0],
             best_trial_number=best.number,
             metric_name=best.user_attrs.get("metric_name"),
-            trials=tuple(_trial_record(trial) for trial in ran),
-            is_reproducible=self.n_jobs == 1 and self.timeout_seconds is None)
-
-    def _check_initial_params(self, study: optuna.Study, trial: FrozenTrial) -> None:
-        # An Optuna callback, run after each trial. COMPLETE only: a pruned
-        # objective may stop before suggesting every name.
-        # ValueError: "initial_params[{i}]: no trial suggested {names}; check the names"
+            trials=tuple(_trial_record(trial) for trial in ran))
 
 @dataclass(frozen=True)
-class TrialRecord:                          # 3.3; built by _trial_record(trial)
+class TrialRecord:                          # built by _trial_record(trial)
     number: int
     state: TrialState                       # COMPLETE, PRUNED or FAIL
     params: dict[str, Any]                  # a copy
-    metric_name: str | None                 # this trial's attr; None for a plain objective
-    score: float | None                     # the search value (lower is better)
-    value: float | None                     # the metric in its own sign: _sign(trial) * score
-    fold_scores: tuple[float, ...] | None   # the evaluator's attrs
-    fold_values: tuple[float, ...] | None   # in the metric's own sign
+    value: float | None                     # the metric in its own sign: _sign(trial) * the Optuna value
+    fold_values: tuple[float, ...] | None   # the evaluator's fold_scores attr, in the metric's own sign
     fold_sizes: tuple[int, ...] | None
     std_error: float | None                 # corrected_std_error(fold_scores); sign-free
     # all but number, state and params None unless COMPLETE
@@ -286,30 +282,23 @@ def _sign(trial: FrozenTrial) -> float:
 
 @dataclass(frozen=True)
 class TuningResult:
-    best_params: dict[str, Any]             # 3.2
-    best_score: float                       # 3.2 (named best_value there); the search value
-    best_value: float                       # 3.3, the metric in its own sign
-    best_trial_number: int                  # 3.2
-    metric_name: str | None                 # 3.3, the best trial's attr
-    trials: tuple[TrialRecord, ...]         # 3.3
-    is_reproducible: bool                   # 3.3
+    best_params: dict[str, Any]
+    best_value: float                       # the metric in its own sign
+    best_trial_number: int
+    metric_name: str | None                 # the best trial's attr; None for a plain objective
+    trials: tuple[TrialRecord, ...]
 
     def to_dict(self) -> dict[str, Any]:
-        # JSON-safe, for MLflow: the fields as they are, the state by name,
-        # tuples as lists. No sign logic: the records already carry both.
+        # JSON-safe, for MLflow: the fields as they are, the state by name, tuples as lists
 ```
 
-**The constructor (3.1), each item with its evidence:**
-- The two checks catch what Optuna swallows: with `n_trials` and `timeout`
-  both `None` the study never stops; `n_trials` ≤ 0 and `timeout` ≤ 0 run 0
-  trials silently. Nothing else is checked. `n_jobs` ≤ 0 (other than −1): Optuna
-  raises `ValueError` at the start of `optimize`, before any trial runs; a
-  negative seed: `TPESampler` raises a clear `ValueError`.
-- Strict pydantic rejects `seed=True`, `n_trials=2.0`, `timeout_seconds=inf`
-  and a string or dict sampler (`arbitrary_types_allowed` checks with
-  `isinstance`; no `InstanceOf` needed, unlike the evaluator's `Metric`, which
-  is itself a pydantic dataclass), and stores a given sampler or pruner as
-  given (`is`), not a copy. An int timeout is stored as a float.
+**The constructor, each item with its evidence:**
+- `n_trials` ≤ 0 runs 0 trials silently in Optuna, so it is rejected; nothing
+  else is checked (a negative seed: `TPESampler` raises a clear `ValueError`).
+- Strict pydantic rejects `seed=True`, `n_trials=2.0` and a string or dict
+  sampler (`arbitrary_types_allowed` checks with `isinstance`; no `InstanceOf`
+  needed, unlike the evaluator's `Metric`, which is itself a pydantic
+  dataclass), and stores a given sampler or pruner as given (`is`), not a copy.
 - `seed` is required and seeds only the default sampler; with a given sampler it
   is unused but still recorded (every study's seed is logged, E12 of
   `EXPERIMENT_NOTEBOOK_PLAN.md`).
@@ -320,82 +309,63 @@ class TuningResult:
   are identical with and without it, so it is silenced narrowly, around that
   one construction, with `warnings.filterwarnings("ignore",
   message="Argument ``multivariate``")` (the pattern of `parameters.py`).
-- Dropped from the first draft, unused by any planned client: `storage`,
-  `study_name`, `show_progress_bar` (`storage` would also need a
-  `load_if_exists` rule). Add them with their first use.
-- `initial_params` is a `Sequence` (a set would vary the order). More of them
-  than `n_trials` is rejected: the extra enqueued trials never run and stay
-  WAITING, silently. (Only checkable with `n_trials`; with a timeout alone,
-  the timeout decides.)
+- Dropped, unused by any planned client (the rule: add a field with its first
+  use): `storage`, `study_name`, `show_progress_bar` (3.1); `timeout_seconds`,
+  `n_jobs`, `initial_params` and with them `is_reproducible`, the
+  misspelt-name callback and the WAITING-trial handling (A4b, D19). Trials
+  run one after the other with a fixed count, so a seeded sampler reproduces
+  the search.
 
-**`optimize` (3.2), each item with its evidence:**
-- **The best trial is chosen here, not by `study.best_trial`.** Optuna updates
-  its best with a strict `<` as trials *complete*, so a tie goes to the first
-  to finish: with `n_jobs=2`, trial 1 beat trial 0 on a tie. `get_trials()` is
-  in number order and `min` returns the first minimum, so a tie keeps the
-  lowest number whatever the completion order.
-- **COMPLETE trials only.** A PRUNED trial keeps a `value`, its last reported
-  intermediate (100.0 in the 3.2 probe; the test reports −100.0, below every
-  complete trial), which is not a full-CV score (D8).
-  `TrialRecord` (3.3) must not report it as one.
+**`optimize`, each item with its evidence:**
+- **COMPLETE trials only, chosen by our own `min`.** A PRUNED trial keeps a
+  `value`, its last reported intermediate (100.0 in the 3.2 probe; the test
+  reports −100.0, below every complete trial), which is not a full-CV score
+  (D8). `get_trials()` is in number order and `min` returns the first minimum,
+  so a tie keeps the lowest number. (Sequentially, Optuna's `best_trial` gives
+  the same answer, measured; the own `min` keeps D8 explicit.)
 - **No completed trial → `RuntimeError`** with a clear message (every trial
-  pruned, or the timeout came before the first finished). Optuna's own
-  `best_trial` says `ValueError: No trials are completed yet.`; our `min`
-  over an empty list would say "min() arg is an empty sequence".
-- **A misspelt `initial_params` key** is dropped by Optuna silently (no
-  warning; the trial runs with the suggested parameters). The callback
-  compares `initial_params[trial.number]` with `trial.params`: enqueued trials
-  are numbered 0..k−1 when enqueued, so no Optuna internal (`fixed_params`) is
-  needed. A raising callback stops `optimize` at once, so a typo costs one
-  trial per job (measured: 1, 2, 4 trials with `n_jobs` = 1, 2, 4; no trial
-  left RUNNING), not the study. The check is per trial: a name the objective
-  suggests only on some branches would be flagged, which D9 (no conditional
-  parameters) makes moot.
+  pruned). Optuna's own `best_trial` says `ValueError: No trials are completed
+  yet.`; our `min` over an empty list would say "min() arg is an empty sequence".
 - **`best_params` is a copy** of the trial's params: `get_trials(deepcopy=False)`
   returns Optuna's stored dict, and editing the result rewrote the kept
-  study's trial (measured).
+  study's trial (measured). A one-level copy is enough because every choice
+  is a scalar (D18): Optuna hands a categorical value back by reference, and
+  a list choice edited through a result changed the study *and* the
+  parameter's own `choices` (A4b review, A2).
 - **Left to Optuna:** an objective error propagates at once (trial FAIL; no
-  `catch=`); an out-of-range enqueued value is *warned* about ("Fixed
-  parameter x … out of range for distribution").
+  `catch=`).
 - **`optuna_study_` is set before the search runs**, so a study that raised
-  (a failed trial, a misspelt key) can still be inspected.
+  (a failed trial) can still be inspected.
 
-**Records and results (3.3), each item with its evidence:**
+**Records and results, each item with its evidence:**
 - **Which trials are recorded:** COMPLETE, PRUNED and FAIL. A NaN or `None`
   from a plain objective marks the trial FAIL and the study **continues**,
   with only a log line (no Python warning), so leaving FAIL out would hide it
-  (the evaluator raises on NaN itself). WAITING trials, leftover
-  `initial_params` after a timeout, never ran and have no params: not recorded.
-- **A record's score is `None` unless COMPLETE:** a PRUNED trial's Optuna
+  (the evaluator raises on NaN itself).
+- **A record's value is `None` unless COMPLETE:** a PRUNED trial's Optuna
   `value` is its last intermediate (measured: 100.0), not a full-CV score (D8).
   Its fold scores are in `optuna_study_` (its intermediate values).
 - **Copies:** `params` is a `dict` copy and the folds are tuples, because
   `get_trials(deepcopy=False)` returns Optuna's own objects (the 3.2 finding).
-- **Score and value, both (D12; user's choice 2026-10-11):** the score is
-  what the search compared (lower is better); the value is the metric as
-  measured. They differ only for a greater-is-better metric (an R² of 0.7:
-  score −0.7, value 0.7); for every repo metric, a loss, they are equal.
-  Each record takes its sign from *its own* trial's
-  `greater_is_better` attr, so an objective that switches metric between
-  trials is still reported right (the first design flipped every trial by the
-  best trial's sign; the review showed a mixed objective flipped wrongly). The
-  sign comes from the evaluator, so it cannot be forgotten; a plain objective
-  without it is taken as a score (value = score). `std_error` is sign-free.
-  `best_value` is the *aggregation's* value in the metric's sign, not
-  necessarily the plain CV mean: under `UpperBound` it is the loss's mean +
-  z·SE (for R², mean − z·SE), so log it under a name that says which.
-  `UpperBound` gives a loss's mean + z·SE, its pessimistic bound, directly
-  (under the former "maximize" it took −(−mean − z·SE); the review matched it
-  by hand).
+- **One sign, the metric's own (D12; A4b):** the evaluator negates a
+  greater-is-better metric so the search minimizes; each record undoes it
+  from *its own* trial's `greater_is_better` attr (an R² of 0.7 was searched
+  as −0.7 and is reported as 0.7; a loss is reported as it is), so an
+  objective that switches metric between trials is still reported right. A
+  plain objective without the attr is reported as returned. The search-side
+  numbers stay in `optuna_study_` (trial values, the `fold_scores` attr), so
+  nothing is lost. `std_error` is sign-free. `best_value` is the
+  *aggregation's* value in the metric's sign, not necessarily the plain CV
+  mean: under `UpperBound` it is the loss's mean + z·SE (for R², mean − z·SE),
+  so log it under a name that says which (E9 logs `aggregation` beside it).
 - **JSON:** the evaluator's attrs and the params are plain Python and
   round-trip through `json` exactly (measured, also with `allow_nan=False`);
-  a NumPy int in a user's categorical choices raises `TypeError` in
-  `json.dumps`, loud. `to_dict` converts only the state (an `IntEnum`: `json`
-  would write `1`) and tuples to lists. An `inf` from a plain objective
-  reaches `best_score` (the evaluator rejects it), and `json.dumps` with
+  D18 makes every categorical value JSON-native (a `np.float64` is a `float`
+  and is written as one; a `np.int64` choice is rejected when the parameter is
+  built). `to_dict` converts only the state (an `IntEnum`: `json` would
+  write `1`) and tuples to lists. An `inf` from a plain objective reaches
+  `best_value` (the evaluator rejects it), and `json.dumps` with
   `allow_nan=False` would raise: left as is.
-- **`is_reproducible`** is `n_jobs == 1 and timeout_seconds is None`; it
-  assumes a given sampler is seeded (Optuna exposes no seed to check).
 
 **Tests** (`tests/unit/test_hyperparameter_tuning_study.py`; each name is the
 mistake it catches, each with the mutation that must fail it):
@@ -408,43 +378,41 @@ mistake it catches, each with the mutation that must fail it):
 | `test_the_default_pruner_never_prunes`: `isinstance(pruner, NopPruner)` | another pruner |
 | `test_a_given_sampler_and_pruner_are_used_as_given`: `is` | wrap or copy them |
 | `test_the_default_sampler_does_not_warn`: the helper under `@pytest.mark.filterwarnings("error")` | remove the filter |
-| `test_a_study_with_no_stopping_rule_is_rejected` | drop the check |
 | `test_fewer_than_one_trial_is_rejected` (0, −1) | `< 0` |
-| `test_a_non_positive_timeout_is_rejected` (0, −1.0) | `< 0` |
 | `test_a_misspelt_setting_is_rejected` (`n_trial=10`) | drop `extra="forbid"` |
 | `test_a_bool_seed_is_rejected` (`seed=True`, the one case lax mode accepts) | drop `_STRICT` |
-| `test_more_initial_params_than_trials_are_rejected` (3.2) | drop the check |
-| `test_the_same_seed_gives_the_same_result`: two objects, and two `optimize` calls on one (3.2) | an unseeded default sampler |
-| `test_the_best_params_are_the_best_trials`: trial 2 is the only minimum (3.4 review) | `best_params` from another trial |
+| `test_the_same_seed_gives_the_same_result`: two objects, two `optimize` calls on one, and a different seed differs (A4b) | an unseeded default sampler; `seed=0` hard-coded (review D1) |
+| `test_the_best_params_are_the_best_trials`: trial 2 is the only minimum; its `best_value` is 1.0 (A4b) | `best_params` or `best_value` from another trial (review D2) |
 | `test_a_pruned_trial_never_wins`: a pruned trial reports −100.0, below every other (3.2) | include PRUNED states |
-| `test_a_tie_goes_to_the_lowest_trial_number`: `n_jobs=2`, trial 0 finishes last, all return 1.0 (3.2) | return `study.best_trial` |
 | `test_no_completed_trial_raises` (3.2) | drop the check |
-| `test_initial_params_run_first_in_order` (3.2) | enqueue them reversed |
-| `test_a_misspelt_initial_param_stops_the_study`: stops after 1 trial (3.2) | drop the callback |
 | `test_the_optuna_study_is_kept`: `len(optuna_study_.trials) == n_trials` (3.2) | don't set it |
 | `test_editing_the_result_leaves_the_study_intact` (3.2, from the review) | `best_params=best.params` |
 | `test_a_complete_record_carries_its_folds_and_their_std_error` (3.3) | the naive `s/sqrt(K)` |
-| `test_a_pruned_record_reports_no_score`: it reported 100.0 (3.3) | `score=trial.value` |
+| `test_a_pruned_record_reports_no_value`: it reported 100.0 (3.3) | `value=trial.value` |
 | `test_a_failed_trial_is_recorded`: a NaN objective (3.3) | record COMPLETE and PRUNED only |
-| `test_trials_that_never_ran_are_not_recorded`: a timeout leaves WAITING (3.3) | record every state |
 | `test_editing_a_record_leaves_the_study_intact` (3.3) | `params=trial.params` |
 | `test_to_dict_round_trips_through_json` (3.3) | a NumPy value in the dict |
 | `test_to_dict_names_the_state` (3.3): `TrialState` is an `IntEnum`, so `json` writes `1` and the round trip still compares equal (measured) | keep the `TrialState` in the dict |
-| `test_a_loss_is_reported_as_it_is`: score = value, per record and best (3.3) | the evaluator's sign condition reversed (via `_sign` default) |
-| `test_a_greater_is_better_metric_is_reported_in_its_own_sign`: score −0.7, value 0.7 (3.3) | `value=trial.values[0]`; `best_value=best.values[0]` |
+| `test_a_loss_is_reported_as_it_is`: value = the evaluator's score, per record and best (3.3) | the sign condition reversed |
+| `test_a_greater_is_better_metric_is_reported_in_its_own_sign`: searched as −0.7 (`optuna_study_.best_value`), reported 0.7 (3.3) | `value=trial.values[0]`; `best_value=best.values[0]` |
 | `test_each_trial_is_reported_in_its_own_metric_sign` (3.3, from the review) | one sign for every trial |
-| `test_a_plain_objective_is_taken_as_a_score` (3.3) | default `greater_is_better=False` |
-| `test_is_reproducible_only_without_a_timeout_or_parallel_jobs` (3 cases, 3.3) | drop the `n_jobs` term |
+| `test_a_plain_objective_is_reported_unsigned` (3.3) | default `greater_is_better=True` |
 
 In `tests/unit/test_hyperparameter_tuning_evaluator.py`:
-`test_a_completed_trial_records_its_folds`, now for both signs of
-`greater_is_better`, expects the two new attrs (mutation: hard-code `True`;
-the review found the single-sign version let it pass).
+`test_a_completed_trial_records_its_folds`, for both signs of
+`greater_is_better`, expects the four attrs (mutation: hard-code `True`; the
+review found the single-sign version let it pass);
+`test_an_empty_search_space_scores_the_model_as_given` (A4b): `parameters=[]`
+with `FixedTrial({})` fits the template's own settings on every fold and
+records the folds (mutation: `Field(min_length=1)` back). In
+`tests/unit/test_hyperparameter_tuning_parameters.py`:
+`test_a_choice_outside_optunas_types_is_rejected` (a list, a tuple, an
+object, a `np.int64`; mutation: drop the validator) and `test_choices_are_stored_as_given`
+(a `np.float64` kept by identity).
 
-Timeouts and parallel jobs are allowed, and `is_reproducible` records which
-kind of run it was. The Optuna study is kept as `optuna_study_` for
-`optuna.visualization`. No `catch=` option in v1: through the evaluator, a NaN
-fold score stops the study (§4.2); a plain objective's NaN is a FAIL record.
+The Optuna study is kept as `optuna_study_` for `optuna.visualization`. No
+`catch=` option in v1: through the evaluator, a NaN fold score stops the study
+(§4.2); a plain objective's NaN is a FAIL record.
 
 ## 5. Worked example: `CountModel`
 
@@ -521,6 +489,7 @@ choices asked), then §7's routine, then a stop for approval.
 - [x] **3.4 Integration test** (§5 on a small simulated table, a few trials). *Done when:* the best parameters refit through `build_model` and predict.
 - [x] **3.5 Pruners in the docs:** `WilcoxonPruner` or `SuccessiveHalvingPruner` for CV, not `MedianPruner` (§4.2). Wilcoxon's docs also advise shuffling the evaluation order per trial; decide whether that applies with fixed folds. *Decided:* no, measured (§4.2, "Folds run in a fixed order").
   **Then the Phase 3 review** and your approval.
+- [x] **A4b External review** ([EXPERIMENT_NOTEBOOK_PLAN.md](EXPERIMENT_NOTEBOOK_PLAN.md) §6; the review doc `HYPERPARAMETER_TUNING_REVIEW.md`). *Done 2026-10-11:* every finding reproduced; D18–D20 and the one-sign result (D12) applied; the SE and `UpperBound` wording corrected; the two test gaps (a hard-coded sampler seed, a wrong `best_value`) closed in existing tests.
 - [ ] **4.1 `docs/HYPERPARAMETER_TUNING.md`:** the three parts, the decisions, aggregation and pruning guidance, the worked example, hazards, how a rebuilt model becomes tunable (D17), what remains.
 - [ ] **4.2 Links** from `docs/README.md`, `docs/MODULE_REFERENCE.md` and `docs/SPLITTING.md` §7; mark this plan implemented.
 - [ ] **4.3 Final check** (§7; `git status` shows only the package, `modeling/`, `scoring.py`, `utils.py`, their tests, `pyproject.toml` and the docs) and the PR checklist. **Then the Phase 4 review** and your approval; the PR moves from draft to ready.

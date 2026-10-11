@@ -147,7 +147,6 @@ def _optimize(
 @pytest.mark.parametrize(
     ("overrides", "field"),
     [
-        ({"parameters": []}, "parameters"),
         ({"parameters": set(PARAMETERS)}, "parameters"),
         ({"model": StandardScaler()}, "model"),
         ({"metric": "neg_mean_squared_error"}, "metric"),  # the old sklearn API
@@ -156,7 +155,6 @@ def _optimize(
         ({"aggregation": "mean"}, "aggregation"),  # the old string API
     ],
     ids=[
-        "no-parameters",
         "parameter-set",
         "model",
         "metric-string",
@@ -171,6 +169,20 @@ def test_invalid_settings_are_rejected(overrides: dict[str, Any], field: str) ->
     # Positional arguments are named by position: model 0, parameters 1.
     location = {"model": 0, "parameters": 1}.get(field, field)
     assert error.value.errors()[0]["loc"][0] == location
+
+
+def test_an_empty_search_space_scores_the_model_as_given() -> None:
+    # A model without hyperparameters (the NB2 run): one trial, no suggest,
+    # the template's own settings fitted on every fold and the folds recorded.
+    trial = FixedTrial({})
+
+    value = _evaluator(parameters=[], metric=_mean_of_y()).evaluate(trial, X, Y, GROUPS)
+
+    scores, sizes = _fold_scores()
+    assert [alpha for alpha, _, _ in _RecordingModel.fits] == [1.0] * 3
+    assert trial.params == {}
+    assert trial.user_attrs["fold_sizes"] == sizes
+    assert value == pytest.approx(np.average(scores, weights=sizes))
 
 
 def test_duplicate_parameter_names_are_named() -> None:

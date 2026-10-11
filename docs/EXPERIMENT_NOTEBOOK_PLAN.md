@@ -7,9 +7,11 @@ counts, test counts drift).
 
 **Status (2026-10-11):** A0 committed (`6b8f5a1`), A1 (`1f4ed67`), A2
 (`81f8896`), A3 (`b0d436c`: records, the full `TuningResult`, the study now
-minimizes); A4 done (the slow integration test, pruner guidance with the
-fold order kept fixed, the penalty ranges checked) and awaits the user's
-commit. **Next:** PR A, sub-task A5 (the user doc).
+minimizes), A4 (`80fd068`: the slow integration test, pruner guidance with
+the fold order kept fixed, the penalty ranges checked); A4b done (the
+external review processed: the empty search space, scalar choices, the
+study's unused settings dropped, one sign on the result) and awaits the
+user's commit. **Next:** PR A, sub-task A5 (the user doc).
 
 **Branch state:** `feat/hyperparameter-tuning` (draft PR #5), 49 commits ahead
 of `main` at `7d865ab`, carrying the squash-merges of PRs #10–#14.
@@ -363,9 +365,9 @@ test score is reported, never used to choose.
 **E12. Seeds.** Four named seeds, all logged: `split_seed` (both
 `train_test_indices` calls), `cv_seed` (`Splitter.cv`), `study_seed` (one per
 study: `study_seed + i` for the i-th cohort / component), `estimator_seed`
-(`random_state` of every estimator that takes one). A study with `n_jobs > 1`
-or a timeout is not reproducible (`TuningResult.is_reproducible`); the
-notebook uses neither.
+(`random_state` of every estimator that takes one). The study runs its trials
+one after the other with a fixed `n_trials`, so a seeded sampler reproduces
+it (A4b dropped `n_jobs`, timeouts and `is_reproducible`: no client used them).
 
 ---
 
@@ -455,6 +457,68 @@ user's choice 2026-10-11; design decided in A3's plan mode).
 
 **Done when:** the slow test passes; the ranges are written in this plan's D4
 and the feature doc's §8.7.
+
+### [x] A4b. External review and simplification
+
+The review of `80fd068`, its evidence, qualifications and continuation prompt
+are in [HYPERPARAMETER_TUNING_REVIEW.md](HYPERPARAMETER_TUNING_REVIEW.md).
+It is review input, not an approved replacement for the decisions in §4 or
+the tuning plan. No package changes have been chosen or applied.
+
+- Verify branch, HEAD and worktree before assuming the A4b plan is committed
+  or the tree is clean. Preserve unrelated user changes.
+- Reproduce every finding A1–E2 against current code before accepting or
+  rejecting it. Use read-only probes or isolated scratch mutations; verify
+  the scratch import path and restore scratch files by copy and `cmp`.
+  Do not mutate repository `src` during this review. Temporary scripts are
+  optional: the review document includes durable reproduction recipes.
+- Address the empty search space required by D4's one-trial NB2 run and the
+  test gaps: hard-coding the sampler seed or returning the wrong `best_score`
+  both survived 141 package tests. Reuse existing tests; do not add a test for
+  a field removed by a chosen simplification.
+- Set the report's simplifications beside these candidates, found before the
+  review (estimates, not applied); the user chooses which to apply:
+  - **S1. Drop `n_jobs`, `timeout_seconds`, `initial_params`.** No planned
+    client uses them (E12: "the notebook uses neither"); the rule that
+    dropped `storage` and `study_name` in A1 (add a field with its first
+    use). About 27 lines of `study.py` (two checks, the misspelt-name
+    callback, the WAITING-trial handling, `is_reproducible`) and ~8 tests.
+    With sequential trials, Optuna's `study.best_trial` already gives a tie
+    to the lowest number and skips pruned trials (measured), so the study's
+    own `min` selection can go too, after re-verifying those guarantees.
+    The review's C1 additionally considers sampler/pruner configuration;
+    evaluate that extension separately. Its 42-line/16-case footprint is not
+    S1's net saving. Preserve guarantees for objectives still supported.
+  - **S2. One sign: keep `value`, `fold_values`, `best_value`; drop `score`,
+    `fold_scores`, `best_score`.** Since D12's reversal the score equals the
+    value for every repo metric (all losses); a greater-is-better score is
+    `-value`. Changes the user's explicit "keep both" choice recorded with
+    A3's minimize convention, so requires approval. Keep D12's evaluator
+    negation and any retained natural-sign reporting. Removing a result field
+    does not automatically remove its evaluator user attr or `_sign`.
+  - **S3. Drop `metric_name` from each `TrialRecord`**, keeping it on
+    `TuningResult`. Minor.
+  - Compare the review's additional candidates with the existing preference
+    to retain `Mean` and useful state-name/tuple conversions. E9 mentions
+    `UpperBound`: establish planned use before removing policies or moving
+    serialization. Couple mutable-choice aliasing and JSON safety with the
+    choice of whether to retain arbitrary categorical objects. Wrapper/test
+    removals need evidence of preserved behavior, not just smaller footprints.
+  - Nit: `aggregation.py`'s module docstring has an over-long line.
+- Before A5, adjudicate the statistical/JSON documentation findings: the
+  corrected SE is not generally exact sampling uncertainty; mean plus each
+  candidate's SE is not the classical one-SE simplicity rule; accepted params
+  are not universally JSON-safe. The SE finding does not request a new formula.
+- Rank actual net changes and tests affected; footprints overlap and do not
+  justify deleting tests for retained guarantees. Ask the user to choose and
+  stop before implementation.
+- Implement the chosen changes with the §3 routine; update the tuning plan's
+  §2, §4.4 and its test table to match.
+
+**Done when:** every finding has a reproduced verdict, recorded in the
+session's stop summary; the user has chosen the changes; those changes pass
+the routine; the tuning plan's §4 and test table match the code. Stop before
+A5 rather than writing the user guide around an unsettled API.
 
 ### [ ] A5. Docs (tuning plan 4.1–4.3)
 

@@ -194,8 +194,8 @@ def test_categorical_choices_reach_optuna_in_order() -> None:
 
 @pytest.mark.parametrize(
     "choices",
-    [("gbdt", "dart", "gbdt"), (True, 1), ([1], [1])],
-    ids=["repeated", "true-equals-1", "unhashable"],
+    [("gbdt", "dart", "gbdt"), (True, 1)],
+    ids=["repeated", "true-equals-1"],
 )
 def test_duplicate_choices_are_rejected(choices: tuple[object, ...]) -> None:
     # Optuna maps 1 to True's slot, so (True, 1) is a duplicate there too.
@@ -203,18 +203,19 @@ def test_duplicate_choices_are_rejected(choices: tuple[object, ...]) -> None:
         CategoricalParameter("p", choices)
 
 
-def test_non_scalar_choices_reach_optuna() -> None:
-    # E.g. layer sizes. Optuna's own warning, that such choices suit only
-    # in-memory storage, is left to each suggest.
-    choices = ([32], [64, 32])
-    parameter = CategoricalParameter("layers", choices)
-    trial = optuna.create_study(sampler=optuna.samplers.RandomSampler(seed=0)).ask()
-
-    with pytest.warns(UserWarning, match="persistent storage"):
-        value = parameter.suggest(trial)
-
-    assert parameter.choices == ([32], [64, 32])
-    assert value in choices
+@pytest.mark.parametrize(
+    "choice",
+    [[32], (1, 2), object(), np.int64(7)],
+    ids=["list", "tuple", "object", "numpy-int"],
+)
+def test_a_choice_outside_optunas_types_is_rejected(choice: object) -> None:
+    # Optuna only warns: it would hand a list choice back by reference (a
+    # result's params would alias the study and this parameter) and json
+    # cannot write a tuple back as a tuple, nor an object or a numpy int.
+    with pytest.raises(
+        ValueError, match="choices must be None, bool, int, float or str"
+    ):
+        CategoricalParameter("p", (choice, "a"))
 
 
 def test_a_set_of_choices_is_rejected() -> None:
@@ -234,11 +235,10 @@ def test_list_of_choices_is_stored_as_a_tuple() -> None:
         parameter.choices = ("goss",)  # type: ignore[misc]
 
 
-@pytest.mark.parametrize(
-    "choice", [np.int64(7), np.float64(0.5)], ids=["numpy-int", "numpy-float"]
-)
-def test_choices_are_stored_as_given(choice: object) -> None:
-    # Not converted: strict pydantic would have turned np.int64(7) into 7.0.
+def test_choices_are_stored_as_given() -> None:
+    # A numpy float is a float, kept as is: a strict pydantic union would
+    # have rebuilt it (and turned np.int64(7) into 7.0 instead of rejecting it).
+    choice = np.float64(0.5)
     parameter = CategoricalParameter("p", (choice, "a"))
 
     assert parameter.choices[0] is choice

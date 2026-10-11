@@ -8,10 +8,9 @@ distribution class checks the values. Both raise ``ValueError``. Pass Python
 numbers as bounds: numpy integers are rejected (use ``int(x)``), not silently
 converted.
 
-Categorical choices may be any objects, e.g. layer sizes ``[[32], [64, 32]]``,
-and are passed to Optuna unchanged. Optuna warns at each ``suggest`` that
-non-scalar choices suit only in-memory storage: a persistent storage keeps
-them as JSON, so a tuple comes back as a list.
+Categorical choices are Optuna's scalar choice types, ``None``, ``bool``,
+``int``, ``float`` and ``str``, so a trial's parameters are immutable, plain
+Python values; a numpy integer is rejected, like a numpy bound.
 """
 
 from __future__ import annotations
@@ -19,19 +18,23 @@ from __future__ import annotations
 import warnings
 from abc import ABC, abstractmethod
 from dataclasses import KW_ONLY
-from typing import Annotated, Any
+from typing import Annotated, Any, get_args
 
 from optuna.distributions import (
     BaseDistribution,
+    CategoricalChoiceType,
     CategoricalDistribution,
     FloatDistribution,
     IntDistribution,
 )
 from optuna.trial import BaseTrial
-from pydantic import BeforeValidator
+from pydantic import AfterValidator, BeforeValidator
 from pydantic.dataclasses import dataclass as pydantic_dataclass
 
 from ._config import _STRICT
+
+# (NoneType, bool, int, float, str), from Optuna's own alias.
+_CHOICE_TYPES = get_args(CategoricalChoiceType)
 
 __all__ = [
     "CategoricalParameter",
@@ -116,22 +119,40 @@ class IntParameter(Parameter):
         return IntDistribution(self.low, self.high, log=self.log, step=self.step)
 
 
+def _scalar_choices(choices: tuple[Any, ...]) -> tuple[CategoricalChoiceType, ...]:
+    # Optuna's declared choice types; it only warns about others, which it
+    # would hand back by reference (a list choice edited through a result
+    # edits the study) and which json cannot write. isinstance, not a strict
+    # pydantic union: that would turn np.int64(7) into 7.0 silently.
+    unsupported = [c for c in choices if not isinstance(c, _CHOICE_TYPES)]
+    if unsupported:
+        raise ValueError(
+            f"choices must be None, bool, int, float or str, got {unsupported}"
+        )
+    return choices
+
+
 @pydantic_dataclass(frozen=True, config=_STRICT)
 class CategoricalParameter(Parameter):
-    """One of ``choices``, drawn by ``trial.suggest_categorical``."""
+    """One of ``choices``, drawn by ``trial.suggest_categorical``.
 
-    # Any objects, left as given. A list is stored as an immutable tuple; a
-    # set is rejected, since its order, and so a seeded study, varies by run.
+    Choices are ``None``, ``bool``, ``int``, ``float`` or ``str`` (Optuna's
+    own types), left as given.
+    """
+
+    # A list is stored as an immutable tuple; a set is rejected, since its
+    # order, and so a seeded study, varies by run.
     choices: Annotated[
         tuple[Any, ...],
         BeforeValidator(lambda v: tuple(v) if isinstance(v, list) else v),
+        AfterValidator(_scalar_choices),
     ]
 
     def __post_init__(self) -> None:
         super().__post_init__()
         # Optuna accepts duplicates silently, giving that choice double weight.
-        # Compared with ==, which handles unhashable choices such as lists and,
-        # like Optuna, treats True, 1 and 1.0 as one choice.
+        # Compared with ==, which, like Optuna, treats True, 1 and 1.0 as one
+        # choice.
         c = self.choices
         if any(a == b for i, a in enumerate(c) for b in c[i + 1 :]):
             raise ValueError(
@@ -143,10 +164,4 @@ class CategoricalParameter(Parameter):
         return trial.suggest_categorical(self.name, self.choices)
 
     def _distribution(self) -> CategoricalDistribution:
-        with warnings.catch_warnings():
-            # Non-scalar choices are allowed. Optuna's note that they suit only
-            # in-memory storage is left to each suggest, not made an error here.
-            warnings.filterwarnings(
-                "ignore", message="Choices for a categorical distribution"
-            )
-            return CategoricalDistribution(self.choices)
+        return CategoricalDistribution(self.choices)
