@@ -542,12 +542,13 @@ In order. Each step has its own plan and gated phases.
 
 1. ✓ **Merge PR #6 into `feat/hyperparameter-tuning`**: squash-merged as
    `aee3e6a` (2026-09-24).
-2. **Resume the tuning package** at
-   [HYPERPARAMETER_TUNING_PLAN.md §9](HYPERPARAMETER_TUNING_PLAN.md): switch
-   the evaluator to `BaseAgeGroupModel`, then tune `CountModel` per
-   cohort. Re-check the exposure offset once tuned; Step 2.4 found only weak
-   evidence, untuned, and the multi-cohort plan's A4 re-run through
-   `IndependentCohortModels` found the same.
+2. ✓ **The tuning package** (PR #5; [user guide](HYPERPARAMETER_TUNING.md),
+   [plan](HYPERPARAMETER_TUNING_PLAN.md)): the evaluator on
+   `BaseAgeGroupModel` (PR #12), the study and its records (2026-10-11),
+   `CountModel` tuned per cohort in the worked example. The exposure-offset
+   re-check once tuned (Step 2.4 found only weak evidence, untuned; the
+   multi-cohort plan's A4 re-run found the same) is the notebook plan's
+   exposure on/off runs ([E5](EXPERIMENT_NOTEBOOK_PLAN.md#4-decisions)).
 3. **Complete Model A as `IndependentCohortModels`, then rebuild Model B**
    (`IndependentTotalProbabilityModel`) in `modeling/`. Plan:
    [MULTI_COHORT_MODELS_PLAN.md](MULTI_COHORT_MODELS_PLAN.md) (there, Model 1

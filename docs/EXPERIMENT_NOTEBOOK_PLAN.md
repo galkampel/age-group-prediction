@@ -8,10 +8,11 @@ counts, test counts drift).
 **Status (2026-10-11):** A0 committed (`6b8f5a1`), A1 (`1f4ed67`), A2
 (`81f8896`), A3 (`b0d436c`: records, the full `TuningResult`, the study now
 minimizes), A4 (`80fd068`: the slow integration test, pruner guidance with
-the fold order kept fixed, the penalty ranges checked); A4b done (the
-external review processed: the empty search space, scalar choices, the
-study's unused settings dropped, one sign on the result) and awaits the
-user's commit. **Next:** PR A, sub-task A5 (the user doc).
+the fold order kept fixed, the penalty ranges checked), A4b (`b8cebd0`: the
+external review processed); A5 done (the user guide
+[HYPERPARAMETER_TUNING.md](HYPERPARAMETER_TUNING.md), every block run as
+written; the links) and awaits the user's commit. **Next:** A6, the merge of
+PR #5 into `main`; then PR B.
 
 **Branch state:** `feat/hyperparameter-tuning` (draft PR #5), 49 commits ahead
 of `main` at `7d865ab`, carrying the squash-merges of PRs #10–#14.
@@ -520,7 +521,7 @@ session's stop summary; the user has chosen the changes; those changes pass
 the routine; the tuning plan's §4 and test table match the code. Stop before
 A5 rather than writing the user guide around an unsettled API.
 
-### [ ] A5. Docs (tuning plan 4.1–4.3)
+### [x] A5. Docs (tuning plan 4.1–4.3)
 
 `docs/HYPERPARAMETER_TUNING.md` (user doc: the three classes, the worked
 example run as written, aggregation choice, pruners, reproducibility,

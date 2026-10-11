@@ -179,7 +179,9 @@ Tests: `tests/unit/test_splitters.py` (the methods and their guarantees) and
 1. **Migrate the consumers.** `experiment/partitions.py` shrinks rather than
    ports — its disjointness and exact-partition checks become structurally
    impossible once folds are index complements. Then `models/fold_scoring.py`
-   and the two models' nested tuning loops.
+   and the old models' nested tuning loops. The new tuning package already
+   consumes `cv`: every trial re-splits with the same seeded validator
+   ([Hyperparameter tuning §4](HYPERPARAMETER_TUNING.md#4-the-evaluator)).
 2. **Report metrics by group size** (1 / 2-3 / 4-7 / 8+) instead of filtering,
    so the coverage gap in §3 is visible rather than silent.
 3. **Surface `_prediction_fallback_count`** in the Bayesian model's evidence,

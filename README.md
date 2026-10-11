@@ -33,6 +33,10 @@ building-level DataFrame:
   explains how Model A and Model B tune with seeded Optuna studies nested
   inside each training fold, what is tuned, and where the evidence is logged
   (the Bayesian model uses fixed priors and NUTS profiles instead).
+- [Hyperparameter tuning package](docs/HYPERPARAMETER_TUNING.md): the
+  `hyperparameter_tuning` package that tunes the rebuilt `modeling` models
+  (parameters, a cross-validation evaluator, fold aggregation, an Optuna
+  study), with a worked example run as written.
 - Component documents describe each pipeline stage's API, guarantees,
   refusals, and configuration:
   - [Data and splitting](docs/DATA_AND_SPLITTING.md): modeling table,
