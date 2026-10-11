@@ -5,24 +5,19 @@ sub-task. Self-contained: it assumes no memory of the planning conversation.
 This file is the source of truth: update its status line and the sub-task
 checkboxes in §8 as work finishes.
 
-**Status (2026-10-11):** sub-task 1 (`BootstrapEvaluator`) is done and awaits
-the user's commit. On 2026-10-11 the user narrowed this PR to the bootstrap.
-Feature importance (permutation and SHAP) is deferred to a later PR, and its
-decisions, evidence and sub-tasks moved to
-[FEATURE_IMPORTANCE_PLAN.md](FEATURE_IMPORTANCE_PLAN.md). shap was removed
-again, unused. The branch is `feat/model-inspection`, and draft
-[PR #14](https://github.com/galkampel/age-group-prediction/pull/14) targets
-`feat/hyperparameter-tuning`. **Next:** sub-task 2 (smoke run and docs). After
-this plan closes, tuning resumes at
-[HYPERPARAMETER_TUNING_PLAN.md](HYPERPARAMETER_TUNING_PLAN.md) 3.1.
+**Status (2026-10-11):** sub-task 1 (`BootstrapEvaluator`) is merged:
+[PR #14](https://github.com/galkampel/age-group-prediction/pull/14) was
+squash-merged into `feat/hyperparameter-tuning` as `7d865ab`. Feature importance
+(permutation and SHAP) is deferred, and its decisions, evidence and sub-tasks
+live in [FEATURE_IMPORTANCE_PLAN.md](FEATURE_IMPORTANCE_PLAN.md). Sub-task 2
+(smoke run and `docs/MODEL_INSPECTION.md`) moved to
+[EXPERIMENT_NOTEBOOK_PLAN.md](EXPERIMENT_NOTEBOOK_PLAN.md) sub-task C3, together
+with the importance work; this plan is marked complete there.
 
-**To resume (new session):**
-1. Run the baseline, `uv run pytest -m "not slow"`. Expect 1216 passed,
-   1 skipped, 1 xfailed; if it differs, stop and report (§3 rule 2).
-2. Read §3 (how to work), §5 (decisions; do not re-ask them) and §8 sub-task 2.
-3. Read `inspection/bootstrap.py` and `tests/unit/test_inspection_bootstrap.py`.
-4. Start sub-task 2 in plan mode: re-verify the facts, ask the open choices,
-   and summarize the step in chat before asking for approval.
+**To resume (new session):** do not resume here. Follow
+[EXPERIMENT_NOTEBOOK_PLAN.md](EXPERIMENT_NOTEBOOK_PLAN.md); §5, §9 and §10 of
+this plan stay the reference for the bootstrap's decisions, its doc content and
+its open item.
 
 ## Contents
 
@@ -53,11 +48,10 @@ Out of scope:
 
 ## 2. Branch and PR
 
-The branch `feat/model-inspection` is cut from `feat/hyperparameter-tuning` at
-`3c4c028`. Its draft PR is
-[#14](https://github.com/galkampel/age-group-prediction/pull/14), which targets
-`feat/hyperparameter-tuning`. The user commits and pushes; commit messages carry
-no `Co-Authored-By` line.
+The branch `feat/model-inspection` was cut from `feat/hyperparameter-tuning` at
+`3c4c028`; its PR [#14](https://github.com/galkampel/age-group-prediction/pull/14)
+was squash-merged into `feat/hyperparameter-tuning` as `7d865ab`. The user
+commits and pushes; commit messages carry no `Co-Authored-By` line.
 
 ## 3. How to work
 
@@ -238,6 +232,9 @@ Each sub-task ends at a stop (§3). **Verify** lists what the user can check.
   zero-width interval silently.
 
 ### [ ] 2. Smoke run, docs and close
+
+Moved to [EXPERIMENT_NOTEBOOK_PLAN.md](EXPERIMENT_NOTEBOOK_PLAN.md) C3, which
+runs it with the importance smoke run; the list below is its bootstrap part.
 
 - Run on the simulator data:
   - fit `CountModel` and `TotalTimesProbabilityModel` on train;
