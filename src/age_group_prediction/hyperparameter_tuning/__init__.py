@@ -17,7 +17,7 @@ decisions are in ``docs/HYPERPARAMETER_TUNING_PLAN.md``.
 from __future__ import annotations
 
 from .aggregation import (
-    Aggregation,
+    Aggregator,
     Mean,
     UpperBound,
     WeightedMean,
@@ -33,7 +33,7 @@ from .parameters import (
 from .study import HyperparameterStudy, TrialRecord, TuningResult
 
 __all__ = [
-    "Aggregation",
+    "Aggregator",
     "CVHyperparameterEvaluator",
     "CategoricalParameter",
     "FloatParameter",

@@ -276,7 +276,7 @@ def test_lightgbm_parameters_run_in_a_study() -> None:
 
 def test_package_exports_the_public_names() -> None:
     assert set(tuning.__all__) == {
-        "Aggregation",
+        "Aggregator",
         "CVHyperparameterEvaluator",
         "CategoricalParameter",
         "FloatParameter",

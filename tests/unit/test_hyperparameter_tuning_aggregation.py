@@ -12,7 +12,7 @@ import pandas as pd
 import pytest
 
 from age_group_prediction.hyperparameter_tuning import (
-    Aggregation,
+    Aggregator,
     Mean,
     UpperBound,
     WeightedMean,
@@ -31,7 +31,7 @@ MEAN = (3.0 + 5.0 + 4.5) / 3
 STD_ERROR = math.sqrt(13 / 12 * (1 / 3 + 1 / 2))
 
 
-class _Median(Aggregation):
+class _Median(Aggregator):
     """A custom rule: only aggregate is defined."""
 
     def aggregate(self, scores: Sequence[float], fold_sizes: Sequence[int]) -> float:
@@ -78,7 +78,7 @@ def test_singleton_strata_make_the_std_error_conservative() -> None:
     ids=["weighted-mean", "mean", "upper-bound", "upper-bound-z2", "median"],
 )
 def test_each_aggregation_matches_the_hand_value(
-    aggregation: Aggregation, expected: float
+    aggregation: Aggregator, expected: float
 ) -> None:
     value = aggregation.aggregate(SCORES, FOLD_SIZES)
     assert value == pytest.approx(expected)
@@ -87,13 +87,13 @@ def test_each_aggregation_matches_the_hand_value(
 
 
 @pytest.mark.parametrize("aggregation", [WeightedMean(), Mean(), UpperBound()])
-def test_no_folds_are_rejected(aggregation: Aggregation) -> None:
+def test_no_folds_are_rejected(aggregation: Aggregator) -> None:
     with pytest.raises(ValueError, match="at least one fold"):
         aggregation.aggregate([], [])
 
 
 @pytest.mark.parametrize("aggregation", [WeightedMean(), Mean(), UpperBound()])
-def test_unequal_lengths_are_rejected(aggregation: Aggregation) -> None:
+def test_unequal_lengths_are_rejected(aggregation: Aggregator) -> None:
     with pytest.raises(ValueError, match="equal lengths, got 3 and 2"):
         aggregation.aggregate(SCORES, [20, 5])
 
@@ -122,6 +122,6 @@ def test_aggregations_are_frozen_and_compare_by_value() -> None:
     assert repr(WeightedMean()) == "WeightedMean()"
 
 
-def test_aggregation_is_abstract() -> None:
+def test_aggregator_is_abstract() -> None:
     with pytest.raises(TypeError, match="abstract"):
-        Aggregation()  # type: ignore[abstract]
+        Aggregator()  # type: ignore[abstract]

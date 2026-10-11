@@ -25,7 +25,7 @@ from ..modeling import BaseAgeGroupModel
 from ..scoring import Metric
 from ..utils import DesignMatrix, Exposure, Groups, Target, take_rows
 from ._config import _STRICT
-from .aggregation import Aggregation, WeightedMean
+from .aggregation import Aggregator, WeightedMean
 from .parameters import Parameter
 
 __all__ = ["CVHyperparameterEvaluator"]
@@ -75,7 +75,7 @@ class CVHyperparameterEvaluator:
     cv: BaseCrossValidator
     # InstanceOf: lax pydantic would otherwise build a Metric from a dict.
     metric: InstanceOf[Metric]
-    aggregation: Aggregation = field(default_factory=WeightedMean)
+    aggregation: Aggregator = field(default_factory=WeightedMean)
 
     def evaluate(
         self,

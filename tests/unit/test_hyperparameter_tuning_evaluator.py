@@ -29,7 +29,7 @@ from age_group_prediction.feature_engineering.transformer import (
 )
 from age_group_prediction.feature_engineering.transforms import Standardize
 from age_group_prediction.hyperparameter_tuning import (
-    Aggregation,
+    Aggregator,
     CVHyperparameterEvaluator,
     FloatParameter,
     IntParameter,
@@ -77,7 +77,7 @@ class _RecordingModel(BaseAgeGroupModel):
         return np.full(len(X), self.mean_)
 
 
-class _Median(Aggregation):
+class _Median(Aggregator):
     def aggregate(self, scores: Sequence[float], fold_sizes: Sequence[int]) -> float:
         return float(np.median(scores))
 
@@ -365,7 +365,7 @@ def _fold_scores() -> tuple[list[float], list[int]]:
     ids=["weighted-mean", "mean", "upper-bound", "median"],
 )
 def test_each_fold_reports_its_score_and_the_value_is_the_aggregation(
-    aggregation: Aggregation, rule: Any
+    aggregation: Aggregator, rule: Any
 ) -> None:
     study = _optimize(
         _evaluator(metric=_mean_of_y(), aggregation=aggregation), n_trials=1

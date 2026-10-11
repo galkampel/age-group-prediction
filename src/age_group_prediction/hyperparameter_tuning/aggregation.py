@@ -12,7 +12,7 @@ evaluator, and returns a number.
   pessimistic bound, to prefer stable settings over the best average. Its
   ranking is noisier: the SE is estimated from only K scores.
 
-Subclass :class:`Aggregation` for another rule, e.g. a median.
+Subclass :class:`Aggregator` for another rule, e.g. a median.
 """
 
 from __future__ import annotations
@@ -29,7 +29,7 @@ from pydantic.dataclasses import dataclass as pydantic_dataclass
 from ._config import _STRICT
 
 __all__ = [
-    "Aggregation",
+    "Aggregator",
     "Mean",
     "UpperBound",
     "WeightedMean",
@@ -74,7 +74,7 @@ def _check_folds(scores: Sequence[float], fold_sizes: Sequence[int]) -> None:
         raise ValueError("at least one fold is required")
 
 
-class Aggregation(ABC):
+class Aggregator(ABC):
     """A rule that combines a trial's fold scores into its value.
 
     A plain ABC: it holds no data. Subclass it; for a validated setting,
@@ -89,7 +89,7 @@ class Aggregation(ABC):
 # Field-less classes are pydantic dataclasses too, so they print as
 # "WeightedMean()" and compare by value, like UpperBound.
 @pydantic_dataclass(frozen=True, config=_STRICT)
-class WeightedMean(Aggregation):
+class WeightedMean(Aggregator):
     """The mean score weighted by fold size."""
 
     def aggregate(self, scores: Sequence[float], fold_sizes: Sequence[int]) -> float:
@@ -98,7 +98,7 @@ class WeightedMean(Aggregation):
 
 
 @pydantic_dataclass(frozen=True, config=_STRICT)
-class Mean(Aggregation):
+class Mean(Aggregator):
     """The unweighted mean of the fold scores."""
 
     def aggregate(self, scores: Sequence[float], fold_sizes: Sequence[int]) -> float:
@@ -108,7 +108,7 @@ class Mean(Aggregation):
 
 
 @pydantic_dataclass(frozen=True, config=_STRICT)
-class UpperBound(Aggregation):
+class UpperBound(Aggregator):
     """The weighted mean plus ``z`` corrected standard errors: a loss's pessimistic bound.
 
     A penalty on each candidate's own uncertainty, not the one-SE rule (the
