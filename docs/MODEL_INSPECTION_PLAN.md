@@ -1,30 +1,27 @@
-# Plan: model inspection: bootstrap CI, permutation importance, SHAP
+# Plan: model inspection: bootstrap CI
 
 **Written for:** the implementing model and the user who validates each
 sub-task. Self-contained: it assumes no memory of the planning conversation.
 This file is the source of truth: update its status line and the sub-task
 checkboxes in §8 as work finishes.
 
-**Status (2026-10-10):** approved by the user. Sub-task 0 is committed and
-pushed as `0785aca`: this doc, `shap>=0.53,<1` and `uv.lock`. The branch is
-`feat/model-inspection`, and draft
+**Status (2026-10-11):** sub-task 1 (`BootstrapEvaluator`) is done and awaits
+the user's commit. On 2026-10-11 the user narrowed this PR to the bootstrap.
+Feature importance (permutation and SHAP) is deferred to a later PR, and its
+decisions, evidence and sub-tasks moved to
+[FEATURE_IMPORTANCE_PLAN.md](FEATURE_IMPORTANCE_PLAN.md). shap was removed
+again, unused. The branch is `feat/model-inspection`, and draft
 [PR #14](https://github.com/galkampel/age-group-prediction/pull/14) targets
-`feat/hyperparameter-tuning`. No code exists yet. **Next:** sub-task 1
-(`BootstrapEvaluator`). After this plan closes, tuning resumes at
+`feat/hyperparameter-tuning`. **Next:** sub-task 2 (smoke run and docs). After
+this plan closes, tuning resumes at
 [HYPERPARAMETER_TUNING_PLAN.md](HYPERPARAMETER_TUNING_PLAN.md) 3.1.
 
 **To resume (new session):**
-1. Run `uv sync`. shap is in `uv.lock` but was not yet installed in `.venv`
-   (`import shap` raised `ModuleNotFoundError` at the handoff).
-2. Run the baseline, `uv run pytest -m "not slow"`. Expect 1200 passed,
+1. Run the baseline, `uv run pytest -m "not slow"`. Expect 1216 passed,
    1 skipped, 1 xfailed; if it differs, stop and report (§3 rule 2).
-3. Read §3 (how to work), §5 (decisions; do not re-ask them), §6 (evidence),
-   §7 (code shape) and §8 sub-task 1.
-4. Read the patterns to match: `hyperparameter_tuning/evaluator.py` (a
-   pydantic dataclass with `InstanceOf[Metric]`, settings vs method data),
-   `modeling/base.py`, `scoring.py`, `utils.py` (`take_rows`, aliases), and a
-   test such as `tests/unit/test_hyperparameter_tuning_evaluator.py`.
-5. Start sub-task 1 in plan mode: re-verify the facts, ask the open choices,
+2. Read §3 (how to work), §5 (decisions; do not re-ask them) and §8 sub-task 2.
+3. Read `inspection/bootstrap.py` and `tests/unit/test_inspection_bootstrap.py`.
+4. Start sub-task 2 in plan mode: re-verify the facts, ask the open choices,
    and summarize the step in chat before asking for approval.
 
 ## Contents
@@ -35,7 +32,7 @@ pushed as `0785aca`: this doc, `shap>=0.53,<1` and `uv.lock`. The branch is
 4. What exists today
 5. Decisions
 6. Measured evidence
-7. Target code shape
+7. Code shape
 8. Sub-tasks
 9. Docs: what the model-inspection doc must say
 10. Risks
@@ -43,18 +40,16 @@ pushed as `0785aca`: this doc, `shap>=0.53,<1` and `uv.lock`. The branch is
 
 ## 1. Context and goal
 
-Two analysis tools for a **fitted** `BaseAgeGroupModel`. In practice that is the
-tuned model refit on the full training data,
-`evaluator.build_model(best_params).fit(X_train, y_train, exposure=...)`:
-
-1. **Bootstrap:** the mean and the (1 − α) percentile interval of a
-   `scoring.Metric` on an evaluation set.
-2. **Feature importance**, in two variants: permutation importance and SHAP.
+The bootstrap of a **fitted** `BaseAgeGroupModel`: the mean and the (1 − α)
+percentile interval of a `scoring.Metric` on an evaluation set. In practice the
+model is the tuned model refit on the full training data,
+`evaluator.build_model(best_params).fit(X_train, y_train, exposure=...)`.
 
 Out of scope:
 - refitting inside the bootstrap (model uncertainty);
-- importance of engineered features (this plan works on the raw columns only);
-- plots (shap's own plotting works on the returned `Explanation`).
+- feature importance, deferred to
+  [FEATURE_IMPORTANCE_PLAN.md](FEATURE_IMPORTANCE_PLAN.md);
+- plots.
 
 ## 2. Branch and PR
 
@@ -106,73 +101,52 @@ The user's standing rules, as
 
 ## 4. What exists today
 
+- `inspection/bootstrap.py`: `BootstrapEvaluator` and `BootstrapResult`
+  (sub-task 1).
 - `modeling/base.py`:
   - `BaseAgeGroupModel.predict(X, exposure=None)` returns an array for one
     target, or a DataFrame with `y`'s columns.
   - `evaluate(y_true, y_pred, metric)` is `metric.function(y_true, y_pred)`.
-  - `_check_exposure` returns `None` when the model expects no exposure, so
-    passing one to such a model is harmless.
 - `scoring.py`: `Metric(name, function, greater_is_better)`, and
   `POISSON_DEVIANCE`, `MAE`, `RMSE`, `COHORT_LOG_LOSS`.
 - `utils.py`: `take_rows`, and the aliases `DesignMatrix`, `Target`, `Groups`,
   `Exposure`.
 - Groups are neighborhoods. One row is one building. `Splitter` takes
   `groups=None` for a plain random split.
-- The old stack has the same tools, bound to its own types and deleted with it
-  (roadmap §5 step 5), so they are not reused:
-  - `evaluation.neighborhood_cluster_bootstrap` with
-    `resampling.NeighborhoodClusterResampler`, which uses fixed predictions,
-    whole neighborhoods and a percentile CI;
-  - `experiment/importance.py` (per-block permutation).
-
-  This plan keeps their method.
+- The old stack has the same tool, bound to its own types and deleted with it
+  (roadmap §5 step 5), so it is not reused:
+  `evaluation.neighborhood_cluster_bootstrap` with
+  `resampling.NeighborhoodClusterResampler`, which uses fixed predictions,
+  whole neighborhoods and a percentile CI. This plan keeps its method.
 
 ## 5. Decisions
 
+I3–I6 and I8–I11 (importance) moved to
+[FEATURE_IMPORTANCE_PLAN.md](FEATURE_IMPORTANCE_PLAN.md) §2, with their numbers.
+
 | # | Decision | Why |
 |---|---|---|
-| I1 | The bootstrap takes a **fitted** model and an evaluation set. It predicts **once**, resamples the evaluation rows `n_resamples` times, and recomputes the metric each time. It returns `mean`, `lower` and `upper`, the `alpha/2` and `1 − alpha/2` percentiles of the replicates. There is no refit. | The user's spec. The interval is conditional on the fitted model, as the old stack's was. |
+| I1 | The bootstrap takes a **fitted** model and an evaluation set. It predicts **once**, resamples the evaluation rows `n_resamples` times, and recomputes the metric each time. It returns `mean`, `lower` and `upper`: the mean of the replicates, and their `alpha/2` and `1 − alpha/2` percentiles. There is no refit. | The user's spec. The interval is conditional on the fitted model, as the old stack's was. |
 | I2 | The resampling unit is whole groups when `groups` is given, and rows otherwise. | Buildings in one neighborhood are correlated. This mirrors `Splitter`'s optional groups. |
-| I3 | Importance runs on whatever `X, y` the caller passes. | The user's choice. The doc recommends held-out data for permutation importance. |
-| I4 | Importance is computed per **raw input column** of `X`. | It covers every `BaseAgeGroupModel`, composites included, and one-hot or interaction expansions map back to their source column. |
-| I5 | SHAP explains the **rate per unit exposure**, `predict(X, exposure=1)`. | SHAP predicts on synthetic masked rows, so a per-row exposure cannot follow them. For an exposure model, `predict = rate × exposure`, and the features drive the rate. Models without exposure ignore the argument (§4). |
-| I6 | Permutation importance runs per raw column through `sklearn.inspection.permutation_importance`, with a scorer built from our `Metric`. | Probed (§6): it works with a cohort-table `y`, string columns and a closed-over exposure. There are no column blocks. |
-| I7 | The code goes in a new package `age_group_prediction/inspection/`, as `bootstrap.py`, `permutation.py` and `shap_values.py`. | "inspection" is scikit-learn's term, and the package is independent of the old `evaluation.py`/`resampling.py`. |
-| I8 | `shap` is a main dependency (`shap>=0.53,<1`). | It is a core step after tuning, and the tests need no extra group. |
-| I9 | SHAP sees non-numeric columns as integer codes. The prediction function decodes them back before `predict`. | Probed (§6): shap's `Independent` masker fails on string columns with `TypeError: unsupported operand type(s) for -: 'str' and 'str'`. The codes are the categories observed in `background` and `X`. |
-| I10 | `ShapExplainer` uses `shap.PermutationExplainer`, and `background` is a required argument of `explain`. `max_evals` defaults to shap's own default, 500. | The explainer is model-agnostic and exactly additive (§6). There is no sensible default background: the caller chooses its rows and size, which set the cost (§6). |
-| I11 | `explain` returns the `shap.Explanation` with the model's output names set (`y`'s cohort columns). Global importance is `mean(|values|)` per feature, shown in the doc. | shap drops the output names and labels them `Output 0..K-1` (§6). The `Explanation` keeps shap's plots. |
+| I7 | The code goes in a new package `age_group_prediction/inspection/`, as `bootstrap.py`. | "inspection" is scikit-learn's term, and the package is independent of the old `evaluation.py`/`resampling.py`. The importance modules join it later. |
+| I12 | A non-finite replicate score raises `ValueError`, naming how many. | The user's choice (2026-10-11). Otherwise `np.quantile` returns nan bounds silently. Example: `COHORT_LOG_LOSS` is 0/0 on a replicate with no children. |
+| I13 | No shap dependency in this PR. | The user's choice (2026-10-11): it is unused until the importance PR, which re-adds it. |
 
 ## 6. Measured evidence
 
-Measured 2026-10-10 with shap 0.53.0, sklearn 1.9.0 and pandas 3. The probe
-script is in that session's scratchpad (`probes/shap_probe.py`). Its setup:
-- 400 rows, with columns `x`, `z` (float) and `kind` (str: a/b/c);
-- an exposure;
-- `CountModel(PoissonRegressor, use_exposure=True)` and
-  `TotalTimesProbabilityModel` (with `CohortProbabilityModel(LogisticRegression)`),
-  each with a `FeatureTransformer` (Standardize, then OneHot on `kind`);
-- 100 background rows and 50 explained rows.
+- Sub-task 1, mutation checks: 13 mutations of `bootstrap.py`, each failed by
+  a test (§8, sub-task 1 record).
+- The shap and permutation probes of 2026-10-10 are in
+  [FEATURE_IMPORTANCE_PLAN.md](FEATURE_IMPORTANCE_PLAN.md) §3.
 
-| Probe | Result |
-|---|---|
-| sklearn `permutation_importance`, DataFrame `y` (2 columns), a string column, exposure closed over in the scorer | Works. The importances are `[921.6, 0, 0]` for the used column, the constant column and the string column. |
-| `shap.maskers.Independent` on a DataFrame with a str column | `TypeError: unsupported operand type(s) for -: 'str' and 'str'`. |
-| The same with the str column encoded as integer codes, decoded inside `f` | Works. `f` receives a DataFrame. |
-| Additivity, `base + Σ values` against `predict(exposure=1)` | Max error 6.7e-16 (`CountModel`) and 1.1e-15 (`TotalTimesProbabilityModel`). |
-| Multi-output shapes | `values` is (50, 3 features, 3 cohorts) and `base_values` is (50, 3). The output names come back as `Output 0..2`, even with `output_names=` passed. |
-| Same `seed`, run twice | Identical values. |
-| `shap.Explainer(f, masker)` default algorithm | `ExactExplainer`, which is exponential in the number of features. Hence I10 calls `PermutationExplainer` directly. |
-| Cost (`max_evals=500`, 100 background rows) | `CountModel`: 15.7 s per 50 rows. `TotalTimesProbabilityModel`: 32.6 s per 50 rows, and 222 s per 500 rows. Each `predict` call re-runs the feature transformer, so the cost grows with the background size × `max_evals`. |
-
-## 7. Target code shape
+## 7. Code shape
 
 Settings go in the constructor, as a pydantic dataclass with
 `InstanceOf[Metric]` like `CVHyperparameterEvaluator`. Data are method
 arguments.
 
 ```python
-# inspection/bootstrap.py                                   (sub-task 1)
+# inspection/bootstrap.py
 @dataclass(frozen=True)
 class BootstrapResult:
     mean: float
@@ -186,35 +160,11 @@ class BootstrapEvaluator:
     random_state: int | None = None
 
     def evaluate(self, model, X, y, groups=None, *, exposure=None) -> BootstrapResult:
-        # predict once; per replicate draw rows (or all rows of drawn groups) with
+        # check_consistent_length(X, y, groups); predict once; per replicate
+        # draw rows (or as many groups as there are, with all their rows) with
         # replacement; score with model.evaluate on take_rows(y), take_rows(y_pred);
+        # raise on a non-finite score (I12);
         # percentiles via np.quantile(scores, [alpha/2, 1 - alpha/2])
-```
-
-```python
-# inspection/permutation.py                                 (sub-task 2)
-class PermutationImportance:
-    metric: InstanceOf[Metric]
-    n_repeats: int
-    random_state: int | None = None
-
-    def compute(self, model, X, y, *, exposure=None) -> pd.DataFrame:
-        # scorer = ±metric(y, est.predict(X, exposure=exposure)), the sign from
-        # greater_is_better, so a positive importance means the column helps;
-        # one row per column of X: importance_mean, importance_std
-```
-
-```python
-# inspection/shap_values.py                                 (sub-task 3)
-class ShapExplainer:
-    max_evals: int = 500
-    random_state: int | None = None
-
-    def explain(self, model, X, background) -> shap.Explanation:
-        # encode non-numeric columns as codes (I9); f decodes and returns
-        # model.predict(frame, exposure=np.ones(len(frame))) as an array (I5);
-        # shap.PermutationExplainer(f, Independent(background), seed=random_state);
-        # set output names (I11)
 ```
 
 ## 8. Sub-tasks
@@ -226,67 +176,72 @@ Each sub-task ends at a stop (§3). **Verify** lists what the user can check.
 - Write this doc.
 - Create the branch `feat/model-inspection`.
 - Add `shap>=0.53,<1` to `[project] dependencies`.
-- Run the probes in §6.
-
-**Verify:** the doc renders; the baseline passes; the probe results are in §6.
+- Run the probes (now in FEATURE_IMPORTANCE_PLAN.md §3).
 
 **Record (2026-10-10):**
 - Baseline: 1200 passed, 1 skipped, 1 xfailed.
-- The probes changed the design from the approved plan: the str-column
-  failure gives I9, the lost output names give I11, and `background` became
-  required with shap's `max_evals` default (I10).
+- The probes changed the importance design (I9–I11).
 - The mypy entries moved to sub-task 1: mypy fails on the missing package
   path.
 - Committed and pushed as `0785aca` (with `uv.lock`). Draft PR #14 was
-  opened against `main` and retargeted to `feat/hyperparameter-tuning` at the
-  handoff.
+  opened against `main` and retargeted to `feat/hyperparameter-tuning`.
 
-### [ ] 1. `BootstrapEvaluator`
+### [x] 1. `BootstrapEvaluator`
 
 - Write `inspection/__init__.py`, `inspection/bootstrap.py` and
   `tests/unit/test_inspection_bootstrap.py`.
 - Add `src/age_group_prediction/inspection` to the mypy `files` and the
-  `disallow_untyped_defs` override. This waits for this sub-task because mypy
-  fails on a missing path (`Cannot read file`), as checked in sub-task 0.
-- Tests:
-  - With groups, each replicate holds whole groups (a mutation to row
-    resampling fails).
-  - The same seed gives identical results.
-  - The bounds equal `np.quantile` of the replicates, and `lower ≤ mean ≤ upper`.
-  - `predict` is called once (a spy).
-  - A `greater_is_better` metric is reported raw, not negated.
+  `disallow_untyped_defs` override.
+- Remove shap (I13), and run `uv lock`.
+- Move the importance material to FEATURE_IMPORTANCE_PLAN.md.
 
 **Verify:** the tests pass under `-W error`; each mutation fails a test.
 
-### [ ] 2. `PermutationImportance`
+**Record (2026-10-11):**
+- Baseline: 1200 passed, 1 skipped, 1 xfailed.
+- `uv.lock` after `uv lock` is identical to `3c4c028`'s: shap and slicer
+  removed.
+- 16 tests, passing under `-W error`. They cover:
+  - whole groups drawn, as many as there are;
+  - rows drawn with replacement;
+  - `y` and the predictions paired by position;
+  - seed reproducibility;
+  - the bounds equal to `np.quantile` of the replicates;
+  - `predict` called once, with the exposure;
+  - a raw `greater_is_better` score;
+  - the non-finite raise;
+  - the length checks;
+  - the settings validation;
+  - `CohortProbabilityModel` with `COHORT_LOG_LOSS` on a shuffled index.
+- Mutations, each failed by a test:
+  - row resampling with groups;
+  - a fixed seed;
+  - quantiles at α instead of α/2;
+  - predict per replicate;
+  - a negated score;
+  - no finite check;
+  - no length check;
+  - unpaired predictions;
+  - no replacement;
+  - label-based row selection;
+  - and, from the review, contiguous groups assumed (no `argsort`), a raise
+    only when every replicate is non-finite, and label indexing on both `y`
+    and the predictions.
+- Review (independent subagent): no correctness bug. It probed position
+  pairing for every pandas/numpy mix, NaN and categorical groups, and the
+  exposure. It found three test gaps, each reproduced as a surviving mutant,
+  then fixed:
+  - the groups are now interleaved and unsorted;
+  - one NaN among finite replicate scores now raises;
+  - the cohort frames have a non-range index.
+  Its fourth point is left as the user's choice (§10): a single group gives a
+  zero-width interval silently.
 
-- Write `inspection/permutation.py` and its tests.
-- Tests:
-  - A column the model ignores scores 0, and a used one scores > 0.
-  - A positive score means "important" under both metric directions.
-  - Exposure stays row-aligned while columns are permuted.
-  - It works on `TotalTimesProbabilityModel` with a string column.
-
-**Verify:** the same.
-
-### [ ] 3. `ShapExplainer`
-
-- Write `inspection/shap_values.py` and its tests.
-- Tests:
-  - Additivity against `predict(exposure=1)` for `CountModel` with exposure.
-  - The multi-output shape and cohort output names.
-  - A string column round-trips through the codes.
-  - The same seed gives identical values.
-
-**Verify:** the same.
-
-### [ ] 4. Smoke run, docs and close
+### [ ] 2. Smoke run, docs and close
 
 - Run on the simulator data:
   - fit `CountModel` and `TotalTimesProbabilityModel` on train;
-  - bootstrap the test metric, with and without neighborhood groups;
-  - compute both importances, then compare the rankings of permutation and
-    mean |SHAP|.
+  - bootstrap the test metric, with and without neighborhood groups.
 - Write `docs/MODEL_INSPECTION.md` (§9), and update `MODULE_REFERENCE.md`, the
   README, the roadmap in `MODEL_REIMPLEMENTATION_PLAN.md`, and the status line of
   `HYPERPARAMETER_TUNING_PLAN.md`.
@@ -296,36 +251,23 @@ passes.
 
 ## 9. Docs: what the model-inspection doc must say
 
-- **Bootstrap:**
-  - the percentile interval;
-  - why the cluster bootstrap (whole neighborhoods);
-  - that the interval is conditional on the fitted model (no refit);
-  - that few groups give wide, unstable intervals;
-  - that `COHORT_LOG_LOSS` is a ratio of sums recomputed per replicate.
-- **Permutation:**
-  - the definition (score drop when one column is shuffled, averaged over
-    repeats);
-  - why to use held-out data;
-  - that correlated columns share or hide importance.
-- **SHAP:**
-  - Shapley values of the rate (I5) and their additivity;
-  - the code encoding (I9);
-  - the cost (§6) and how to subsample `background` and `X`;
-  - mean |SHAP| as the global importance.
+- the percentile interval;
+- why the cluster bootstrap (whole neighborhoods);
+- that the interval is conditional on the fitted model (no refit);
+- that few groups give wide, unstable intervals;
+- that `COHORT_LOG_LOSS` is a ratio of sums recomputed per replicate, and that
+  a replicate with no children raises (I12).
 
 ## 10. Risks
 
-- **SHAP cost.** It is minutes for a few hundred rows of a composite model
-  (§6). The doc gives the subsampling recipe, and the smoke run measures the
-  cost at simulator scale.
-- **A category in `X` but not in `background`.** The codes come from both
-  frames (I9), so it decodes correctly.
 - **Few neighborhoods** give a degenerate cluster bootstrap. This is
-  documented, not checked.
+  documented, not checked. With one group, every replicate is the full set,
+  so the interval has zero width and looks certain. A
+  `len(groups) < 2` raise (the old stack had one) is open for the user.
 
 ## 11. Verification
 
 - `uv run pytest -m "not slow"` before and after each sub-task.
 - `uv run mypy`, plus `uv run mypy src/age_group_prediction/inspection <tests>`.
 - ruff, the new tests under `-W error`, the mutation checks, and the smoke run
-  in sub-task 4.
+  in sub-task 2.
