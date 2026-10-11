@@ -2,10 +2,11 @@
 
 **Branch:** `feat/hyperparameter-tuning` · draft PR #5.
 **Status (2026-10-11):** Phases 1 (parameters) and 2 (evaluator, aggregations)
-are done; 3.1 (the study's constructor and defaults, `study.py`) is done and
-awaits the user's commit. The sub-tasks are driven from
+are done; 3.1 (the study's constructor and defaults, `study.py`) is committed
+(`1f4ed67`); 3.2 (`optimize`, the best trial, a minimal `TuningResult`) is done
+and awaits the user's commit. The sub-tasks are driven from
 [EXPERIMENT_NOTEBOOK_PLAN.md](EXPERIMENT_NOTEBOOK_PLAN.md) §6 (A1–A6).
-**Next:** **3.2** (`optimize`), then the rest of Phase 3 and Phase 4 (docs). The §6 task "Evaluator on the raw table" was done by [DIRECT_COHORT_GENERALIZATION_PLAN.md](DIRECT_COHORT_GENERALIZATION_PLAN.md) Step 5 (PR #12).
+**Next:** **3.3** (`TrialRecord`, the full `TuningResult`), then the rest of Phase 3 and Phase 4 (docs). The §6 task "Evaluator on the raw table" was done by [DIRECT_COHORT_GENERALIZATION_PLAN.md](DIRECT_COHORT_GENERALIZATION_PLAN.md) Step 5 (PR #12).
 The history of each step is in the git log and the commit messages.
 **To resume:** read this doc (§2 decisions, §4 design, §6 remaining work, §7
 working notes), then the package code and its tests; start the next sub-task
@@ -41,7 +42,7 @@ experiment runner.
 | D9 | No conditional or derived parameters in v1 | the LightGBM example (§5) doesn't need them |
 | D10 | Settings in the constructor; data (`X, y, groups, exposure`) as arguments of the named method `evaluate` | the sklearn convention; one evaluator scores many targets; Optuna's one-argument objective is a lambda |
 | D11 | The evaluator tunes a `BaseAgeGroupModel`: per trial, `build_model(params)` makes a copy (`clone`, `set_params`); each fold refits it on the raw rows, predicts, and scores with `model.evaluate(y, y_pred, metric)` | the repo's models get `clone`/`set_params` from `BaseEstimator`; a misspelled parameter raises at `set_params` |
-| D12 | One direction: the score is the metric's value if `greater_is_better`, else its negation; the study always maximizes | no sign to get wrong |
+| D12 | One direction: the score is the metric's value if `greater_is_better`, else its negation; the study always maximizes | no sign to get wrong; scikit-learn's convention (`neg_*` scorers); `LowerBound`'s mean − z·SE and the tie rule need no sign. Display: a loss comes out negative; 3.3 shows it in its natural sign (user's choice, 2026-10-11) |
 | D13 | A required `feature_transformer: FeatureTransformer`, fitted per fold on the training rows and targets | a transformer fitted on all rows would leak validation statistics; a `Pipeline` was rejected (its `fit` and `predict` name the exposure differently, and it has no `evaluate`). **Superseded** by [DIRECT_COHORT_GENERALIZATION_PLAN.md](DIRECT_COHORT_GENERALIZATION_PLAN.md) F1/F3: the model owns its `feature_transformer` and fits it inside its own `fit`, on each fold's training rows; the evaluator has no transformer |
 | D14 | `exposure=None` is part of `BaseAgeGroupModel.fit`/`predict`; the evaluator slices it per fold and always passes it | typed calls (mypy); the model decides whether it needs one |
 | D15 | `evaluate(trial, X, y, groups=None, *, exposure=None)`; `X` is the raw table | the exposure is data (D10) |
@@ -192,7 +193,7 @@ and return `aggregation.aggregate(scores, fold_sizes)`.
 
 ### 4.4 Study (`study.py`, Phase 3)
 
-Settled 2026-10-11 (sub-task 3.1), measured on optuna 4.9.0 / pydantic 2.13.4.
+Settled 2026-10-11 (sub-tasks 3.1, 3.2), measured on optuna 4.9.0 / pydantic 2.13.4.
 
 ```python
 # A strict pydantic dataclass (the package's _STRICT config, plus
@@ -212,22 +213,41 @@ class HyperparameterStudy:
         # ValueError: "n_trials and timeout_seconds are both None: the study would never stop"
         # ValueError: "n_trials must be at least 1, got {n_trials}"
         # ValueError: "timeout_seconds must be positive, got {timeout_seconds}"
+        # ValueError: "initial_params holds {k} trials but n_trials is {n}: the rest would never run"
 
     def _create_optuna_study(self) -> optuna.Study:
         # optuna.create_study(direction="maximize", sampler=..., pruner=...), the
-        # defaults resolved here; called by each optimize (3.2)
+        # defaults resolved here; called by each optimize
 
     def optimize(self, objective: Callable[[optuna.Trial], float]) -> TuningResult:
-        # 3.2: enqueue initial_params; best = max over COMPLETE trials, ties ->
-        # lowest number; RuntimeError if none completed; keeps optuna_study_
+        study = self._create_optuna_study()
+        for params in self.initial_params:
+            study.enqueue_trial(dict(params))
+        self.optuna_study_ = study     # before running: a failed trial stays inspectable
+        study.optimize(objective, n_trials=self.n_trials, timeout=self.timeout_seconds,
+                       n_jobs=self.n_jobs, callbacks=[self._check_initial_params])
+        complete = study.get_trials(deepcopy=False, states=(TrialState.COMPLETE,))
+        if len(complete) == 0:
+            raise RuntimeError("no trial completed: every trial was pruned or the timeout came first")
+        best = max(complete, key=lambda trial: trial.values[0])  # number order: a tie keeps the lowest
+        return TuningResult(best_params=dict(best.params), best_value=best.values[0],   # a copy: see below
+                            best_trial_number=best.number)
+
+    def _check_initial_params(self, study: optuna.Study, trial: FrozenTrial) -> None:
+        # An Optuna callback, run after each trial. COMPLETE only: a pruned
+        # objective may stop before suggesting every name.
+        # ValueError: "initial_params[{i}]: no trial suggested {names}; check the names"
 
 @dataclass(frozen=True)
-class TrialRecord: number, state, value, params, fold_scores, fold_sizes, std_error
+class TrialRecord: number, state, value, params, fold_scores, fold_sizes, std_error   # 3.3
     # the last three None unless COMPLETE; std_error = corrected_std_error(fold_scores)
 
 @dataclass(frozen=True)
-class TuningResult: best_params, best_value, best_trial_number, trials, is_reproducible
-    def to_dict(self) -> dict   # JSON-safe, e.g. for MLflow
+class TuningResult:
+    best_params: dict[str, Any]       # 3.2
+    best_value: float                 # 3.2
+    best_trial_number: int            # 3.2
+    # 3.3 adds: trials: tuple[TrialRecord, ...], is_reproducible: bool, to_dict() (JSON-safe, e.g. for MLflow)
 ```
 
 **The constructor (3.1), each item with its evidence:**
@@ -254,9 +274,41 @@ class TuningResult: best_params, best_value, best_trial_number, trials, is_repro
 - Dropped from the first draft, unused by any planned client: `storage`,
   `study_name`, `show_progress_bar` (`storage` would also need a
   `load_if_exists` rule). Add them with their first use.
-- `initial_params` is a `Sequence` (a set would vary the order). Its keys are
-  checked in 3.2: Optuna drops a misspelled key of an enqueued trial silently
-  (no warning; the trial runs with the suggested parameters only).
+- `initial_params` is a `Sequence` (a set would vary the order). More of them
+  than `n_trials` is rejected: the extra enqueued trials never run and stay
+  WAITING, silently. (Only checkable with `n_trials`; with a timeout alone,
+  the timeout decides.)
+
+**`optimize` (3.2), each item with its evidence:**
+- **The best trial is chosen here, not by `study.best_trial`.** Optuna updates
+  its best with a strict `>` as trials *complete*, so a tie goes to the first
+  to finish: with `n_jobs=2`, trial 1 beat trial 0 on a tie. `get_trials()` is
+  in number order and `max` returns the first maximum, so a tie keeps the
+  lowest number whatever the completion order.
+- **COMPLETE trials only.** A PRUNED trial keeps a `value`, its last reported
+  intermediate (100.0 in the probe), which is not a full-CV score (D8).
+  `TrialRecord` (3.3) must not report it as one.
+- **No completed trial → `RuntimeError`** with a clear message (every trial
+  pruned, or the timeout came before the first finished). Optuna's own
+  `best_trial` says `ValueError: No trials are completed yet.`; our `max`
+  over an empty list would say "max() arg is an empty sequence".
+- **A misspelt `initial_params` key** is dropped by Optuna silently (no
+  warning; the trial runs with the suggested parameters). The callback
+  compares `initial_params[trial.number]` with `trial.params`: enqueued trials
+  are numbered 0..k−1 when enqueued, so no Optuna internal (`fixed_params`) is
+  needed. A raising callback stops `optimize` at once, so a typo costs one
+  trial per job (measured: 1, 2, 4 trials with `n_jobs` = 1, 2, 4; no trial
+  left RUNNING), not the study. The check is per trial: a name the objective
+  suggests only on some branches would be flagged, which D9 (no conditional
+  parameters) makes moot.
+- **`best_params` is a copy** of the trial's params: `get_trials(deepcopy=False)`
+  returns Optuna's stored dict, and editing the result rewrote the kept
+  study's trial (measured).
+- **Left to Optuna:** an objective error propagates at once (trial FAIL; no
+  `catch=`); an out-of-range enqueued value is *warned* about ("Fixed
+  parameter x … out of range for distribution").
+- **`optuna_study_` is set before the search runs**, so a study that raised
+  (a failed trial, a misspelt key) can still be inspected.
 
 **Tests** (`tests/unit/test_hyperparameter_tuning_study.py`; each name is the
 mistake it catches, each with the mutation that must fail it):
@@ -267,11 +319,21 @@ mistake it catches, each with the mutation that must fail it):
 | `test_the_default_sampler_is_multivariate`: `sampler._multivariate is True` (Optuna has no public getter) | drop `multivariate=True` |
 | `test_the_default_pruner_never_prunes`: `isinstance(pruner, NopPruner)` | another pruner |
 | `test_a_given_sampler_and_pruner_are_used_as_given`: `is` | wrap or copy them |
-| `test_the_default_sampler_does_not_warn`: the helper under `-W error` | remove the filter |
+| `test_the_default_sampler_does_not_warn`: the helper under `@pytest.mark.filterwarnings("error")` | remove the filter |
 | `test_a_study_with_no_stopping_rule_is_rejected` | drop the check |
 | `test_fewer_than_one_trial_is_rejected` (0, −1) | `< 0` |
 | `test_a_non_positive_timeout_is_rejected` (0, −1.0) | `< 0` |
+| `test_a_misspelt_setting_is_rejected` (`n_trial=10`) | drop `extra="forbid"` |
 | `test_a_bool_seed_is_rejected` (`seed=True`, the one case lax mode accepts) | drop `_STRICT` |
+| `test_more_initial_params_than_trials_are_rejected` (3.2) | drop the check |
+| `test_the_same_seed_gives_the_same_result`: two objects, and two `optimize` calls on one (3.2) | an unseeded default sampler |
+| `test_a_pruned_trial_never_wins`: a pruned trial reports 100.0 (3.2) | include PRUNED states |
+| `test_a_tie_goes_to_the_lowest_trial_number`: `n_jobs=2`, trial 0 finishes last, all return 1.0 (3.2) | return `study.best_trial` |
+| `test_no_completed_trial_raises` (3.2) | drop the check |
+| `test_initial_params_run_first_in_order` (3.2) | enqueue them reversed |
+| `test_a_misspelt_initial_param_stops_the_study`: stops after 1 trial (3.2) | drop the callback |
+| `test_the_optuna_study_is_kept`: `len(optuna_study_.trials) == n_trials` (3.2) | don't set it |
+| `test_editing_the_result_leaves_the_study_intact` (3.2, from the review) | `best_params=best.params` |
 
 `is_reproducible` is `n_jobs == 1 and timeout_seconds is None`: timeouts and
 parallel jobs are allowed, and the result records which kind of run it was.
@@ -344,8 +406,8 @@ choices asked), then §7's routine, then a stop for approval.
   test on a path nothing uses, and a misplaced comment.
 - [x] **Evaluator on the raw table** (from [MULTI_COHORT_MODELS_PLAN.md](MULTI_COHORT_MODELS_PLAN.md) N20). Switch `CVHyperparameterEvaluator` from a separate `feature_transformer` and model to one `modeling.ModelPipeline`, cloned per fold; its `exposure` argument is kept and passed through. Build that argument with `preprocessing.ExposureTransformer(...).fit_transform(table)`. *Done when:* the evaluator takes a pipeline, and a test shows it fits one per fold; §5's example builds `exposure = ExposureTransformer("n_apartments").fit_transform(df)` before the split and passes `take_rows(exposure, train_index)` (the split's positions), not `train_df["n_apartments"]`. **Done 2026-10-05** by [DIRECT_COHORT_GENERALIZATION_PLAN.md](DIRECT_COHORT_GENERALIZATION_PLAN.md) Step 5, with the model's own `feature_transformer` instead of `ModelPipeline` (removed there in Step 4): the evaluator has no transformer, fits the model on each fold's raw rows, and `build_feature_transformer_and_model` became `build_model`.
 - [x] **3.1 Study constructor and defaults** (§4.4). *Done when:* the default sampler is a seeded multivariate TPE and the default pruner `NopPruner`, built without a warning; `n_trials=None` with `timeout_seconds=None`, `n_trials < 1` and `timeout_seconds <= 0` raise `ValueError`; a given sampler or pruner is used as given.
-- [ ] **3.2 `optimize` and the best trial.** *Done when:* the same seed gives an identical `TuningResult`; a pruned trial never wins; ties go to the lowest number; no completed trial raises `RuntimeError`; `initial_params` run first, in order, and a key that no trial suggested raises (Optuna drops it silently); the Optuna study is kept as `optuna_study_`.
-- [ ] **3.3 Records and results.** *Done when:* each `TrialRecord` carries the fold scores and sizes and the derived SE; `to_dict()` round-trips through `json`; `is_reproducible` is False with a timeout or `n_jobs > 1`.
+- [x] **3.2 `optimize` and the best trial.** *Done when:* the same seed gives an identical `TuningResult`; a pruned trial never wins; ties go to the lowest number; no completed trial raises `RuntimeError`; `initial_params` run first, in order, and a key that no trial suggested raises (Optuna drops it silently); more `initial_params` than `n_trials` raises; the Optuna study is kept as `optuna_study_`.
+- [ ] **3.3 Records and results.** *Done when:* each `TrialRecord` carries the fold scores and sizes and the derived SE; a PRUNED trial's record does not report its last intermediate as a score (§4.4: Optuna keeps it as the trial's `value`); `to_dict()` round-trips through `json`; `is_reproducible` is False with a timeout or `n_jobs > 1`; a lower-is-better metric's best value is reported in its natural sign wherever it is shown or logged, the score kept as the search value (D12; design decided in 3.3's plan mode).
 - [ ] **3.4 Integration test** (§5 on a small simulated table, a few trials). *Done when:* the best parameters refit through `build_model` and predict.
 - [ ] **3.5 Pruners in the docs:** `WilcoxonPruner` or `SuccessiveHalvingPruner` for CV, not `MedianPruner` (§4.2). Wilcoxon's docs also advise shuffling the evaluation order per trial; decide whether that applies with fixed folds.
   **Then the Phase 3 review** and your approval.

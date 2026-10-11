@@ -5,9 +5,9 @@ it. Self-contained: everything an implementer needs is here or linked. Re-verify
 every fact against the code of the day before relying on it (file paths, line
 counts, test counts drift).
 
-**Status (2026-10-11):** A0 committed (`6b8f5a1`); A1 done
-(`HyperparameterStudy` constructor and defaults; design in the tuning plan
-§4.4) and awaits the user's commit. **Next:** PR A, sub-task A2.
+**Status (2026-10-11):** A0 committed (`6b8f5a1`), A1 committed (`1f4ed67`);
+A2 done (`optimize`, the best trial, a minimal `TuningResult`; design in the
+tuning plan §4.4) and awaits the user's commit. **Next:** PR A, sub-task A3.
 
 **Branch state:** `feat/hyperparameter-tuning` (draft PR #5), 49 commits ahead
 of `main` at `7d865ab`, carrying the squash-merges of PRs #10–#14.
@@ -414,22 +414,29 @@ pruner `NopPruner`; `n_trials=None` with `timeout_seconds=None`, `n_trials < 1`
 and `n_jobs == 0` raise `ValueError`; a user-given sampler/pruner is used as
 given (not cloned).
 
-### [ ] A2. `optimize` and the best trial (tuning plan 3.2)
+### [x] A2. `optimize` and the best trial (tuning plan 3.2)
 
 **Done when:** the same seed gives an identical `best_params` twice; a pruned
 trial never wins; ties go to the lowest trial number; no completed trial
 raises `RuntimeError`; `initial_params` run first, in order, and a key no trial
 suggested raises (measured in A1: Optuna drops it silently, without a warning);
-the Optuna study is kept as `optuna_study_`.
+more `initial_params` than `n_trials` raises; the Optuna study is kept as
+`optuna_study_`. `optimize` returns a minimal `TuningResult` (`best_params`,
+`best_value`, `best_trial_number`; user's choice), which A3 completes.
 
 ### [ ] A3. `TrialRecord` and `TuningResult` (tuning plan 3.3)
 
 **Done when:** each `TrialRecord` of a COMPLETE trial carries `fold_scores`,
 `fold_sizes` (from the trial's user attrs set by the evaluator) and
-`std_error = corrected_std_error(fold_scores)`, `None` otherwise;
+`std_error = corrected_std_error(fold_scores)`, `None` otherwise; a PRUNED
+trial's record does not report its last intermediate as a score (Optuna keeps
+it as the trial's `value`; measured in A2);
 `TuningResult.to_dict()` round-trips through `json.dumps`/`loads` (plain
 Python numbers only: Optuna's sqlite storage rejects `np.int64`);
-`is_reproducible` is `False` with a timeout or `n_jobs > 1`.
+`is_reproducible` is `False` with a timeout or `n_jobs > 1`; a lower-is-better
+metric's best value is reported in its natural sign wherever it is shown or
+logged, the score kept as the search value (D12 of the tuning plan kept,
+user's choice 2026-10-11; design decided in A3's plan mode).
 
 ### [ ] A4. Integration test, pruner guidance, penalty ranges (tuning plan 3.4–3.5)
 

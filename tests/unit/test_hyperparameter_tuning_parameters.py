@@ -285,6 +285,7 @@ def test_package_exports_the_public_names() -> None:
         "LowerBound",
         "Mean",
         "Parameter",
+        "TuningResult",
         "WeightedMean",
         "corrected_std_error",
     }

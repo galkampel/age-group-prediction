@@ -30,7 +30,7 @@ from .parameters import (
     IntParameter,
     Parameter,
 )
-from .study import HyperparameterStudy
+from .study import HyperparameterStudy, TuningResult
 
 __all__ = [
     "Aggregation",
@@ -42,6 +42,7 @@ __all__ = [
     "LowerBound",
     "Mean",
     "Parameter",
+    "TuningResult",
     "WeightedMean",
     "corrected_std_error",
 ]
