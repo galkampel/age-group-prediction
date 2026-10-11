@@ -13,19 +13,19 @@ import pytest
 
 from age_group_prediction.hyperparameter_tuning import (
     Aggregation,
-    LowerBound,
     Mean,
+    UpperBound,
     WeightedMean,
     corrected_std_error,
 )
 from age_group_prediction.splitting import Method, Splitter
 
 # Unequal folds: the `grouped` sizes on the evaluator tests' 28 rows.
-SCORES = [-3.0, -5.0, -4.5]
+SCORES = [3.0, 5.0, 4.5]  # losses: lower is better
 FOLD_SIZES = [20, 5, 3]
 # Worked by hand:
-WEIGHTED_MEAN = (20 * -3.0 + 5 * -5.0 + 3 * -4.5) / 28  # -98.5 / 28
-MEAN = (-3.0 - 5.0 - 4.5) / 3
+WEIGHTED_MEAN = (20 * 3.0 + 5 * 5.0 + 3 * 4.5) / 28  # 98.5 / 28
+MEAN = (3.0 + 5.0 + 4.5) / 3
 # s^2 = 13/12 (ddof=1); the folds partition 28 rows, so
 # n_val/n_train = (28/3) / (56/3) = 1/2 = 1/(K-1).
 STD_ERROR = math.sqrt(13 / 12 * (1 / 3 + 1 / 2))
@@ -71,11 +71,11 @@ def test_singleton_strata_make_the_std_error_conservative() -> None:
     [
         (WeightedMean(), WEIGHTED_MEAN),
         (Mean(), MEAN),
-        (LowerBound(), WEIGHTED_MEAN - STD_ERROR),
-        (LowerBound(z=2), WEIGHTED_MEAN - 2 * STD_ERROR),
-        (_Median(), -4.5),
+        (UpperBound(), WEIGHTED_MEAN + STD_ERROR),
+        (UpperBound(z=2), WEIGHTED_MEAN + 2 * STD_ERROR),
+        (_Median(), 4.5),
     ],
-    ids=["weighted-mean", "mean", "lower-bound", "lower-bound-z2", "median"],
+    ids=["weighted-mean", "mean", "upper-bound", "upper-bound-z2", "median"],
 )
 def test_each_aggregation_matches_the_hand_value(
     aggregation: Aggregation, expected: float
@@ -86,13 +86,13 @@ def test_each_aggregation_matches_the_hand_value(
     assert type(value) is float
 
 
-@pytest.mark.parametrize("aggregation", [WeightedMean(), Mean(), LowerBound()])
+@pytest.mark.parametrize("aggregation", [WeightedMean(), Mean(), UpperBound()])
 def test_no_folds_are_rejected(aggregation: Aggregation) -> None:
     with pytest.raises(ValueError, match="at least one fold"):
         aggregation.aggregate([], [])
 
 
-@pytest.mark.parametrize("aggregation", [WeightedMean(), Mean(), LowerBound()])
+@pytest.mark.parametrize("aggregation", [WeightedMean(), Mean(), UpperBound()])
 def test_unequal_lengths_are_rejected(aggregation: Aggregation) -> None:
     with pytest.raises(ValueError, match="equal lengths, got 3 and 2"):
         aggregation.aggregate(SCORES, [20, 5])
@@ -101,7 +101,7 @@ def test_unequal_lengths_are_rejected(aggregation: Aggregation) -> None:
 @pytest.mark.filterwarnings("error")
 def test_corrected_std_error_needs_two_folds() -> None:
     with pytest.raises(ValueError, match="at least 2 folds, got 1"):
-        corrected_std_error([-3.0])
+        corrected_std_error([3.0])
 
 
 @pytest.mark.parametrize(
@@ -109,15 +109,15 @@ def test_corrected_std_error_needs_two_folds() -> None:
     [0, -1.0, float("nan"), float("inf"), "1", True],
     ids=["zero", "negative", "nan", "inf", "string", "bool"],
 )
-def test_lower_bound_rejects_an_invalid_z(z: Any) -> None:
-    with pytest.raises(ValueError, match="LowerBound\nz\n"):
-        LowerBound(z=z)
+def test_upper_bound_rejects_an_invalid_z(z: Any) -> None:
+    with pytest.raises(ValueError, match="UpperBound\nz\n"):
+        UpperBound(z=z)
 
 
 def test_aggregations_are_frozen_and_compare_by_value() -> None:
     with pytest.raises(dataclasses.FrozenInstanceError):
-        LowerBound().z = 2.0  # type: ignore[misc]
-    assert LowerBound(2) == LowerBound(2.0)
+        UpperBound().z = 2.0  # type: ignore[misc]
+    assert UpperBound(2) == UpperBound(2.0)
     assert WeightedMean() == WeightedMean()
     assert repr(WeightedMean()) == "WeightedMean()"
 

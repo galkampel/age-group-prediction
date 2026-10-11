@@ -282,10 +282,11 @@ def test_package_exports_the_public_names() -> None:
         "FloatParameter",
         "HyperparameterStudy",
         "IntParameter",
-        "LowerBound",
         "Mean",
         "Parameter",
+        "TrialRecord",
         "TuningResult",
+        "UpperBound",
         "WeightedMean",
         "corrected_std_error",
     }

@@ -2,7 +2,7 @@
 
 Any callable works, from :mod:`sklearn.metrics` or custom, so the direction is
 stored rather than assumed: a tuner reads ``greater_is_better`` to know whether
-to maximize the value or its negation.
+to minimize the value or its negation.
 
 Shared by :mod:`~age_group_prediction.modeling` and
 :mod:`~age_group_prediction.hyperparameter_tuning`. Not the ``Metric`` protocol

@@ -18,8 +18,8 @@ from __future__ import annotations
 
 from .aggregation import (
     Aggregation,
-    LowerBound,
     Mean,
+    UpperBound,
     WeightedMean,
     corrected_std_error,
 )
@@ -30,7 +30,7 @@ from .parameters import (
     IntParameter,
     Parameter,
 )
-from .study import HyperparameterStudy, TuningResult
+from .study import HyperparameterStudy, TrialRecord, TuningResult
 
 __all__ = [
     "Aggregation",
@@ -39,10 +39,11 @@ __all__ = [
     "FloatParameter",
     "HyperparameterStudy",
     "IntParameter",
-    "LowerBound",
     "Mean",
     "Parameter",
+    "TrialRecord",
     "TuningResult",
+    "UpperBound",
     "WeightedMean",
     "corrected_std_error",
 ]

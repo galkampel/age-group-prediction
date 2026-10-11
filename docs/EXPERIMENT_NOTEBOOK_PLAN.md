@@ -5,9 +5,11 @@ it. Self-contained: everything an implementer needs is here or linked. Re-verify
 every fact against the code of the day before relying on it (file paths, line
 counts, test counts drift).
 
-**Status (2026-10-11):** A0 committed (`6b8f5a1`), A1 committed (`1f4ed67`);
-A2 done (`optimize`, the best trial, a minimal `TuningResult`; design in the
-tuning plan §4.4) and awaits the user's commit. **Next:** PR A, sub-task A3.
+**Status (2026-10-11):** A0 committed (`6b8f5a1`), A1 (`1f4ed67`), A2
+(`81f8896`); A3 done (`TrialRecord`, the full `TuningResult`, each with the
+score and the metric's value in its own sign; `to_dict()`; the study now
+minimizes, D12 reversed, `LowerBound` → `UpperBound`; design in the tuning
+plan §4.4) and awaits the user's commit. **Next:** PR A, sub-task A4.
 
 **Branch state:** `feat/hyperparameter-tuning` (draft PR #5), 49 commits ahead
 of `main` at `7d865ab`, carrying the squash-merges of PRs #10–#14.
@@ -90,9 +92,10 @@ Verified 2026-10-11 on `feat/hyperparameter-tuning`. Paths are under
 - Done: `FloatParameter`, `IntParameter`, `CategoricalParameter` (`name` is the
   `set_params` key), `CVHyperparameterEvaluator(model, parameters, *, cv, metric,
   aggregation=WeightedMean())` with `evaluate(trial, X, y, groups=None, *,
-  exposure=None) -> float` (negated for lower-is-better metrics, so a study
-  always maximizes) and `build_model(params)`; aggregations `WeightedMean`,
-  `Mean`, `LowerBound(z)`, `corrected_std_error`.
+  exposure=None) -> float` (negated for a greater-is-better metric, so a
+  study always minimizes; since A3, see the tuning plan's D12) and
+  `build_model(params)`; aggregations `WeightedMean`, `Mean`, `UpperBound(z)`
+  (`LowerBound` before A3), `corrected_std_error`.
 - **Missing:** `study.py` with `HyperparameterStudy`, `TrialRecord`,
   `TuningResult` (that plan's §4.4; its §6 sub-tasks 3.1–3.5 and 4.1–4.3).
 
@@ -333,7 +336,7 @@ inside `fit`, never on the explained rows.
 | kind | content |
 |---|---|
 | params | setting: `composite`, `family_total` / `family_cohort` / `family_probability`, `feature_variant`, `use_exposure`; the simulator `Config` flattened from `model_dump()` (dotted keys) and a data hash (SHA-256 of the table's CSV bytes, own 3-line helper; `hashing.py` is old-stack); `split_method`, `split_seed`, `cv_seed`, `study_seed`, `estimator_seed`, `test_size`, `val_size`, `n_train` / `n_val` / `n_test`; the search space (parameter name → bounds); `n_trials`, `n_splits`, `aggregation` |
-| metrics | E3's validation set (`val/<metric>` mean, `val/<metric>/lower`, `.../upper`); per child study `cv/best_value`, `cv/best_std_error` (nested runs) |
+| metrics | E3's validation set (`val/<metric>` mean, `val/<metric>/lower`, `.../upper`); per child study `cv/best_value`, `cv/best_std_error` (nested runs), from `TuningResult.best_value` and the best record's `std_error`, in the metric's own sign (A3); `best_value` is the aggregation's value (the CV mean under `WeightedMean`, mean + z·SE under `UpperBound`), so `aggregation` is logged as a param beside it |
 | artifacts | `trials.csv` (one row per `TrialRecord`), `best_params.json`, `model.joblib` (the refit model), `importance/permutation_val.csv`, `importance/permutation_train.csv`, `importance/shap_values.csv` (mean |SHAP| per column and cohort), plots `importance/permutation_val.png` (bar with error bars), `importance/shap_bar.png`, `importance/shap_beeswarm_<cohort>.png`, `features.txt` (`repr` of the feature transformers) |
 | tags | `setting` (a short name, the cell's title), `final=true` on the one test run |
 
@@ -424,7 +427,7 @@ more `initial_params` than `n_trials` raises; the Optuna study is kept as
 `optuna_study_`. `optimize` returns a minimal `TuningResult` (`best_params`,
 `best_value`, `best_trial_number`; user's choice), which A3 completes.
 
-### [ ] A3. `TrialRecord` and `TuningResult` (tuning plan 3.3)
+### [x] A3. `TrialRecord` and `TuningResult` (tuning plan 3.3)
 
 **Done when:** each `TrialRecord` of a COMPLETE trial carries `fold_scores`,
 `fold_sizes` (from the trial's user attrs set by the evaluator) and

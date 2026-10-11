@@ -1,7 +1,8 @@
 """How one trial is scored: set the parameters once, then fit and score every fold.
 
 Every call re-splits with ``cv``, a :meth:`Splitter.cv` validator with an int
-seed, so every trial is compared on identical folds.
+seed and at least 2 folds (the Splitter's rule), so every trial is compared on
+identical folds.
 """
 
 from __future__ import annotations
@@ -45,7 +46,7 @@ def _unique_names(parameters: Sequence[Parameter]) -> tuple[Parameter, ...]:
     frozen=True, config=ConfigDict(**_STRICT, arbitrary_types_allowed=True)
 )
 class CVHyperparameterEvaluator:
-    """Score one hyperparameter set by cross-validation; greater is better.
+    """Score one hyperparameter set by cross-validation; lower is better.
 
     Optuna calls its objective with the trial alone, so bind the data in a
     lambda (example: ``docs/HYPERPARAMETER_TUNING_PLAN.md`` §5).
@@ -55,7 +56,7 @@ class CVHyperparameterEvaluator:
     rejects the values LightGBM would accept silently. Rows are paired by
     position, so take its training rows by the positions
     ``Splitter.train_test_indices`` returned, the ones that gave ``X``.
-    A lower-is-better metric is negated, so the study always maximizes.
+    A greater-is-better metric is negated, so the study always minimizes.
     The model transforms its own features (its ``feature_transformer``),
     fitted on each fold's training rows. ``aggregation`` combines the fold
     scores into the trial value.
@@ -110,7 +111,7 @@ class CVHyperparameterEvaluator:
             model.fit(X_train, y_train, exposure=exposure_train)
             y_val_pred = model.predict(X_val, exposure=exposure_val)
             value = model.evaluate(y_val, y_val_pred, self.metric)
-            score = value if self.metric.greater_is_better else -value
+            score = -value if self.metric.greater_is_better else value
             # Checked before report: Optuna stores a NaN intermediate silently.
             if not math.isfinite(score):
                 raise ValueError(
@@ -127,6 +128,9 @@ class CVHyperparameterEvaluator:
         # A pruned trial's fold scores are already its intermediate values.
         trial.set_user_attr("fold_scores", scores)
         trial.set_user_attr("fold_sizes", fold_sizes)
+        # The study reads these to report the metric in its own sign.
+        trial.set_user_attr("metric_name", self.metric.name)
+        trial.set_user_attr("greater_is_better", self.metric.greater_is_better)
         return self.aggregation.aggregate(scores, fold_sizes)
 
     @staticmethod

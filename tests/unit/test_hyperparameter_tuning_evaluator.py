@@ -33,8 +33,8 @@ from age_group_prediction.hyperparameter_tuning import (
     CVHyperparameterEvaluator,
     FloatParameter,
     IntParameter,
-    LowerBound,
     Mean,
+    UpperBound,
     WeightedMean,
 )
 from age_group_prediction.modeling import BaseAgeGroupModel, CountModel
@@ -95,7 +95,7 @@ def _listed(exposure: ArrayLike | None) -> list[float] | None:
     return None if exposure is None else np.asarray(exposure).tolist()
 
 
-def _mean_of_y(*, greater_is_better: bool = True) -> Metric:
+def _mean_of_y(*, greater_is_better: bool = False) -> Metric:
     # The fold score is the mean target of the validation rows, which a test
     # can compute from the folds alone.
     return Metric(
@@ -133,7 +133,7 @@ def _optimize(
     pruner: BasePruner | None = None,
 ) -> optuna.Study:
     study = optuna.create_study(
-        direction="maximize",
+        direction="minimize",
         sampler=optuna.samplers.RandomSampler(seed=0),
         pruner=pruner,
     )
@@ -317,7 +317,7 @@ def test_the_score_is_signed_by_the_metrics_direction(greater_is_better: bool) -
         )
     )
     assert pooled > 0
-    assert value == pytest.approx(pooled if greater_is_better else -pooled)
+    assert value == pytest.approx(-pooled if greater_is_better else pooled)
 
 
 @pytest.mark.parametrize("bad", [math.nan, math.inf, -math.inf])
@@ -341,16 +341,16 @@ def _fold_scores() -> tuple[list[float], list[int]]:
         (WeightedMean(), lambda scores, sizes: np.average(scores, weights=sizes)),
         (Mean(), lambda scores, sizes: np.mean(scores)),
         (
-            LowerBound(z=2),
+            UpperBound(z=2),
             # 3 folds partition the rows: the K-fold corrected SE.
             lambda scores, sizes: (
                 np.average(scores, weights=sizes)
-                - 2 * np.std(scores, ddof=1) * math.sqrt(1 / 3 + 1 / 2)
+                + 2 * np.std(scores, ddof=1) * math.sqrt(1 / 3 + 1 / 2)
             ),
         ),
         (_Median(), lambda scores, sizes: np.median(scores)),
     ],
-    ids=["weighted-mean", "mean", "lower-bound", "median"],
+    ids=["weighted-mean", "mean", "upper-bound", "median"],
 )
 def test_each_fold_reports_its_score_and_the_value_is_the_aggregation(
     aggregation: Aggregation, rule: Any
@@ -367,16 +367,25 @@ def test_each_fold_reports_its_score_and_the_value_is_the_aggregation(
     assert study.trials[0].value == pytest.approx(rule(scores, sizes))
 
 
-def test_a_completed_trial_records_its_folds() -> None:
-    evaluator = _evaluator(metric=_mean_of_y())
+@pytest.mark.parametrize("greater_is_better", [True, False])
+def test_a_completed_trial_records_its_folds(greater_is_better: bool) -> None:
+    evaluator = _evaluator(metric=_mean_of_y(greater_is_better=greater_is_better))
     study = _optimize(evaluator, n_trials=1)
     fixed = FixedTrial({"alpha": 1.0})
     evaluator.evaluate(fixed, X, Y, GROUPS)
 
     scores, sizes = _fold_scores()
     for attrs in (study.trials[0].user_attrs, fixed.user_attrs):
-        assert set(attrs) == {"fold_scores", "fold_sizes"}
-        assert attrs["fold_scores"] == pytest.approx(scores)
+        assert set(attrs) == {
+            "fold_scores",
+            "fold_sizes",
+            "metric_name",
+            "greater_is_better",
+        }
+        assert attrs["metric_name"] == evaluator.metric.name
+        assert attrs["greater_is_better"] is greater_is_better
+        sign = -1.0 if greater_is_better else 1.0
+        assert attrs["fold_scores"] == pytest.approx([sign * s for s in scores])
         assert attrs["fold_sizes"] == sizes
         # JSON-native, as sqlite storage requires.
         assert type(attrs["fold_scores"]) is list
@@ -415,7 +424,7 @@ def test_pandas_and_numpy_inputs_score_the_same() -> None:
 
 def test_matches_a_hand_written_fold_loop() -> None:
     # The real pieces, end to end: fold-local features, the exposure offset,
-    # and a lower-is-better metric that is negated. The loop below builds
+    # and a lower-is-better metric, scored as it is. The loop below builds
     # fresh objects per fold, so this also catches any state the evaluator's
     # one-copy-per-trial refits might carry from one fold to the next.
     rng = np.random.default_rng(0)
@@ -465,7 +474,7 @@ def test_matches_a_hand_written_fold_loop() -> None:
         y_val_pred = fitted.predict(
             transformer.transform(df.iloc[val]), exposure=exposure[val]
         )
-        scores.append(-float(POISSON_DEVIANCE.function(y.iloc[val], y_val_pred)))
+        scores.append(float(POISSON_DEVIANCE.function(y.iloc[val], y_val_pred)))
         sizes.append(len(val))
     assert len(set(sizes)) > 1
     assert value == pytest.approx(np.average(scores, weights=sizes))
@@ -519,7 +528,7 @@ def test_a_dataframe_target_is_split_and_scored_per_fold() -> None:
     for train, val in cv.split(df, y, groups):
         proportions = y.iloc[train].sum() / y.iloc[train].to_numpy().sum()
         predicted = np.tile(proportions.to_numpy(), (len(val), 1))
-        scores.append(-cohort_log_loss(y.iloc[val], predicted))
+        scores.append(cohort_log_loss(y.iloc[val], predicted))
         sizes.append(len(val))
     assert len(set(sizes)) > 1
     assert value == pytest.approx(np.average(scores, weights=sizes))

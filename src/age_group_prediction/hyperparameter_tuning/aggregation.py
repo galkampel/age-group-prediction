@@ -1,15 +1,15 @@
-"""How a trial's fold scores are combined into the one value the study maximizes.
+"""How a trial's fold scores are combined into the one value the study minimizes.
 
 An aggregation knows nothing about the data: it receives each fold's score
-(greater is better) and size (its validation rows), computed by the
+(lower is better) and size (its validation rows), computed by the
 evaluator, and returns a number.
 
 - :class:`WeightedMean` (the default): the size-weighted mean. For a metric
   that is a mean over rows (MAE, Poisson deviance) it equals the pooled
   per-row score, the measure the test set reports.
 - :class:`Mean`: the plain mean, as ``cross_val_score(...).mean()``.
-- :class:`LowerBound`: the weighted mean minus ``z`` standard errors, to prefer
-  stable settings over the best average. Its ranking is noisier: the SE is
+- :class:`UpperBound`: the weighted mean plus ``z`` standard errors, a loss's
+  pessimistic bound, to prefer stable settings over the best average. Its ranking is noisier: the SE is
   estimated from only K scores.
 
 Subclass :class:`Aggregation` for another rule, e.g. a median.
@@ -30,8 +30,8 @@ from ._config import _STRICT
 
 __all__ = [
     "Aggregation",
-    "LowerBound",
     "Mean",
+    "UpperBound",
     "WeightedMean",
     "corrected_std_error",
 ]
@@ -75,7 +75,7 @@ class Aggregation(ABC):
     """A rule that combines a trial's fold scores into its value.
 
     A plain ABC: it holds no data. Subclass it; for a validated setting,
-    decorate the subclass as :class:`LowerBound` is.
+    decorate the subclass as :class:`UpperBound` is.
     """
 
     @abstractmethod
@@ -84,7 +84,7 @@ class Aggregation(ABC):
 
 
 # Field-less classes are pydantic dataclasses too, so they print as
-# "WeightedMean()" and compare by value, like LowerBound.
+# "WeightedMean()" and compare by value, like UpperBound.
 @pydantic_dataclass(frozen=True, config=_STRICT)
 class WeightedMean(Aggregation):
     """The mean score weighted by fold size."""
@@ -105,8 +105,8 @@ class Mean(Aggregation):
 
 
 @pydantic_dataclass(frozen=True, config=_STRICT)
-class LowerBound(Aggregation):
-    """The weighted mean minus ``z`` corrected standard errors.
+class UpperBound(Aggregation):
+    """The weighted mean plus ``z`` corrected standard errors: a loss's pessimistic bound.
 
     ``z=1`` is the one-SE rule; ``z=1.645`` roughly a one-sided 95% bound. The
     SE is the unweighted mean's (:func:`corrected_std_error`), an
@@ -116,5 +116,5 @@ class LowerBound(Aggregation):
     z: Annotated[float, Field(gt=0)] = 1.0
 
     def aggregate(self, scores: Sequence[float], fold_sizes: Sequence[int]) -> float:
-        """The weighted mean minus ``z`` standard errors."""
-        return _weighted_mean(scores, fold_sizes) - self.z * corrected_std_error(scores)
+        """The weighted mean plus ``z`` standard errors."""
+        return _weighted_mean(scores, fold_sizes) + self.z * corrected_std_error(scores)
