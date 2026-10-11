@@ -4,10 +4,11 @@
 **Status (2026-10-11):** Phases 1 (parameters) and 2 (evaluator, aggregations)
 are done; 3.1 (the study's constructor and defaults, `study.py`) is committed
 (`1f4ed67`); 3.2 (`optimize`, the best trial) is committed (`81f8896`); 3.3
-(`TrialRecord`, the full `TuningResult` with `to_dict()` in the metric's own
-sign) is done and awaits the user's commit. The sub-tasks are driven from
+(`TrialRecord`, the full `TuningResult`; the study minimizes, D12 reversed) is
+committed (`b0d436c`); 3.4 (the slow integration test) and 3.5 (pruner
+guidance) are done and await the user's commit. The sub-tasks are driven from
 [EXPERIMENT_NOTEBOOK_PLAN.md](EXPERIMENT_NOTEBOOK_PLAN.md) §6 (A1–A6).
-**Next:** **3.4** (the integration test) and 3.5 (pruner guidance), then the rest of Phase 3 and Phase 4 (docs). The §6 task "Evaluator on the raw table" was done by [DIRECT_COHORT_GENERALIZATION_PLAN.md](DIRECT_COHORT_GENERALIZATION_PLAN.md) Step 5 (PR #12).
+**Next:** **Phase 4** (4.1 the user doc `docs/HYPERPARAMETER_TUNING.md`, 4.2 links, 4.3 final check). The §6 task "Evaluator on the raw table" was done by [DIRECT_COHORT_GENERALIZATION_PLAN.md](DIRECT_COHORT_GENERALIZATION_PLAN.md) Step 5 (PR #12).
 The history of each step is in the git log and the commit messages.
 **To resume:** read this doc (§2 decisions, §4 design, §6 remaining work, §7
 working notes), then the package code and its tests; start the next sub-task
@@ -159,7 +160,22 @@ and return `aggregation.aggregate(scores, fold_sizes)`.
   `WilcoxonPruner` pruned it after 5 folds and `SuccessiveHalvingPruner`
   after 2; `MedianPruner`/`PercentilePruner` never did, whatever was reported,
   because they compare a trial's best value over its steps (a learning-curve
-  assumption).
+  assumption). **Guidance (3.5):** for CV, use `WilcoxonPruner` or
+  `SuccessiveHalvingPruner`, never `MedianPruner`/`PercentilePruner`; the
+  default is no pruning (`NopPruner`), and the notebook uses none.
+- **Folds run in a fixed order (3.5).** Optuna's `WilcoxonPruner` docs advise
+  shuffling the evaluation order per trial "so that the optimization doesn't
+  overfit to the instances in the beginning". Measured on 8 folds of unequal
+  difficulty, 80 trials, 4 seeds: under Wilcoxon, shuffled and fixed order
+  gave about the same results (identical in our run; the review's own probe
+  found small differences both ways, e.g. best 1.110 vs 1.148); under
+  successive halving, shuffling made the best **worse** in 3 of 4 seeds in
+  our run (1.163 vs 1.016, 1.048 vs 0.989, 1.186 vs 1.004) and 4 of 4 in the
+  review's, because it compares trials at the
+  same step, which must then be the same fold in every trial. So the order is
+  kept fixed (user's rule: change only what affects the results). Without a
+  pruner the order changes nothing: every fold is fitted, each fit starts
+  afresh, and the aggregations ignore order.
 - **User attrs** are written only for a completed trial, as plain Python
   values (what sqlite storage accepts and returns): `fold_scores`,
   `fold_sizes`, and (3.3) `metric_name` and `greater_is_better`, from which the
@@ -399,6 +415,7 @@ mistake it catches, each with the mutation that must fail it):
 | `test_a_bool_seed_is_rejected` (`seed=True`, the one case lax mode accepts) | drop `_STRICT` |
 | `test_more_initial_params_than_trials_are_rejected` (3.2) | drop the check |
 | `test_the_same_seed_gives_the_same_result`: two objects, and two `optimize` calls on one (3.2) | an unseeded default sampler |
+| `test_the_best_params_are_the_best_trials`: trial 2 is the only minimum (3.4 review) | `best_params` from another trial |
 | `test_a_pruned_trial_never_wins`: a pruned trial reports −100.0, below every other (3.2) | include PRUNED states |
 | `test_a_tie_goes_to_the_lowest_trial_number`: `n_jobs=2`, trial 0 finishes last, all return 1.0 (3.2) | return `study.best_trial` |
 | `test_no_completed_trial_raises` (3.2) | drop the check |
@@ -454,7 +471,8 @@ g_train, exposure_train = take_rows(groups, train_index), take_rows(exposure, tr
 evaluator = CVHyperparameterEvaluator(
     CountModel(
         # subsample_freq=1: LightGBM ignores subsample without it.
-        estimator=LGBMRegressor(objective="poisson", subsample_freq=1, n_jobs=1, verbosity=-1),
+        estimator=LGBMRegressor(objective="poisson", subsample_freq=1, n_jobs=1, verbosity=-1,
+                                random_state=0),
         use_exposure=True, feature_transformer=tree),
     parameters,
     cv=splitter.cv(n_splits=5, random_state=42),
@@ -468,8 +486,11 @@ for cohort in cohort_columns:                    # one study per cohort
         train_df, Y_train[cohort], exposure=exposure_train)
 ```
 
-`HyperparameterStudy` is Phase 3 (3.1–3.2); until then the block was run with a
-seeded Optuna study in its place. Compared with the old closure: the model
+The runnable version is `tests/unit/test_hyperparameter_tuning_integration.py`
+(3.4, marked `slow`): the simulator at 20 neighborhoods (79 buildings), `tree`
+copied from `FEATURE_TRANSFORMATIONS.md` §8.1, 3 trials per cohort, then each
+best parameter set rebuilt, refitted and used to predict the held-out rows
+(about 0.2 s per cohort). Compared with the old closure: the model
 takes the raw table and fits its own `feature_transformer` per fold; the
 LightGBM settings live on the template estimator and are tuned by nested
 names (`estimator__…`); `num_leaves` and `max_depth` are sampled
@@ -497,8 +518,8 @@ choices asked), then §7's routine, then a stop for approval.
 - [x] **3.1 Study constructor and defaults** (§4.4). *Done when:* the default sampler is a seeded multivariate TPE and the default pruner `NopPruner`, built without a warning; `n_trials=None` with `timeout_seconds=None`, `n_trials < 1` and `timeout_seconds <= 0` raise `ValueError`; a given sampler or pruner is used as given.
 - [x] **3.2 `optimize` and the best trial.** *Done when:* the same seed gives an identical `TuningResult`; a pruned trial never wins; ties go to the lowest number; no completed trial raises `RuntimeError`; `initial_params` run first, in order, and a key that no trial suggested raises (Optuna drops it silently); more `initial_params` than `n_trials` raises; the Optuna study is kept as `optuna_study_`.
 - [x] **3.3 Records and results.** *Done when:* each `TrialRecord` carries the fold scores and sizes and the derived SE; a PRUNED trial's record does not report its last intermediate as a score (§4.4: Optuna keeps it as the trial's `value`); `to_dict()` round-trips through `json`; `is_reproducible` is False with a timeout or `n_jobs > 1`; the best value is reported in the metric's own sign wherever it is shown or logged, the score kept as the search value (D12, reversed to "always minimize" in 3.3).
-- [ ] **3.4 Integration test** (§5 on a small simulated table, a few trials). *Done when:* the best parameters refit through `build_model` and predict.
-- [ ] **3.5 Pruners in the docs:** `WilcoxonPruner` or `SuccessiveHalvingPruner` for CV, not `MedianPruner` (§4.2). Wilcoxon's docs also advise shuffling the evaluation order per trial; decide whether that applies with fixed folds.
+- [x] **3.4 Integration test** (§5 on a small simulated table, a few trials). *Done when:* the best parameters refit through `build_model` and predict.
+- [x] **3.5 Pruners in the docs:** `WilcoxonPruner` or `SuccessiveHalvingPruner` for CV, not `MedianPruner` (§4.2). Wilcoxon's docs also advise shuffling the evaluation order per trial; decide whether that applies with fixed folds. *Decided:* no, measured (§4.2, "Folds run in a fixed order").
   **Then the Phase 3 review** and your approval.
 - [ ] **4.1 `docs/HYPERPARAMETER_TUNING.md`:** the three parts, the decisions, aggregation and pruning guidance, the worked example, hazards, how a rebuilt model becomes tunable (D17), what remains.
 - [ ] **4.2 Links** from `docs/README.md`, `docs/MODULE_REFERENCE.md` and `docs/SPLITTING.md` §7; mark this plan implemented.

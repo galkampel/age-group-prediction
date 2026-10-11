@@ -117,6 +117,19 @@ def test_the_same_seed_gives_the_same_result() -> None:
     assert HyperparameterStudy(seed=7, n_trials=N_TRIALS).optimize(_objective) == first
 
 
+def test_the_best_params_are_the_best_trials() -> None:
+    # Trial 2 is the only minimum, so another trial's params would show.
+    def objective(trial: optuna.Trial) -> float:
+        trial.suggest_float("x", 0.0, 1.0)
+        return [3.0, 2.0, 1.0, 4.0][trial.number]
+
+    result = HyperparameterStudy(seed=0, n_trials=4).optimize(objective)
+    best = result.trials[result.best_trial_number]
+    assert result.best_trial_number == 2
+    assert result.best_params == best.params
+    assert result.best_params != result.trials[0].params
+
+
 def test_a_pruned_trial_never_wins() -> None:
     def objective(trial: optuna.Trial) -> float:
         trial.suggest_float("x", 0.0, 1.0)

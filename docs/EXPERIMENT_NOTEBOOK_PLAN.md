@@ -6,10 +6,10 @@ every fact against the code of the day before relying on it (file paths, line
 counts, test counts drift).
 
 **Status (2026-10-11):** A0 committed (`6b8f5a1`), A1 (`1f4ed67`), A2
-(`81f8896`); A3 done (`TrialRecord`, the full `TuningResult`, each with the
-score and the metric's value in its own sign; `to_dict()`; the study now
-minimizes, D12 reversed, `LowerBound` → `UpperBound`; design in the tuning
-plan §4.4) and awaits the user's commit. **Next:** PR A, sub-task A4.
+(`81f8896`), A3 (`b0d436c`: records, the full `TuningResult`, the study now
+minimizes); A4 done (the slow integration test, pruner guidance with the
+fold order kept fixed, the penalty ranges checked) and awaits the user's
+commit. **Next:** PR A, sub-task A5 (the user doc).
 
 **Branch state:** `feat/hyperparameter-tuning` (draft PR #5), 49 commits ahead
 of `main` at `7d865ab`, carrying the squash-merges of PRs #10–#14.
@@ -441,7 +441,7 @@ metric's best value is reported in its natural sign wherever it is shown or
 logged, the score kept as the search value (D12 of the tuning plan kept,
 user's choice 2026-10-11; design decided in A3's plan mode).
 
-### [ ] A4. Integration test, pruner guidance, penalty ranges (tuning plan 3.4–3.5)
+### [x] A4. Integration test, pruner guidance, penalty ranges (tuning plan 3.4–3.5)
 
 - The §5 example as a test marked `slow`, with `n_trials=3`, on the simulator
   at 20 neighborhoods.
@@ -603,7 +603,11 @@ notebook fits nothing. Docs in `docs/EXPERIMENTS.md`.
   module constants, for the variants with state: a `FeatureTransformer` is
   cloned by the models anyway, so constants would also be safe; choose
   constants for the three bases and functions for the variants, and say why in
-  the module docstring. Add the module to the mypy `files` list.
+  the module docstring. Add the module to the mypy `files` list. Expect one
+  typing gap (found in A4): the doc writes `ColumnPlan(columns="school_status")`,
+  which runs (a "before" validator wraps a string) but `ColumnPlan.columns` is
+  typed `tuple[str, ...]`, so mypy rejects it. Either write tuples or widen the
+  annotation (`str | tuple[str, ...]` with the validator); decide with the user.
 - Tests: each declaration fits and transforms the simulator table at 20
   neighborhoods without error and yields finite columns; the doc blocks of §8
   now `import` from the module instead of redefining (edit the doc).
@@ -672,10 +676,10 @@ folds LightGBM fits ≈ a few minutes).
   nested studies):
   1. Model 1 × LightGBM × `tree` × exposure **off** (E5).
   2. Model 1 × `PoissonRegressor(alpha)` × `total_base` (+ `n_apartments`
-     dropped, exposure on): `alpha ∈ [1e-4, 10]` log.
+     dropped, exposure on): `alpha ∈ [1e-4, 10]` log (checked in A4).
   3. Model 1 × NB2 (`NegativeBinomialRegressor`): no hyperparameters; the
      "study" is one trial, logged the same way.
-  4. Model 2 × {Poisson, NB2, LightGBM} total × {LR (`C ∈ [1e-3, 100]` log,
+  4. Model 2 × {Poisson, NB2, LightGBM} total × {LR (`C ∈ [1e-3, 100]` log, checked in A4;
      `calibration_method ∈ {None, "temperature", "sigmoid"}`), `LGBMClassifier`
      (the §5 LightGBM ranges)} probability: six cells, or one cell with a
      dropdown for the pair (prefer six explicit cells: "each run is a cell").

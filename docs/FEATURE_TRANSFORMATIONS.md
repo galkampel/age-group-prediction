@@ -1279,6 +1279,14 @@ open user-named `Interaction`s. **The rest still stand:**
    against the constant rate's 4.69; `l2_penalty = 1.0` pulled it back to
    5.29). With sklearn's `PoissonRegressor()` default `alpha=1` that population
    gives 3.60 ([plan, sub-task 6](TOTAL_TIMES_PROBABILITY_MODEL_PLAN.md)).*
+   *Checked 2026-10-11 (EXPERIMENT_NOTEBOOK_PLAN.md A4): the tuning ranges are
+   `alpha ∈ [1e-4, 10]` and `C ∈ [1e-3, 100]`, both log-uniform (that plan's
+   D4). The old ranges were `total_l2_penalty ∈ [0, 1]` and
+   `probability_c ∈ [0.01, 100]`, with the optima at their edges (1.0 and
+   0.01); each new range reaches a decade past that edge. `alpha` is in the
+   estimator's own units, scaled by `mean(exposure)` under the weighted rate
+   (40.1 apartments per building in the notebook's table: 150 neighborhoods,
+   `buildings_per_neighborhood_rate = 9.0`, 1529 buildings).*
 
 ## 9. Related Documents
 
