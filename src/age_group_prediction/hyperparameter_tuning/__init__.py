@@ -8,7 +8,7 @@
 :mod:`~age_group_prediction.hyperparameter_tuning.aggregation`
     How a trial's fold scores are combined into one value.
 :mod:`~age_group_prediction.hyperparameter_tuning.study`
-    How Optuna searches, and which trial won (Phase 3).
+    How Optuna searches, and which trial won.
 
 Each part can be replaced without touching the others. The design and its
 decisions are in ``docs/HYPERPARAMETER_TUNING_PLAN.md``.
@@ -30,12 +30,14 @@ from .parameters import (
     IntParameter,
     Parameter,
 )
+from .study import HyperparameterStudy
 
 __all__ = [
     "Aggregation",
     "CVHyperparameterEvaluator",
     "CategoricalParameter",
     "FloatParameter",
+    "HyperparameterStudy",
     "IntParameter",
     "LowerBound",
     "Mean",

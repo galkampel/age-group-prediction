@@ -23,6 +23,7 @@ from sklearn.model_selection import BaseCrossValidator
 from ..modeling import BaseAgeGroupModel
 from ..scoring import Metric
 from ..utils import DesignMatrix, Exposure, Groups, Target, take_rows
+from ._config import _STRICT
 from .aggregation import Aggregation, WeightedMean
 from .parameters import Parameter
 
@@ -40,7 +41,9 @@ def _unique_names(parameters: Sequence[Parameter]) -> tuple[Parameter, ...]:
 
 # Settings are checked when the evaluator is built, not after a fold is fitted.
 # Arbitrary types are checked with isinstance and stored as given.
-@pydantic_dataclass(frozen=True, config=ConfigDict(arbitrary_types_allowed=True))
+@pydantic_dataclass(
+    frozen=True, config=ConfigDict(**_STRICT, arbitrary_types_allowed=True)
+)
 class CVHyperparameterEvaluator:
     """Score one hyperparameter set by cross-validation; greater is better.
 

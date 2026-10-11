@@ -5,8 +5,9 @@ it. Self-contained: everything an implementer needs is here or linked. Re-verify
 every fact against the code of the day before relying on it (file paths, line
 counts, test counts drift).
 
-**Status (2026-10-11):** A0 done (branch settled, baseline 1216 passed);
-awaits the user's commit. **Next:** PR A, sub-task A1.
+**Status (2026-10-11):** A0 committed (`6b8f5a1`); A1 done
+(`HyperparameterStudy` constructor and defaults; design in the tuning plan
+§4.4) and awaits the user's commit. **Next:** PR A, sub-task A2.
 
 **Branch state:** `feat/hyperparameter-tuning` (draft PR #5), 49 commits ahead
 of `main` at `7d865ab`, carrying the squash-merges of PRs #10–#14.
@@ -399,7 +400,7 @@ status line as its sub-tasks close.
 **Done when:** `git status` is clean after the user's commit; the baseline
 passes.
 
-### [ ] A1. `HyperparameterStudy` constructor and defaults (tuning plan 3.1)
+### [x] A1. `HyperparameterStudy` constructor and defaults (tuning plan 3.1)
 
 File `hyperparameter_tuning/study.py`; tests
 `tests/unit/test_hyperparameter_tuning_study.py`. Signature as §4.4 of the
@@ -417,8 +418,9 @@ given (not cloned).
 
 **Done when:** the same seed gives an identical `best_params` twice; a pruned
 trial never wins; ties go to the lowest trial number; no completed trial
-raises `RuntimeError`; `initial_params` run first, in order; the Optuna study
-is kept as `optuna_study_`.
+raises `RuntimeError`; `initial_params` run first, in order, and a key no trial
+suggested raises (measured in A1: Optuna drops it silently, without a warning);
+the Optuna study is kept as `optuna_study_`.
 
 ### [ ] A3. `TrialRecord` and `TuningResult` (tuning plan 3.3)
 
@@ -524,6 +526,10 @@ its status line to "in progress" at C1 and to "complete" at C3.
 `X`: `importance_mean`, `importance_std`; sign from `greater_is_better`, so
 positive = helps). Built on `sklearn.inspection.permutation_importance` with a
 scorer that passes `exposure` row-aligned. Tests as the importance plan lists.
+Its pydantic config, and `BootstrapEvaluator`'s, should take `extra="forbid"`
+(a misspelt keyword is ignored silently today), as the tuning package does
+since A1 (`hyperparameter_tuning/_config.py`); either share that constant or
+add an `inspection/_config.py`.
 
 **Done when:** that plan's four tests pass under `-W error`; each mutation
 fails a test; works on `TotalTimesProbabilityModel` with the string column

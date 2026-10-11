@@ -280,6 +280,7 @@ def test_package_exports_the_public_names() -> None:
         "CVHyperparameterEvaluator",
         "CategoricalParameter",
         "FloatParameter",
+        "HyperparameterStudy",
         "IntParameter",
         "LowerBound",
         "Mean",
