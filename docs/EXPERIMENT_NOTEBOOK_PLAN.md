@@ -17,8 +17,9 @@ written; the links). An independent validation
 choices rejected, the doc corrections) and awaiting the user's commit.
 **Next:** A6, the merge of PR #5 into `main`; then PR B.
 
-**Branch state:** `feat/hyperparameter-tuning` (draft PR #5), 49 commits ahead
-of `main` at `7d865ab`, carrying the squash-merges of PRs #10–#14.
+**Branch state:** `feat/hyperparameter-tuning` (draft PR #5), 59 commits ahead
+of `main` at `3c3ed53` (PR #4). The sub-PRs #6–#14 were merged into this branch, not into
+`main`, so A6's squash brings the rebuilt models to `main` together with the tuning package.
 
 ## Contents
 

@@ -557,70 +557,83 @@ doc → stop with the commands.
 
 ## 8. Draft PR text
 
-**Title:** `feat: add modular Optuna hyperparameter tuning`. At each phase
-stop, update the status line and checklist, and give the user the lines to
-paste. No "Generated with" footer: the user removed it.
+**Title:** `feat: rebuilt models, hyperparameter tuning and model inspection`.
+
+The branch is 59 commits ahead of `main` (`3c3ed53`). It carries the sub-PRs #6–#14, merged into it,
+so the squash-merge brings all of them to `main` in one commit. The body says so. There is no
+"Generated with" footer: the user removed it.
 
 ```markdown
-**Status:** ready. The package is complete and documented
-(`docs/HYPERPARAMETER_TUNING.md`).
+**Status:** ready. Validated independently (`docs/HYPERPARAMETER_TUNING_VALIDATION.md`:
+ACCEPT WITH NOTES, findings processed).
 
 ## Summary
 Adds the `hyperparameter_tuning` package: Optuna tuning split into independent,
-tested parts that tune the repo's own `modeling.BaseAgeGroupModel`s.
+tested parts that tune the repo's own `modeling.BaseAgeGroupModel`s. The branch
+also carries the rebuilt models it tunes (sub-PRs #6–#14, below).
 
 - **Parameters** (`parameters.py`): `FloatParameter`, `IntParameter` and
   `CategoricalParameter`, strict pydantic dataclasses validated when created.
-  They run Optuna's own checks, plus three that Optuna lets through silently:
-  a step that doesn't divide the range, duplicate choices, and NaN/inf
-  bounds and float choices. A search space is a plain list of them.
+  They run Optuna's own checks, plus those Optuna lets through silently: a
+  step that doesn't divide the range, duplicate choices, NaN/inf bounds and
+  float choices, and (in the evaluator) duplicate names. Choices are Optuna's
+  scalar types. A search space is a plain list of parameters.
 - **`CVHyperparameterEvaluator`** (`evaluator.py`): a frozen pydantic
-  dataclass of settings, checked when built: a model, parameters, a
-  `Splitter.cv` validator, a `Metric` and an `Aggregator`. The data go to `evaluate(trial, X, y, groups, *, exposure=None)`.
+  dataclass of settings, checked when built: a model, parameters (an empty
+  list scores the model as given), a cross-validator from `Splitter.cv`, a
+  `Metric` and an `Aggregator`. The data go to
+  `evaluate(trial, X, y, groups, *, exposure=None)`.
   - Each trial copies the model once; each fold refits it (and its own
     `feature_transformer`) on its training rows only, so no validation rows
     leak in.
   - A greater-is-better metric is negated, so the study always minimizes.
   - Each fold's own score is reported for pruning, the contract of Optuna's
     `WilcoxonPruner`. A NaN or inf score raises.
-  - A completed trial records its `fold_scores` and `fold_sizes`.
-- **Aggregations** (`aggregation.py`): `WeightedMean` (the default), `Mean`
+  - `build_model(params)` rebuilds the winner for the final refit.
+- **Aggregators** (`aggregation.py`): `WeightedMean` (the default), `Mean`
   and `UpperBound(z)`, each through `aggregate(scores, fold_sizes)`.
   `corrected_std_error` is the K-fold Nadeau–Bengio standard error.
 - **`HyperparameterStudy`** (`study.py`): `seed`, `n_trials`, `sampler`,
   `pruner`; a seeded multivariate TPE and no pruning by default; trials run
-  one after the other and the study always minimizes. `optimize` returns a
-  `TuningResult`: the best COMPLETE trial (a tie to the lowest number), its
-  params and value in the metric's own sign, and one `TrialRecord` per trial
-  that ran, with the fold values, sizes and the corrected standard error;
-  `to_dict()` is JSON-safe. The Optuna study is kept as `optuna_study_`.
-- An external review (`docs/HYPERPARAMETER_TUNING_REVIEW.md`) was processed:
-  an empty search space is allowed (a model without hyperparameters, one
-  trial), categorical choices are Optuna's scalar types, the study's unused
-  settings (timeouts, parallel jobs, warm starts) were dropped.
+  one after the other. `optimize` returns a `TuningResult`: the best COMPLETE
+  trial (a tie to the lowest number), its params and value in the metric's
+  own sign, and one `TrialRecord` per trial that ran, with the fold values,
+  sizes and the corrected standard error. `to_dict()` is JSON-safe. The
+  Optuna study is kept as `optuna_study_`.
 
-Supporting changes:
-- `Metric` and the ready-made metrics moved to the top-level `scoring.py`.
-- `BaseAgeGroupModel.fit`/`predict` take `exposure=None`, and a contract test
-  runs sklearn's parameter checks over every model.
-- `Splitter.cv` requires an int `random_state`, so every trial sees identical
-  folds.
-- A public `utils.py` holds `take_rows` and the table type aliases.
+Also on this branch (merged into it as sub-PRs):
+- **The rebuilt models** (`modeling/`, #6, #10–#13): `BaseAgeGroupModel`
+  (scikit-learn style; `fit`/`predict` take `exposure=None`, rows paired by
+  position); `CountModel` on any regressor, with the exposure as a weighted
+  rate or, for NB2, as an offset; `NegativeBinomialRegressor` (statsmodels
+  NB2); `CohortProbabilityModel` on any classifier; `IndependentCohortModels`
+  (Model 1) and `TotalTimesProbabilityModel` (Model 2). Each leaf model owns
+  its `feature_transformer`, fitted inside `fit`. A contract test runs
+  scikit-learn's parameter checks over every model.
+- **Model inspection** (`inspection/`, #14): `BootstrapEvaluator`, the
+  bootstrap mean and percentile CI of a fitted model's metric, by rows or by
+  whole groups.
+- **Feature engineering** (#8, #9): `CenterByReferencePoint`, a public
+  `Log1pRatioScaler`, one scale for every penalized column.
+- **Supporting:** `Metric` and the ready-made metrics in the top-level
+  `scoring.py`; `preprocessing.ExposureTransformer`; a public `utils.py`
+  (`take_rows`, the table type aliases); `Splitter.cv` requires an int
+  `random_state`, so every trial sees identical folds; the splitting fixes of
+  #7.
 
 ## Scope
-Not wired into the experiment runner (the experiment notebook,
-`docs/EXPERIMENT_NOTEBOOK_PLAN.md`, is the first client). `tuning.py` and
-the old `models/` are unchanged. The user guide is
-`docs/HYPERPARAMETER_TUNING.md`; the decisions and design are in
-`docs/HYPERPARAMETER_TUNING_PLAN.md`.
+The old stack (`models/`, `tuning.py`, `tracking/`, `experiment/`) is
+unchanged and is deleted in a later PR. The experiment notebook
+(`docs/EXPERIMENT_NOTEBOOK_PLAN.md`) is the first client. User guides:
+`docs/HYPERPARAMETER_TUNING.md`, `docs/INDEPENDENT_COHORT_MODELS.md`,
+`docs/TOTAL_TIMES_PROBABILITY_MODEL.md`.
 
 ## Checklist
-- [x] Phase 1: parameters
-- [x] Phase 2: evaluator and aggregations
-- [x] Phase 3: study, including the slow integration test
+- [x] Parameters, evaluator, aggregators, study (with the slow integration test)
 - [x] External review processed (A4b)
-- [x] Phase 4: docs
-- [x] Non-slow suite passes (1244 passed)
+- [x] User guide, every code block run as written
+- [x] Independent validation: 30 mutations killed, findings processed
+- [x] Non-slow suite passes (1247 passed, 1 skipped, 1 xfailed)
 ```
 
 ## 9. The switch to `BaseAgeGroupModel` (settled 2026-09-24)
