@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+import statsmodels.api as sm
+
 from student_simulator.apartment import ApartmentSimulator
 from student_simulator.config import Config, ValidationSettings
 from student_simulator.outcomes import TotalChildrenSimulator
@@ -63,14 +65,6 @@ def run_recovery_checks(
     validation: ValidationSettings,
 ) -> list[RecoveryResult]:
     """Fit oracle and naive NB2 models for test-only coefficient recovery."""
-    try:
-        import statsmodels.api as sm
-    except ImportError as exc:
-        raise RuntimeError(
-            "Coefficient recovery requires the validation dependency group: "
-            "install with `uv sync --group validation`."
-        ) from exc
-
     apartments = result.apartments
     buildings = result.buildings
     neighborhoods = result.neighborhoods

@@ -14,6 +14,7 @@ from sklearn.exceptions import NotFittedError
 
 from age_group_prediction.feature_engineering import (
     Center,
+    CenterByReferencePoint,
     ColumnPlan,
     DomainMinMax,
     DomainScale,
@@ -22,6 +23,7 @@ from age_group_prediction.feature_engineering import (
     Log,
     Log1p,
     OneHot,
+    Quadratic,
     RelativeSaturation,
     Standardize,
 )
@@ -111,6 +113,23 @@ def test_a_relative_saturation_centers_on_log1p_of_the_mean() -> None:
     out = transformer.fit_transform(df)
     expected = np.log1p([0.0, 4.0, 8.0]) - np.log1p(4.0)
     np.testing.assert_allclose(out["n_daycares_500m_sat"], expected, atol=1e-12)
+
+
+def test_ses_is_measured_from_the_reference_point_not_the_fold_mean() -> None:
+    # ses is [1, 2, 3] with fold mean 2. Measured from the reference 0, both
+    # terms keep their distance from 0; Center would give [-1, 0, 1] and
+    # [1, 0, 1], measured from the fold instead.
+    reference = CenterByReferencePoint(reference_point=0.0)
+    transformer = FeatureTransformer(
+        plans=(
+            _plan("ses", "ses", transforms=(reference,)),
+            _plan("ses_sq", "ses", transforms=(reference, Quadratic())),
+        ),
+    )
+    out = transformer.fit_transform(_frame())
+    assert list(out.columns) == ["ses", "ses_squared"]
+    np.testing.assert_allclose(out["ses"], [1.0, 2.0, 3.0], atol=1e-12)
+    np.testing.assert_allclose(out["ses_squared"], [1.0, 4.0, 9.0], atol=1e-12)
 
 
 # --- Structure ---------------------------------------------------------------
@@ -323,63 +342,3 @@ def test_a_later_frame_that_poisons_the_matrix_is_rejected_too() -> None:
     ).fit(pd.DataFrame({"count": [1.0, 2.0, 3.0]}))
     with pytest.raises(ValueError, match="non-finite"):
         transformer.transform(pd.DataFrame({"count": [1.0, 0.0, 3.0]}))
-
-
-# --- The exposure offset -----------------------------------------------------
-
-
-def _exposure_frame() -> pd.DataFrame:
-    return pd.DataFrame(
-        {"ses": [1.0, 2.0, 3.0], "n_apartments": [1.0, 10.0, 100.0]},
-        index=[10, 11, 12],
-    )
-
-
-def _exposure_tf(**overrides) -> FeatureTransformer:
-    defaults = {
-        "plans": (_plan("ses_z", "ses", transforms=(Standardize(),)),),
-        "exposure_column": "n_apartments",
-    }
-    return FeatureTransformer(**{**defaults, **overrides})
-
-
-def test_the_offset_is_the_log_of_the_exposure_column() -> None:
-    offset = _exposure_tf().log_exposure(_exposure_frame())
-    assert offset.name == "log_n_apartments"
-    # log(1), log(10), log(100) -- hand-checked against the natural log.
-    np.testing.assert_allclose(offset.to_numpy(), [0.0, np.log(10.0), np.log(100.0)])
-    assert list(offset.index) == [10, 11, 12]
-
-
-def test_there_is_no_offset_when_no_exposure_is_declared() -> None:
-    assert _tf().log_exposure(_frame()) is None
-
-
-def test_an_unplanned_exposure_is_dropped_from_the_design_matrix() -> None:
-    # Not a guarantee about exposures -- it follows from no plan claiming the
-    # column and the remainder dropping it. A plan may claim it (see
-    # test_an_exposure_may_also_be_a_predictor).
-    transformer = _exposure_tf().fit(_exposure_frame())
-    names = list(transformer.get_feature_names_out())
-    assert "n_apartments" not in names
-    assert "log_n_apartments" not in names
-    assert names == ["ses"]
-
-
-def test_a_non_positive_exposure_is_rejected_when_the_offset_is_asked_for() -> None:
-    df = _exposure_frame()
-    df.loc[11, "n_apartments"] = 0.0
-    with pytest.raises(ValueError, match="strictly positive"):
-        _exposure_tf().log_exposure(df)
-
-
-def test_a_missing_or_blank_exposure_column_raises_when_the_offset_is_asked_for() -> (
-    None
-):
-    # Not checked at fit: the exposure is not part of the design matrix, so
-    # nothing touches it until the offset is requested. pandas names it.
-    with pytest.raises(KeyError, match="n_apartments"):
-        _exposure_tf().log_exposure(_exposure_frame().drop(columns=["n_apartments"]))
-    # A blank name must not be silently treated as "no exposure".
-    with pytest.raises(KeyError):
-        _exposure_tf(exposure_column="").log_exposure(_exposure_frame())

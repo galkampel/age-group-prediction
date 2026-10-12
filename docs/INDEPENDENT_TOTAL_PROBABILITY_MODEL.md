@@ -1,5 +1,21 @@
 # Independent Total And Probability Model (Model B)
 
+> **Two implementations.** The rebuilt Model B / Model 2 in
+> `age_group_prediction.modeling` (`TotalTimesProbabilityModel`: a `CountModel` total times
+> a `CohortProbabilityModel`) is described in
+> [TOTAL_TIMES_PROBABILITY_MODEL.md](TOTAL_TIMES_PROBABILITY_MODEL.md). §1–§12 below
+> describe the original `models/independent_total_probability.py`, which `experiment/`
+> and `tracking/` still run. That code is deleted once all three models are rebuilt
+> ([plan](MODEL_REIMPLEMENTATION_PLAN.md)).
+
+## 0. The Rebuilt Model
+
+Moved (2026-10-08) to [TOTAL_TIMES_PROBABILITY_MODEL.md](TOTAL_TIMES_PROBABILITY_MODEL.md):
+the model, the total as `CountModel`, `CohortProbabilityModel` (the categorical rows, the
+classifier, bagging under replication, calibration), `TotalTimesProbabilityModel`, the
+API, the data flow, the errors, what changed and the smoke-run evidence, each decision
+derived step by step.
+
 `IndependentTotalProbabilityModel` splits the prediction into two separately
 fitted parts: a count regression for a building's **total** children and a
 grouped multinomial model for the **age composition** of those children. Its
@@ -104,6 +120,12 @@ Zero-total buildings still contribute to the total model and to preprocessing
 state, but carry zero composition weight.
 
 ### Temperature calibration
+
+*Rebuilt (2026-10-08, `modeling/cohort_probability.py`): calibration is
+scikit-learn's `CalibratedClassifierCV` inside the probability model,
+cross-fitted on folds of buildings, with no likelihood-ratio gate; see
+[TOTAL_TIMES_PROBABILITY_MODEL.md §3.4](TOTAL_TIMES_PROBABILITY_MODEL.md#34-calibration).
+The paragraph below describes the old model.*
 
 After `probability_c` is selected, the model fits the composition component on
 each tuning fold's fit rows and collects out-of-fold logits for the validation
@@ -290,6 +312,10 @@ the cohort distribution declaration.
 
 ## 12. Tests And Related Documents
 
+- Tests of the rebuilt model (§0): `tests/unit/test_modeling_count_model.py`,
+  `test_modeling_negative_binomial.py`, `test_modeling_cohort_probability.py`,
+  `test_modeling_total_times_probability.py`, `test_modeling_feature_transformer.py`,
+  the contract test `test_modeling_contract.py`.
 - Tests: `tests/unit/test_independent_total_probability.py` (including the
   grouped/literal expansion oracle), `tests/unit/test_distributions.py`,
   `tests/unit/test_composition_kernels.py`,

@@ -1,7 +1,7 @@
 # Modeling Rebuild And Experiment Tracking Plan
 
 > **Status: Gates 1 through 9 complete; the rebuild was approved by the user on
-> 2026-09-15.** See `docs/GATE_9_PHASE_4_ACCEPTANCE_HANDOFF.md` and the
+> 2026-09-15.** See the
 > post-completion audit in `docs/GATE_9_INDEPENDENT_VALIDATION_REPORT.md`. Gate 8
 > (cross-family selection and the
 > one-time lockbox) completed on 2026-09-14, after its independent validation,
@@ -2125,7 +2125,8 @@ still passes over every new file).
   The full record is the Gate 8 "Independent validation" subsection of
   `GATE_VALIDATION_FINDINGS.md`. The canonical run was executed by a scratch
   script mirroring the notebook's cells, not by the notebook's buttons; the
-  script is reproduced in `GATE_8_VALIDATION_HANDOFF.md` Appendix A.
+  script is reproduced in the Gate 8 "Canonical run record" section of
+  `GATE_VALIDATION_FINDINGS.md`.
   Approved remediation:
   - the pretest freeze is bound to the rule and to its CV result;
   - once the lockbox has opened, a later run is accepted only as a retry of

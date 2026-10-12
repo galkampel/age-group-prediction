@@ -19,6 +19,7 @@ from sklearn.preprocessing import StandardScaler
 
 from age_group_prediction.feature_engineering import (
     Center,
+    CenterByReferencePoint,
     ColumnPlan,
     DomainMinMax,
     DomainScale,
@@ -44,6 +45,7 @@ _ONE_OF_EACH_TRANSFORM = (
     Log1p(),
     DomainScale(scale=0.1),
     DomainMinMax(minimum=0.0, maximum=8.0),
+    CenterByReferencePoint(reference_point=0.0),
     RelativeSaturation(),
     OneHot(categories=("none", "existing", "planned"), reference_category="none"),
 )
@@ -121,6 +123,78 @@ def test_a_plan_rejects_an_empty_name_or_no_columns() -> None:
         ColumnPlan(name="empty", columns=())
 
 
+@pytest.mark.parametrize(
+    ("earlier", "log"),
+    [
+        (Center(), Log()),
+        (Standardize(), Log()),
+        (Standardize(), Log1p()),
+        (Center(), RelativeSaturation()),
+        # Saturation measures from the mean too: negative wherever x < mean(x).
+        (RelativeSaturation(), Log()),
+    ],
+    ids=lambda t: t.kind,
+)
+def test_a_log_after_centering_is_rejected_when_declared(earlier, log) -> None:
+    # A column measured from its mean is negative somewhere, or all zeros,
+    # whatever the data. The rule is on sign: log1p would survive values in
+    # (-1, 0), but a log of a centered column is a modeling mistake either way.
+    with pytest.raises(
+        ValidationError,
+        match=rf"'c'.*{log.kind}.*{earlier.kind} .*always emits.*before {earlier.kind}",
+    ):
+        _plan("c", "ses", transforms=(earlier, log))
+
+
+def test_a_sign_preserving_step_does_not_clear_negatives() -> None:
+    with pytest.raises(ValidationError, match="log.*center"):
+        _plan("c", "ses", transforms=(Center(), DomainScale(scale=0.1), Log()))
+
+
+@pytest.mark.parametrize(
+    "earlier",
+    # Below the declared minimum, or below 1 for a log, the output is
+    # negative; above them it is not. Only the data can tell.
+    [
+        (DomainMinMax(minimum=0.0, maximum=8.0),),
+        (Log(),),
+        # The centering is certain, but a range that reaches below zero can map
+        # the whole column back above it, so the log is left to the data again.
+        (Center(), DomainMinMax(minimum=-10.0, maximum=10.0)),
+    ],
+    ids=lambda steps: "-".join(step.kind for step in steps),
+)
+def test_a_log_after_a_data_dependent_step_is_left_to_the_data(earlier) -> None:
+    plan = _plan("c", "ses", transforms=(*earlier, Log()))
+    # ses [2, 3, 4]: DomainMinMax gives [0.25, 0.375, 0.5], Log gives values
+    # above 0, and the centered chain gives [0.45, 0.5, 0.55]; either way the
+    # final log is finite.
+    df = pd.DataFrame({"ses": [2.0, 3.0, 4.0]})
+    transformed = FeatureTransformer(plans=(plan,)).fit_transform(df)
+    assert np.isfinite(transformed["ses"]).all()
+
+
+@pytest.mark.filterwarnings("ignore:.*encountered in log:RuntimeWarning")
+def test_a_data_dependent_bad_value_is_caught_by_the_output_check() -> None:
+    # The declared minimum maps to 0, and log 0 is -inf.
+    plan = _plan("c", "ses", transforms=(DomainMinMax(minimum=1.0, maximum=3.0), Log()))
+    with pytest.raises(ValueError, match="non-finite"):
+        FeatureTransformer(plans=(plan,)).fit_transform(_frame())
+
+
+def test_squaring_clears_negatives() -> None:
+    plan = _plan("c", "ses", transforms=(Center(), Quadratic(), Log1p()))
+    transformed = FeatureTransformer(plans=(plan,)).fit_transform(_frame())
+    # ses [1, 2, 3] centers to [-1, 0, 1] and squares to [1, 0, 1].
+    np.testing.assert_allclose(transformed["ses_squared"], np.log1p([1.0, 0.0, 1.0]))
+
+
+def test_centering_after_a_log_is_allowed() -> None:
+    plan = _plan("c", "ses", transforms=(Log(), Center()))
+    transformed = FeatureTransformer(plans=(plan,)).fit_transform(_frame())
+    assert transformed["ses"].mean() == pytest.approx(0.0)
+
+
 def test_a_plan_named_remainder_is_rejected_when_fitted() -> None:
     # Not checked here: "remainder" is ColumnTransformer's own entry name and
     # it refuses the clash itself. Pinned because the guarantee is now its.
@@ -193,16 +267,6 @@ def test_colliding_output_names_are_rejected_when_fitted() -> None:
         ).fit(_frame())
 
 
-@pytest.mark.filterwarnings("ignore:.*encountered in log:RuntimeWarning")
-def test_a_log_after_another_transform_is_caught_by_the_output_check() -> None:
-    # Centering first makes values non-positive, so the log yields -inf. The
-    # chain is no longer forbidden outright; the output check catches it.
-    with pytest.raises(ValueError, match="non-finite"):
-        FeatureTransformer(
-            plans=(_plan("c", "ses", transforms=(Center(), Log())),)
-        ).fit_transform(_frame())
-
-
 def test_a_plan_round_trips_with_its_transform_subclasses_intact() -> None:
     plan = ColumnPlan(
         name="daycare",
@@ -271,22 +335,6 @@ def test_an_empty_passthrough_transformer_is_meaningful() -> None:
     FeatureTransformer(plans=(), remainder="passthrough").validate()
 
 
-def test_an_exposure_may_also_be_a_predictor() -> None:
-    # Model A keeps n_apartments as a feature and passes log n as LightGBM's
-    # init_score (FEATURE_TRANSFORMATIONS.md 3.3): the offset asserts exact
-    # proportionality and the feature lets the trees learn departures from it.
-    # Whether that is wanted is the caller's modeling choice, not this class's.
-    transformer = FeatureTransformer(
-        plans=(_plan("apartments", "n_apartments"),),
-        exposure_column="n_apartments",
-    )
-    df = pd.DataFrame({"n_apartments": [12.0, 40.0, 80.0]})
-    assert list(transformer.fit_transform(df).columns) == ["n_apartments"]
-    offset = transformer.log_exposure(df)
-    assert offset.name == "log_n_apartments"
-    np.testing.assert_allclose(offset.to_numpy(), np.log([12.0, 40.0, 80.0]))
-
-
 # --- Interactions: what can be declared --------------------------------------
 #
 # An Interaction is to the interaction step what a ColumnPlan is to the base
@@ -336,12 +384,15 @@ def test_an_interaction_round_trips_with_its_columns_intact() -> None:
 
 def test_an_interaction_step_is_added_only_when_interactions_are_declared() -> None:
     assert [name for name, _ in _interacting_transformer()._build().steps] == [
-        "columns"
+        "column_transformer"
     ]
     built = _interacting_transformer(
         (Interaction(left="ses", right="3_rooms_share"),)
     )._build()
-    assert [name for name, _ in built.steps] == ["columns", "interactions"]
+    assert [name for name, _ in built.steps] == [
+        "column_transformer",
+        "interaction_transformer",
+    ]
 
 
 def test_the_interaction_step_passes_the_base_matrix_through() -> None:
@@ -351,7 +402,7 @@ def test_the_interaction_step_passes_the_base_matrix_through() -> None:
     built = _interacting_transformer(
         (Interaction(left="ses", right="3_rooms_share"),)
     )._build()
-    entries = built.named_steps["interactions"].transformers
+    entries = built.named_steps["interaction_transformer"].transformers
     assert [name for name, _, _ in entries] == ["base", "ses_x_3_rooms_share"]
     assert entries[1][2] == ["ses", "3_rooms_share"]
 
@@ -423,10 +474,9 @@ def test_a_column_multiplied_by_itself_is_rejected_when_fitted() -> None:
 def test_cloning_preserves_the_declaration() -> None:
     # One declaration is fit once per fold, and clone() is how a fresh unfitted
     # copy is made -- so the parameters must survive it untouched.
-    original = _transformer(exposure_column="n_apartments")
+    original = _transformer(remainder="passthrough")
     copy = clone(original)
     assert copy.plans == original.plans
-    assert copy.exposure_column == "n_apartments"
     assert copy.remainder == original.remainder
 
 
@@ -437,7 +487,7 @@ def test_build_returns_one_column_transformer_entry_per_plan() -> None:
             _plan("room_share", "3_rooms_share", "4_rooms_share"),
         )
     )
-    # _build() returns the whole pipeline; the plans are its "columns" step.
-    built = transformer._build().named_steps["columns"]
+    # _build() returns the whole pipeline; the "column_transformer" step has the plans.
+    built = transformer._build().named_steps["column_transformer"]
     assert [name for name, _, _ in built.transformers] == ["ses_z", "room_share"]
     assert built.transformers[1][2] == ["3_rooms_share", "4_rooms_share"]

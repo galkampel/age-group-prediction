@@ -6,6 +6,8 @@ construct, so most of these assert that something raises.
 
 from __future__ import annotations
 
+from typing import get_args
+
 import numpy as np
 import pandas as pd
 import pytest
@@ -13,13 +15,17 @@ from pydantic import TypeAdapter, ValidationError
 from sklearn.base import clone
 from sklearn.exceptions import NotFittedError
 from sklearn.preprocessing import OneHotEncoder, StandardScaler
+from sklearn.utils.estimator_checks import estimator_checks_generator
 
+from age_group_prediction import feature_engineering
 from age_group_prediction.feature_engineering import (
     Center,
+    CenterByReferencePoint,
     DomainMinMax,
     DomainScale,
     Log,
     Log1p,
+    Log1pRatioScaler,
     OneHot,
     Quadratic,
     RelativeSaturation,
@@ -37,6 +43,7 @@ _EVERY_MEMBER = (
     Log1p(),
     DomainScale(scale=0.1),
     DomainMinMax(minimum=0.0, maximum=8.0),
+    CenterByReferencePoint(reference_point=0.0),
     RelativeSaturation(),
     OneHot(categories=("none", "existing", "planned"), reference_category="none"),
 )
@@ -125,6 +132,38 @@ def test_every_member_round_trips_as_its_own_subclass(transform) -> None:
     assert restored == transform
 
 
+# (negative_output, needs_nonnegative_input), read off each formula. A member
+# missing here fails the test below, so a new one is classified deliberately.
+_SIGN_BEHAVIOR = {
+    "standardize": ("always", False),
+    "center": ("always", False),
+    "quadratic": ("never", False),
+    "log": ("depends_on_data", True),
+    "log1p": ("as_input", True),
+    "domain_scale": ("as_input", False),
+    "domain_min_max": ("depends_on_data", False),
+    "center_by_reference_point": ("depends_on_data", False),
+    "relative_saturation": ("always", True),
+    "ohe": ("never", False),
+}
+
+
+def test_every_member_is_listed_once() -> None:
+    # The sign-behavior test can only pin what _EVERY_MEMBER lists, so a union
+    # member left out of it would inherit the base class's defaults unchecked.
+    union = get_args(Transform)[0]
+    assert {type(member) for member in _EVERY_MEMBER} == set(get_args(union))
+    assert len(_EVERY_MEMBER) == len(get_args(union))
+
+
+@pytest.mark.parametrize("transform", _EVERY_MEMBER, ids=lambda t: t.kind)
+def test_every_member_declares_its_sign_behavior(transform) -> None:
+    # ColumnPlan rejects a log of a column an earlier step may have made
+    # negative; it can only do so if every step states what it does to signs.
+    declared = (transform.negative_output, transform.needs_nonnegative_input)
+    assert declared == _SIGN_BEHAVIOR[transform.kind]
+
+
 def test_the_discriminator_names_the_intended_member_in_errors() -> None:
     with pytest.raises(ValidationError) as excinfo:
         _ADAPTER.validate_python({"kind": "domain_min_max", "minimum": 0.0})
@@ -159,8 +198,10 @@ def test_quadratic_renames_its_output_so_the_linear_term_survives() -> None:
     [
         (DomainScale(scale=0.1), [[0.0], [5.0], [10.0]]),
         (DomainMinMax(minimum=0.0, maximum=8.0), [[0.0], [0.0625], [0.125]]),
+        # The reference is declared, not the data's mean of 0.5.
+        (CenterByReferencePoint(reference_point=2.0), [[-2.0], [-1.5], [-1.0]]),
     ],
-    ids=["domain_scale", "domain_min_max"],
+    ids=["domain_scale", "domain_min_max", "center_by_reference_point"],
 )
 def test_domain_transforms_use_declared_constants_not_observed_ones(
     transform, expected
@@ -189,11 +230,27 @@ def test_domain_transforms_invert_exactly() -> None:
     for transform in (
         DomainScale(scale=0.1),
         DomainMinMax(minimum=0.0, maximum=8.0),
+        CenterByReferencePoint(reference_point=2.0),
     ):
         transformer = transform.build()
         np.testing.assert_allclose(
             transformer.inverse_transform(transformer.fit_transform(values)), values
         )
+
+
+def test_center_by_reference_point_requires_a_reference_point() -> None:
+    # The reference is a domain decision the call site states, never a default.
+    with pytest.raises(ValidationError):
+        CenterByReferencePoint()
+    with pytest.raises(ValidationError):
+        CenterByReferencePoint(reference=0.0)
+
+
+def test_center_by_reference_point_rejects_a_non_finite_reference() -> None:
+    # Every output would be non-finite, so the declaration cannot succeed.
+    for reference_point in (float("nan"), float("inf"), float("-inf")):
+        with pytest.raises(ValidationError):
+            CenterByReferencePoint(reference_point=reference_point)
 
 
 def test_relative_saturation_centers_by_log1p_of_the_mean() -> None:
@@ -237,6 +294,14 @@ def test_relative_saturation_inverts_and_names_its_output() -> None:
 def test_relative_saturation_rejects_values_at_or_below_minus_one() -> None:
     with pytest.raises(ValueError, match="greater than -1"):
         RelativeSaturation().build().fit(np.array([[-1.0], [2.0]]))
+
+
+def test_relative_saturation_accepts_values_above_minus_one() -> None:
+    # The domain is log1p's, x > -1, not the non-negative one its sklearn tag
+    # names (see the estimator checks below).
+    values = np.array([[-0.5], [2.0]])
+    transformed = RelativeSaturation().build().fit_transform(values)
+    np.testing.assert_allclose(transformed, np.log1p(values) - np.log1p(0.75))
 
 
 # --- scikit-learn estimator contract for the fitted scaler -------------------
@@ -304,3 +369,47 @@ def test_relative_saturation_returns_a_named_frame_under_pandas_output() -> None
     assert isinstance(transformed, pd.DataFrame)
     assert list(transformed.columns) == ["n_daycares_500m_sat"]
     assert transformed.index.equals(df.index)
+
+
+def test_log1p_ratio_scaler_is_public() -> None:
+    # Importable for direct use and for isinstance checks on a built spec.
+    assert isinstance(RelativeSaturation().build(), Log1pRatioScaler)
+    assert "Log1pRatioScaler" in feature_engineering.__all__
+
+
+# scikit-learn's own estimator checks: cloning, fitted state, dtypes, pandas
+# input. A list rather than parametrize_with_checks, which hands pytest a
+# generator that pytest 9 deprecates. The scaler declares the positive_only
+# tag, the nearest sklearn has to its real domain (x > -1). The one check that
+# expects negatives refused with sklearn's own message is a strict expected
+# failure: the scaler refuses the values it feeds, but with its own message.
+_EXPECTED_FAILED_CHECKS = {
+    "check_positive_only_tag_during_fit": (
+        "refuses values <= -1 with its own message, not sklearn's 'Negative "
+        "values in data'; accepts (-1, 0)"
+    ),
+}
+_SKLEARN_CHECKS = list(
+    estimator_checks_generator(
+        Log1pRatioScaler(),
+        expected_failed_checks=_EXPECTED_FAILED_CHECKS,
+        mark="xfail",
+        xfail_strict=True,
+    )
+)
+
+
+def _check_name(item) -> str:
+    # The generator yields (estimator, check) tuples, and a pytest.param
+    # wrapping one for each expected failure.
+    _, check = getattr(item, "values", item)
+    return check.func.__name__
+
+
+@pytest.mark.parametrize(
+    ("estimator", "check"),
+    _SKLEARN_CHECKS,
+    ids=[_check_name(c) for c in _SKLEARN_CHECKS],
+)
+def test_log1p_ratio_scaler_is_a_compliant_sklearn_estimator(estimator, check) -> None:
+    check(estimator)

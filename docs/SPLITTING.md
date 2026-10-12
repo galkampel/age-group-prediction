@@ -16,12 +16,13 @@ They differ in one thing: what a model may know about a test row's group.
 
 | method | train/test split | cross-validator | a test group is... |
 |---|---|---|---|
-| `random` (default) | `ShuffleSplit(n_splits=1)` | `KFold(shuffle=True)` | usually in training |
+| `random` | `ShuffleSplit(n_splits=1)` | `KFold(shuffle=True)` | usually in training |
 | `stratified_by_group` | `StratifiedHoldout` | `StratifiedFolds` | **always** in training |
 | `grouped` | `GroupShuffleSplit(n_splits=1)` | `GroupKFold(shuffle=True)` | **never** in training |
 
 `StratifiedHoldout` and `StratifiedFolds` are ours; nothing in scikit-learn
-splits *within* every group. The other four are scikit-learn's own.
+splits *within* every group. The other four (`ShuffleSplit`, `KFold`,
+`GroupShuffleSplit`, `GroupKFold`) are scikit-learn's own.
 
 Each method answers a different question:
 
@@ -33,22 +34,32 @@ Each method answers a different question:
 
 ```python
 from age_group_prediction.splitting import Splitter
+from age_group_prediction.utils import take_rows
 
 splitter = Splitter("stratified_by_group")
 
-X_train, X_test, y_train, y_test, groups_train, groups_test = (
-    splitter.train_test_split(X, y, groups, test_size=0.2, random_state=42)
+train_index, test_index = splitter.train_test_indices(
+    X, groups, test_size=0.2, random_state=42
 )
+X_train, y_train = take_rows(X, train_index), take_rows(y, train_index)
+groups_train = take_rows(groups, train_index)  # None for random without groups
 cross_validate(
     estimator, X_train, y_train,
     cv=splitter.cv(n_splits=5, random_state=42), groups=groups_train,
 )
 ```
 
-Two steps, not one `n_splits + 1` way split: `train_test_split` is drawn once
-and then fixed, while `cv` re-deals folds on every tuning pass. `train_test_split`
-splits every array it is given and returns two per array in scikit-learn's
-order; the groups come back because `cv` needs `groups_train`.
+Two steps, not one `n_splits + 1` way split: `train_test_indices` is drawn
+once and then fixed, while `cv` re-deals folds on every tuning pass.
+`train_test_indices` returns the **positions** of the training and test rows,
+as scikit-learn's splitters and `cv` do. Every array of the table's rows (`X`,
+`y`, `groups`, an exposure) is taken with `take_rows` by the same positions, so
+they stay paired whatever their index. Take `groups_train` too: `cv` needs it.
+
+`random` never reads groups, so it takes `groups=None`. Then there are no
+groups to take (`take_rows` does not take `None`): pass `groups=None` to `cv`,
+since `KFold` warns if given groups. `stratified_by_group` and `grouped` raise `ValueError` ("The 'groups'
+parameter should not be None.") rather than split without them.
 
 No parameter has a default — sizing and seeding are decisions the call site
 states. `Splitter` is a frozen dataclass, so `repr` records the method.
@@ -86,7 +97,7 @@ the method exists to prevent.
 
 ## 4. Choosing a method
 
-`random` is the default because only one of the three models can tell it from
+`random` is the usual choice because only one of the three models can tell it from
 `stratified_by_group`.
 
 - **Only `BayesianConditionalModel` fits a per-group term** — a hierarchical
@@ -122,14 +133,16 @@ within groups. Canonical (min 4, median 10) is fine; the default config (10 of
 
 ## 5. Hazards
 
-- **Draw the split once.** `train_test_split` re-draws on every call, so calling
+- **Draw the split once.** `train_test_indices` re-draws on every call, so calling
   it again with a different `random_state` silently moves the test set. `cv` is
-  the half meant to be re-derived freely.
+  the half meant to be re-derived freely. It requires an int `random_state`,
+  so every `split()` call gives the same folds; tuning re-splits in every trial.
 - **Give `cv` the training rows only** — `groups_train`, never `groups`. Hand it
   the whole table and the test set leaks into tuning.
 - **Fold indices are positions inside `X_train`.** With a DataFrame the pandas
   index still identifies the original row; with a bare numpy array that link is
-  gone.
+  gone. The holdout's positions index the full table instead, so take a fold's
+  exposure from `exposure_train`, never from the full `exposure`.
 - **Row order is an input to correctness, not just reproducibility.** Rows
   arrive sorted by neighborhood, so `KFold(shuffle=False)` would take contiguous
   blocks and `random` would behave as `grouped` — measured: 0-2 of ~13
@@ -146,8 +159,12 @@ within groups. Canonical (min 4, median 10) is fine; the default config (10 of
 | file | contents |
 |---|---|
 | `splitting/__init__.py` | public API: `Splitter`, `Method`, `StratifiedHoldout`, `StratifiedFolds` |
-| `splitting/splitters.py` | `Splitter`, the `Method` literal, the type aliases, and the dispatch |
-| `splitting/stratified.py` | `StratifiedHoldout`, `StratifiedFolds`, and the shared `_strata` helper |
+| `splitting/splitters.py` | `Splitter`, the `Method` literal, and the exhaustive dispatch |
+| `splitting/stratified.py` | `StratifiedHoldout`, `StratifiedFolds`, and the private `_strata` and `_held_out_count` helpers |
+
+To add a method, extend `Method`: mypy then points at every dispatch still
+missing a branch (each ends in `assert_never`), and `__post_init__` rejects
+unknown names read from a config.
 
 Both custom classes implement `_iter_test_indices` and inherit `split` from
 `BaseCrossValidator`, so the training half is always the complement — fit and
@@ -162,7 +179,9 @@ Tests: `tests/unit/test_splitters.py` (the methods and their guarantees) and
 1. **Migrate the consumers.** `experiment/partitions.py` shrinks rather than
    ports — its disjointness and exact-partition checks become structurally
    impossible once folds are index complements. Then `models/fold_scoring.py`
-   and the two models' nested tuning loops.
+   and the old models' nested tuning loops. The new tuning package already
+   consumes `cv`: every trial re-splits with the same seeded validator
+   ([Hyperparameter tuning §4](HYPERPARAMETER_TUNING.md#4-the-evaluator)).
 2. **Report metrics by group size** (1 / 2-3 / 4-7 / 8+) instead of filtering,
    so the coverage gap in §3 is visible rather than silent.
 3. **Surface `_prediction_fallback_count`** in the Bayesian model's evidence,

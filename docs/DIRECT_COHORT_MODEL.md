@@ -1,11 +1,23 @@
 # Direct Cohort Model (Model A)
 
-`DirectCohortModel` predicts each age cohort's child count directly with one
-LightGBM regressor per cohort. It is the flexible, tree-based baseline against
-which the two conditional models are compared. Everything here is derived from
-`src/age_group_prediction/models/direct_cohort.py` and the modules it uses; the
-design rationale is in [MODELING_REBUILD_PLAN.md](MODELING_REBUILD_PLAN.md)
-Section 6.
+> **Two implementations.** The rebuilt Model A / Model 1 in
+> `age_group_prediction.modeling` (`CountModel`, `NegativeBinomialRegressor`,
+> `IndependentCohortModels`) is described in
+> [INDEPENDENT_COHORT_MODELS.md](INDEPENDENT_COHORT_MODELS.md). §1–§10 below describe the
+> original `models/direct_cohort.py`, which `experiment/` and `tracking/` still run. That
+> code is deleted once all three models are rebuilt
+> ([plan](MODEL_REIMPLEMENTATION_PLAN.md)).
+
+## 0. The Rebuilt Model
+
+Moved (2026-10-08) to [INDEPENDENT_COHORT_MODELS.md](INDEPENDENT_COHORT_MODELS.md): the
+exposure as a weighted rate (the Poisson offset identity, the Gaussian analogue) or passed
+raw to an estimator that takes it (NB2 as statsmodels' `NegativeBinomialRegressor`), every
+cohort from the raw table, the API, the data flow and the errors. The class is
+`CountModel`, renamed from `DirectCohortModel` on 2026-10-07 because it fits any one count
+column, a cohort's or Model 2's total
+([plan P2](TOTAL_TIMES_PROBABILITY_MODEL_PLAN.md)); this file keeps its name, and
+"Model A" stays the name of the direct approach.
 
 ## 1. Statistical Model
 

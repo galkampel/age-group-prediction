@@ -3085,6 +3085,276 @@ reproduces predictions or that the leakage guard fires.**
   `test_holdout_input_frame_carries_no_target_column` checks the produced
   frame, never the guard.
 
+### Gate 8 — Canonical run record
+
+Moved verbatim from the local handoff `GATE_8_VALIDATION_HANDOFF.md` (its §3 and
+Appendix A) when `docs/archive/` was deleted on 2026-09-24; that file no longer
+exists. Headings are demoted one level; the text is unchanged.
+
+#### Where it lives
+
+| Item | Value |
+|---|---|
+| Tracking store | `sqlite:///mlflow.db` (repository root), artifacts in `mlartifacts/` |
+| Experiment | `age-group-prediction` |
+| CV comparison parent (Gate 6/7) | `9cf84b8e1e9f4ed1b75e61511449b50f` (3 candidate children) |
+| Final evaluation parent (Gate 8) | `9450596574494ea188a05f7988e28650` (3 final children) |
+| Run status | All 8 runs `FINISHED` with `evidence_complete=true` |
+| Split manifest | `artifacts/lockbox/split_manifest.json` |
+| Manifest fingerprint | `52b4f7be54c61d36fc45256b3523ba5ebb4b0fad4ad7a1672e383bd48f74eeeb` |
+| Table | 1,529 buildings, 150 neighborhoods; 1,222 training, 307 holdout (realized fraction 0.20078) |
+| Master seed | 42, source `experiment_config.randomness.default_seed` |
+
+`mlflow.db`, `mlartifacts/` and `artifacts/lockbox/` are git-ignored.
+
+**Final parent artifacts:** `pretest_freeze.json`, `finalized_freeze.json`,
+`cross_family_rule.json`, `comparability.json`, `provenance.json`,
+`test_metrics.csv`, `split_manifest.json`. Tags include
+`test_lock_status=opened`, `source_cv_run_id`, `manifest_fingerprint`,
+`cross_family_rule_version=1.0`, `selected_candidate_id`, `selected_approach`.
+
+**Each final child:** tags `candidate_id`, `approach`, `role`
+(`selected`/`comparator`), `final_model_uri`; artifacts `refit_metadata.json`,
+`seeds.json`, `state_bundle.json.gz`, `reload_check.json`,
+`evaluation_metadata.json`, `predictions.csv`, `metrics.csv`, `intervals.csv`,
+and the logged pyfunc model.
+
+#### How it ran
+
+- The manifest file was **first created by a Phase 5 script-mode test** of the
+  notebook's setup cells (`split_known_neighborhood_buildings` seeded with
+  `default_seed`, then `persist_split_manifest`). No CV or final action ran then.
+- The canonical run itself was executed by a **scratch script that mirrors the
+  notebook's cells**, not by clicking the notebook's buttons. It is reproduced
+  verbatim in Appendix A, because the original scratchpad does not survive the
+  session. It loaded and replayed the persisted manifest, ran and tracked CV,
+  computed the cross-family decision, and called `run_final_evaluation` once.
+- The canonical registry declares **one candidate per approach**, so every
+  within-approach selection was trivial (`rejected_candidate_ids` empty).
+
+#### Cross-family decision (from `pretest_freeze.json`)
+
+| Criterion (CV aggregate mean) | `bayesian-reduced` | `independent-nb2` | `direct-poisson` |
+|---|---|---|---|
+| `joint_predictive_nll` | **7.8363** | 8.0107 | not produced |
+| `composition_log_loss` | **1.08386** | — | 1.08843 |
+| `mean_cohort_rmse` | 4.1272 | — | 4.3990 |
+| `mean_cohort_mae` | 3.0660 | — | 3.2687 |
+
+Conditional winner `bayesian-reduced` (no tie-break). Selected
+`bayesian-reduced` (`BayesianConditionalModel`); decisive criterion
+`composition_log_loss` (margin 0.0046); no final tie-break.
+`direct-poisson` and `independent-nb2` are comparators.
+
+#### Test metrics (descriptive only; from `test_metrics.csv`)
+
+| Metric | `bayesian-reduced` | `direct-poisson` | `independent-nb2` |
+|---|---|---|---|
+| `composition_log_loss` (child) | 1.07522 | 1.07928 | 1.07541 |
+| `joint_predictive_nll` (building) | 7.8021 | — | 7.9258 |
+| RMSE kindergarten / elementary / highschool | 4.680 / 3.718 / 3.850 | 4.720 / 3.848 / 4.146 | 5.126 / 3.957 / 3.933 |
+| MAE kindergarten / elementary / highschool | 3.363 / 2.623 / 2.854 | 3.434 / 2.705 / 3.045 | 3.637 / 2.793 / 2.941 |
+| `predictive_nll` n_highschool | 1.4e-17 | 2.867 | 4.9e-17 |
+
+The near-zero last-cohort `predictive_nll` for the conditional models is the
+documented artifact of their schema-ordered conditional decomposition; it is
+exactly why per-target `predictive_nll` must never be ranked across families.
+
+#### Bayesian final refit (from its `refit_metadata.json`)
+
+| Stage | `active_profile` | Chains / warmup / samples | Worst R-hat | Min ESS | Divergences | Policy |
+|---|---|---|---|---|---|---|
+| total | full | 4 / 1000 / 1000 | 1.0066 | 1397 | 0 | passed, `action=error` |
+| composition | full | 4 / 1000 / 1000 | 1.0048 | 1796 | 0 | passed, `action=error` |
+
+Fit duration 734 s. The reduced-profile Bayesian fits during CV logged no
+diagnostic-failure warnings.
+
+#### Appendix A: canonical run script (verbatim)
+
+Executed once, on 2026-09-14, from the repository root with
+`MLFLOW_DISABLE_AGENT_HINT=1 uv run --group tracking python run_gate8_canonical.py`.
+**Do not run it again.** It is kept as provenance only.
+
+```python
+"""One-time canonical Gate 8 final evaluation.
+
+Mirrors notebooks/02_model_fitting.py's guarded cells exactly, using the
+real (already-persisted) lockbox manifest and the default local MLflow
+store. This is the authorized, one-time action: do not rerun against the
+same manifest.
+"""
+
+from __future__ import annotations
+
+import sys
+from pathlib import Path
+
+PROJECT_ROOT = Path("/Users/galkampel/Desktop/Projects/age-group-prediction")
+sys.path.insert(0, str(PROJECT_ROOT / "src"))
+
+import numpy as np
+
+from age_group_prediction import (
+    DEFAULT_MODELING_SCHEMA,
+    build_modeling_table,
+    load_experiment_config,
+    load_split_manifest,
+    make_validation_folds,
+    replay_split_manifest,
+)
+from age_group_prediction.experiment import (
+    build_canonical_candidate_registry,
+    run_cross_model_validation,
+    select_cross_family_winner,
+)
+from age_group_prediction.tracking import (
+    TrackingContext,
+    log_cross_validation_experiment,
+    resolve_tracking_settings,
+    run_final_evaluation,
+)
+from student_simulator import StudentPopulationSimulator, load_simulation_config
+
+print("=== 1) Canonical population ===", flush=True)
+simulation_config_path = PROJECT_ROOT / "configs" / "stage1.toml"
+base_simulation_config = load_simulation_config(simulation_config_path)
+canonical_simulation_config = base_simulation_config.model_copy(
+    update={
+        "simulation": base_simulation_config.simulation.model_copy(
+            update={"n_neighborhoods": 150}
+        ),
+        "building": base_simulation_config.building.model_copy(
+            update={"buildings_per_neighborhood_rate": 9.0}
+        ),
+    }
+)
+population_df = StudentPopulationSimulator(canonical_simulation_config).run()
+print(
+    f"population: {len(population_df):,} buildings, "
+    f"{population_df['neighborhood_id'].nunique()} neighborhoods",
+    flush=True,
+)
+
+print("=== 2) Modeling table ===", flush=True)
+modeling_df = build_modeling_table(population_df)
+print(f"modeling_df: {len(modeling_df):,} rows", flush=True)
+
+print("=== 3) Experiment configuration ===", flush=True)
+experiment_config_path = PROJECT_ROOT / "configs" / "modeling.toml"
+experiment_config = load_experiment_config(experiment_config_path)
+
+print("=== 4) Replay the persisted lockbox manifest ===", flush=True)
+lockbox_manifest_path = PROJECT_ROOT / "artifacts" / "lockbox" / "split_manifest.json"
+assert lockbox_manifest_path.exists(), "canonical manifest must already be persisted"
+split_manifest = load_split_manifest(lockbox_manifest_path)
+split = replay_split_manifest(
+    modeling_df, split_manifest, config=experiment_config.outer_split
+)
+print(
+    f"train={len(split.train_df):,} holdout={len(split.manifest.holdout_building_ids):,} "
+    f"(holdout rows never printed)",
+    flush=True,
+)
+
+print("=== 5) Candidate registry and validation folds ===", flush=True)
+candidate_registry = build_canonical_candidate_registry(experiment_config)
+validation_fold_plan = make_validation_folds(
+    split.train_df,
+    config=experiment_config.folds,
+    rng=np.random.default_rng(experiment_config.randomness.default_seed),
+)
+print(
+    f"candidates={len(candidate_registry.candidates)} "
+    f"folds={len(validation_fold_plan.folds)}",
+    flush=True,
+)
+
+print("=== 6) Run and track cross-validation (Gate 6/7) ===", flush=True)
+cv_result = run_cross_model_validation(
+    split.train_df,
+    split_manifest=split.manifest,
+    validation_folds=validation_fold_plan.folds,
+    candidates=candidate_registry.candidates,
+    selection_policies=candidate_registry.selection_policies,
+    experiment_config=experiment_config,
+    capture_artifacts=True,
+)
+source_cv_run_id = log_cross_validation_experiment(
+    cv_result,
+    TrackingContext(run_name="gate8-cv-canonical"),
+    train_df=split.train_df,
+)
+print(f"source_cv_run_id={source_cv_run_id}", flush=True)
+for selection in cv_result.selections:
+    print(f"  selected[{selection.approach}] = {selection.selected_candidate_id}", flush=True)
+
+print("=== 7) Cross-family decision (Gate 8) ===", flush=True)
+cross_family_selection = select_cross_family_winner(cv_result)
+pretest_freeze = cv_result.freeze.with_cross_family_selection(cross_family_selection)
+print(
+    f"cross_family_winner={cross_family_selection.selected_candidate_id} "
+    f"({cross_family_selection.selected_approach})",
+    flush=True,
+)
+print(
+    f"decisive_final_criterion={cross_family_selection.decisive_final_criterion} "
+    f"tie_break={cross_family_selection.final_tie_break_used}",
+    flush=True,
+)
+
+print("=== 8) FINAL EVALUATION (one-time, opens the lockbox) ===", flush=True)
+final_evaluation_result = run_final_evaluation(
+    split.train_df,
+    modeling_df,
+    split_manifest=split.manifest,
+    cv_result=cv_result,
+    pretest_freeze=pretest_freeze,
+    candidates=candidate_registry.candidates,
+    final_refit_factories=candidate_registry.final_refit_factories,
+    context=TrackingContext(run_name="gate8-final-canonical"),
+    source_cv_run_id=source_cv_run_id,
+    evaluation_config=experiment_config.evaluation,
+)
+print("Final evaluation complete.", flush=True)
+
+tracking_settings = resolve_tracking_settings()
+print(f"tracking_uri={tracking_settings.tracking_uri}", flush=True)
+print(f"experiment_name={tracking_settings.experiment_name}", flush=True)
+print(f"manifest_fingerprint={final_evaluation_result.manifest_fingerprint}", flush=True)
+print(f"holdout_building_count={len(final_evaluation_result.holdout_building_ids)}", flush=True)
+for evaluation in final_evaluation_result.evaluations:
+    print(
+        f"  {evaluation.candidate_id} ({evaluation.approach}, role={evaluation.role})",
+        flush=True,
+    )
+
+print("=== DONE ===", flush=True)
+```
+
+Key output lines (Optuna and MLflow logging omitted):
+
+```text
+population: 1,529 buildings, 150 neighborhoods
+modeling_df: 1,529 rows
+train=1,222 holdout=307 (holdout rows never printed)
+candidates=3 folds=5
+  selected[BayesianConditionalModel] = bayesian-reduced
+  selected[DirectCohortModel] = direct-poisson
+  selected[IndependentTotalProbabilityModel] = independent-nb2
+cross_family_winner=bayesian-reduced (BayesianConditionalModel)
+decisive_final_criterion=composition_log_loss tie_break=False
+Final evaluation complete.
+tracking_uri=sqlite:///mlflow.db
+experiment_name=age-group-prediction
+manifest_fingerprint=52b4f7be54c61d36fc45256b3523ba5ebb4b0fad4ad7a1672e383bd48f74eeeb
+holdout_building_count=307
+  bayesian-reduced (BayesianConditionalModel, role=selected)
+  direct-poisson (DirectCohortModel, role=comparator)
+  independent-nb2 (IndependentTotalProbabilityModel, role=comparator)
+=== DONE ===
+```
+
 ### Sabotage harness (focused Gate 8 suite, 99 tests; each mutation alone, then restored)
 
 | Mutation | Caught by |
@@ -3131,14 +3401,13 @@ the repository's `src/` and showed no differences.
 - **`bayesian-reduced` naming on a full refit.** Confirmed, low (F10).
 - **Retry semantics.** Confirmed, high (F1, with F2).
 - **Canonical provenance.** Acceptable. Appendix A of the validation handoff
-  matches the notebook's setup, CV, decision and final cells argument for
-  argument, apart from run names. The manifest was created by that same code
-  path, with seed 42 and `seed_source=caller_generator`, and replay verifies
-  it. The plan's implementation record does not mention that the canonical run
-  came from a script mirroring the notebook rather than the notebook's buttons.
-
-### Findings withdrawn
-
+  (reproduced in the Canonical run record above) matches the notebook's setup,
+  CV, decision and final cells argument for argument, apart from run names.
+  The manifest was created by that same code path, with seed 42 and
+  `seed_source=caller_generator`, and replay verifies it. The plan's
+  implementation record does not mention that the canonical run came from a
+  script mirroring the notebook rather than the notebook's buttons. ###
+  Findings withdrawn
 - The `code_paths` concern (above).
 - "Retry could already have contaminated the canonical run": the store has 8
   runs, all `FINISHED`/`active`, with artifact directories matching.

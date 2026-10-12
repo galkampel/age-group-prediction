@@ -1,0 +1,172 @@
+# feat(feature_engineering): center by a reference point, a public Log1pRatioScaler, explicit builder loops
+
+## Context
+
+Three small changes to `src/age_group_prediction/feature_engineering/`, requested 2026-09-27:
+
+1. **A transformer that centers a column on a fixed reference point**, so the output measures deviation from it. The application is SES. The hypothesis is that both strong- and weak-SES populations have larger households than the middle, so the useful quantity is distance from the *true* SES mean, not from the fold mean. The docs should say what the SES reference point is.
+2. **`_Log1pRatioScaler` becomes public** (`Log1pRatioScaler`).
+3. **`FeatureTransformer._build_interactions` and `_build` use explicit `for` loops** instead of list comprehensions, for readability.
+
+**Facts established while planning** (verified 2026-09-27; re-check before relying on them):
+- `ses` is one continuous, neighborhood-level column drawn from `N(ses_mean=0.0, ses_sd=1.0)`, clipped to [-2.5, 2.5] (`configs/simulation.toml:14-17`, `student_simulator/neighborhood.py:78-93`). There are no strong/weak levels. "Strong" and "weak" are the two tails, which is why a deviation from the centre, squared, captures them both.
+- **The SES reference point is 0.0**, the simulator's population mean. The sample mean is 0.07, and that is what `Center` (the fold mean) uses today (`docs/FEATURE_TRANSFORMATIONS.md` §3.2). The doc already argues for this: "If a substantive turning point is hypothesized, that value is a better $c$ than the mean."
+- **In the simulator, SES does not affect household size.** `avg_household_size` depends on median age plus noise only (`neighborhood.py:112-133`); measured r(ses, household size) = −0.13. The U-shape the hypothesis describes is simulated in the **number of children**, through `ses_squared` (`simulation.toml:67` `ses_quadratic_coef = 0.05`; `outcomes.py:152-153`). The docs must state this, so the SES deviation feature is not presented as explaining household size in this data.
+- The package imports nothing from the project (`transforms.py:23-24`), so the 0.0 is written at the call site, not read from the simulator config.
+
+## Branch
+
+- **Name:** `feat/feature-engineering-reference-point`
+- **Base:** `feat/hyperparameter-tuning`, not `main`. `docs/FEATURE_TRANSFORMATIONS.md` differs by about 100 lines between the two, including §8, which this work edits. Basing on `main` would conflict once PR #5 merges. The code under `feature_engineering/` is identical on both.
+- **Draft PR** into `feat/hyperparameter-tuning`, merged with a merge commit, the same as PR #7. If PR #5 is squash-merged into `main` first, rebase before retargeting: `git rebase --onto origin/main feat/hyperparameter-tuning feat/feature-engineering-reference-point`.
+
+## Workflow (every task)
+
+Plan the task, write failing tests first where behavior changes, then implement, run the gates, run a mutation check, run an independent review subagent, then **STOP**. The user reviews and commits. Never commit. Suggested commit messages carry no `Co-Authored-By` line. Each task is one commit.
+
+Gates: `uv run ruff check <changed files>` + `uv run ruff format <changed files>` · `uv run mypy` (its `files` includes `feature_engineering`, with `disallow_untyped_defs`) · `uv run pytest tests/unit/test_feature_transforms.py tests/unit/test_feature_transformer.py tests/unit/test_transformer_spec.py -W error`.
+
+## Task 0 — docs: commit this plan
+
+This plan is saved as `docs/FEATURE_ENGINEERING_REFERENCE_POINT_PLAN.md`, written untracked on `feat/hyperparameter-tuning`. `git switch -c` carries an untracked file onto the new branch, so after creating the branch the user commits the plan as its first commit: `docs(feature_engineering): plan for the reference-point branch`.
+
+## Task 0b — fix(feature_engineering): reject a log after centering or standardizing
+
+Added 2026-09-28, after Task 1's baseline gate failed before any edit. Under `-W error`, `test_a_log_after_another_transform_is_caught_by_the_output_check` failed. It fitted `Center() → Log()`, and sklearn's `check_inverse` warned about the resulting `nan` before the finite-output check ran. The user ruled that a log must be rejected only where an earlier step makes negative values certain, and left to the data otherwise.
+
+- **Rule:** each transform declares, as `ClassVar`s on `_TransformBase`, `negative_output` (`"always"` for `Center`, `Standardize` and `RelativeSaturation`, whose output is negative wherever `x < mean(x)`; `"as_input"` for `DomainScale`, `Log1p`; `"depends_on_data"` for `DomainMinMax`, `Log`; `"never"` for `Quadratic`, `OneHot`) and `needs_nonnegative_input` (`Log`, `Log1p`, `RelativeSaturation`). Both are class-level, so dumped specs are unchanged.
+- **Where:** `ColumnPlan._check_input_signs` (`transformer.py`) walks the chain and rejects a step needing non-negative input once negatives are certain. `"always"` makes them certain, `"as_input"` keeps that, `"depends_on_data"` and `"never"` clear it. Nothing else changes at runtime: a data-dependent bad value still fails at fit or transform, by the step's own input check (`RelativeSaturation`) or the finite-output check. The rule is on sign, so `Center → Log1p` is rejected even though `log1p` survives values in (-1, 0): a log of a mean-zero column is a mistake either way.
+- **Tests:** rejection cases `center-log`, `standardize-log`, `standardize-log1p`, `center-relative_saturation`, `relative_saturation-log`, plus `Center → DomainScale → Log`; accepted chains `DomainMinMax → Log`, `Log → Log`, `Center → DomainMinMax(-10, 10) → Log`, `Center → Quadratic → Log1p`, `Log → Center`; a bad value under `DomainMinMax → Log` fails with "non-finite"; and `_SIGN_BEHAVIOR` in `test_feature_transforms.py` pins every member's two facts, so a new transform must be classified.
+- **Docs:** the `Log` docstring no longer claims a fit-time check that never existed, and `FEATURE_TRANSFORMATIONS.md` §8 lists the rule.
+- **Corrected in review (2026-09-28):** `RelativeSaturation` was first classified `"depends_on_data"`; its output is negative wherever `x < mean(x)`, which some value always is, so it is `"always"`, and `RelativeSaturation → Log` is rejected at declaration.
+
+## Task 1 — refactor(feature_engineering): explicit loops and clearer names in the builders
+
+In [transformer.py](src/age_group_prediction/feature_engineering/transformer.py), `FeatureTransformer._build` and `_build_interactions`. The design matrix is unchanged.
+- **Explicit loops:** `for plan in self.plans` and `for interaction in self.interactions` append to the list, replacing the comprehensions. In `_build_interactions` the list starts with the `("base", "passthrough", _all_columns)` entry, and the comment explaining why the base entry exists sits directly above it.
+- **The list is named `transformers`**, which is sklearn's own `ColumnTransformer(transformers=...)` parameter. It is typed `list[_TransformerTuple]`, with a module-level alias:
+  `_TransformerTuple = tuple[str, TransformerMixin | Pipeline | str, list[str] | Callable[[pd.DataFrame], list[str]]]`.
+  - `Pipeline` is listed separately because it is not a `TransformerMixin` subclass, and `str` covers `"passthrough"`.
+  - The `Callable` is there because the base entry selects every column at fit time: the first step's output names aren't known until it has run.
+  - The annotation is also needed for type checking. Without it, mypy infers the element type from the base entry, and appending a transformer fails.
+- **Variables and step names:** the two `ColumnTransformer`s are `column_transformer` and `interaction_transformer`, and the Pipeline steps are named the same (formerly `columns` and `interactions`). Only three tests read the step names; nothing in `src` does, and nothing is pickled (bundles and tracking store JSON).
+
+Tests: none new. The four step-name uses, in three tests in `tests/unit/test_transformer_spec.py`, are updated.
+Mutation check, each of which an existing test must catch:
+- drop the base entry;
+- stop after the first interaction;
+- skip the append in `_build`;
+- add the base entry after the interactions instead of first.
+
+## Task 2 — refactor(feature_engineering): a public, sklearn-checked Log1pRatioScaler
+
+**Why it was private.** Nothing records a reason; the only commit is 9e84279. The design treats the pydantic specs as the public API and the sklearn objects as build details. It is the only hand-written estimator, which is the only reason it has a class name at all.
+
+**Why make it public.** It is a real, reusable sklearn estimator with its own contract: it learns `mean_`, supports `inverse_transform`, and implements `get_feature_names_out`. Making it public lets it be imported for direct use and for `isinstance` checks. Nothing depends on it being private.
+
+No behavior change: the input domain stays `x > -1`, where `log1p` is defined.
+- [transforms.py](src/age_group_prediction/feature_engineering/transforms.py): renamed `_Log1pRatioScaler` to `Log1pRatioScaler` (the class, its use in `RelativeSaturation.build`, and `fit`'s return type). The error message now names the class. The docstring is written for a public reader: the formula, the input domain, and the fitted attributes.
+- **sklearn's estimator checks.** Before this task the scaler failed 9 of 47: sklearn's generic checks feed negative data, and it rejects values at or below −1 without declaring any restriction. After it: 48 checks (the tag adds `check_fit_non_negative`), 46 passed, 1 expected failure, 1 skipped.
+  - It now declares `positive_only` in `__sklearn_tags__`. sklearn has no tag for "greater than −1"; `positive_only` is the nearest, and data respecting it is always valid here. Only sklearn's estimator checks read the tag: no meta-estimator (Pipeline, ColumnTransformer, GridSearchCV) passes it on.
+  - A non-negative bound was tried and reverted: it passed every check but served sklearn's harness, not the math.
+  - `check_positive_only_tag_during_fit` is a strict expected failure through sklearn's `expected_failed_checks`. It feeds values down to −3.4 and expects them refused with sklearn's "Negative values in data" message; the scaler refuses them with its own. If the domain is ever tightened to non-negative *with sklearn's message*, that check passes and the strict xfail fails the test. A tightening with any other message is caught by `test_relative_saturation_accepts_values_above_minus_one` instead.
+  - `check_fit_non_negative` passes only because it probes exactly −1.0, which is out of the domain. If sklearn ever probes a value in (−1, 0), it will need its own expected-failure entry.
+- [feature_engineering/__init__.py](src/age_group_prediction/feature_engineering/__init__.py): imported and added to `__all__`.
+- Docs: added to the `transforms.py` API list in [docs/MODULE_REFERENCE.md](docs/MODULE_REFERENCE.md), and named in `FEATURE_TRANSFORMATIONS.md` §8.5.2 with its input domain.
+- Tests, in `test_feature_transforms.py`:
+  - `test_log1p_ratio_scaler_is_public`: `RelativeSaturation().build()` is a `Log1pRatioScaler`, and the name is in `__all__`.
+  - `test_relative_saturation_accepts_values_above_minus_one`: pins the domain as `> -1`, not `>= 0`.
+  - `test_log1p_ratio_scaler_is_a_compliant_sklearn_estimator`: one test per sklearn check, built from `estimator_checks_generator` as a list. `parametrize_with_checks` hands pytest 9 a generator, which it deprecates, and that fails `-W error`. One check, `check_array_api_input`, is skipped because it needs the `SCIPY_ARRAY_API` environment variable.
+- Check: `git grep -n "_Log1pRatioScaler" -- src tests` returns nothing. This plan names the old class as history, so the grep excludes `docs`.
+
+## Task 3 — feat(feature_engineering): CenterByReferencePoint
+
+In [transforms.py](src/age_group_prediction/feature_engineering/transforms.py), next to `DomainScale` and `DomainMinMax` (the "fixed, from domain knowledge" family):
+
+```python
+class CenterByReferencePoint(_TransformBase):
+    """Subtract a fixed reference point chosen from domain knowledge.
+
+    Unlike ``Center``, it learns nothing from the data, so the output is the
+    deviation from the declared reference and means the same in every fold.
+    Its sign depends on where the data lie relative to the reference.
+    """
+
+    kind: Literal["center_by_reference_point"] = "center_by_reference_point"
+    negative_output = "depends_on_data"
+    # A non-finite reference makes every output non-finite, whatever the data.
+    reference_point: float = Field(allow_inf_nan=False)
+
+    def build(self) -> TransformerMixin:
+        reference_point = self.reference_point
+        return FunctionTransformer(
+            lambda x: x - reference_point,
+            inverse_func=lambda x: x + reference_point,
+            validate=False,
+            feature_names_out="one-to-one",
+        )
+```
+
+- `reference_point` has no default. Like every parameter in this package, it is a decision the call site states.
+- A `nan` or `inf` reference is rejected at declaration, because it fails for any data. Otherwise it would reach fit and fail there with a message about logs. The siblings have the same gap (`DomainScale(scale=inf)` and `DomainMinMax(minimum=nan, maximum=nan)` are accepted). That is left for a separate follow-up.
+- `negative_output = "depends_on_data"` (Task 0b): a column can lie entirely above the reference, so negatives are not certain.
+- `feature_names_out="one-to-one"` keeps the column name, as `Center` does. sklearn's `check_inverse` stays on: the inverse is exact.
+- Added to the `Transform` discriminated union and to the package `__all__`.
+- The `Quadratic` docstring names it and says what actually causes collinearity: a centre far from zero relative to the spread. A reference point avoids it only when it lies near the centre of the data.
+
+**Tests** (written first, with hand-written expected values):
+- In `test_feature_transforms.py`:
+  - It joins the parametrized `test_domain_transforms_use_declared_constants_not_observed_ones`. On `[0, 0.5, 1]`, whose mean is 0.5, `reference_point=2.0` gives `[-2, -1.5, -1]`, and the same after fitting on `[100, 200]`. This is the difference from `Center`: the reference is declared and can be any value, while `Center`'s is always the data's mean.
+  - It joins `test_domain_transforms_invert_exactly`.
+  - Omitting `reference_point`, or a typo such as `reference=0.0`, raises a pydantic `ValidationError`. So does a `nan`, `inf` or `-inf` reference.
+  - It is added to `_EVERY_MEMBER` (the serialization round-trip), and `"center_by_reference_point": ("depends_on_data", False)` is added to `_SIGN_BEHAVIOR`.
+- It is added to `_ONE_OF_EACH_TRANSFORM` in `test_transformer_spec.py`.
+- The application, in `test_feature_transformer.py`, uses two plans, as in `FEATURE_TRANSFORMATIONS.md` §8:
+  - `ses` with `(CenterByReferencePoint(reference_point=0.0),)`, and `ses_sq` with `(CenterByReferencePoint(reference_point=0.0), Quadratic())`.
+  - On `ses = [1, 2, 3]` they emit `ses = [1, 2, 3]` and `ses_squared = [1, 4, 9]`. These are measured from 0, not from the frame's mean of 2.
+  - One chain would emit only `ses_squared`. The test also asserts the column names, which covers `feature_names_out`.
+
+Mutation check. Each of these must make a test fail:
+- `x - reference_point` becomes `x + reference_point`.
+- The fold mean replaces the reference.
+- The inverse is broken.
+- `negative_output = "always"`.
+- It is dropped from the union.
+- `allow_inf_nan=False` is removed.
+- `feature_names_out` is removed.
+
+## Task 4 — docs(feature_engineering): the SES reference point
+
+In [docs/FEATURE_TRANSFORMATIONS.md](docs/FEATURE_TRANSFORMATIONS.md), re-read in full first:
+- §3.2 (SES candidates) and §4.2 (`ses` for the GLMs): state that **the SES reference point is 0.0**, the simulated population mean. Contrast it with the fold mean of 0.07 that `Center` uses. Explain why a fixed reference is better here: the same meaning in every fold, and it is the point the hypothesis names. State the hypothesis, that strong- and weak-SES populations have larger households, and say plainly that the simulator puts this U-shape in the number of children, not in `avg_household_size`.
+- §8 (building each model's transformer): add `CenterByReferencePoint` to the import block, and switch the quadratic SES declaration(s) from `Center()` to `CenterByReferencePoint(reference_point=0.0)`, if §3.2's reasoning then recommends it for that model.
+- §7 summary table: update the `ses` row.
+- §1 "Prefer fixed anchors over learned scales": list the new transform alongside `DomainScale` and `DomainMinMax`.
+- Wherever the doc names `RelativeSaturation`'s estimator, use `Log1pRatioScaler`. (Task 2 added the only such mention, in §8.5.2.)
+
+In [docs/MODULE_REFERENCE.md:72](docs/MODULE_REFERENCE.md#L72), add `CenterByReferencePoint` to the API list.
+
+**As built (2026-09-28).**
+- **The SES reference point is 0.0 and is the true population mean.** `ses` is drawn from `N(0, 1)`, clipped symmetrically to ±2.5.
+- **The simulator's U-shape bottoms out exactly there.** The total-children log-mean has `0.05 · ses²` and no linear SES term (`simulation.toml` `ses_quadratic_coef`, `outcomes.py`).
+- **Household size is drawn from median age plus noise**, independently of SES, so the doc's r = −0.13 is sampling variation.
+- **Decision (user): a quadratic SES term is centered at the reference point.**
+  - Model A's `ses_sq` and GLM candidate 2's `ses_sq` are both `(CenterByReferencePoint(reference_point=0.0), Quadratic())`.
+  - The GLM base `ses` stays `Standardize()`, so candidate 2 remains a one-plan change. β1 on z reads as the slope at the reference point; β2 as the curvature per population SD².
+- **Measured over 20 runs of 60 neighborhoods:**
+  - A run's SES mean ranges from −0.25 to +0.26, and its SD from 0.82 to 1.14.
+  - corr(ses, ses²) ranges from −0.55 to +0.27, and corr(z, z²) from −0.39 to +0.35.
+  - So neither center decorrelates the columns, and the old "decorrelates" claim in §4.2 was dropped.
+- **§1 now says** a learned center is harmless for a linear column, while before squaring the center fixes the vertex.
+
+## Final gate (after Task 4)
+
+- `uv run pytest -m "not slow"` (1007 passed on the base as of 2026-09-27, plus this branch's new tests).
+- ruff on the changed files · `uv run mypy`.
+- `git grep -n "_Log1pRatioScaler" -- src tests` returns nothing.
+- Independent review of the docs against the code.
+- At the stop: the commit command, the draft PR description, and the push command.
+
+## Sequencing
+
+Task 0b went first: it unblocked the `-W error` gate. Task 1 comes next: it is the smallest and touches only `transformer.py`. Tasks 2 and 3 both edit `transforms.py` and `__init__.py`, so do them one at a time. Docs go last, so they describe the finished API.

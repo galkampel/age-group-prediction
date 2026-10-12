@@ -9,8 +9,6 @@ from student_simulator import (
 from student_simulator.config import load_validation_config
 from tests.validation.helpers import run_recovery_checks
 
-pytest.importorskip("statsmodels")
-
 
 @pytest.mark.slow
 def test_oracle_nb2_recovers_fixed_effects() -> None:

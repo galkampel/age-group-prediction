@@ -13,7 +13,7 @@ import pandas as pd
 from sklearn.base import BaseEstimator, TransformerMixin
 from sklearn.utils.validation import check_is_fitted
 
-__all__ = ["ShareTransformer"]
+__all__ = ["ExposureTransformer", "ShareTransformer"]
 
 
 class ShareTransformer(TransformerMixin, BaseEstimator):
@@ -84,3 +84,36 @@ class ShareTransformer(TransformerMixin, BaseEstimator):
             for name in self.share_columns
             if name != self.reference_column
         )
+
+
+class ExposureTransformer(TransformerMixin, BaseEstimator):
+    """Read each row's exposure from the table, as floats, and check its values.
+
+    A model with an exposure offset takes the raw exposure outside its feature
+    matrix. LightGBM accepts a zero, infinite or NaN exposure silently, so it
+    is checked once, here, rather than inside each model. Run on the full
+    table before splitting, a bad test row fails before any model is fitted.
+    """
+
+    def __init__(self, exposure_column: str = "n_apartments") -> None:
+        # Stored verbatim: a clone assigns attributes without re-entering here.
+        self.exposure_column = exposure_column
+
+    def fit(self, X: pd.DataFrame, y: object = None) -> ExposureTransformer:
+        """Nothing is learned from ``X``."""
+        return self
+
+    def transform(self, X: pd.DataFrame) -> pd.Series:
+        """The exposure column as floats, with ``X``'s index.
+
+        pandas raises for a missing column and ``astype`` for a non-numeric one.
+        """
+        exposure = X[self.exposure_column].astype(float)
+        invalid = ~(np.isfinite(exposure) & (exposure > 0))
+        if invalid.any():
+            raise ValueError(
+                f"exposure column {self.exposure_column!r} must be strictly positive "
+                f"and finite; {int(invalid.sum())} invalid, first at rows "
+                f"{X.index[invalid.to_numpy()].tolist()[:5]}"
+            )
+        return exposure

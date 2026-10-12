@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 
 import numpy as np
 import pandas as pd
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from sklearn.base import BaseEstimator, TransformerMixin
 from sklearn.compose import ColumnTransformer
 from sklearn.pipeline import Pipeline
@@ -14,6 +14,16 @@ from sklearn.preprocessing import FunctionTransformer
 from sklearn.utils.validation import check_is_fitted
 
 from .transforms import Transform
+
+# One ColumnTransformer entry, in sklearn's (name, transformer, columns) form.
+# Columns are names, except in the interaction step's base entry, which
+# selects every column at fit time: the first step's output names aren't
+# known until it has run.
+_TransformerTuple = tuple[
+    str,
+    TransformerMixin | Pipeline | str,
+    list[str] | Callable[[pd.DataFrame], list[str]],
+]
 
 
 class ColumnPlan(BaseModel):
@@ -35,8 +45,28 @@ class ColumnPlan(BaseModel):
         """Let a one-column plan pass the name itself rather than a list."""
         return (value,) if isinstance(value, str) else value
 
+    @model_validator(mode="after")
+    def _check_input_signs(self) -> ColumnPlan:
+        """Reject a step needing non-negative input once negatives are certain."""
+        # The step after which negatives are certain. Only then is the plan
+        # refused; otherwise a bad value is the data's, caught at fit or
+        # transform by the step's own input check or the finite-output check.
+        negative_since: str | None = None
+        for transform in self.transforms:
+            if transform.needs_nonnegative_input and negative_since is not None:
+                raise ValueError(
+                    f"Plan {self.name!r}: {transform.kind} needs non-negative "
+                    f"input, but {negative_since} before it always emits negative "
+                    f"values; apply {transform.kind} before {negative_since}"
+                )
+            if transform.negative_output == "always":
+                negative_since = transform.kind
+            elif transform.negative_output in ("depends_on_data", "never"):
+                negative_since = None
+        return self
+
     def build(self) -> TransformerMixin | Pipeline | str:
-        """Return this plan's ``ColumnTransformer`` entry."""
+        """Return the transformer for this plan's ``ColumnTransformer`` entry."""
         if not self.transforms:
             return "passthrough"
         if len(self.transforms) == 1:
@@ -90,6 +120,11 @@ class FeatureTransformer(TransformerMixin, BaseEstimator):
     Statistics are learned in :meth:`fit` and reused by every
     :meth:`transform`, so a validation fold is centered by the training fold's
     means. ``sklearn.base.clone`` gives a fresh unfitted copy per fold.
+
+    The exposure is not declared here: whether a model has an offset is the
+    model's setting, and the caller passes the exposure to the model as
+    ``exposure=``, built with
+    :class:`~age_group_prediction.preprocessing.ExposureTransformer`.
     """
 
     def __init__(
@@ -97,14 +132,12 @@ class FeatureTransformer(TransformerMixin, BaseEstimator):
         plans: tuple[ColumnPlan, ...] = (),
         *,
         interactions: Sequence[Interaction] = (),
-        exposure_column: str | None = None,
         remainder: str = "drop",
     ) -> None:
         # Stored verbatim: set_params assigns attributes without re-entering
         # __init__, so validating here would be skipped by GridSearchCV.
         self.plans = plans
         self.interactions = interactions
-        self.exposure_column = exposure_column
         self.remainder = remainder
 
     def validate(self) -> None:
@@ -145,52 +178,36 @@ class FeatureTransformer(TransformerMixin, BaseEstimator):
         check_is_fitted(self)
         return np.asarray(self.feature_names_, dtype=object)
 
-    def log_exposure(self, X: pd.DataFrame) -> pd.Series | None:
-        """The offset column, or ``None`` when no exposure is declared.
-
-        Returned separately from :meth:`transform` so it cannot be mistaken for
-        a predictor: callers hand it to the model's ``offset``.
-        """
-        if self.exposure_column is None:
-            return None
-        values = X[self.exposure_column].astype(float)
-        if (values <= 0).any():
-            # The offset is a log, and log of a non-positive number is -inf.
-            raise ValueError(
-                f"Exposure column {self.exposure_column!r} must be strictly "
-                f"positive; it enters the model as its log"
-            )
-        return pd.Series(
-            np.log(values.to_numpy()),
-            index=X.index,
-            name=f"log_{self.exposure_column}",
-        )
-
     def _build(self) -> Pipeline:
         """Return the unfitted pipeline the plans and interactions describe."""
-        columns = ColumnTransformer(
-            [(plan.name, plan.build(), list(plan.columns)) for plan in self.plans],
+        transformers: list[_TransformerTuple] = []
+        for plan in self.plans:
+            transformers.append((plan.name, plan.build(), list(plan.columns)))
+        column_transformer = ColumnTransformer(
+            transformers,
             remainder=self.remainder,
             # Every transform that changes a column's meaning renames it, so a
             # prefix would only add noise. A real collision raises.
             verbose_feature_names_out=False,
         )
-        steps = [("columns", columns)]
+        steps = [("column_transformer", column_transformer)]
         if self.interactions:
-            steps.append(("interactions", self._build_interactions()))
+            interaction_transformer = self._build_interactions()
+            steps.append(("interaction_transformer", interaction_transformer))
         return Pipeline(steps)
 
     def _build_interactions(self) -> ColumnTransformer:
-        """Return the entry per product, over a passthrough of the base matrix."""
-        return ColumnTransformer(
-            # The base entry is what keeps the main effects: a ColumnTransformer
-            # drops whatever no entry claimed, and an operand is claimed by its
-            # product. A column may appear in several entries.
-            [("base", "passthrough", _all_columns)]
-            + [
+        """Return a ``ColumnTransformer`` with one entry per product, plus the base."""
+        # The base entry is what keeps the main effects: a ColumnTransformer
+        # drops whatever no entry claimed, and an operand is claimed by its
+        # product. A column may appear in several entries.
+        transformers: list[_TransformerTuple] = [("base", "passthrough", _all_columns)]
+        for interaction in self.interactions:
+            transformers.append(
                 (interaction.name, interaction.build(), list(interaction.columns))
-                for interaction in self.interactions
-            ],
+            )
+        return ColumnTransformer(
+            transformers,
             remainder="drop",
             # Entries emit in order, so the products follow the base columns. A
             # product shadowing a column, or declared twice, raises here.

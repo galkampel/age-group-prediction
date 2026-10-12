@@ -5,10 +5,8 @@ subtitle: "How to build the synthetic data-generating process — transformation
 
 > **Status: legacy full-model source.** This document is preserved for its
 > original rationale and assumptions and may conflict with the current
-> simplified model. Use the [documentation index](../README.md),
-> [current model specification](../SIMPLIFIED_MODEL_PLAN.md), and
-> current implementation plan (archived: `SIMPLIFIED_MODEL_IMPLEMENTATION_PLAN.md`)
-> for active work.
+> simplified model. Use the [documentation index](../README.md) and the
+> [current model specification](../SIMPLIFIED_MODEL_PLAN.md) for active work.
 
 # 1. Purpose and scope
 

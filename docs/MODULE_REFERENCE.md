@@ -2,12 +2,13 @@
 
 One entry per Python module in `src/`: what it owns, its main public API, what
 it depends on inside the project, and where to read more. Names come from the
-code as of 2026-09-15. A module's own docstring, when present, is the most
+code as of 2026-10-11 (`hyperparameter_tuning`), 2026-10-08 (the `modeling` package) and 2026-09-30 (the rest). A module's own docstring, when present, is the most
 detailed and current description.
 
 Modules or names starting with `_` are internal: they can change without
 notice. Import public names from a package root (`age_group_prediction`,
-`age_group_prediction.models`, `age_group_prediction.experiment`,
+`age_group_prediction.models`, `age_group_prediction.modeling`,
+`age_group_prediction.hyperparameter_tuning`, `age_group_prediction.experiment`,
 `age_group_prediction.tracking`, `student_simulator`).
 
 ## How The Packages Fit Together
@@ -62,12 +63,19 @@ does not import `tracking`.
 | `experiment_config.py` | Load `configs/modeling.toml` into one `ExperimentConfig` (unknown keys refused) | `load_experiment_config`, `ExperimentConfig` | `modeling_config` | Guide intro |
 | `dataset_builder.py` | Build and validate the canonical modeling table, including room shares | `build_modeling_table` | `modeling_config` | [Data and splitting](DATA_AND_SPLITTING.md#2-the-modeling-table); guide §2 |
 | `data_splitting.py` | Known-neighborhood outer split, write-once manifest, replay, training-only folds | `split_known_neighborhood_buildings`, `SplitManifest`, `DataSplit`, `persist_split_manifest`, `load_split_manifest`, `replay_split_manifest`, `make_validation_folds`, `FoldPlan`, `ValidationFold`, `SeedSource` | `hashing`, `modeling_config` | [Data and splitting](DATA_AND_SPLITTING.md); guide §3-4 |
-| `splitting/splitters.py` | The three split methods; each pairs a train/test split with its cross-validator. Replaces `data_splitting.py`, not yet wired | `Splitter`, `Method`, `DesignMatrix`, `Target`, `Groups` | `splitting.stratified` | [Splitting](SPLITTING.md) |
+| `splitting/splitters.py` | The three split methods; each pairs a train/test split with its cross-validator. Replaces `data_splitting.py`, not yet wired | `Splitter`, `Method` | `splitting.stratified` | [Splitting](SPLITTING.md) |
 | `splitting/stratified.py` | The two splitters scikit-learn does not provide: split within every group, keeping each on both sides | `StratifiedHoldout`, `StratifiedFolds` | — (numpy, scikit-learn only) | [Splitting §3](SPLITTING.md#3-what-stratified_by_group-guarantees) |
+| `utils.py` | Helpers shared across packages: table type aliases and positional row selection | `take_rows`, `DesignMatrix`, `Target`, `Groups`, `Exposure` | — | — |
+| `scoring.py` | A named scoring function of `(y_true, y_pred)` with its direction, and four ready-made ones; shared by `modeling` and `hyperparameter_tuning`. `cohort_log_loss` scores cohort probabilities against cohort counts, per child (rows of `y_pred` normalized by their sum, so predicted counts score as proportions). Not the root-level `Metric` protocol from `metrics.py` | `Metric`, `POISSON_DEVIANCE`, `RMSE`, `MAE`, `COHORT_LOG_LOSS`, `cohort_log_loss` | — (numpy, scipy, scikit-learn only) | [Independent cohort models §4](INDEPENDENT_COHORT_MODELS.md#4-api) |
 | `hashing.py` | Stable content hashes for tables and column schemas | `table_hash`, `column_schema_hash` | — | [Data and splitting §4](DATA_AND_SPLITTING.md#4-splitmanifest); guide §14 |
 | `fitted_features.py` | Fold-fitted scaling, splines, schema-driven one-hot encoding, exposure offset, and state export. Was `feature_engineering.py`; the models still use it, and it is slated for removal | `FittedFeatureTransformer` | `modeling_config`, `state_bundle` | [Feature engineering](FEATURE_ENGINEERING.md); guide §5 |
-| `feature_engineering/transforms.py` | The vocabulary of typed transformations, each a frozen model carrying only its own parameters | `Standardize`, `Center`, `Quadratic`, `Log`, `Log1p`, `DomainScale`, `DomainMinMax`, `RelativeSaturation`, `OneHot`, `Transform` | — (pydantic, pandas, numpy, scikit-learn only) | [Feature transformations §8](FEATURE_TRANSFORMATIONS.md) |
-| `feature_engineering/transformer.py` | Declaring a design matrix and fitting it: named column plans, products of transformed columns, and the exposure offset | `ColumnPlan`, `Interaction`, `FeatureTransformer` | — (pydantic, pandas, numpy, scikit-learn only) | [Feature transformations §8](FEATURE_TRANSFORMATIONS.md) |
+| `feature_engineering/transforms.py` | The vocabulary of typed transformations, each a frozen model carrying only its own parameters | `Standardize`, `Center`, `CenterByReferencePoint`, `Quadratic`, `Log`, `Log1p`, `DomainScale`, `DomainMinMax`, `RelativeSaturation`, `Log1pRatioScaler`, `OneHot`, `Transform` | — (pydantic, pandas, numpy, scikit-learn only) | [Feature transformations §8](FEATURE_TRANSFORMATIONS.md) |
+| `feature_engineering/transformer.py` | Declaring a design matrix and fitting it: named column plans and products of transformed columns. The exposure is the model's, not declared here | `ColumnPlan`, `Interaction`, `FeatureTransformer` | — (pydantic, pandas, numpy, scikit-learn only) | [Feature transformations §8](FEATURE_TRANSFORMATIONS.md) |
+| `preprocessing.py` | Row-wise preprocessing that learns nothing: count columns to shares, with an optional omitted reference; the exposure column as floats, rejected unless strictly positive and finite | `ShareTransformer`, `ExposureTransformer` | — (numpy, pandas, scikit-learn only) | [Feature transformations §8.0](FEATURE_TRANSFORMATIONS.md#80-shared-column-groups) |
+| `hyperparameter_tuning/parameters.py` | The values each hyperparameter may take, one class per Optuna `suggest_*` call, validated when created | `Parameter`, `FloatParameter`, `IntParameter`, `CategoricalParameter` | `hyperparameter_tuning._config` (optuna, pydantic) | [Hyperparameter tuning §3](HYPERPARAMETER_TUNING.md#3-parameters) |
+| `hyperparameter_tuning/evaluator.py` | A frozen pydantic dataclass of settings, checked when built. Score one Optuna trial: set its parameters, then for every CV fold fit a `BaseAgeGroupModel` on the raw training rows (it fits its own `feature_transformer`) and score the validation rows with a `Metric`; combine the fold scores | `CVHyperparameterEvaluator` | `utils`, `modeling`, `scoring`, `hyperparameter_tuning.parameters`, `hyperparameter_tuning.aggregation` | [Hyperparameter tuning §4](HYPERPARAMETER_TUNING.md#4-the-evaluator) |
+| `hyperparameter_tuning/aggregation.py` | Combine a trial's fold scores into its value: `aggregate(scores, fold_sizes)`, with the size-weighted mean (default), the plain mean, or an upper bound (a loss's pessimistic end) using the K-fold corrected standard error | `Aggregator`, `WeightedMean`, `Mean`, `UpperBound`, `corrected_std_error` | `hyperparameter_tuning._config` (numpy, pydantic) | [Hyperparameter tuning §5](HYPERPARAMETER_TUNING.md#5-aggregation) |
+| `hyperparameter_tuning/study.py` | The search settings (a seeded multivariate TPE sampler and no pruning by default; trials run sequentially, always minimizing) and the outcome: the best COMPLETE trial, a tie to the lowest number, and one record per trial that ran, with the metric in its own sign and the corrected standard error; `to_dict()` is JSON-safe | `HyperparameterStudy`, `TuningResult`, `TrialRecord` | `hyperparameter_tuning._config`, `hyperparameter_tuning.aggregation` (optuna, pydantic) | [Hyperparameter tuning §6](HYPERPARAMETER_TUNING.md#6-the-study) |
 | `results.py` | Validated, model-independent prediction and evaluation contracts | `PredictionResult`, `EvaluationResult`, `ParametricDistributionSpec` | `modeling_config` | [Evaluation and metrics §1](EVALUATION_AND_METRICS.md#1-the-prediction-contract); guide §6 |
 | `metrics.py` | Metric protocol and classes: point, likelihood, composition, reconciliation, interval, and PIT metrics; capability checks | `Metric`, `MetricResult`, `MeanAbsoluteError`, `RootMeanSquaredError`, `MeanBias`, `R2`, `MeanPoissonDeviance`, `ParametricPredictiveNegativeLogLikelihood`, `PointwisePredictiveNegativeLogLikelihood`, `JointPredictiveNegativeLogLikelihood`, `CompositionLogLoss`, `CompositionBrierScore`, `ReconciliationError`, `IntervalCoverage`, `MeanIntervalWidth`, `WeightedIntervalScore`, `PredictiveNegativeLogLikelihood` and `RandomizedPIT` (abstract bases), `ParametricRandomizedPIT`, `DrawsRandomizedPIT`, `default_metric_set`, `available_prediction_capabilities` | `distributions`, `results`, `modeling_config` | [Evaluation and metrics](EVALUATION_AND_METRICS.md); guide §7; plan §9 |
 | `evaluation.py` | Evaluate fixed predictions and neighborhood-cluster bootstrap intervals; never fits models | `evaluate_predictions`, `neighborhood_cluster_bootstrap`, `BootstrapEvaluationResult`, `MissingCapabilityPolicy` | `metrics`, `resampling`, `results`, `modeling_config` | [Evaluation and metrics §6-7](EVALUATION_AND_METRICS.md#7-neighborhood-cluster-bootstrap); guide §7 |
@@ -77,13 +85,38 @@ does not import `tracking`.
 | `tuning.py` | Deterministic Optuna studies over completed trials | `run_optuna_study`, `TuningResult`, `TrialRecord` | `modeling_config` | — |
 | `state_bundle.py` | JSON state-bundle format and checks shared by all models | `STATE_BUNDLE_FORMAT`, `check_bundle_header`, `verify_training_frame`, `restore_config`, `restore_feature_spec`, `dependency_versions` | `hashing`, `modeling_config` | Guide §13; README "Saving And Reloading" |
 
+## `age_group_prediction.modeling` — Rebuilt Models (Not Yet Wired)
+
+These are scikit-learn-style models that replace `models/` and
+`modeling_config`: settings in the constructor, and `fit(X, y, exposure=None)` /
+`predict(X, exposure=None)`. A leaf model (`CountModel`,
+`CohortProbabilityModel`) takes the raw table when given a
+`feature_transformer`, otherwise a design matrix; `IndependentCohortModels` and
+`TotalTimesProbabilityModel` take the raw table and pass it to their models. No
+torch: scikit-learn, LightGBM and statsmodels estimators only. Nothing in `experiment/` or
+`tracking/` calls them yet; the old `models/` is deleted once all three models
+are rebuilt. Plans: [MODEL_REIMPLEMENTATION_PLAN.md](MODEL_REIMPLEMENTATION_PLAN.md),
+[MULTI_COHORT_MODELS_PLAN.md](MULTI_COHORT_MODELS_PLAN.md),
+[TOTAL_TIMES_PROBABILITY_MODEL_PLAN.md](TOTAL_TIMES_PROBABILITY_MODEL_PLAN.md).
+
+| Module | Responsibility | Main public API | Depends on |
+|---|---|---|---|
+| `__init__.py` | Public surface of the rebuilt models | `BaseAgeGroupModel`, `CalibrationMethod`, `Classifier`, `CohortModels`, `CohortProbabilityModel`, `CountModel`, `ExposureRegressor`, `IndependentCohortModels`, `NegativeBinomialRegressor`, `Regressor`, `ReplicationType`, `TotalTimesProbabilityModel` | `base`, `cohort_probability`, `count_model`, `independent_cohorts`, `negative_binomial`, `total_times_probability` |
+| `base.py` | The shared contract: abstract `fit` and `predict` (one target or one per cohort), and `evaluate(y_true, y_pred, metric)`; `get_params`/`set_params`/`clone` come from scikit-learn's `BaseEstimator`. The exposure rule for a model with an offset (`_check_exposure`: required, one-dimensional, `X`'s length; ignored when unused). The `feature_transformer` logic of the leaf models (`_fit_features`: a fitted copy and the design matrix; `_transform_features`: new rows through that copy) | `BaseAgeGroupModel` | `scoring`, `feature_engineering` (top level) |
+| `count_model.py` | **Model A, and Model 2's total.** Any scikit-learn-style regressor (`estimator`, required) for one count column (a cohort's or the total); the optional exposure applied by the estimator's `fit` signature (`has_fit_parameter`): an estimator taking `exposure` (`ExposureRegressor`, e.g. `NegativeBinomialRegressor`) gets the raw exposure at fit and predict; one taking `sample_weight` (`Regressor`) gets the weighted per-apartment rate (`y / exposure`, `sample_weight=exposure`, the Poisson offset model exactly); neither raises `TypeError`; optional `feature_transformer` | `CountModel`, `Regressor`, `ExposureRegressor` | `base`, `feature_engineering` |
+| `negative_binomial.py` | **NB2 as a scikit-learn regressor** around statsmodels' `NegativeBinomial(loglike_method="nb2", exposure=…)`: `log μ = log(exposure) + b + Xβ`, `Var = μ(1 + αμ)`, α by maximum likelihood; BFGS (the preliminary fit too), `add_constant(has_constant="add")`, no Hessian; statsmodels' `ConvergenceWarning` silenced and non-convergence raised as `RuntimeError`; `fit(X, y, exposure=None)`, `predict(X, exposure=None)` = `exposure · exp(b + Xβ)`; fitted `intercept_`, `coef_`, `dispersion_`; one setting, `max_iter=500`; unpenalized | `NegativeBinomialRegressor` | statsmodels, scikit-learn |
+| `cohort_probability.py` | **Model 2, cohort probabilities.** Any scikit-learn multi-class classifier (`estimator`, required: `fit(X, y, sample_weight=None)`, `predict_proba`) fitted on the children as categorical rows built inside `fit` (`multinomial_to_categorical`): `replication="weighted"`, one row per (sample, cohort) with a child weighted by its count, or `"per_child"`, one row per child, no `sample_weight`; labels are the cohort positions (`classes_` = `0 … K−1` in `y`'s order); optional calibration, `calibration_method` (`temperature`, `sigmoid`, `isotonic`; `None` default) as `CalibratedClassifierCV(ensemble=False)` on `calibration_cv` (5) round-robin folds of samples made before the rows; the feature transformer fitted on the samples; `fit` raises for `X`/`y` of different lengths and for a cohort with no child; `predict` returns a DataFrame with `y`'s columns and raises if a row does not sum to 1; an exposure is ignored | `CohortProbabilityModel`, `Classifier`, `ReplicationType`, `CalibrationMethod` | `base`, `feature_engineering`, `utils`; scikit-learn |
+| `independent_cohorts.py` | **Model 1.** One independent model per cohort (any `BaseAgeGroupModel`, usually a `CountModel` with its own `feature_transformer`), fitted on its column of `y`; every cohort gets the same exposure; predicts a DataFrame, one column per cohort | `IndependentCohortModels`, `CohortModels` | `base` |
+| `total_times_probability.py` | **Model 2.** The predicted total times the predicted cohort probabilities: `total_model` (a `BaseAgeGroupModel`, fitted on the row sum of `y`) and `probability_model` (a `CohortProbabilityModel`, on `y`), each with its own `feature_transformer`, cloned in `fit`, the same exposure to both (the probability model ignores it), the fitted state set only once both succeeded; predicts `probabilities * total[:, None]`, a DataFrame with `y`'s columns and `X`'s index, each row summing to the predicted total. Nested `set_params` names reach both | `TotalTimesProbabilityModel` | `base`, `cohort_probability` |
+
+Model descriptions: Model 1, [INDEPENDENT_COHORT_MODELS.md](INDEPENDENT_COHORT_MODELS.md) (`CountModel`, `NegativeBinomialRegressor`, `IndependentCohortModels`); Model 2, [TOTAL_TIMES_PROBABILITY_MODEL.md](TOTAL_TIMES_PROBABILITY_MODEL.md).
+
 ## `age_group_prediction.models` — Model Families
 
-Model descriptions: [DIRECT_COHORT_MODEL.md](DIRECT_COHORT_MODEL.md),
+Being replaced by `modeling` (above). Model descriptions: [DIRECT_COHORT_MODEL.md](DIRECT_COHORT_MODEL.md),
 [INDEPENDENT_TOTAL_PROBABILITY_MODEL.md](INDEPENDENT_TOTAL_PROBABILITY_MODEL.md),
 [BAYESIAN_CONDITIONAL_MODEL_OVERVIEW.md](BAYESIAN_CONDITIONAL_MODEL_OVERVIEW.md),
 and the full [BAYESIAN_CONDITIONAL_MODEL.md](BAYESIAN_CONDITIONAL_MODEL.md);
-specification: plan §6-8 in [MODELING_REBUILD_PLAN.md](MODELING_REBUILD_PLAN.md);
 overview: guide §6. `models/__init__.py` imports the LightGBM model before the
 torch model to avoid a native-runtime crash when reloading boosters.
 
@@ -159,7 +192,7 @@ docstring describes the run layout in detail. The final path is described in
 
 | Location | Role | Read more |
 |---|---|---|
-| `notebooks/01_eda.py` | EDA client | [EDA plan](EDA_AND_PREDICTIVE_MODELING_PLAN.md) |
+| `notebooks/01_eda.py` | EDA client | [README](../README.md#run-the-modeling-notebook) (opened the same way as the modeling notebook) |
 | `notebooks/02_model_fitting.py` | Thin, button-gated modeling client | [README](../README.md#run-the-modeling-notebook); guide §15 |
 | `configs/simulation.toml`, `configs/modeling.toml`, `configs/validation.toml` | Simulator, modeling/experiment, and test-only threshold settings | Guide §1 and intro |
 | `tests/unit`, `tests/validation`, `tests/characterization` | Focused contracts; recovery and real-model checks; simulator and notebook behavior | README "Run The Tests" |

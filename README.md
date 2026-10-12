@@ -10,19 +10,15 @@ building-level DataFrame:
 
 - [Simplified model specification](docs/SIMPLIFIED_MODEL_PLAN.md) defines the
 	current behavior and formulas.
-- [Compact simulator migration plan](docs/COMPACT_SIMULATOR_MIGRATION_PLAN.md)
-  records the compact component migration and its validation gates.
-- [Marimo research workflow migration plan](docs/MARIMO_MIGRATION_PLAN.md)
-	records the completed Jupyter cutover, package setup, notebook structure,
-	validation gates, and model assignments.
-- [EDA and predictive modeling plan](docs/EDA_AND_PREDICTIVE_MODELING_PLAN.md)
-	defines the immediate EDA deliverable and modeling handoff.
 - [Modeling guide](docs/MODELING_GUIDE.md) explains the supported pipeline,
   public APIs, configuration, evidence, and invariants.
 - [MLflow experiments guide](docs/MLFLOW_EXPERIMENTS_GUIDE.md) covers scratch
   setup, run layout, searching, final-run semantics, and model loading.
 - [Feature engineering](docs/FEATURE_ENGINEERING.md) explains feature specs,
   fitted transformations, and how each model uses them.
+- [Feature transformations](docs/FEATURE_TRANSFORMATIONS.md): the typed
+  `feature_engineering` package, the per-feature decisions, and each model's
+  declaration.
 - Model descriptions:
   - [Direct cohort model (Model A)](docs/DIRECT_COHORT_MODEL.md): one tuned
     LightGBM regressor per cohort.
@@ -37,6 +33,10 @@ building-level DataFrame:
   explains how Model A and Model B tune with seeded Optuna studies nested
   inside each training fold, what is tuned, and where the evidence is logged
   (the Bayesian model uses fixed priors and NUTS profiles instead).
+- [Hyperparameter tuning package](docs/HYPERPARAMETER_TUNING.md): the
+  `hyperparameter_tuning` package that tunes the rebuilt `modeling` models
+  (parameters, a cross-validation evaluator, fold aggregation, an Optuna
+  study), with a worked example run as written.
 - Component documents describe each pipeline stage's API, guarantees,
   refusals, and configuration:
   - [Data and splitting](docs/DATA_AND_SPLITTING.md): modeling table,
@@ -197,10 +197,9 @@ Run the fast suite with:
 uv run pytest -m "not calibration and not slow"
 ```
 
-Run coefficient recovery after installing the validation dependency group:
+Run coefficient recovery:
 
 ```bash
-uv sync --group validation
 uv run pytest -m slow tests/validation/test_recovery.py -v
 ```
 
