@@ -8,9 +8,10 @@ counts, test counts drift).
 **Status (2026-10-12):** PR A done: the tuning study (A0–A5), an independent
 validation ([HYPERPARAMETER_TUNING_VALIDATION.md](HYPERPARAMETER_TUNING_VALIDATION.md):
 ACCEPT WITH NOTES, findings processed), PR #5 squash-merged into `main` as
-`ba2aa11` (A6). PR B: B1 done (`COHORT_POISSON_DEVIANCE`) and awaits the
-user's commit. **Next:** B2, the split pattern (the method decided with the
-user first).
+`ba2aa11` (A6). PR B: B1 committed (`2d4f0c5`: `COHORT_POISSON_DEVIANCE`,
+non-slow suite 1252 passed); PR B is opened on GitHub after B2. **Next:** B2,
+the split pattern: ask the user for the method first (evidence: `SPLITTING.md`'s
+"how to choose" and E6), then the tests, then the doc block.
 
 **Branch state:** `feat/split-and-cohort-deviance` (PR B), from `main` at `ba2aa11`.
 
@@ -206,6 +207,18 @@ states them; they apply to every sub-task below.
     updated in place; the commit messages keep the history.
 11. After editing `pyproject.toml`, run `uv` with `--frozen`; `uv lock` and
     `uv sync` are the user's.
+
+**Working notes (2026-10-12):**
+- Files in the working tree were overwritten twice by stale editor buffers:
+  docs, then `parameters.py`, reverted to older texts mid-session. Start with
+  `git status`. If a file you did not touch is modified, stop and show the user
+  the diff.
+- When the tree cannot be trusted, validate from a `git archive HEAD` copy in
+  the scratchpad. Assert the import path first: the `.venv` has an editable
+  `.pth` pointing at the repo's `src`, so a scratch copy is ignored unless it
+  comes first on the path (pytest: `-c <copy>/pyproject.toml --rootdir <copy>`).
+- A test of a shape check needs non-square data: a transposed square matrix
+  has the same shape (B1's first try).
 
 ---
 
