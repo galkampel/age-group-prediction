@@ -48,7 +48,7 @@ experiment runner.
 | D15 | `evaluate(trial, X, y, groups=None, *, exposure=None)`; `X` is the raw table | the exposure is data (D10) |
 | D16 | `Metric` and the ready-made metrics live in the top-level `scoring.py` | models and tuning both use them |
 | D17 | Only `modeling.BaseAgeGroupModel`s are tunable; a contract test runs sklearn's parameter checks over every one | the old models can't be cloned; a rebuilt model gets `clone`/`set_params` if it stores its settings verbatim and validates in `fit` |
-| D18 | Categorical choices are Optuna's scalar choice types only: `None`, `bool`, `int`, `float`, `str` (A4b) | Optuna only warns about others and hands a choice back by reference, so a list choice edited through a result changed the kept study and the parameter's own `choices` (measured); scalars make every `params` dict copy-safe with one `dict()` and JSON-native. No planned client uses non-scalar choices (D4's `calibration_method` is `None`/strings) |
+| D18 | Categorical choices are Optuna's scalar choice types only: `None`, `bool`, `int`, `float`, `str` (A4b); a float choice must be finite (the validation's F1) | Optuna only warns about others and hands a choice back by reference, so a list choice edited through a result changed the kept study and the parameter's own `choices` (measured); scalars make every `params` dict copy-safe with one `dict()` and JSON-native. No planned client uses non-scalar choices (D4's `calibration_method` is `None`/strings). A NaN or infinite choice passed the type check and reached `best_params`, where `to_dict()` stopped round-tripping through JSON (measured, [the validation](HYPERPARAMETER_TUNING_VALIDATION.md) F1) |
 | D19 | The study runs trials one after the other, a fixed `n_trials`; no `timeout_seconds`, `n_jobs`, `initial_params` or `is_reproducible` (A4b) | no planned client uses them (E12 of `EXPERIMENT_NOTEBOOK_PLAN.md`); the rule that dropped `storage`/`study_name` in 3.1: add a field with its first use. Sequential trials make a seeded sampler reproduce the search, and the tie rule needs no parallel case |
 | D20 | An empty search space is allowed: the evaluator scores the model as given (A4b) | D4 item 3 of `EXPERIMENT_NOTEBOOK_PLAN.md` tunes NB2, which has no hyperparameters, as a one-trial study logged like the others; with more trials every trial repeats the same fit (measured: three equal values), a waste, not a wrong answer, so the user pairs it with `n_trials=1` |
 
@@ -59,7 +59,7 @@ D2 (sklearn estimators) and D6 (sklearn scorers) were superseded by D11–D13.
 ```
 src/age_group_prediction/hyperparameter_tuning/
     __init__.py      # how the parts fit; the public API
-    _config.py       # _STRICT: the pydantic config shared by parameters and aggregation
+    _config.py       # _STRICT: the pydantic config shared by the package's modules
     parameters.py    # Parameter, FloatParameter, IntParameter, CategoricalParameter
     aggregation.py   # Aggregator, WeightedMean, Mean, UpperBound, corrected_std_error
     evaluator.py     # CVHyperparameterEvaluator
@@ -69,11 +69,11 @@ src/age_group_prediction/hyperparameter_tuning/
 - Shared helpers: `utils.take_rows` and the `DesignMatrix`, `Target`,
   `Groups` and `Exposure` aliases.
 - Imports go one way: `evaluator` → `parameters`, `aggregation`, `modeling`,
-  `scoring`, `feature_engineering`; `study` imports only
-  `aggregation.corrected_std_error`, and accepts any `trial -> float` objective.
+  `scoring`, `utils`; `study` imports only `aggregation.corrected_std_error`
+  (and `_config`), and accepts any `trial -> float` objective.
 - The package is not re-exported from `age_group_prediction`, and mypy checks
   it strictly.
-- Tests: `tests/unit/test_hyperparameter_tuning_{parameters,aggregation,evaluator,study}.py`,
+- Tests: `tests/unit/test_hyperparameter_tuning_{parameters,aggregation,evaluator,study,integration}.py`,
   `test_scoring.py`, `test_modeling_contract.py`.
 
 ## 4. Design
@@ -100,14 +100,16 @@ CategoricalParameter("calibration_method", [None, "temperature", "sigmoid"])  # 
   `step` are keyword-only.
 - Validated when created: pydantic checks the types strictly (`1.5` or
   `True` for an int is rejected); Optuna's distribution classes check the
-  values. Both raise `ValueError`: a value error is prefixed
-  `parameter '<name>'`; a type error names the class and the argument (its
-  position if passed positionally).
-- Three rules Optuna lets through, added here: a step that doesn't divide the
-  range (Optuna quietly lowers `high`), duplicate choices (double weight),
-  and duplicate parameter names (in the evaluator).
-- Choices are Optuna's scalar types, `None`, `bool`, `int`, `float` and `str`
-  (D18), checked with `isinstance` against Optuna's own alias and left as
+  values. Both raise `ValueError`: Optuna's value errors and the
+  duplicate-choice error are prefixed `parameter '<name>'` (the choice-type
+  and finite checks, field validators, are not); a type error names the class
+  and the argument (its position if passed positionally).
+- Four rules Optuna lets through, added here: a step that doesn't divide the
+  range (Optuna quietly lowers `high`), duplicate choices (double weight), a
+  NaN or infinite float choice (D18), and duplicate parameter names (in the
+  evaluator).
+- Choices are Optuna's scalar types, `None`, `bool`, `int`, finite `float`
+  and `str` (D18), checked with `isinstance` against Optuna's own alias and left as
   given (a `np.float64` is a `float`; a `np.int64` is rejected, like a numpy
   bound: a strict pydantic union would have turned it into `7.0` silently).
   A list is stored as a tuple; a set is rejected, since its order varies
@@ -163,7 +165,9 @@ and return `aggregation.aggregate(scores, fold_sizes)`.
   of Optuna's `WilcoxonPruner`, which pairs fold k across trials. Measured,
   on 10 folds of unequal difficulty with a bad trial that ties on fold 0:
   `WilcoxonPruner` pruned it after 5 folds and `SuccessiveHalvingPruner`
-  after 2; `MedianPruner`/`PercentilePruner` never did, whatever was reported,
+  after 2; whether `MedianPruner`/`PercentilePruner` pruned it depended on the
+  fold order (never when the tied fold 0 was the easiest, after 1–2 folds
+  otherwise; [the validation](HYPERPARAMETER_TUNING_VALIDATION.md) §3.6),
   because they compare a trial's best value over its steps (a learning-curve
   assumption). **Guidance (3.5):** for CV, use `WilcoxonPruner` or
   `SuccessiveHalvingPruner`, never `MedianPruner`/`PercentilePruner`; the
@@ -359,8 +363,8 @@ class TuningResult:
 - **JSON:** the evaluator's attrs and the params are plain Python and
   round-trip through `json` exactly (measured, also with `allow_nan=False`);
   D18 makes every categorical value JSON-native (a `np.float64` is a `float`
-  and is written as one; a `np.int64` choice is rejected when the parameter is
-  built). `to_dict` converts only the state (an `IntEnum`: `json` would
+  and is written as one; a `np.int64` or a NaN/inf choice is rejected when the
+  parameter is built). `to_dict` converts only the state (an `IntEnum`: `json` would
   write `1`) and tuples to lists. An `inf` from a plain objective reaches
   `best_value` (the evaluator rejects it), and `json.dumps` with
   `allow_nan=False` would raise: left as is.
@@ -523,7 +527,7 @@ doc → stop with the commands.
 | purpose | command |
 |---|---|
 | package tests | `uv run pytest tests/unit/test_hyperparameter_tuning_*.py -q -W error` |
-| suite | `uv run pytest -m "not slow"` (1002 passed, 8 warnings, ~85 s) |
+| suite | `uv run pytest -m "not slow"` (~95 s) |
 | types | `uv run mypy`, plus `uv run mypy src/age_group_prediction/hyperparameter_tuning <changed test files>`. The package path is needed: without it, mypy doesn't check the tests' calls into the package. The parameters test has 4 deliberate type errors |
 | lint | `uv run ruff check <files>` and `uv run ruff format <files>`, changed files only, paths listed explicitly (zsh doesn't split `$FILES`) |
 | probes | `PYTHONPATH=src uv run --group test python -c "..."` |
@@ -569,7 +573,7 @@ tested parts that tune the repo's own `modeling.BaseAgeGroupModel`s.
   `CategoricalParameter`, strict pydantic dataclasses validated when created.
   They run Optuna's own checks, plus three that Optuna lets through silently:
   a step that doesn't divide the range, duplicate choices, and NaN/inf
-  bounds. A search space is a plain list of them.
+  bounds and float choices. A search space is a plain list of them.
 - **`CVHyperparameterEvaluator`** (`evaluator.py`): a frozen pydantic
   dataclass of settings, checked when built: a model, parameters, a
   `Splitter.cv` validator, a `Metric` and an `Aggregator`. The data go to `evaluate(trial, X, y, groups, *, exposure=None)`.

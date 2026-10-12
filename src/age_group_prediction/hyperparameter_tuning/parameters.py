@@ -18,6 +18,7 @@ from __future__ import annotations
 import warnings
 from abc import ABC, abstractmethod
 from dataclasses import KW_ONLY
+from math import isfinite
 from typing import Annotated, Any, get_args
 
 from optuna.distributions import (
@@ -129,6 +130,9 @@ def _scalar_choices(choices: tuple[Any, ...]) -> tuple[CategoricalChoiceType, ..
         raise ValueError(
             f"choices must be None, bool, int, float or str, got {unsupported}"
         )
+    # NaN or inf would reach best_params, which strict json cannot write.
+    if any(isinstance(c, float) and not isfinite(c) for c in choices):
+        raise ValueError(f"float choices must be finite, got {choices}")
     return choices
 
 
@@ -151,10 +155,9 @@ class CategoricalParameter(Parameter):
     def __post_init__(self) -> None:
         super().__post_init__()
         # Optuna accepts duplicates silently, giving that choice double weight.
-        # Compared with ==, which, like Optuna, treats True, 1 and 1.0 as one
-        # choice.
-        c = self.choices
-        if any(a == b for i, a in enumerate(c) for b in c[i + 1 :]):
+        # A set compares by ==, which, like Optuna, treats True, 1 and 1.0 as
+        # one choice.
+        if len(set(self.choices)) != len(self.choices):
             raise ValueError(
                 f"parameter {self.name!r}: choices must be unique, got {self.choices}"
             )

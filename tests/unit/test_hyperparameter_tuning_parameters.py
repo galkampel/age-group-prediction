@@ -218,6 +218,14 @@ def test_a_choice_outside_optunas_types_is_rejected(choice: object) -> None:
         CategoricalParameter("p", (choice, "a"))
 
 
+@pytest.mark.parametrize("choice", [math.nan, math.inf, -math.inf])
+def test_a_non_finite_float_choice_is_rejected(choice: float) -> None:
+    # It would pass the type check and reach best_params, which strict json
+    # cannot write.
+    with pytest.raises(ValueError, match="float choices must be finite"):
+        CategoricalParameter("p", (choice, 1.0))
+
+
 def test_a_set_of_choices_is_rejected() -> None:
     # A set's order depends on the hash seed, so a seeded study would differ
     # between runs.

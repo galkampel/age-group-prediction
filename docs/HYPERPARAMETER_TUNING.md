@@ -27,7 +27,7 @@ evaluator suggests every parameter once, builds one copy of the model with them
 (`clone` + `set_params`), fits and scores it on each fold of a seeded
 `Splitter.cv` validator, and returns the aggregated score; the study keeps the
 best COMPLETE trial and a record of every trial. Imports go one way,
-`evaluator → parameters, aggregation, modeling, scoring, splitting`; the study
+`evaluator → parameters, aggregation, modeling, scoring, utils`; the study
 knows only the aggregation's standard error and accepts any `trial -> float`
 objective. Nothing here is re-exported from `age_group_prediction`'s root:
 import from `age_group_prediction.hyperparameter_tuning`.
@@ -153,21 +153,24 @@ the leaves by depth). The same loop, as a test, is
 A search space is a plain list of parameters. Each is a frozen, strict pydantic
 dataclass, validated when created rather than at the first trial: pydantic checks
 the types (`IntParameter("p", 1.5, 9)` fails; so does a numpy bound, use
-`int(x)`), then Optuna's own distribution class checks the values, and three
+`int(x)`), then Optuna's own distribution class checks the values, and four
 rules Optuna lets through silently are added: a step that does not divide the
-range (Optuna would quietly lower `high`), duplicate choices (double weight),
-and, in the evaluator, duplicate names (Optuna would reuse the first value).
+range (Optuna would quietly lower `high`), duplicate choices (double weight), a
+NaN or infinite float choice, and, in the evaluator, duplicate names (Optuna
+would reuse the first value).
 
 | class | Optuna call | arguments |
 |---|---|---|
 | `FloatParameter(name, low, high, *, log=False, step=None)` | `suggest_float` | `log` needs `low > 0`; `step` must divide `high − low`; not both |
 | `IntParameter(name, low, high, *, log=False, step=1)` | `suggest_int` | `log` needs `low ≥ 1` and `step == 1` |
-| `CategoricalParameter(name, choices)` | `suggest_categorical` | choices are `None`, `bool`, `int`, `float` or `str`; a list is stored as a tuple; a set is rejected (its order varies between runs) |
+| `CategoricalParameter(name, choices)` | `suggest_categorical` | choices are `None`, `bool`, `int`, finite `float` or `str`; a list is stored as a tuple; a set is rejected (its order varies between runs) |
 
 Choices are restricted to Optuna's own scalar types (D18) because Optuna hands a
 choice back by reference: a list choice edited through a result changed the kept
 study and the parameter itself, and a tuple or an object cannot be written to
-JSON. A `np.float64` is a `float` and is kept as given; a `np.int64` is rejected.
+JSON. For the same reason a NaN or infinite float choice is rejected: it would reach
+`best_params`, and strict JSON cannot write it. A `np.float64` is a `float` and is kept
+as given; a `np.int64` is rejected.
 
 ```python
 import numpy as np
@@ -201,8 +204,10 @@ are out of scope (D9).
 `CVHyperparameterEvaluator(model, parameters, *, cv, metric, aggregation=WeightedMean())`
 holds the settings (scikit-learn style: settings in the constructor, data as
 method arguments) and checks them when built: `model` is a
-`modeling.BaseAgeGroupModel`, `cv` a `Splitter.cv(n_splits=..., random_state=int)`
-validator (so every trial sees identical folds, D3), `metric` a `scoring.Metric`,
+`modeling.BaseAgeGroupModel`, `cv` a scikit-learn cross-validator (only the type is
+checked: build it with `Splitter.cv(n_splits=..., random_state=int)`, so every trial
+sees identical folds, D3; a seedless one would give each trial different folds),
+`metric` a `scoring.Metric`,
 `aggregation` an `Aggregator` (§5). Each check prevents a failure that would
 otherwise come after a fold was fitted.
 
@@ -381,7 +386,7 @@ shuffling changed little under Wilcoxon and made successive halving worse,
 because it compares trials at the same step, which must then be the same fold.
 Pruning pays with many folds; on this 5-fold example `WilcoxonPruner()` at its
 default `p_threshold=0.1` pruned nothing, and `SuccessiveHalvingPruner()` at its
-defaults completed only 2 of 30 trials. Both pruners emit Optuna's
+defaults completed only 2 of 30 trials. `WilcoxonPruner` emits Optuna's
 `ExperimentalWarning` once, when constructed.
 
 ```python
@@ -408,8 +413,8 @@ has seen; the folds themselves are unchanged.
 ## 8. Reproducibility
 
 The study's `seed` covers the default sampler only. What it does not cover must
-be seeded on its own: the estimator (`random_state` on `LGBMRegressor`, with
-`n_jobs=1`: more threads change the fit), a sampler you pass in, the split
+be seeded on its own: the estimator (`random_state` on `LGBMRegressor`), a
+sampler you pass in, the split
 (`Splitter.train_test_indices(..., random_state=...)`) and the folds
 (`Splitter.cv(..., random_state=...)`, required). With those fixed, the same
 seed gives an identical result, trial for trial, because the trials run one
@@ -425,6 +430,15 @@ print(again == result)
 ```text
 True
 ```
+
+The examples also set LightGBM's `n_jobs=1`. LightGBM guarantees identical
+results across thread counts only with `deterministic=True` (its parameter
+docs), so one thread is the safe default. Measured on LightGBM 4.7.0 (8 cores),
+1, 2, 4 and 8 threads gave bit-identical fits in all seven settings tried
+(60 to 400 000 rows, up to 500 columns, Poisson with weights and bagging, row-
+and column-wise histograms, `deterministic=True`), and the worked example's
+study with 1, 4 and 8 threads was identical too: on this setup the thread count
+changes the speed, not the fit.
 
 The notebook plan names four seeds (E12): `split_seed`, `cv_seed`, `study_seed`
 (one per study, `study_seed + i` for the i-th cohort or component) and

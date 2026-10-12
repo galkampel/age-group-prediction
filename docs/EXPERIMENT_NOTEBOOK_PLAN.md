@@ -5,14 +5,17 @@ it. Self-contained: everything an implementer needs is here or linked. Re-verify
 every fact against the code of the day before relying on it (file paths, line
 counts, test counts drift).
 
-**Status (2026-10-11):** A0 committed (`6b8f5a1`), A1 (`1f4ed67`), A2
+**Status (2026-10-12):** A0 committed (`6b8f5a1`), A1 (`1f4ed67`), A2
 (`81f8896`), A3 (`b0d436c`: records, the full `TuningResult`, the study now
 minimizes), A4 (`80fd068`: the slow integration test, pruner guidance with
 the fold order kept fixed, the penalty ranges checked), A4b (`b8cebd0`: the
-external review processed); A5 done (the user guide
+external review processed), A5 (`f219cb8`: the user guide
 [HYPERPARAMETER_TUNING.md](HYPERPARAMETER_TUNING.md), every block run as
-written; the links) and awaits the user's commit. **Next:** A6, the merge of
-PR #5 into `main`; then PR B.
+written; the links). An independent validation
+([HYPERPARAMETER_TUNING_VALIDATION.md](HYPERPARAMETER_TUNING_VALIDATION.md),
+`4a3a3f3`: ACCEPT WITH NOTES); its findings processed (non-finite float
+choices rejected, the doc corrections) and awaiting the user's commit.
+**Next:** A6, the merge of PR #5 into `main`; then PR B.
 
 **Branch state:** `feat/hyperparameter-tuning` (draft PR #5), 49 commits ahead
 of `main` at `7d865ab`, carrying the squash-merges of PRs #10–#14.

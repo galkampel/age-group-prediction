@@ -246,7 +246,27 @@ the table names was among the failures.
 **30 killed, 0 survived.** After the last restore, `diff -r` of the scratch `src` against the pristine
 archive is empty.
 
-## 5. Findings and proposed fixes (none applied)
+## 5. Findings and proposed fixes
+
+**Processed 2026-10-12** (after this report, on the same branch):
+- **F1:** `_scalar_choices` now rejects a NaN or infinite float choice. The duplicate check is
+  `len(set(choices)) != len(choices)`, without the `TypeError` fallback. That is your choice: an
+  unhashable float subclass now raises a raw `TypeError`, and a subclass whose hash disagrees with `==`
+  is not caught. Both break Python's hash/`==` contract.
+- **The new test:** `test_a_non_finite_float_choice_is_rejected`. Mutation checks: dropping the
+  finite check fails its 3 cases, and dropping or loosening the duplicate check fails the duplicate
+  tests. D18 records the rule.
+- **D1, D3–D6 and N2:** fixed as proposed in the guide and the plan, plus the "four rules" and JSON
+  sentences that F1 touched.
+- **D2:** re-measured before rewording.
+  - LightGBM does run multithreaded here: 8 threads use 2.4× CPU per wall-second, at half the wall
+    time.
+  - Seven settings were bit-identical across 1, 2, 4 and 8 threads, and repeatable at 8: 60 to
+    400 000 rows, up to 500 columns, Poisson with weights and bagging, row- and column-wise
+    histograms, and `deterministic=True`.
+  - LightGBM's parameter docs promise stability across `num_threads` only with `deterministic=true`.
+  - Guide §8 now says both, and keeps `n_jobs=1` as the safe default.
+- The table below is kept as reported.
 
 | # | Severity, kind | Where | What | Reproduction | Proposed fix |
 |---|---|---|---|---|---|
