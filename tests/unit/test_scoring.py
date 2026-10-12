@@ -16,11 +16,13 @@ from sklearn.metrics import (
 
 from age_group_prediction.scoring import (
     COHORT_LOG_LOSS,
+    COHORT_POISSON_DEVIANCE,
     MAE,
     POISSON_DEVIANCE,
     RMSE,
     Metric,
     cohort_log_loss,
+    cohort_poisson_deviance,
 )
 
 # Three buildings, the second without children; probabilities that differ per row.
@@ -35,6 +37,7 @@ PROBABILITIES = np.array([[0.5, 0.3, 0.2], [0.2, 0.3, 0.5], [0.1, 0.6, 0.3]])
         (RMSE, "rmse", root_mean_squared_error),
         (MAE, "mae", mean_absolute_error),
         (COHORT_LOG_LOSS, "cohort_log_loss", cohort_log_loss),
+        (COHORT_POISSON_DEVIANCE, "cohort_poisson_deviance", cohort_poisson_deviance),
     ],
 )
 def test_ready_made_metrics_wrap_their_function(
@@ -120,6 +123,55 @@ def test_a_prediction_of_another_shape_is_rejected(y_pred: np.ndarray) -> None:
     # normalization it is all ones, so the loss is 0, silently).
     with pytest.raises(ValueError, match="same shape"):
         cohort_log_loss(COUNTS, y_pred)
+
+
+# --- cohort_poisson_deviance ------------------------------------------
+
+# Four buildings by three cohorts (not square, so a transposed prediction has
+# another shape); expected counts that differ per cell, so a mispairing changes
+# the value.
+COHORT_COUNTS = np.array(
+    [[2.0, 1.0, 0.0], [0.0, 0.0, 0.0], [1.0, 3.0, 2.0], [4.0, 0.0, 1.0]]
+)
+EXPECTED_COUNTS = np.array(
+    [[1.5, 0.8, 0.4], [0.3, 0.2, 0.6], [1.2, 2.5, 1.7], [3.1, 0.5, 0.9]]
+)
+
+
+def test_cohort_poisson_deviance_is_the_mean_of_the_cohort_deviances() -> None:
+    # Each cohort weighs as its own CountModel's POISSON_DEVIANCE would.
+    per_cohort = [
+        mean_poisson_deviance(COHORT_COUNTS[:, k], EXPECTED_COUNTS[:, k])
+        for k in range(3)
+    ]
+
+    assert cohort_poisson_deviance(COHORT_COUNTS, EXPECTED_COUNTS) == pytest.approx(
+        np.mean(per_cohort)
+    )
+
+
+@pytest.mark.parametrize(
+    "y_pred",
+    [EXPECTED_COUNTS.T.copy(), EXPECTED_COUNTS.ravel(order="F")],
+    ids=["transposed", "flattened"],
+)
+def test_a_transposed_or_flattened_prediction_is_rejected(y_pred: np.ndarray) -> None:
+    # As many cells as y_true: once raveled, they would be scored mispaired,
+    # without an error from scikit-learn.
+    with pytest.raises(ValueError, match="same shape"):
+        cohort_poisson_deviance(COHORT_COUNTS, y_pred)
+
+
+def test_cohort_poisson_deviance_pairs_dataframes_by_position() -> None:
+    # A DataFrame with other labels is not realigned (pandas would, into NaN).
+    counts = pd.DataFrame(
+        COHORT_COUNTS, index=[10, 11, 12, 13], columns=["a", "b", "c"]
+    )
+    expected = pd.DataFrame(EXPECTED_COUNTS, columns=["x", "y", "z"])
+
+    assert cohort_poisson_deviance(counts, expected) == pytest.approx(
+        cohort_poisson_deviance(COHORT_COUNTS, EXPECTED_COUNTS)
+    )
 
 
 @pytest.mark.parametrize(

@@ -5,21 +5,14 @@ it. Self-contained: everything an implementer needs is here or linked. Re-verify
 every fact against the code of the day before relying on it (file paths, line
 counts, test counts drift).
 
-**Status (2026-10-12):** A0 committed (`6b8f5a1`), A1 (`1f4ed67`), A2
-(`81f8896`), A3 (`b0d436c`: records, the full `TuningResult`, the study now
-minimizes), A4 (`80fd068`: the slow integration test, pruner guidance with
-the fold order kept fixed, the penalty ranges checked), A4b (`b8cebd0`: the
-external review processed), A5 (`f219cb8`: the user guide
-[HYPERPARAMETER_TUNING.md](HYPERPARAMETER_TUNING.md), every block run as
-written; the links). An independent validation
-([HYPERPARAMETER_TUNING_VALIDATION.md](HYPERPARAMETER_TUNING_VALIDATION.md),
-`4a3a3f3`: ACCEPT WITH NOTES); its findings processed (non-finite float
-choices rejected, the doc corrections) and awaiting the user's commit.
-**Next:** A6, the merge of PR #5 into `main`; then PR B.
+**Status (2026-10-12):** PR A done: the tuning study (A0–A5), an independent
+validation ([HYPERPARAMETER_TUNING_VALIDATION.md](HYPERPARAMETER_TUNING_VALIDATION.md):
+ACCEPT WITH NOTES, findings processed), PR #5 squash-merged into `main` as
+`ba2aa11` (A6). PR B: B1 done (`COHORT_POISSON_DEVIANCE`) and awaits the
+user's commit. **Next:** B2, the split pattern (the method decided with the
+user first).
 
-**Branch state:** `feat/hyperparameter-tuning` (draft PR #5), 59 commits ahead
-of `main` at `3c3ed53` (PR #4). The sub-PRs #6–#14 were merged into this branch, not into
-`main`, so A6's squash brings the rebuilt models to `main` together with the tuning package.
+**Branch state:** `feat/split-and-cohort-deviance` (PR B), from `main` at `ba2aa11`.
 
 ## Contents
 
@@ -237,7 +230,7 @@ flattened (buildings × cohorts) cells, i.e. the mean over all cells (each
 cohort weighted exactly as its own `CountModel` is). Shapes must match, as in
 `cohort_log_loss`. Exported as `COHORT_POISSON_DEVIANCE =
 Metric("cohort_poisson_deviance", cohort_poisson_deviance)`. Why: the two
-composites predict a (n, K) matrix and today only `COHORT_LOG_LOSS` accepts it,
+composites predict a (n, K) matrix and before B1 only `COHORT_LOG_LOSS` accepted it,
 and that one ignores the total. It lands in **PR B**, not A: the study does not
 need it and PR #5 is large enough to merge as is.
 
@@ -535,13 +528,14 @@ pitfalls), links from `docs/README.md`, `MODULE_REFERENCE.md`, the root
 **Done when:** every code block in the new doc runs as written; the tuning
 plan's status line says "complete".
 
-### [ ] A6. Merge PR #5 into `main`
+### [x] A6. Merge PR #5 into `main`
 
 The user marks PR #5 ready and squash-merges it (their convention). Later PRs
 branch from `main`.
 
 **Done when:** `git log --oneline -1 main` shows the squash commit; the
-non-slow suite passes on `main`.
+non-slow suite passes on `main`. *Done 2026-10-12:* `ba2aa11`; 1247 passed,
+1 skipped, 1 xfailed on `main`.
 
 ---
 
@@ -550,21 +544,25 @@ non-slow suite passes on `main`.
 Branch `feat/split-and-cohort-deviance` from `main`. A small PR; one plan-mode
 stop per sub-task.
 
-### [ ] B1. `COHORT_POISSON_DEVIANCE` (E2)
+### [x] B1. `COHORT_POISSON_DEVIANCE` (E2)
 
 - `scoring.py`: `cohort_poisson_deviance(y_true, y_pred) -> float`, the shape
   check as in `cohort_log_loss`, then `mean_poisson_deviance(counts.ravel(),
   predictions.ravel())`; the constant `COHORT_POISSON_DEVIANCE`; both in
   `__all__`.
-- Tests in `tests/unit/test_scoring.py`: equals `POISSON_DEVIANCE` on a
-  one-column matrix; equals the mean of the per-column deviances on a complete
-  matrix; raises on a shape mismatch (a broadcastable (n, 1) against (n, K)
-  would otherwise pass silently); accepts a DataFrame and an array alike.
+- Tests in `tests/unit/test_scoring.py`: the ready-made row (name,
+  function, a loss); equals the mean of the per-column deviances on a complete
+  matrix; raises on a transposed or flattened prediction (measured: as many
+  cells, so after `ravel` it is scored mispaired with no error: 2.809 instead
+  of 0.386 on the test's fixtures; a (n, 1) prediction is not silent, scikit-learn raises on the
+  lengths); DataFrames are paired by position. The "equals `POISSON_DEVIANCE`
+  on one column" test was dropped: a special case of the mean.
 - `EVALUATION_AND_METRICS.md` is the old stack's; add the metric to the new
   metric list in `MODULE_REFERENCE.md`'s `scoring` entry only.
 
 **Done when:** the four tests pass under `-W error`; a mutation that drops the
-shape check fails a test.
+shape check fails a test. *Done 2026-10-12:* both mutations (no shape check;
+the prediction raveled column-major) fail their tests.
 
 ### [ ] B2. The split pattern (E6)
 
