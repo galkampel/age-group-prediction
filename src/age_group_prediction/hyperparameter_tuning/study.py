@@ -18,7 +18,7 @@ from optuna.trial import FrozenTrial, TrialState
 from pydantic import ConfigDict
 from pydantic.dataclasses import dataclass as pydantic_dataclass
 
-from ._config import _STRICT
+from .._config import STRICT
 from .aggregation import corrected_std_error
 
 __all__ = ["HyperparameterStudy", "TrialRecord", "TuningResult"]
@@ -109,7 +109,7 @@ def _trial_record(trial: FrozenTrial) -> TrialRecord:
 
 # Not frozen: optimize keeps the Optuna study as ``optuna_study_``.
 @pydantic_dataclass(
-    kw_only=True, config=ConfigDict(**_STRICT, arbitrary_types_allowed=True)
+    kw_only=True, config=ConfigDict(**STRICT, arbitrary_types_allowed=True)
 )
 class HyperparameterStudy:
     """Settings of one Optuna search; the study always minimizes.

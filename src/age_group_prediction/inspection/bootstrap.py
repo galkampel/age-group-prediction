@@ -10,10 +10,11 @@ from dataclasses import dataclass
 from typing import Annotated
 
 import numpy as np
-from pydantic import ConfigDict, Field, InstanceOf
+from pydantic import Field
 from pydantic.dataclasses import dataclass as pydantic_dataclass
 from sklearn.utils.validation import check_consistent_length
 
+from .._config import STRICT
 from ..modeling import BaseAgeGroupModel
 from ..scoring import Metric
 from ..utils import DesignMatrix, Exposure, Groups, Target, take_rows
@@ -30,8 +31,9 @@ class BootstrapResult:
     upper: float
 
 
-# Settings are checked when the evaluator is built, not after the replicates.
-@pydantic_dataclass(frozen=True, config=ConfigDict(arbitrary_types_allowed=True))
+# Settings are checked when the evaluator is built, not after the replicates:
+# strictly (a bool is not an int), and a misspelt keyword is rejected.
+@pydantic_dataclass(frozen=True, config=STRICT)
 class BootstrapEvaluator:
     """Bootstrap a metric of a fitted model: its mean and ``1 - alpha`` percentile interval.
 
@@ -41,8 +43,7 @@ class BootstrapEvaluator:
     direction.
     """
 
-    # InstanceOf: lax pydantic would otherwise build a Metric from a dict.
-    metric: InstanceOf[Metric]
+    metric: Metric
     n_resamples: Annotated[int, Field(ge=1)]
     alpha: Annotated[float, Field(gt=0, lt=1)] = 0.05
     random_state: int | None = None
@@ -74,6 +75,13 @@ class BootstrapEvaluator:
             _, group_codes, group_sizes = np.unique(
                 np.asarray(groups), return_inverse=True, return_counts=True
             )
+            # With one group every replicate is the whole set: a zero-width
+            # interval that looks certain.
+            if len(group_sizes) < 2:
+                raise ValueError(
+                    f"groups has {len(group_sizes)} distinct value(s); the "
+                    "group bootstrap needs at least 2"
+                )
             group_rows = np.split(
                 np.argsort(group_codes, kind="stable"), np.cumsum(group_sizes)[:-1]
             )

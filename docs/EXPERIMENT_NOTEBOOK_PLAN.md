@@ -5,15 +5,22 @@ it. Self-contained: everything an implementer needs is here or linked. Re-verify
 every fact against the code of the day before relying on it (file paths, line
 counts, test counts drift).
 
-**Status (2026-10-12):** PR A done: the tuning study (A0–A5), an independent
+**Status (2026-10-13):** PR A done: the tuning study (A0–A5), an independent
 validation ([HYPERPARAMETER_TUNING_VALIDATION.md](HYPERPARAMETER_TUNING_VALIDATION.md):
 ACCEPT WITH NOTES, findings processed), PR #5 squash-merged into `main` as
-`ba2aa11` (A6). PR B: B1 committed (`2d4f0c5`: `COHORT_POISSON_DEVIANCE`,
-non-slow suite 1252 passed); B2 done (the split pattern tested for every method
-and documented in `SPLITTING.md` §3; no new code), awaiting the user's commit.
-**Next:** open PR B on GitHub, then PR C.
+`ba2aa11` (A6). PR B done: `COHORT_POISSON_DEVIANCE` (B1) and the three-way
+split pattern (B2: tested for every method, `SPLITTING.md` §3, no new code;
+`split_method` stays a setting), PR #15 squash-merged into `main` as `660611d`;
+non-slow suite 1257 passed, 1 skipped, 1 xfailed on `main`. PR C in progress
+on `feat/feature-importance`: C1 (`PermutationImportance`) done 2026-10-13,
+C2 (`ShapExplainer`) and C3 (the smoke run and the
+[model inspection guide](MODEL_INSPECTION.md)) done 2026-10-13; **PR C is
+complete**, non-slow suite 1299 passed, 1 skipped, 1 xfailed. **Next:** open
+PR C against `main`, then PR D (§9).
 
-**Branch state:** `feat/split-and-cohort-deviance` (PR B), from `main` at `ba2aa11`.
+**Branch state:** `feat/feature-importance` from `main` at `660611d`; C1
+committed as `9448c5e`, C2 as `e2c6137`; C3 (the bootstrap's two-groups
+check, the guide, the index docs and the plan docs) awaits the user's commit.
 
 ## Contents
 
@@ -105,13 +112,17 @@ Verified 2026-10-11 on `feat/hyperparameter-tuning`. Paths are under
 `grouped`; `train_test_indices(X, groups, *, test_size, random_state) ->
 (train_index, test_index)` positions; `cv(*, n_splits, random_state)` the
 matching cross-validator, to be given `groups_train`. `utils.take_rows(array,
-index)` takes any row container by positions. **No three-way split exists.**
+index)` takes any row container by positions. The three-way split is two
+`train_test_indices` calls and a position mapping (E6), documented in
+`SPLITTING.md` §3 (since PR B).
 
 **Scoring (`scoring.py`).** `Metric(name, function, greater_is_better=False)`;
 `POISSON_DEVIANCE` (scikit-learn's `mean_poisson_deviance`, **one column
 only**: a (n, K) matrix raises "Multioutput not supported"), `RMSE`, `MAE`,
 `COHORT_LOG_LOSS` (takes the (n, K) count matrix; per child; rows of `y_pred`
-are normalized, so it ignores the total).
+are normalized, so it ignores the total), `COHORT_POISSON_DEVIANCE` (the mean
+Poisson deviance over every (building, cohort) cell, shapes must match; since
+PR B).
 
 **Inspection (`inspection/`), plan
 [MODEL_INSPECTION_PLAN.md](MODEL_INSPECTION_PLAN.md).** `BootstrapEvaluator(metric,
@@ -338,11 +349,15 @@ permutation importance splits credit between them: stated in the docs, no
 column blocks (I6).
 
 **E8. SHAP on a seeded validation subsample.** `ShapExplainer` (I9–I11)
-explains the rate, `predict(X, exposure=1)` (I5), per cohort output; global
-importance is mean |SHAP|. Cost measured at ~0.45 s per row for Model 2, so:
-`n_rows ≈ 200` validation rows, `n_background ≈ 50` **training** rows, both
-seeded and logged as parameters. Leak-free: the feature transformer is fitted
-inside `fit`, never on the explained rows.
+explains `predict(X, exposure)` per cohort output: the rate without an
+exposure, the count with the validation rows' exposure (I5); global
+importance is mean |SHAP|. With `method="exact"` (I10) the cost is
+`2^columns` model evaluations per row, measured at 0.7 s per 50 rows of
+Model 2 with 50 background rows, so a few hundred validation rows and a few
+dozen **training** background rows take seconds; the sizes are chosen in
+PR D from the measured cost and logged as parameters with their seeds.
+Leak-free: the feature transformer is fitted inside `fit`, never on the
+explained rows.
 
 **E9. What one run logs.**
 
@@ -612,41 +627,52 @@ three mutations (no position mapping; `grouped` holding out with
 Branch `feat/feature-importance` from `main`. Source of truth for the design:
 [FEATURE_IMPORTANCE_PLAN.md](FEATURE_IMPORTANCE_PLAN.md): its "To start" list
 (re-add `shap>=0.53,<1`, then the user runs `uv lock` and `uv sync`), decisions
-I3–I11, code shapes §4, sub-tasks 1–3 with their test lists, risks §6. Move
-its status line to "in progress" at C1 and to "complete" at C3.
+I3–I11, code shapes §4, sub-tasks 1–3 with their test lists, risks §6. Its
+status line moved to "in progress" at C1 and to "complete" at C3 (done).
 
-### [ ] C1. `PermutationImportance` (importance plan sub-task 1)
+### [x] C1. `PermutationImportance` (importance plan sub-task 1)
 
 `inspection/permutation.py`, pydantic dataclass like `BootstrapEvaluator`,
-`compute(model, X, y, *, exposure=None) -> DataFrame` (one row per column of
+`compute_importances(model, X, y, *, exposure=None) -> DataFrame` (one row per column of
 `X`: `importance_mean`, `importance_std`; sign from `greater_is_better`, so
 positive = helps). Built on `sklearn.inspection.permutation_importance` with a
 scorer that passes `exposure` row-aligned. Tests as the importance plan lists.
-Its pydantic config, and `BootstrapEvaluator`'s, should take `extra="forbid"`
-(a misspelt keyword is ignored silently today), as the tuning package does
-since A1 (`hyperparameter_tuning/_config.py`); either share that constant or
-add an `inspection/_config.py`.
+Its pydantic config, and `BootstrapEvaluator`'s, take the tuning package's
+strict config (a misspelt keyword was ignored silently, and `True` read as 1),
+lifted to `age_group_prediction/_config.py` as `STRICT` (user's choice: one
+definition, next to the other shared modules `scoring.py` and `utils.py`).
 
 **Done when:** that plan's four tests pass under `-W error`; each mutation
 fails a test; works on `TotalTimesProbabilityModel` with the string column
-`school_status`.
+`school_status`. *Done 2026-10-13:* seven mutations each fail a test; the
+independent review found no bug and one simplification, applied (`InstanceOf`
+and `arbitrary_types_allowed` are redundant under `STRICT` for a `Metric`
+field). `BootstrapEvaluator` now also rejects numpy integers, as the tuning
+classes do.
 
-### [ ] C2. `ShapExplainer` (importance plan sub-task 2)
+### [x] C2. `ShapExplainer` (importance plan sub-task 2)
 
-`inspection/shap_values.py`, `explain(model, X, background) -> shap.Explanation`
-with cohort output names; `shap.PermutationExplainer`, `max_evals=500`
-default, codes for non-numeric columns (I9). Tests as the importance plan
-lists. Add `inspection` mypy entries if missing.
+`inspection/shap_values.py`, `ShapExplainer(method, max_evals=None,
+random_state=None, n_jobs=1).explain(model, X, background, *, exposure=None)
+-> shap.Explanation` with cohort output names (importance plan I5, I9–I11
+as amended there). Tests as the importance plan lists.
 
-**Done when:** additivity against `predict(exposure=1)` holds for `CountModel`;
-the multi-output shape and names are right; the same seed gives identical
-values.
+**Done when:** additivity against `predict(X, exposure)` holds for
+`CountModel`; the multi-output shape and names are right; the same seed
+gives identical values. *Done 2026-10-13:* `method` is a literal
+(`"exact"`, `2^p` evaluations and exact, or `"permutation"`), rows are
+explained one at a time so each row's exposure reaches `predict`, `n_jobs`
+runs rows in joblib processes, non-numeric columns go through
+`OrdinalEncoder`; 12 tests (28 cases), 21 mutations each fail a test; the
+independent review found one bug (a background with reordered columns gave
+wrong values silently) and two edge cases (NaN in a string column, a
+categorical column with a background-only level), all fixed with tests.
 
-### [ ] C3. Per-component importance, smoke run, docs (importance plan sub-task 3 + inspection plan sub-task 2)
+### [x] C3. Per-component importance, smoke run, docs (importance plan sub-task 3 + inspection plan sub-task 2)
 
 - No new class for per-component importance: the fitted children are public
   (`total_model_`, `probability_model_`), so the notebook calls
-  `PermutationImportance(metric=POISSON_DEVIANCE, ...).compute(model.total_model_,
+  `PermutationImportance(metric=POISSON_DEVIANCE, ...).compute_importances(model.total_model_,
   X, y.sum(axis=1), exposure=...)` and the same with `COHORT_LOG_LOSS` on
   `probability_model_`. The smoke run shows the three tables side by side.
 - Smoke run script in the session scratchpad (recipe recorded in the doc):
@@ -667,6 +693,15 @@ values.
 
 **Done when:** the doc's blocks run as written; the smoke tables are in the
 doc; the non-slow suite passes; the importance plan is marked complete.
+*Done 2026-10-13:* no new class; the per-component recipe is in the guide's
+worked example (§2, §4). The smoke run (150 × 9, `grouped` split, both
+models at defaults) is the guide's worked example, run as written by a
+scratchpad runner (five blocks, 44 s; outputs identical). The inspection
+plan's open item is closed: `BootstrapEvaluator` raises on fewer than two
+groups (one check, one test, one mutation killed). `MODULE_REFERENCE.md`,
+`docs/README.md`, the root `README.md` and the roadmap carry the package.
+Finding for PR D: at 9 raw columns, exact SHAP on Model 1 (three LightGBM
+models) costs 90 s per 200 rows (27 s with `n_jobs=4`); Model 2 4 s.
 
 ---
 

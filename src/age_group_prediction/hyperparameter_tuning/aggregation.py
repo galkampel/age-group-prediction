@@ -26,7 +26,7 @@ import numpy as np
 from pydantic import Field
 from pydantic.dataclasses import dataclass as pydantic_dataclass
 
-from ._config import _STRICT
+from .._config import STRICT
 
 __all__ = [
     "Aggregator",
@@ -88,7 +88,7 @@ class Aggregator(ABC):
 
 # Field-less classes are pydantic dataclasses too, so they print as
 # "WeightedMean()" and compare by value, like UpperBound.
-@pydantic_dataclass(frozen=True, config=_STRICT)
+@pydantic_dataclass(frozen=True, config=STRICT)
 class WeightedMean(Aggregator):
     """The mean score weighted by fold size."""
 
@@ -97,7 +97,7 @@ class WeightedMean(Aggregator):
         return _weighted_mean(scores, fold_sizes)
 
 
-@pydantic_dataclass(frozen=True, config=_STRICT)
+@pydantic_dataclass(frozen=True, config=STRICT)
 class Mean(Aggregator):
     """The unweighted mean of the fold scores."""
 
@@ -107,7 +107,7 @@ class Mean(Aggregator):
         return float(np.mean(scores))
 
 
-@pydantic_dataclass(frozen=True, config=_STRICT)
+@pydantic_dataclass(frozen=True, config=STRICT)
 class UpperBound(Aggregator):
     """The weighted mean plus ``z`` corrected standard errors: a loss's pessimistic bound.
 

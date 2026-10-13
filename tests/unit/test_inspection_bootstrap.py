@@ -168,6 +168,14 @@ def test_length_mismatch_raises(y: np.ndarray, groups: np.ndarray | None) -> Non
         evaluator.evaluate(_SpyModel(), X, y, groups)
 
 
+def test_fewer_than_two_groups_raises() -> None:
+    # Catches a single group passing silently: every replicate is then the
+    # whole set and the interval has zero width.
+    evaluator = BootstrapEvaluator(Metric("mean_id", _RecordingMetric()), 10)
+    with pytest.raises(ValueError, match="1 distinct value"):
+        evaluator.evaluate(_SpyModel(), X, Y, np.zeros(len(X), dtype=int))
+
+
 @pytest.mark.parametrize(
     "settings",
     [
@@ -175,12 +183,21 @@ def test_length_mismatch_raises(y: np.ndarray, groups: np.ndarray | None) -> Non
         {"alpha": 0.0},
         {"alpha": 1.0},
         {"metric": {"name": "m", "function": len}},
+        {"random_stat": 0},
+        {"n_resamples": True},
     ],
-    ids=["no-resamples", "alpha-0", "alpha-1", "metric-dict"],
+    ids=[
+        "no-resamples",
+        "alpha-0",
+        "alpha-1",
+        "metric-dict",
+        "misspelt-keyword",
+        "bool-resamples",
+    ],
 )
 def test_invalid_settings_raise(settings: dict[str, Any]) -> None:
     # Catches settings that would fail only after the predictions, or give a
-    # degenerate interval.
+    # degenerate interval. Pydantic's default ignores extras and reads True as 1.
     kwargs: dict[str, Any] = {"metric": Metric("mean_id", _RecordingMetric())}
     with pytest.raises(ValidationError):
         BootstrapEvaluator(**(kwargs | {"n_resamples": 10} | settings))

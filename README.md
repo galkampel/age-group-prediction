@@ -37,6 +37,10 @@ building-level DataFrame:
   `hyperparameter_tuning` package that tunes the rebuilt `modeling` models
   (parameters, a cross-validation evaluator, fold aggregation, an Optuna
   study), with a worked example run as written.
+- [Model inspection](docs/MODEL_INSPECTION.md): the `inspection` package for
+  the rebuilt models: bootstrap intervals of a metric, permutation importance
+  per raw column and SHAP values of the predicted rate or count, with a
+  worked example on both models run as written.
 - Component documents describe each pipeline stage's API, guarantees,
   refusals, and configuration:
   - [Data and splitting](docs/DATA_AND_SPLITTING.md): modeling table,

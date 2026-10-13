@@ -549,6 +549,9 @@ In order. Each step has its own plan and gated phases.
    re-check once tuned (Step 2.4 found only weak evidence, untuned; the
    multi-cohort plan's A4 re-run found the same) is the notebook plan's
    exposure on/off runs ([E5](EXPERIMENT_NOTEBOOK_PLAN.md#4-decisions)).
+   ✓ **Model inspection** (`inspection/`, PR #14 and PR C of the notebook
+   plan, 2026-10-13): bootstrap intervals, permutation importance and SHAP
+   values of the rebuilt models; [guide](MODEL_INSPECTION.md).
 3. **Complete Model A as `IndependentCohortModels`, then rebuild Model B**
    (`IndependentTotalProbabilityModel`) in `modeling/`. Plan:
    [MULTI_COHORT_MODELS_PLAN.md](MULTI_COHORT_MODELS_PLAN.md) (there, Model 1
