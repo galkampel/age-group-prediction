@@ -59,7 +59,6 @@ D2 (sklearn estimators) and D6 (sklearn scorers) were superseded by D11–D13.
 ```
 src/age_group_prediction/hyperparameter_tuning/
     __init__.py      # how the parts fit; the public API
-    _config.py       # _STRICT: the pydantic config shared by the package's modules
     parameters.py    # Parameter, FloatParameter, IntParameter, CategoricalParameter
     aggregation.py   # Aggregator, WeightedMean, Mean, UpperBound, corrected_std_error
     evaluator.py     # CVHyperparameterEvaluator
@@ -70,7 +69,7 @@ src/age_group_prediction/hyperparameter_tuning/
   `Groups` and `Exposure` aliases.
 - Imports go one way: `evaluator` → `parameters`, `aggregation`, `modeling`,
   `scoring`, `utils`; `study` imports only `aggregation.corrected_std_error`
-  (and `_config`), and accepts any `trial -> float` objective.
+  (and the package root's `_config`), and accepts any `trial -> float` objective.
 - The package is not re-exported from `age_group_prediction`, and mypy checks
   it strictly.
 - Tests: `tests/unit/test_hyperparameter_tuning_{parameters,aggregation,evaluator,study,integration}.py`,
@@ -83,7 +82,8 @@ for objects that users build and whose values need checking (parameters,
 aggregations, the evaluator's settings); a stdlib dataclass for data the code
 builds itself (`TrialRecord`, `TuningResult`); a plain `ABC` for an interface
 that holds no data (`Aggregator`). Every user-built class takes the shared
-`_config._STRICT` (`strict=True, allow_inf_nan=False, extra="forbid"`; a class
+`age_group_prediction._config.STRICT` (`strict=True, allow_inf_nan=False,
+`extra="forbid"`; shared with `inspection` since PR C; a class
 with Optuna or sklearn objects adds `arbitrary_types_allowed=True`). Pydantic
 dataclasses inherit no config, so the shared constant is what keeps them
 consistent; `extra="forbid"` (added in 3.1) rejects a misspelt keyword, which
@@ -235,10 +235,10 @@ and return `aggregation.aggregate(scores, fold_sizes)`.
 Settled 2026-10-11 (sub-tasks 3.1–3.3, A4b), measured on optuna 4.9.0 / pydantic 2.13.4.
 
 ```python
-# A strict pydantic dataclass (the package's _STRICT config, plus
+# A strict pydantic dataclass (the shared STRICT config, plus
 # arbitrary_types_allowed for the Optuna objects); not frozen, since optimize
 # sets optuna_study_. kw_only=True: no field is positional.
-@pydantic_dataclass(kw_only=True, config=ConfigDict(**_STRICT, arbitrary_types_allowed=True))
+@pydantic_dataclass(kw_only=True, config=ConfigDict(**STRICT, arbitrary_types_allowed=True))
 class HyperparameterStudy:
     seed: int                                          # seeds the default sampler only
     n_trials: int = 50
@@ -382,7 +382,7 @@ mistake it catches, each with the mutation that must fail it):
 | `test_the_default_sampler_does_not_warn`: the helper under `@pytest.mark.filterwarnings("error")` | remove the filter |
 | `test_fewer_than_one_trial_is_rejected` (0, −1) | `< 0` |
 | `test_a_misspelt_setting_is_rejected` (`n_trial=10`) | drop `extra="forbid"` |
-| `test_a_bool_seed_is_rejected` (`seed=True`, the one case lax mode accepts) | drop `_STRICT` |
+| `test_a_bool_seed_is_rejected` (`seed=True`, the one case lax mode accepts) | drop `STRICT` |
 | `test_the_same_seed_gives_the_same_result`: two objects, two `optimize` calls on one, and a different seed differs (A4b) | an unseeded default sampler; `seed=0` hard-coded (review D1) |
 | `test_the_best_params_are_the_best_trials`: trial 2 is the only minimum; its `best_value` is 1.0 (A4b) | `best_params` or `best_value` from another trial (review D2) |
 | `test_a_pruned_trial_never_wins`: a pruned trial reports −100.0, below every other (3.2) | include PRUNED states |

@@ -1,4 +1,4 @@
-"""The pydantic config shared by the package's user-built value objects."""
+"""The pydantic config shared by the user-built value objects of ``hyperparameter_tuning`` and ``inspection``."""
 
 from __future__ import annotations
 
@@ -8,4 +8,4 @@ from pydantic import ConfigDict
 # NaN and inf would otherwise pass here and surface only when a trial runs.
 # A misspelt keyword (pydantic's default is to ignore extras) would leave the
 # intended setting at its default.
-_STRICT = ConfigDict(strict=True, allow_inf_nan=False, extra="forbid")
+STRICT = ConfigDict(strict=True, allow_inf_nan=False, extra="forbid")

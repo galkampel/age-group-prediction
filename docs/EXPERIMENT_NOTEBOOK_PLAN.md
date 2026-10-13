@@ -11,11 +11,13 @@ ACCEPT WITH NOTES, findings processed), PR #5 squash-merged into `main` as
 `ba2aa11` (A6). PR B done: `COHORT_POISSON_DEVIANCE` (B1) and the three-way
 split pattern (B2: tested for every method, `SPLITTING.md` §3, no new code;
 `split_method` stays a setting), PR #15 squash-merged into `main` as `660611d`;
-non-slow suite 1257 passed, 1 skipped, 1 xfailed on `main`. **Next:** PR C, C1
-(`PermutationImportance`), on a new branch `feat/feature-importance` from
-`main`.
+non-slow suite 1257 passed, 1 skipped, 1 xfailed on `main`. PR C in progress
+on `feat/feature-importance`: C1 (`PermutationImportance`) done 2026-10-13,
+non-slow suite 1270 passed, 1 skipped, 1 xfailed. **Next:** C2 (`ShapExplainer`),
+which starts with the `shap` dependency.
 
-**Branch state:** `main` at `660611d`; PR C's branch is not created yet.
+**Branch state:** `feat/feature-importance` from `main` at `660611d`; C1
+awaits the user's commit.
 
 ## Contents
 
@@ -621,21 +623,25 @@ Branch `feat/feature-importance` from `main`. Source of truth for the design:
 I3–I11, code shapes §4, sub-tasks 1–3 with their test lists, risks §6. Move
 its status line to "in progress" at C1 and to "complete" at C3.
 
-### [ ] C1. `PermutationImportance` (importance plan sub-task 1)
+### [x] C1. `PermutationImportance` (importance plan sub-task 1)
 
 `inspection/permutation.py`, pydantic dataclass like `BootstrapEvaluator`,
-`compute(model, X, y, *, exposure=None) -> DataFrame` (one row per column of
+`compute_importances(model, X, y, *, exposure=None) -> DataFrame` (one row per column of
 `X`: `importance_mean`, `importance_std`; sign from `greater_is_better`, so
 positive = helps). Built on `sklearn.inspection.permutation_importance` with a
 scorer that passes `exposure` row-aligned. Tests as the importance plan lists.
-Its pydantic config, and `BootstrapEvaluator`'s, should take `extra="forbid"`
-(a misspelt keyword is ignored silently today), as the tuning package does
-since A1 (`hyperparameter_tuning/_config.py`); either share that constant or
-add an `inspection/_config.py`.
+Its pydantic config, and `BootstrapEvaluator`'s, take the tuning package's
+strict config (a misspelt keyword was ignored silently, and `True` read as 1),
+lifted to `age_group_prediction/_config.py` as `STRICT` (user's choice: one
+definition, next to the other shared modules `scoring.py` and `utils.py`).
 
 **Done when:** that plan's four tests pass under `-W error`; each mutation
 fails a test; works on `TotalTimesProbabilityModel` with the string column
-`school_status`.
+`school_status`. *Done 2026-10-13:* seven mutations each fail a test; the
+independent review found no bug and one simplification, applied (`InstanceOf`
+and `arbitrary_types_allowed` are redundant under `STRICT` for a `Metric`
+field). `BootstrapEvaluator` now also rejects numpy integers, as the tuning
+classes do.
 
 ### [ ] C2. `ShapExplainer` (importance plan sub-task 2)
 
@@ -652,7 +658,7 @@ values.
 
 - No new class for per-component importance: the fitted children are public
   (`total_model_`, `probability_model_`), so the notebook calls
-  `PermutationImportance(metric=POISSON_DEVIANCE, ...).compute(model.total_model_,
+  `PermutationImportance(metric=POISSON_DEVIANCE, ...).compute_importances(model.total_model_,
   X, y.sum(axis=1), exposure=...)` and the same with `COHORT_LOG_LOSS` on
   `probability_model_`. The smoke run shows the three tables side by side.
 - Smoke run script in the session scratchpad (recipe recorded in the doc):

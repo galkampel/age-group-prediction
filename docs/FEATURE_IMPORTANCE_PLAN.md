@@ -3,11 +3,14 @@
 **Written for:** the model that picks this up in a later PR, and the user who
 validates it. Self-contained.
 
-**Status (2026-10-11):** deferred by the user. This material was planned as
-sub-tasks 2–3 of [MODEL_INSPECTION_PLAN.md](MODEL_INSPECTION_PLAN.md) (PR #14),
-which now delivers only the bootstrap. The decisions below were approved on
-2026-10-10, and the evidence was measured then. Re-verify both against the code
-of the day before relying on them.
+**Status (2026-10-13):** in progress as PR C of
+[EXPERIMENT_NOTEBOOK_PLAN.md](EXPERIMENT_NOTEBOOK_PLAN.md) §8, branch
+`feat/feature-importance`. Sub-task 1 (`PermutationImportance`, C1) is done;
+sub-tasks 2–3 (C2, C3) are open. This material was planned as sub-tasks 2–3 of
+[MODEL_INSPECTION_PLAN.md](MODEL_INSPECTION_PLAN.md) (PR #14), which delivered
+only the bootstrap. The decisions below were approved on 2026-10-10; the
+evidence was measured then and re-verified on 2026-10-13 (§3). Re-verify both
+against the code of the day before relying on them.
 
 **To start:**
 1. Re-add `shap>=0.53,<1` to `[project] dependencies`, then run `uv lock` and
@@ -35,7 +38,7 @@ The numbers are those of MODEL_INSPECTION_PLAN.md, where I1, I2 and I7 remain.
 | I3 | Importance runs on whatever `X, y` the caller passes. | The user's choice. The doc recommends held-out data for permutation importance. |
 | I4 | Importance is computed per **raw input column** of `X`. | It covers every `BaseAgeGroupModel`, composites included, and one-hot or interaction expansions map back to their source column. |
 | I5 | SHAP explains the **rate per unit exposure**, `predict(X, exposure=1)`. | SHAP predicts on synthetic masked rows, so a per-row exposure cannot follow them. For an exposure model, `predict = rate × exposure`, and the features drive the rate. Models without exposure ignore the argument (`_check_exposure` returns `None`). |
-| I6 | Permutation importance runs per raw column through `sklearn.inspection.permutation_importance`, with a scorer built from our `Metric`. | Probed (§3): it works with a cohort-table `y`, string columns and a closed-over exposure. There are no column blocks. |
+| I6 | Permutation importance runs per raw column through `sklearn.inspection.permutation_importance`, with a scorer built from our `Metric`. | Probed (§3): it works with a cohort-table `y`, string columns and a closed-over exposure. sklearn shuffles one column of a copy with the rows in place, so an exposure taken by position stays aligned. There are no column blocks. |
 | I7 | `inspection/permutation.py` and `inspection/shap_values.py`. | The package exists (PR #14). |
 | I8 | `shap` is a main dependency (`shap>=0.53,<1`). | It is a core step after tuning, and the tests need no extra group. |
 | I9 | SHAP sees non-numeric columns as integer codes. The prediction function decodes them back before `predict`. | Probed (§3): shap's `Independent` masker fails on string columns with `TypeError: unsupported operand type(s) for -: 'str' and 'str'`. The codes are the categories observed in `background` and `X`. |
@@ -61,6 +64,7 @@ Measured 2026-10-10 with shap 0.53.0, sklearn 1.9.0 and pandas 3. The setup:
 | Multi-output shapes | `values` is (50, 3 features, 3 cohorts) and `base_values` is (50, 3). The output names come back as `Output 0..2`, even with `output_names=` passed. |
 | Same `seed`, run twice | Identical values. |
 | `shap.Explainer(f, masker)` default algorithm | `ExactExplainer`, which is exponential in the number of features. Hence I10 calls `PermutationExplainer` directly. |
+| Re-verified 2026-10-13 (sklearn 1.9.0, pandas 3.0.5, pydantic 2.13.4), under `-W error` | The permutation row is unchanged. On the simulator (150 neighborhoods, 624 rows), `TotalTimesProbabilityModel` (Poisson × LR, OneHot on the string column `school_status`) with `COHORT_POISSON_DEVIANCE`: `avg_household_size` 0.38, `median_age` 0.20, `n_daycares_500m` 0.08, `ses` 0.02, `school_status` 0.009; 0.13 s for 5 columns × 5 repeats. A NaN score gives NaN importances with no error (hence the finite check). Every length mismatch already raises in the model or the metric. |
 | Cost (`max_evals=500`, 100 background rows) | `CountModel`: 15.7 s per 50 rows. `TotalTimesProbabilityModel`: 32.6 s per 50 rows, and 222 s per 500 rows. Each `predict` call re-runs the feature transformer, so the cost grows with the background size × `max_evals`. |
 
 ## 4. Target code shape
@@ -69,17 +73,23 @@ Settings go in the constructor, as a pydantic dataclass like
 `BootstrapEvaluator`. Data are method arguments.
 
 ```python
-# inspection/permutation.py
+# inspection/permutation.py (as built in C1)
+@pydantic_dataclass(frozen=True, config=STRICT)   # age_group_prediction._config
 class PermutationImportance:
-    metric: InstanceOf[Metric]
+    metric: Metric
     n_repeats: int
     random_state: int | None = None
 
-    def compute(self, model, X, y, *, exposure=None) -> pd.DataFrame:
+    def compute_importances(self, model, X: pd.DataFrame, y, *, exposure=None) -> pd.DataFrame:
         # scorer = ±metric(y, est.predict(X, exposure=exposure)), the sign from
         # greater_is_better, so a positive importance means the column helps;
-        # one row per column of X: importance_mean, importance_std
+        # one row per column of X: importance_mean, importance_std; raises on
+        # a non-finite importance
 ```
+
+`STRICT` rejects a misspelt keyword, a bool or string where an int is
+expected, and numpy integers (`np.int64`): pass Python ints, as the tuning
+classes require.
 
 ```python
 # inspection/shap_values.py
@@ -96,7 +106,7 @@ class ShapExplainer:
 
 ## 5. Sub-tasks
 
-### [ ] 1. `PermutationImportance`
+### [x] 1. `PermutationImportance`
 
 - Write `inspection/permutation.py` and its tests.
 - Tests:
@@ -106,6 +116,10 @@ class ShapExplainer:
   - It works on `TotalTimesProbabilityModel` with a string column.
 
 **Verify:** the tests pass under `-W error`; each mutation fails a test.
+*Done 2026-10-13:* eight tests (11 cases) in
+`tests/unit/test_inspection_permutation.py`; seven mutations (sign, exposure
+reversed, mean/std swapped, seed not passed, finite check dropped,
+`extra="forbid"` dropped, `strict` dropped) each fail a test.
 
 ### [ ] 2. `ShapExplainer`
 

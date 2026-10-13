@@ -48,6 +48,7 @@ packages = ["src/student_simulator", "src/age_group_prediction"]
 # models, tracking, experiment); widen `files` to ["src"] once those are fixed
 # and the override below keeps this package strict while the rest stays lenient.
 files = [
+    "src/age_group_prediction/_config.py",
     "src/age_group_prediction/feature_engineering",
     "src/age_group_prediction/hyperparameter_tuning",
     "src/age_group_prediction/inspection",
@@ -66,6 +67,7 @@ follow_imports = "silent"
 
 [[tool.mypy.overrides]]
 module = [
+    "age_group_prediction._config",
     "age_group_prediction.feature_engineering.*",
     "age_group_prediction.hyperparameter_tuning.*",
     "age_group_prediction.inspection.*",

@@ -32,7 +32,7 @@ from optuna.trial import BaseTrial
 from pydantic import AfterValidator, BeforeValidator
 from pydantic.dataclasses import dataclass as pydantic_dataclass
 
-from ._config import _STRICT
+from .._config import STRICT
 
 # (NoneType, bool, int, float, str), from Optuna's own alias.
 _CHOICE_TYPES = get_args(CategoricalChoiceType)
@@ -45,7 +45,7 @@ __all__ = [
 ]
 
 
-@pydantic_dataclass(frozen=True, config=_STRICT)
+@pydantic_dataclass(frozen=True, config=STRICT)
 class Parameter(ABC):
     """One hyperparameter: its ``set_params`` name and the values it may take."""
 
@@ -72,7 +72,7 @@ class Parameter(ABC):
         """The Optuna distribution :meth:`suggest` samples from."""
 
 
-@pydantic_dataclass(frozen=True, config=_STRICT)
+@pydantic_dataclass(frozen=True, config=STRICT)
 class FloatParameter(Parameter):
     """A float in ``[low, high]``, drawn by ``trial.suggest_float``.
 
@@ -96,7 +96,7 @@ class FloatParameter(Parameter):
         return FloatDistribution(self.low, self.high, log=self.log, step=self.step)
 
 
-@pydantic_dataclass(frozen=True, config=_STRICT)
+@pydantic_dataclass(frozen=True, config=STRICT)
 class IntParameter(Parameter):
     """An integer in ``[low, high]``, drawn by ``trial.suggest_int``.
 
@@ -136,7 +136,7 @@ def _scalar_choices(choices: tuple[Any, ...]) -> tuple[CategoricalChoiceType, ..
     return choices
 
 
-@pydantic_dataclass(frozen=True, config=_STRICT)
+@pydantic_dataclass(frozen=True, config=STRICT)
 class CategoricalParameter(Parameter):
     """One of ``choices``, drawn by ``trial.suggest_categorical``.
 
