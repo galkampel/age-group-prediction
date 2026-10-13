@@ -25,11 +25,13 @@ from sklearn.metrics import (
 
 __all__ = [
     "COHORT_LOG_LOSS",
+    "COHORT_POISSON_DEVIANCE",
     "MAE",
     "POISSON_DEVIANCE",
     "RMSE",
     "Metric",
     "cohort_log_loss",
+    "cohort_poisson_deviance",
 ]
 
 
@@ -77,7 +79,28 @@ def cohort_log_loss(y_true: ArrayLike, y_pred: ArrayLike) -> float:
     return -float(xlogy(counts, probabilities).sum() / counts.sum())
 
 
+def cohort_poisson_deviance(y_true: ArrayLike, y_pred: ArrayLike) -> float:
+    """The mean Poisson deviance over every (building, cohort) cell.
+
+    ``y_true`` holds the cohort counts, one row per building and one column per
+    cohort; ``y_pred`` the predicted counts in the same layout, paired by
+    position. Each cohort weighs as its own ``POISSON_DEVIANCE`` would: the
+    value is the mean of the per-cohort deviances.
+    """
+    counts = np.asarray(y_true, dtype=float)
+    predictions = np.asarray(y_pred, dtype=float)
+    # A transposed or flattened prediction has as many cells, so after ravel it
+    # would be scored mispaired, silently.
+    if counts.shape != predictions.shape:
+        raise ValueError(
+            "y_true and y_pred must both be (buildings, cohorts) arrays of the "
+            f"same shape, got {counts.shape} and {predictions.shape}"
+        )
+    return float(mean_poisson_deviance(counts.ravel(), predictions.ravel()))
+
+
 POISSON_DEVIANCE = Metric("poisson_deviance", mean_poisson_deviance)
 RMSE = Metric("rmse", root_mean_squared_error)
 MAE = Metric("mae", mean_absolute_error)
 COHORT_LOG_LOSS = Metric("cohort_log_loss", cohort_log_loss)
+COHORT_POISSON_DEVIANCE = Metric("cohort_poisson_deviance", cohort_poisson_deviance)

@@ -6,7 +6,7 @@ cross-validator, which method to choose, and what each one guarantees.
 > **Not yet wired.** `data_splitting.py` and its seven consumers are still the
 > production path, documented in [Data and splitting](DATA_AND_SPLITTING.md) and
 > [Cross-validation and selection](CROSS_VALIDATION_AND_SELECTION.md). This
-> package is built and tested but nothing calls it yet; §7 lists what remains.
+> package is built and tested but nothing calls it yet; §8 lists what remains.
 
 ## 1. The three methods
 
@@ -64,7 +64,90 @@ parameter should not be None.") rather than split without them.
 No parameter has a default — sizing and seeding are decisions the call site
 states. `Splitter` is a frozen dataclass, so `repr` records the method.
 
-## 3. What `stratified_by_group` guarantees
+For a validation part as well, take a second holdout from the training rows (§3).
+
+## 3. Train, validation and test
+
+Settings are tuned and fitted on a training part, compared on a validation part,
+and the winner is scored once on a test part. The three parts take two holdouts
+with the same `Splitter`: the test part from the table, then the validation
+part from the rest. Run as written on 2026-10-13, from the repository root
+with `PYTHONPATH=src uv run python`; the sizes below are its output:
+
+```python
+from age_group_prediction.splitting import Splitter
+from age_group_prediction.utils import take_rows
+from student_simulator import StudentPopulationSimulator
+from student_simulator.config import load_simulation_config
+
+base = load_simulation_config("configs/simulation.toml")
+config = base.model_copy(update={
+    "simulation": base.simulation.model_copy(update={"n_neighborhoods": 150}),
+    "building": base.building.model_copy(update={"buildings_per_neighborhood_rate": 9.0}),
+})
+table = StudentPopulationSimulator(config).run()
+
+split_method = "grouped"  # or "stratified_by_group", "random"
+split_seed, cv_seed = 42, 42
+groups = None if split_method == "random" else table["neighborhood_id"]
+
+splitter = Splitter(split_method)
+train_val_index, test_index = splitter.train_test_indices(
+    table, groups, test_size=0.2, random_state=split_seed
+)
+groups_train_val = None if groups is None else take_rows(groups, train_val_index)
+train_sub, val_sub = splitter.train_test_indices(
+    take_rows(table, train_val_index), groups_train_val,
+    test_size=0.25, random_state=split_seed,  # 0.25 of 80 % = 20 % of all
+)
+# Positions in the remainder, mapped back to positions in the table.
+train_index, val_index = train_val_index[train_sub], train_val_index[val_sub]
+groups_train = None if groups is None else take_rows(groups, train_index)
+cv = splitter.cv(n_splits=5, random_state=cv_seed)  # split with groups_train
+
+print(len(train_index), len(val_index), len(test_index))
+```
+
+The second call returns positions **inside the remainder**; the mapping line
+turns them into table positions. Leave it out and nothing raises: the indices
+look plausible, yet on the tests' 16-row table up to 4 training or validation
+rows are test rows (over 200 seeds; under `grouped`, a quarter of the seeds
+show no overlap, so one draw can hide the mistake). The second call must also
+take the remainder's rows, `take_rows(table, train_val_index)`: given the whole
+table, `stratified_by_group` and `grouped` raise scikit-learn's "inconsistent
+numbers of samples", but `random`, which reads no groups, silently re-splits
+every row, test rows included. The second `test_size` is
+`val_size / (1 - test_size)`: 0.25 of 80 % is 20 % of the table, while 0.2
+would give 64 / 16 / 20 %.
+
+On the canonical table (150 neighborhoods, 1529 buildings), `split_seed = 42`:
+
+| `split_method` | train / val / test rows | neighborhoods train / val / test | val, test neighborhoods not in train |
+|---|---|---|---|
+| `random` | 917 / 306 / 306 | 150 / 129 / 129 | 0, 0 |
+| `stratified_by_group` | 915 / 307 / 307 | 150 / 150 / 150 | 0, 0 |
+| `grouped` | 908 / 311 / 310 | 90 / 30 / 30 | 30, 30 |
+
+- **`grouped`**: `GroupShuffleSplit`'s `test_size` is a share of *groups* (30 of
+  150 neighborhoods), so the row counts depend on which neighborhoods are drawn.
+- **`stratified_by_group`** applies §4's rule in each call, the second on the
+  remainder. The resulting rows (train / val / test) per group, the same for
+  every seed:
+
+  | rows in the group | train | val | test |
+  |---|---|---|---|
+  | 1 | 1 | 0 | 0 |
+  | 2 | 1 | 0 | 1 |
+  | 3 | 1 | 1 | 1 |
+  | 10 | 6 | 2 | 2 |
+
+  A pair gives one row to the test part and is then a singleton, so it has no
+  validation row; a group of 3 has one row in each part.
+- **`random`** keeps every neighborhood in training on this table by chance; on
+  the 60-neighborhood default config, 2 validation and 3 test neighborhoods
+  are absent from training.
+
+## 4. What `stratified_by_group` guarantees
 
 Every held-out or validated row keeps at least one row from its own group in the
 fit set. A group of `n` rows gives up `max(1, min(round(n * test_size), n - 1))`
@@ -95,7 +178,7 @@ validation set of **none** — normal k-fold inverts this. Validating it would
 remove its only representative from that fold's fit set, which is the situation
 the method exists to prevent.
 
-## 4. Choosing a method
+## 5. Choosing a method
 
 `random` is the usual choice because only one of the three models can tell it from
 `stratified_by_group`.
@@ -131,7 +214,7 @@ identified when most groups are tiny: a variance component needs replication
 within groups. Canonical (min 4, median 10) is fine; the default config (10 of
 60 at `n <= 2`) leans on its `HalfNormal(0.5)` prior.
 
-## 5. Hazards
+## 6. Hazards
 
 - **Draw the split once.** `train_test_indices` re-draws on every call, so calling
   it again with a different `random_state` silently moves the test set. `cv` is
@@ -154,7 +237,7 @@ within groups. Canonical (min 4, median 10) is fine; the default config (10 of
   (`resampling.py:19-43`) already does this; effective *n* is nearer 150 than
   1529.
 
-## 6. Modules and tests
+## 7. Modules and tests
 
 | file | contents |
 |---|---|
@@ -171,10 +254,11 @@ Both custom classes implement `_iter_test_indices` and inherit `split` from
 validation cannot overlap or miss a row, and a position returned by no fold is
 fitted in every one. That is how singletons stay in training.
 
-Tests: `tests/unit/test_splitters.py` (the methods and their guarantees) and
+Tests: `tests/unit/test_splitters.py` (the methods and their guarantees, and
+the §3 block for every method) and
 `tests/unit/test_splitting.py` (the two custom splitters).
 
-## 7. What remains
+## 8. What remains
 
 1. **Migrate the consumers.** `experiment/partitions.py` shrinks rather than
    ports — its disjointness and exact-partition checks become structurally
@@ -183,7 +267,7 @@ Tests: `tests/unit/test_splitters.py` (the methods and their guarantees) and
    consumes `cv`: every trial re-splits with the same seeded validator
    ([Hyperparameter tuning §4](HYPERPARAMETER_TUNING.md#4-the-evaluator)).
 2. **Report metrics by group size** (1 / 2-3 / 4-7 / 8+) instead of filtering,
-   so the coverage gap in §3 is visible rather than silent.
+   so the coverage gap in §4 is visible rather than silent.
 3. **Surface `_prediction_fallback_count`** in the Bayesian model's evidence,
    turning the co-presence question into a number.
 4. **Decide the write-once holdout guarantee's new home.** The

@@ -472,9 +472,9 @@ then assembled into one `TotalTimesProbabilityModel` and refit.
   positions, never `train["n_apartments"]`; the evaluator checks only its shape.
 - **One column per metric.** `POISSON_DEVIANCE`, `RMSE` and `MAE` score one
   target column; a (n, K) matrix raises "Multioutput not supported". The matrix
-  metric `COHORT_LOG_LOSS` normalizes rows, so it ignores the total. The
-  cross-setting count metric on the whole matrix comes with the notebook plan's
-  PR B.
+  metric `COHORT_LOG_LOSS` normalizes rows, so it ignores the total;
+  `COHORT_POISSON_DEVIANCE` scores the whole count matrix, the mean of the
+  per-cohort deviances.
 - **`groups=None` for `random`.** `KFold` warns on every split that receives
   groups.
 - **An empty search space with many trials** repeats one fit `n_trials` times;
@@ -493,8 +493,7 @@ then assembled into one `TotalTimesProbabilityModel` and refit.
 
 ## 11. What Remains
 
-- The notebook plan's PR B adds `COHORT_POISSON_DEVIANCE` (the cross-setting
-  metric); PR D logs a `TuningResult` to MLflow (`log_tuning_result`), the
+- The notebook plan's PR D logs a `TuningResult` to MLflow (`log_tuning_result`), the
   first user of `to_dict()`, and runs the NB2 one-trial studies.
 - Only on demand: out-of-fold predictions from the evaluator, Optuna
   visualizations as artifacts, conditional parameters.
