@@ -5,15 +5,17 @@ it. Self-contained: everything an implementer needs is here or linked. Re-verify
 every fact against the code of the day before relying on it (file paths, line
 counts, test counts drift).
 
-**Status (2026-10-12):** PR A done: the tuning study (A0–A5), an independent
+**Status (2026-10-13):** PR A done: the tuning study (A0–A5), an independent
 validation ([HYPERPARAMETER_TUNING_VALIDATION.md](HYPERPARAMETER_TUNING_VALIDATION.md):
 ACCEPT WITH NOTES, findings processed), PR #5 squash-merged into `main` as
-`ba2aa11` (A6). PR B: B1 committed (`2d4f0c5`: `COHORT_POISSON_DEVIANCE`,
-non-slow suite 1252 passed); B2 done (the split pattern tested for every method
-and documented in `SPLITTING.md` §3; no new code), awaiting the user's commit.
-**Next:** open PR B on GitHub, then PR C.
+`ba2aa11` (A6). PR B done: `COHORT_POISSON_DEVIANCE` (B1) and the three-way
+split pattern (B2: tested for every method, `SPLITTING.md` §3, no new code;
+`split_method` stays a setting), PR #15 squash-merged into `main` as `660611d`;
+non-slow suite 1257 passed, 1 skipped, 1 xfailed on `main`. **Next:** PR C, C1
+(`PermutationImportance`), on a new branch `feat/feature-importance` from
+`main`.
 
-**Branch state:** `feat/split-and-cohort-deviance` (PR B), from `main` at `ba2aa11`.
+**Branch state:** `main` at `660611d`; PR C's branch is not created yet.
 
 ## Contents
 
@@ -105,13 +107,17 @@ Verified 2026-10-11 on `feat/hyperparameter-tuning`. Paths are under
 `grouped`; `train_test_indices(X, groups, *, test_size, random_state) ->
 (train_index, test_index)` positions; `cv(*, n_splits, random_state)` the
 matching cross-validator, to be given `groups_train`. `utils.take_rows(array,
-index)` takes any row container by positions. **No three-way split exists.**
+index)` takes any row container by positions. The three-way split is two
+`train_test_indices` calls and a position mapping (E6), documented in
+`SPLITTING.md` §3 (since PR B).
 
 **Scoring (`scoring.py`).** `Metric(name, function, greater_is_better=False)`;
 `POISSON_DEVIANCE` (scikit-learn's `mean_poisson_deviance`, **one column
 only**: a (n, K) matrix raises "Multioutput not supported"), `RMSE`, `MAE`,
 `COHORT_LOG_LOSS` (takes the (n, K) count matrix; per child; rows of `y_pred`
-are normalized, so it ignores the total).
+are normalized, so it ignores the total), `COHORT_POISSON_DEVIANCE` (the mean
+Poisson deviance over every (building, cohort) cell, shapes must match; since
+PR B).
 
 **Inspection (`inspection/`), plan
 [MODEL_INSPECTION_PLAN.md](MODEL_INSPECTION_PLAN.md).** `BootstrapEvaluator(metric,
