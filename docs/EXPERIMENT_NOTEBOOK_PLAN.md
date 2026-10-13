@@ -9,9 +9,9 @@ counts, test counts drift).
 validation ([HYPERPARAMETER_TUNING_VALIDATION.md](HYPERPARAMETER_TUNING_VALIDATION.md):
 ACCEPT WITH NOTES, findings processed), PR #5 squash-merged into `main` as
 `ba2aa11` (A6). PR B: B1 committed (`2d4f0c5`: `COHORT_POISSON_DEVIANCE`,
-non-slow suite 1252 passed); PR B is opened on GitHub after B2. **Next:** B2,
-the split pattern: ask the user for the method first (evidence: `SPLITTING.md`'s
-"how to choose" and E6), then the tests, then the doc block.
+non-slow suite 1252 passed); B2 done (the split pattern tested for every method
+and documented in `SPLITTING.md` §3; no new code), awaiting the user's commit.
+**Next:** open PR B on GitHub, then PR C.
 
 **Branch state:** `feat/split-and-cohort-deviance` (PR B), from `main` at `ba2aa11`.
 
@@ -303,7 +303,7 @@ validation.
 **E6. The three-way split needs no new class.** Positions, as everything else:
 
 ```python
-splitter = Splitter("grouped")                       # method: see B2
+splitter = Splitter(split_method)                    # a setting: see B2
 train_val_index, test_index = splitter.train_test_indices(
     table, groups, test_size=0.2, random_state=split_seed)
 groups_train_val = take_rows(groups, train_val_index)
@@ -577,27 +577,33 @@ stop per sub-task.
 shape check fails a test. *Done 2026-10-12:* both mutations (no shape check;
 the prediction raveled column-major) fail their tests.
 
-### [ ] B2. The split pattern (E6)
+### [x] B2. The split pattern (E6)
 
-- Decide the method with the user before coding, with evidence from
-  `SPLITTING.md`'s "how to choose": the smoke runs used `grouped` by
-  neighborhood (a new neighborhood is the deployment claim); `stratified_by_group`
-  keeps every neighborhood in training. Record the choice and why here.
-- Tests in `tests/unit/test_splitters.py`, one per `Method`, on a small table
-  with groups of sizes 1, 2, 3 and 10: the three index arrays are disjoint and
-  their union is `arange(n)`; for `grouped`, no group appears in two parts;
-  for `stratified_by_group`, the documented small-group rule holds after the
-  second call (a group of 3 may have no validation row: assert what the
-  implementation does and state it in the doc).
-- If, and only if, the tests show the inline pattern is error-prone (e.g. the
-  position mapping), add `Splitter.train_val_test_indices(X, groups, *,
-  val_size, test_size, random_state) -> (train, val, test)` returning table
-  positions, with the same tests; otherwise no code.
-- `SPLITTING.md`: a section "Train, validation and test" with the E6 block run
-  as written and the sizes it yields on the simulator table.
+- **Method: not fixed (user, 2026-10-13: "check on each setup").**
+  `split_method` is a setting, set at the top of the notebook (D2) and logged
+  (E9); PR D decides which method the comparison reports. Evidence for that
+  choice is in `SPLITTING.md` §3 (sizes per method) and §5 (how to choose).
+- Tests in `tests/unit/test_splitters.py` ("The three-way split"), on groups of
+  sizes 1, 2, 3 and 10, 20 seeds each: the three parts are disjoint and cover
+  every row (every method); `grouped` never puts a group in two parts;
+  `stratified_by_group` gives each group size its exact counts (train / val /
+  test): 1 → 1/0/0, 2 → 1/0/1, 3 → 1/1/1, 10 → 6/2/2, the same for every seed.
+  A pair is a singleton after the holdout, so it has no validation row; a group
+  of 3 has one in each part.
+- No `Splitter.train_val_test_indices`: of the mistakes probed, two are silent
+  and the doc states both: the missing position mapping (up to 4 of 16 rows
+  overlap the test part) and, under `random` only, the whole table given to the
+  second call (it re-splits every row; the group-aware methods raise on the
+  length mismatch). One client (D2), which displays the three sizes.
+- `SPLITTING.md` §3 "Train, validation and test": the block run as written for
+  each method, and its sizes on the canonical table (`split_seed = 42`):
+  `random` 917 / 306 / 306, `stratified_by_group` 915 / 307 / 307, `grouped`
+  908 / 311 / 310 (30 test neighborhoods; `test_size` counts groups).
 
 **Done when:** the tests pass for all three methods; the doc block runs as
-written; the method choice and its reason are recorded here.
+written; the method choice and its reason are recorded here. *Done 2026-10-13:*
+three mutations (no position mapping; `grouped` holding out with
+`ShuffleSplit`; `_held_out_count` without its floor of one) each fail a test.
 
 ---
 
@@ -703,7 +709,7 @@ blocks run as written; the tests pass.
   `groups = table["neighborhood_id"]`; `Y = table[cohort_columns]`;
   `data_hash`, `config_params = flatten(config.model_dump())` (a 5-line helper
   in the notebook; move to `mlflow_runs.py` in D4 if a second user appears).
-- Split cell: the E6 block with the B2 method; the four seeds (E12) in one
+- Split cell: the E6 block with `split_method` (B2); the four seeds (E12) in one
   cell at the top, displayed; `n_train` / `n_val` / `n_test` displayed.
 - MLflow cell: `mlflow.set_experiment(os.environ["MLFLOW_EXPERIMENT_NAME"])`
   from `.env`; refuse to run when `MLFLOW_TRACKING_URI` is unset or points at

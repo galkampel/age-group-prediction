@@ -275,6 +275,77 @@ def test_the_documented_two_step_flow_scores_every_fold(method: str) -> None:
     assert np.isfinite(scores["test_score"]).all()
 
 
+# --- The three-way split ----------------------------------------------
+
+
+def _mixed_sizes() -> tuple[pd.DataFrame, pd.Series]:
+    """``(X, groups)`` with groups of 1, 2, 3 and 10 rows, on a non-default index."""
+    groups = pd.Series(
+        ["A"] * 1 + ["B"] * 2 + ["C"] * 3 + ["D"] * 10, index=pd.RangeIndex(100, 116)
+    )
+    return pd.DataFrame({"a": np.arange(16.0)}, index=groups.index), groups
+
+
+def _three_way(
+    method: str, table: pd.DataFrame, groups: pd.Series | None, split_seed: int
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """``(train_index, val_index, test_index)`` by the block of SPLITTING.md §3."""
+    splitter = Splitter(method)  # type: ignore[arg-type]
+    train_val_index, test_index = splitter.train_test_indices(
+        table, groups, test_size=0.2, random_state=split_seed
+    )
+    groups_train_val = None if groups is None else take_rows(groups, train_val_index)
+    train_sub, val_sub = splitter.train_test_indices(
+        take_rows(table, train_val_index),
+        groups_train_val,
+        test_size=0.25,
+        random_state=split_seed,
+    )
+    return train_val_index[train_sub], train_val_index[val_sub], test_index
+
+
+@pytest.mark.parametrize("method", METHODS)
+def test_the_three_parts_are_disjoint_and_cover_every_row(method: str) -> None:
+    # The second call returns positions in the remainder: used as table
+    # positions without the mapping, up to 4 of these 16 rows overlap the test
+    # part. Scanned: under grouped, a quarter of the seeds show no overlap.
+    X, groups = _mixed_sizes()
+    for seed in range(20):
+        parts = _three_way(method, X, None if method == "random" else groups, seed)
+
+        np.testing.assert_array_equal(np.sort(np.concatenate(parts)), np.arange(16))
+
+
+def test_grouped_never_puts_a_group_in_two_parts() -> None:
+    X, groups = _mixed_sizes()
+    for seed in range(20):
+        train, val, test = (
+            set(take_rows(groups, part))
+            for part in _three_way("grouped", X, groups, seed)
+        )
+
+        assert not (train & val or train & test or val & test)
+
+
+def test_stratified_by_group_applied_twice_gives_each_group_size_its_documented_counts() -> (
+    None
+):
+    # SPLITTING.md §3's table: a pair is a singleton after the holdout, so it
+    # has no validation row; a group of 3 has one row in each part.
+    X, groups = _mixed_sizes()
+    expected = {"A": (1, 0, 0), "B": (1, 0, 1), "C": (1, 1, 1), "D": (6, 2, 2)}
+    for seed in range(20):
+        parts = _three_way("stratified_by_group", X, groups, seed)
+        counts = {
+            label: tuple(
+                int((take_rows(groups, part) == label).sum()) for part in parts
+            )
+            for label in expected
+        }
+
+        assert counts == expected
+
+
 # --- The configuration ------------------------------------------------
 
 
