@@ -23,7 +23,11 @@ implementation details conflict, the model specification controls behavior.
   - the `hyperparameter_tuning` package is complete (PR #5; the
     [user guide](HYPERPARAMETER_TUNING.md); decisions and design in its
     [plan](HYPERPARAMETER_TUNING_PLAN.md));
-  - the `splitting` package (built and tested, not yet wired).
+  - the `splitting` package (built and tested, not yet wired);
+  - the `inspection` package is complete (PRs #14 and C; the
+    [user guide](MODEL_INSPECTION.md); decisions in the
+    [bootstrap plan](MODEL_INSPECTION_PLAN.md) and the
+    [importance plan](FEATURE_IMPORTANCE_PLAN.md)).
 
 ## Simulator
 
@@ -38,6 +42,7 @@ implementation details conflict, the model specification controls behavior.
 | [Modeling guide](MODELING_GUIDE.md) | User guide to the simulator-to-model pipeline, public APIs, configuration, evidence, and invariants |
 | [MLflow experiments guide](MLFLOW_EXPERIMENTS_GUIDE.md) | User guide to scratch tracking, run layout, metrics, search, final-run semantics, and model loading |
 | [Hyperparameter tuning](HYPERPARAMETER_TUNING.md) | User guide to the `hyperparameter_tuning` package: parameters, the cross-validation evaluator, fold aggregation and the corrected standard error, the study and its records, pruning, reproducibility, making a model tunable, hazards; the worked example run as written |
+| [Model inspection](MODEL_INSPECTION.md) | User guide to the `inspection` package: the bootstrap interval of a metric (rows or whole neighborhoods), permutation importance per raw column (held-out and training rows, per component), SHAP values of the rate or the count (exact or permutation, codes for string columns, the plots), hazards; the worked example on both rebuilt models run as written |
 
 ## Model And Component References
 
@@ -69,6 +74,8 @@ implementation details conflict, the model specification controls behavior.
 | [Hyperparameter tuning plan](HYPERPARAMETER_TUNING_PLAN.md) | Implemented (PR #5): decisions D1–D20, the design with its measured evidence and the test table of the `hyperparameter_tuning` package; the user guide is above |
 | [Direct cohort generalization plan](DIRECT_COHORT_GENERALIZATION_PLAN.md) | Any regressor in `DirectCohortModel` (the exposure as a weighted rate, with the derivation), the `feature_transformer` inside each model in place of `ModelPipeline`, and the tuning evaluator on the raw table |
 | [Experiment notebook plan](EXPERIMENT_NOTEBOOK_PLAN.md) | The MLflow experiment notebook and the work before it, as four PRs: the tuning study (A), the three-way split and the cohort count metric (B), feature importance (C), the notebook with the data and MLflow (D); decisions E1–E12, sub-tasks with done-when lists |
+| [Model inspection plan](MODEL_INSPECTION_PLAN.md) | Implemented (PR #14): decisions I1–I2, I7, I12–I13 and the test record of `BootstrapEvaluator`; the user guide is above |
+| [Feature importance plan](FEATURE_IMPORTANCE_PLAN.md) | Implemented (PR C): decisions I3–I6, I8–I11 with their measured evidence (shap's maskers, exact vs permutation, the row-wise exposure) and the test records of `PermutationImportance` and `ShapExplainer`; the user guide is above |
 
 ## Extensions Beyond The Simplified Model (Not Implemented)
 

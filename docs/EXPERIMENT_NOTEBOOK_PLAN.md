@@ -13,12 +13,14 @@ split pattern (B2: tested for every method, `SPLITTING.md` §3, no new code;
 `split_method` stays a setting), PR #15 squash-merged into `main` as `660611d`;
 non-slow suite 1257 passed, 1 skipped, 1 xfailed on `main`. PR C in progress
 on `feat/feature-importance`: C1 (`PermutationImportance`) done 2026-10-13,
-C2 (`ShapExplainer`) done 2026-10-13, non-slow suite 1298 passed, 1 skipped,
-1 xfailed. **Next:** C3 (per-component importance, smoke run, docs).
+C2 (`ShapExplainer`) and C3 (the smoke run and the
+[model inspection guide](MODEL_INSPECTION.md)) done 2026-10-13; **PR C is
+complete**, non-slow suite 1299 passed, 1 skipped, 1 xfailed. **Next:** open
+PR C against `main`, then PR D (§9).
 
 **Branch state:** `feat/feature-importance` from `main` at `660611d`; C1
-committed as `9448c5e`; C2 (shap dependency, `shap_values.py`, its tests,
-this doc and the importance plan) awaits the user's commit.
+committed as `9448c5e`, C2 as `e2c6137`; C3 (the bootstrap's two-groups
+check, the guide, the index docs and the plan docs) awaits the user's commit.
 
 ## Contents
 
@@ -625,8 +627,8 @@ three mutations (no position mapping; `grouped` holding out with
 Branch `feat/feature-importance` from `main`. Source of truth for the design:
 [FEATURE_IMPORTANCE_PLAN.md](FEATURE_IMPORTANCE_PLAN.md): its "To start" list
 (re-add `shap>=0.53,<1`, then the user runs `uv lock` and `uv sync`), decisions
-I3–I11, code shapes §4, sub-tasks 1–3 with their test lists, risks §6. Move
-its status line to "in progress" at C1 and to "complete" at C3.
+I3–I11, code shapes §4, sub-tasks 1–3 with their test lists, risks §6. Its
+status line moved to "in progress" at C1 and to "complete" at C3 (done).
 
 ### [x] C1. `PermutationImportance` (importance plan sub-task 1)
 
@@ -666,7 +668,7 @@ independent review found one bug (a background with reordered columns gave
 wrong values silently) and two edge cases (NaN in a string column, a
 categorical column with a background-only level), all fixed with tests.
 
-### [ ] C3. Per-component importance, smoke run, docs (importance plan sub-task 3 + inspection plan sub-task 2)
+### [x] C3. Per-component importance, smoke run, docs (importance plan sub-task 3 + inspection plan sub-task 2)
 
 - No new class for per-component importance: the fitted children are public
   (`total_model_`, `probability_model_`), so the notebook calls
@@ -691,6 +693,15 @@ categorical column with a background-only level), all fixed with tests.
 
 **Done when:** the doc's blocks run as written; the smoke tables are in the
 doc; the non-slow suite passes; the importance plan is marked complete.
+*Done 2026-10-13:* no new class; the per-component recipe is in the guide's
+worked example (§2, §4). The smoke run (150 × 9, `grouped` split, both
+models at defaults) is the guide's worked example, run as written by a
+scratchpad runner (five blocks, 44 s; outputs identical). The inspection
+plan's open item is closed: `BootstrapEvaluator` raises on fewer than two
+groups (one check, one test, one mutation killed). `MODULE_REFERENCE.md`,
+`docs/README.md`, the root `README.md` and the roadmap carry the package.
+Finding for PR D: at 9 raw columns, exact SHAP on Model 1 (three LightGBM
+models) costs 90 s per 200 rows (27 s with `n_jobs=4`); Model 2 4 s.
 
 ---
 

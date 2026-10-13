@@ -3,20 +3,17 @@
 **Written for:** the model that picks this up in a later PR, and the user who
 validates it. Self-contained.
 
-**Status (2026-10-13):** in progress as PR C of
+**Status (2026-10-13): complete** as PR C of
 [EXPERIMENT_NOTEBOOK_PLAN.md](EXPERIMENT_NOTEBOOK_PLAN.md) §8, branch
-`feat/feature-importance`. Sub-tasks 1 (`PermutationImportance`, C1) and 2
-(`ShapExplainer`, C2) are done; sub-task 3 (C3) is open. This material was
-planned as sub-tasks 2–3 of [MODEL_INSPECTION_PLAN.md](MODEL_INSPECTION_PLAN.md)
+`feat/feature-importance`: sub-tasks 1 (`PermutationImportance`, C1), 2
+(`ShapExplainer`, C2) and 3 (the smoke run and the user guide
+[MODEL_INSPECTION.md](MODEL_INSPECTION.md), C3). This material was planned as
+sub-tasks 2–3 of [MODEL_INSPECTION_PLAN.md](MODEL_INSPECTION_PLAN.md)
 (PR #14), which delivered only the bootstrap. The decisions below were
 approved on 2026-10-10 and I5, I9 and I10 amended on 2026-10-13 while
-building C2; the evidence is in §3. Re-verify both against the code of the
-day before relying on them.
-
-**To start C3:**
-1. Follow the working rules of [MODEL_INSPECTION_PLAN.md](MODEL_INSPECTION_PLAN.md) §3.
-2. The code lives in `age_group_prediction/inspection/` (I7), next to
-   `bootstrap.py`; `shap>=0.53,<1` is a main dependency (I8, re-added in C2).
+building C2; the evidence is in §3. The code lives in
+`age_group_prediction/inspection/` (I7) and `shap>=0.53,<1` is a main
+dependency (I8).
 
 ## 1. Goal
 
@@ -151,7 +148,7 @@ processes, the exposure length, eleven invalid settings, and the composite
 on the simulator. 21 mutations each fail a test; the independent review's
 findings are in §3.
 
-### [ ] 3. Smoke run and docs
+### [x] 3. Smoke run and docs
 
 - On the simulator data, compute both importances for `CountModel` and
   `TotalTimesProbabilityModel`, then compare the rankings of permutation and
@@ -165,7 +162,18 @@ findings are in §3.
     mean |SHAP| as the global importance.
 
 **Verify:** every code block in the doc runs as written; the non-slow suite
-passes.
+passes. *Done 2026-10-13:* the guide's worked example (simulator 150 × 9,
+`grouped` split, Model 1 = LightGBM Poisson per cohort and Model 2 =
+Poisson × LR at class defaults) runs as written. Permutation on validation
+and on train, per component for Model 2; SHAP exact on 200 validation rows
+against 50 training rows with the validation exposure. Findings: the two
+methods agree on Model 2's top four (`avg_household_size`, `median_age`, the
+room shares); on Model 1 `ses` is 2nd by mean |SHAP| and 7th by permutation
+(correlated columns); Model 1 at defaults overfits (training importances 4
+to 100 times the validation ones); Model 2's total depends on
+`avg_household_size` (0.69 of the deviance). Costs at 9 raw columns: exact
+SHAP 4 s per 200 rows for Model 2, 90 s for Model 1 (27 s on four
+processes).
 
 ## 6. Risks
 

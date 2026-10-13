@@ -75,6 +75,13 @@ class BootstrapEvaluator:
             _, group_codes, group_sizes = np.unique(
                 np.asarray(groups), return_inverse=True, return_counts=True
             )
+            # With one group every replicate is the whole set: a zero-width
+            # interval that looks certain.
+            if len(group_sizes) < 2:
+                raise ValueError(
+                    f"groups has {len(group_sizes)} distinct value(s); the "
+                    "group bootstrap needs at least 2"
+                )
             group_rows = np.split(
                 np.argsort(group_codes, kind="stable"), np.cumsum(group_sizes)[:-1]
             )

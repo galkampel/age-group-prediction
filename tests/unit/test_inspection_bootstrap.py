@@ -168,6 +168,14 @@ def test_length_mismatch_raises(y: np.ndarray, groups: np.ndarray | None) -> Non
         evaluator.evaluate(_SpyModel(), X, y, groups)
 
 
+def test_fewer_than_two_groups_raises() -> None:
+    # Catches a single group passing silently: every replicate is then the
+    # whole set and the interval has zero width.
+    evaluator = BootstrapEvaluator(Metric("mean_id", _RecordingMetric()), 10)
+    with pytest.raises(ValueError, match="1 distinct value"):
+        evaluator.evaluate(_SpyModel(), X, Y, np.zeros(len(X), dtype=int))
+
+
 @pytest.mark.parametrize(
     "settings",
     [

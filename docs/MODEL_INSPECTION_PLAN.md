@@ -5,19 +5,15 @@ sub-task. Self-contained: it assumes no memory of the planning conversation.
 This file is the source of truth: update its status line and the sub-task
 checkboxes in §8 as work finishes.
 
-**Status (2026-10-11):** sub-task 1 (`BootstrapEvaluator`) is merged:
-[PR #14](https://github.com/galkampel/age-group-prediction/pull/14) was
-squash-merged into `feat/hyperparameter-tuning` as `7d865ab`. Feature importance
-(permutation and SHAP) is deferred, and its decisions, evidence and sub-tasks
-live in [FEATURE_IMPORTANCE_PLAN.md](FEATURE_IMPORTANCE_PLAN.md). Sub-task 2
-(smoke run and `docs/MODEL_INSPECTION.md`) moved to
-[EXPERIMENT_NOTEBOOK_PLAN.md](EXPERIMENT_NOTEBOOK_PLAN.md) sub-task C3, together
-with the importance work; this plan is marked complete there.
-
-**To resume (new session):** do not resume here. Follow
-[EXPERIMENT_NOTEBOOK_PLAN.md](EXPERIMENT_NOTEBOOK_PLAN.md); §5, §9 and §10 of
-this plan stay the reference for the bootstrap's decisions, its doc content and
-its open item.
+**Status (2026-10-13): complete.** Sub-task 1 (`BootstrapEvaluator`) was
+merged as [PR #14](https://github.com/galkampel/age-group-prediction/pull/14)
+(squash `7d865ab`). Sub-task 2 (the smoke run and the user guide
+[MODEL_INSPECTION.md](MODEL_INSPECTION.md)) was done as sub-task C3 of
+[EXPERIMENT_NOTEBOOK_PLAN.md](EXPERIMENT_NOTEBOOK_PLAN.md) (PR C), together
+with feature importance, whose decisions, evidence and records live in
+[FEATURE_IMPORTANCE_PLAN.md](FEATURE_IMPORTANCE_PLAN.md). The open item of §10
+is closed: fewer than two groups raise. Nothing to resume; §5 stays the
+reference for the bootstrap's decisions.
 
 ## Contents
 
@@ -231,10 +227,10 @@ Each sub-task ends at a stop (§3). **Verify** lists what the user can check.
   Its fourth point is left as the user's choice (§10): a single group gives a
   zero-width interval silently.
 
-### [ ] 2. Smoke run, docs and close
+### [x] 2. Smoke run, docs and close
 
-Moved to [EXPERIMENT_NOTEBOOK_PLAN.md](EXPERIMENT_NOTEBOOK_PLAN.md) C3, which
-runs it with the importance smoke run; the list below is its bootstrap part.
+Done as [EXPERIMENT_NOTEBOOK_PLAN.md](EXPERIMENT_NOTEBOOK_PLAN.md) C3, with
+the importance smoke run; the list below is its bootstrap part.
 
 - Run on the simulator data:
   - fit `CountModel` and `TotalTimesProbabilityModel` on train;
@@ -245,6 +241,15 @@ runs it with the importance smoke run; the list below is its bootstrap part.
 
 **Verify:** every code block in the doc runs as written; the non-slow suite
 passes.
+
+**Record (2026-10-13):** the simulator at 150 × 9, a `grouped` three-way
+split (908 / 311 / 310 rows, 30 validation neighborhoods), Model 1 (LightGBM
+Poisson per cohort) and Model 2 (Poisson × LR) at class defaults;
+`COHORT_POISSON_DEVIANCE` on validation, 500 resamples: Model 1 by rows
+2.589 [2.330, 2.842], by neighborhood 2.598 [2.200, 3.031]; Model 2 2.187
+[1.967, 2.410] and 2.193 [1.961, 2.472]. The cluster interval is wider, as §9
+says. The guide's five blocks run as written (44 s). The §10 raise was added
+(one check, one test, one mutation killed).
 
 ## 9. Docs: what the model-inspection doc must say
 
@@ -257,10 +262,13 @@ passes.
 
 ## 10. Risks
 
-- **Few neighborhoods** give a degenerate cluster bootstrap. This is
-  documented, not checked. With one group, every replicate is the full set,
-  so the interval has zero width and looks certain. A
-  `len(groups) < 2` raise (the old stack had one) is open for the user.
+- **Few neighborhoods** give a degenerate cluster bootstrap: wide, unstable
+  intervals, documented in the guide. With one group, every replicate would
+  be the full set and the interval would have zero width while looking
+  certain, so fewer than two distinct groups raise `ValueError` (decided
+  2026-10-13; the check lives in the bootstrap, not the splitter, because the
+  bootstrap takes its own `groups` and `random` / `stratified_by_group`
+  splits accept one group).
 
 ## 11. Verification
 
