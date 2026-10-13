@@ -13,11 +13,12 @@ split pattern (B2: tested for every method, `SPLITTING.md` §3, no new code;
 `split_method` stays a setting), PR #15 squash-merged into `main` as `660611d`;
 non-slow suite 1257 passed, 1 skipped, 1 xfailed on `main`. PR C in progress
 on `feat/feature-importance`: C1 (`PermutationImportance`) done 2026-10-13,
-non-slow suite 1270 passed, 1 skipped, 1 xfailed. **Next:** C2 (`ShapExplainer`),
-which starts with the `shap` dependency.
+C2 (`ShapExplainer`) done 2026-10-13, non-slow suite 1298 passed, 1 skipped,
+1 xfailed. **Next:** C3 (per-component importance, smoke run, docs).
 
 **Branch state:** `feat/feature-importance` from `main` at `660611d`; C1
-awaits the user's commit.
+committed as `9448c5e`; C2 (shap dependency, `shap_values.py`, its tests,
+this doc and the importance plan) awaits the user's commit.
 
 ## Contents
 
@@ -346,11 +347,15 @@ permutation importance splits credit between them: stated in the docs, no
 column blocks (I6).
 
 **E8. SHAP on a seeded validation subsample.** `ShapExplainer` (I9–I11)
-explains the rate, `predict(X, exposure=1)` (I5), per cohort output; global
-importance is mean |SHAP|. Cost measured at ~0.45 s per row for Model 2, so:
-`n_rows ≈ 200` validation rows, `n_background ≈ 50` **training** rows, both
-seeded and logged as parameters. Leak-free: the feature transformer is fitted
-inside `fit`, never on the explained rows.
+explains `predict(X, exposure)` per cohort output: the rate without an
+exposure, the count with the validation rows' exposure (I5); global
+importance is mean |SHAP|. With `method="exact"` (I10) the cost is
+`2^columns` model evaluations per row, measured at 0.7 s per 50 rows of
+Model 2 with 50 background rows, so a few hundred validation rows and a few
+dozen **training** background rows take seconds; the sizes are chosen in
+PR D from the measured cost and logged as parameters with their seeds.
+Leak-free: the feature transformer is fitted inside `fit`, never on the
+explained rows.
 
 **E9. What one run logs.**
 
@@ -643,16 +648,23 @@ and `arbitrary_types_allowed` are redundant under `STRICT` for a `Metric`
 field). `BootstrapEvaluator` now also rejects numpy integers, as the tuning
 classes do.
 
-### [ ] C2. `ShapExplainer` (importance plan sub-task 2)
+### [x] C2. `ShapExplainer` (importance plan sub-task 2)
 
-`inspection/shap_values.py`, `explain(model, X, background) -> shap.Explanation`
-with cohort output names; `shap.PermutationExplainer`, `max_evals=500`
-default, codes for non-numeric columns (I9). Tests as the importance plan
-lists. Add `inspection` mypy entries if missing.
+`inspection/shap_values.py`, `ShapExplainer(method, max_evals=None,
+random_state=None, n_jobs=1).explain(model, X, background, *, exposure=None)
+-> shap.Explanation` with cohort output names (importance plan I5, I9–I11
+as amended there). Tests as the importance plan lists.
 
-**Done when:** additivity against `predict(exposure=1)` holds for `CountModel`;
-the multi-output shape and names are right; the same seed gives identical
-values.
+**Done when:** additivity against `predict(X, exposure)` holds for
+`CountModel`; the multi-output shape and names are right; the same seed
+gives identical values. *Done 2026-10-13:* `method` is a literal
+(`"exact"`, `2^p` evaluations and exact, or `"permutation"`), rows are
+explained one at a time so each row's exposure reaches `predict`, `n_jobs`
+runs rows in joblib processes, non-numeric columns go through
+`OrdinalEncoder`; 12 tests (28 cases), 21 mutations each fail a test; the
+independent review found one bug (a background with reordered columns gave
+wrong values silently) and two edge cases (NaN in a string column, a
+categorical column with a background-only level), all fixed with tests.
 
 ### [ ] C3. Per-component importance, smoke run, docs (importance plan sub-task 3 + inspection plan sub-task 2)
 
