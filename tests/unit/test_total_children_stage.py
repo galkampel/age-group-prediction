@@ -8,11 +8,10 @@ import pandas as pd
 from student_simulator import (
     ApartmentSimulator,
     Config,
-    StudentPopulationSimulator,
     load_simulation_config,
 )
 
-from tests.unit.helpers import make_total_children_simulator
+from tests.unit.helpers import make_total_children_simulator, simulate_stages
 
 
 def _config_path() -> Path:
@@ -60,11 +59,7 @@ def _state_for_log_mu_checks() -> tuple[Config, dict[str, pd.DataFrame]]:
 
 def test_total_children_component_adds_nonnegative_integer_counts() -> None:
     cfg = load_simulation_config(_config_path())
-    sim = StudentPopulationSimulator(cfg)
-    sim.run()
-    result = sim.last_result
-    assert result is not None
-    apartments = result.apartments
+    apartments = simulate_stages(cfg).apartments_with_totals
 
     assert "n_children_total" in apartments.columns
     assert pd.api.types.is_integer_dtype(apartments["n_children_total"])

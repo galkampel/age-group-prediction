@@ -2,11 +2,9 @@ from pathlib import Path
 
 import pytest
 
-from student_simulator import (
-    StudentPopulationSimulator,
-    load_simulation_config,
-)
+from student_simulator import load_simulation_config
 from student_simulator.config import load_validation_config
+from tests.unit.helpers import simulate_stages
 from tests.validation.helpers import run_calibration_checks
 
 
@@ -18,11 +16,9 @@ def test_canonical_calibration_ranges_pass() -> None:
     )
     config = load_simulation_config(config_path)
     validation = load_validation_config(config_path.with_name("validation.toml"))
-    simulator = StudentPopulationSimulator(config)
-    simulator.run()
-    result = simulator.last_result
-    assert result is not None
-    calibration = run_calibration_checks(result, validation)
+    calibration = run_calibration_checks(
+        simulate_stages(config).apartments_with_totals, validation
+    )
 
     assert calibration
     assert all(check.passed for check in calibration), calibration

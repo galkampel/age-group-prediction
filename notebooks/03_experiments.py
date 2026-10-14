@@ -89,7 +89,9 @@ def _(
     # FEATURE_TRANSFORMATIONS.md §2: why the 3-room share is the omitted one.
     table = ShareTransformer(
         ("3_rooms", "4_rooms", "5_rooms", "6_rooms"), reference_column="3_rooms"
-    ).fit_transform(StudentPopulationSimulator(config).run())
+    ).fit_transform(
+        StudentPopulationSimulator.from_config(config).create_dataset().dataset
+    )
     COHORTS = ["n_kindergarten", "n_elementary", "n_highschool"]
     RAW_COLUMNS = [
         "4_rooms_share",

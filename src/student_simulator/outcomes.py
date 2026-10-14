@@ -20,6 +20,9 @@ from .features import (
 LatentEffects = dict[str, pd.Series]
 """Effect name -> one value per owner id (the Series index)."""
 
+COHORT_COLUMNS: tuple[str, ...] = ("n_kindergarten", "n_elementary", "n_highschool")
+"""The cohort count columns, in the order of the cohort probabilities."""
+
 
 def _sample_random_effect(
     entity_ids: pd.Series,
@@ -297,9 +300,7 @@ class CohortCompositionSimulator:
             )
 
         out = apartment_context.copy(deep=True)
-        out["n_kindergarten"] = draws[:, 0]
-        out["n_elementary"] = draws[:, 1]
-        out["n_highschool"] = draws[:, 2]
+        out[list(COHORT_COLUMNS)] = draws
         return out, {"building_cohort_effect": building_effect}
 
     def compute_theta(

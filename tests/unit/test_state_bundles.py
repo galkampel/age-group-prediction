@@ -47,7 +47,9 @@ def modeling_df() -> pd.DataFrame:
     """Return the modeling table built from the stage-1 simulation config."""
     config_path = Path(__file__).resolve().parents[2] / "configs" / "simulation.toml"
     config = load_simulation_config(config_path)
-    return build_modeling_table(StudentPopulationSimulator(config).run())
+    return build_modeling_table(
+        StudentPopulationSimulator.from_config(config).create_dataset().dataset
+    )
 
 
 # Every predeclared candidate spec, including the opt-in daycare curve, plus the

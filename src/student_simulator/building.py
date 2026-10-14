@@ -29,7 +29,7 @@ class BuildingSimulator:
 
     def sample_buildings(
         self,
-        neighborhoods: pd.DataFrame,
+        neighborhoods_df: pd.DataFrame,
         rng: np.random.Generator | None = None,
     ) -> pd.DataFrame:
         """Sample the buildings of each neighborhood and their room counts.
@@ -40,7 +40,7 @@ class BuildingSimulator:
         total into room counts. Configured overrides replace the first two.
 
         Args:
-            neighborhoods: Public neighborhood rows containing IDs, SES, and
+            neighborhoods_df: Public neighborhood rows containing IDs, SES, and
                 average household size.
             rng: Optional shared generator. When omitted, a fresh generator is
                 created from the configured simulation seed.
@@ -59,29 +59,29 @@ class BuildingSimulator:
         # Sample one building count per neighborhood, honoring any configured
         # override.
         buildings_per_neighborhood = self._sample_building_counts(
-            len(neighborhoods), generator
+            len(neighborhoods_df), generator
         )
         # Expand building counts into stable IDs and neighborhood foreign keys.
-        buildings = self._build_rows(
-            neighborhoods,
+        buildings_df = self._build_rows(
+            neighborhoods_df,
             buildings_per_neighborhood,
         )
         # Sample apartment totals and room counts for each building, honoring any
         # configured overrides.
         apartment_totals = self._sample_apartment_totals(
-            len(buildings), generator
+            len(buildings_df), generator
         )
         room_counts = self._sample_room_counts(
-            buildings,
-            neighborhoods,
+            buildings_df,
+            neighborhoods_df,
             apartment_totals,
             generator,
         )
 
         for index, room in enumerate(self._room_mix.supported_rooms):
-            buildings[f"{room}_rooms"] = room_counts[:, index].astype(int)
-        buildings["n_apartments"] = apartment_totals.astype(int)
-        return buildings
+            buildings_df[f"{room}_rooms"] = room_counts[:, index].astype(int)
+        buildings_df["n_apartments"] = apartment_totals.astype(int)
+        return buildings_df
 
     def _sample_building_counts(
         self,
@@ -106,13 +106,13 @@ class BuildingSimulator:
 
     def _build_rows(
         self,
-        neighborhoods: pd.DataFrame,
+        neighborhoods_df: pd.DataFrame,
         buildings_per_neighborhood: np.ndarray,
     ) -> pd.DataFrame:
         """Expand building counts into stable IDs and neighborhood keys."""
         rows: list[dict[str, str]] = []
         building_id = 1
-        neighborhood_rows = neighborhoods.reset_index(drop=True)
+        neighborhood_rows = neighborhoods_df.reset_index(drop=True)
         for position, (_, neighborhood) in enumerate(
             neighborhood_rows.iterrows()
         ):
@@ -166,8 +166,8 @@ class BuildingSimulator:
 
     def _sample_room_counts(
         self,
-        buildings: pd.DataFrame,
-        neighborhoods: pd.DataFrame,
+        buildings_df: pd.DataFrame,
+        neighborhoods_df: pd.DataFrame,
         apartment_totals: np.ndarray,
         rng: np.random.Generator,
     ) -> np.ndarray:
@@ -177,8 +177,8 @@ class BuildingSimulator:
         A building-specific Dirichlet draw adds composition heterogeneity, and
         a multinomial draw converts that mix into exact integer counts.
         """
-        context = buildings.merge(
-            neighborhoods[
+        context = buildings_df.merge(
+            neighborhoods_df[
                 ["neighborhood_id", "ses", "avg_household_size"]
             ],
             on="neighborhood_id",
@@ -204,7 +204,7 @@ class BuildingSimulator:
         )
 
         room_counts = np.zeros(
-            (len(buildings), len(room_config.supported_rooms)),
+            (len(buildings_df), len(room_config.supported_rooms)),
             dtype=int,
         )
         for index, n_apartments in enumerate(apartment_totals):

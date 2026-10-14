@@ -8,40 +8,35 @@ import pandas as pd
 from student_simulator import (
     ApartmentSimulator,
     CohortCompositionSimulator,
+    SimulatedPopulation,
     StudentPopulationSimulator,
+    aggregate_to_buildings,
     load_simulation_config,
 )
+from student_simulator.config import Config
 
-from tests.unit.helpers import make_cohort_simulator, with_overrides
+from tests.unit.helpers import make_cohort_simulator, simulate_stages, with_overrides
 
 
 def _config_path() -> Path:
     return Path(__file__).resolve().parents[2] / "configs" / "simulation.toml"
 
 
-def _sim(seed: int = 42) -> StudentPopulationSimulator:
+def _config(seed: int = 42) -> Config:
     cfg = load_simulation_config(_config_path())
-    cfg = with_overrides(cfg, simulation={"seed": seed, "n_neighborhoods": 6})
-    return StudentPopulationSimulator(cfg)
+    return with_overrides(cfg, simulation={"seed": seed, "n_neighborhoods": 6})
 
 
-def _result(simulator: StudentPopulationSimulator):
-    simulator.run()
-    result = simulator.last_result
-    assert result is not None
-    return result
+def _population(seed: int = 42) -> SimulatedPopulation:
+    return StudentPopulationSimulator.from_config(_config(seed)).create_dataset()
 
 
-def test_run_retains_apartments_and_final_buildings() -> None:
-    result = _result(_sim())
-
-    assert not result.apartments.empty
-    assert not result.final_df.empty
+def test_create_dataset_returns_a_nonempty_dataset() -> None:
+    assert not _population().dataset.empty
 
 
 def test_cohort_counts_nonnegative_and_sum_to_total_per_apartment() -> None:
-    sim = _sim()
-    apartments = _result(sim).apartments
+    apartments = simulate_stages(_config()).apartments_with_cohorts
 
     for col in ("n_kindergarten", "n_elementary", "n_highschool", "n_children_total"):
         assert pd.api.types.is_integer_dtype(apartments[col])
@@ -53,12 +48,7 @@ def test_cohort_counts_nonnegative_and_sum_to_total_per_apartment() -> None:
 
 def test_cohort_component_returns_counts_without_latent_columns() -> None:
     cfg = load_simulation_config(_config_path())
-    result = _result(StudentPopulationSimulator(cfg))
-    context = ApartmentSimulator.join_context(
-        result.apartments,
-        result.buildings,
-        result.neighborhoods,
-    )
+    context = simulate_stages(cfg).apartments_with_totals
 
     out, _ = make_cohort_simulator(cfg).sample_cohorts(
         context,
@@ -176,11 +166,12 @@ def test_cohort_probabilities_remain_finite_for_extreme_lifecycle_scores() -> No
     assert np.allclose(probabilities.sum(axis=1), 1.0)
 
 
-def test_building_targets_equal_grouped_apartment_targets() -> None:
-    sim = _sim()
-    result = _result(sim)
-    apartments = result.apartments
-    targets = result.final_df
+def test_aggregate_to_buildings_sums_the_apartment_counts() -> None:
+    stages = simulate_stages(_config())
+    apartments = stages.apartments_with_cohorts
+    targets = aggregate_to_buildings(
+        apartments, stages.buildings_df, stages.neighborhoods_df
+    )
 
     grouped = (
         apartments.groupby("building_id", as_index=False)
@@ -208,46 +199,8 @@ def test_building_targets_equal_grouped_apartment_targets() -> None:
     pd.testing.assert_frame_equal(expected, grouped)
 
 
-def test_building_targets_include_context_in_stable_order() -> None:
-    sim = _sim()
-    targets = _result(sim).final_df
-
-    expected_columns = [
-        "building_id",
-        "neighborhood_id",
-        "ses",
-        "avg_household_size",
-        "median_age",
-        "n_daycares_500m",
-        "school_status",
-        "3_rooms",
-        "4_rooms",
-        "5_rooms",
-        "6_rooms",
-        "n_apartments",
-        "n_kindergarten",
-        "n_elementary",
-        "n_highschool",
-        "n_children_total",
-    ]
-    assert list(targets.columns) == expected_columns
-    assert targets["building_id"].is_unique
-
-
-def test_derived_apartment_and_long_cohort_views() -> None:
-    sim = _sim()
-    result = _result(sim)
-    apartments = result.apartments
-    buildings = result.buildings
-    neighborhoods = result.neighborhoods
-
-    model_view = ApartmentSimulator.join_context(
-        apartments,
-        buildings,
-        neighborhoods,
-    )
-    assert "neighborhood_id" in model_view.columns
-    assert len(model_view) == len(apartments)
+def test_long_cohort_view_has_one_row_per_apartment_and_cohort() -> None:
+    apartments = simulate_stages(_config()).apartments_with_cohorts
 
     long_view = ApartmentSimulator.to_cohort_long(apartments)
     assert len(long_view) == len(apartments) * 3

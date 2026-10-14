@@ -148,8 +148,9 @@ def capture_eda_baseline() -> dict[str, Any]:
             ),
         }
     )
-    simulator = StudentPopulationSimulator(eda_config)
-    final_df = simulator.run()
+    final_df = (
+        StudentPopulationSimulator.from_config(eda_config).create_dataset().dataset
+    )
     canonical_final_df = _canonicalize_string_columns(final_df)
 
     buildings_per_neighborhood = (

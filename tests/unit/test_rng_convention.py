@@ -6,14 +6,13 @@ import numpy as np
 import pandas as pd
 
 from student_simulator import (
-    ApartmentSimulator,
     BuildingSimulator,
     CohortCompositionSimulator,
     NeighborhoodSimulator,
-    StudentPopulationSimulator,
     TotalChildrenSimulator,
     load_simulation_config,
 )
+from student_simulator.config import Config
 
 from tests.unit.helpers import (
     make_apartment_simulator,
@@ -21,6 +20,8 @@ from tests.unit.helpers import (
     make_cohort_simulator,
     make_neighborhood_simulator,
     make_total_children_simulator,
+    simulate_stages,
+    Stages,
     with_overrides,
 )
 
@@ -63,22 +64,14 @@ def _base_buildings() -> pd.DataFrame:
     )
 
 
-def _result_before_total_children() -> tuple[object, object]:
+def _stages_for_total_children() -> tuple[Stages, Config]:
     cfg = _config(seed=777, n_neighborhoods=5)
-    simulator = StudentPopulationSimulator(cfg)
-    simulator.run()
-    result = simulator.last_result
-    assert result is not None
-    return result, cfg
+    return simulate_stages(cfg), cfg
 
 
-def _result_before_cohort() -> tuple[object, object]:
+def _stages_for_cohorts() -> tuple[Stages, Config]:
     cfg = _config(seed=888, n_neighborhoods=5)
-    simulator = StudentPopulationSimulator(cfg)
-    simulator.run()
-    result = simulator.last_result
-    assert result is not None
-    return result, cfg
+    return simulate_stages(cfg), cfg
 
 
 def test_neighborhood_component_rng_convention() -> None:
@@ -151,14 +144,10 @@ def test_apartment_component_rng_convention() -> None:
 
 
 def test_total_children_component_rng_convention() -> None:
-    result, cfg = _result_before_total_children()
+    stages, cfg = _stages_for_total_children()
     simulator = make_total_children_simulator(cfg)
 
-    context = ApartmentSimulator.join_context(
-        result.apartments,
-        result.buildings,
-        result.neighborhoods,
-    )
+    context = stages.apartment_context
 
     pd.testing.assert_frame_equal(
         simulator.sample_total_children(context)[0],
@@ -174,13 +163,9 @@ def test_total_children_component_rng_convention() -> None:
 
 
 def test_cohort_component_rng_convention() -> None:
-    result, cfg = _result_before_cohort()
+    stages, cfg = _stages_for_cohorts()
     simulator = make_cohort_simulator(cfg)
-    context = ApartmentSimulator.join_context(
-        result.apartments,
-        result.buildings,
-        result.neighborhoods,
-    )
+    context = stages.apartments_with_totals
 
     pd.testing.assert_frame_equal(
         simulator.sample_cohorts(context)[0],

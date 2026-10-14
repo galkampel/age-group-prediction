@@ -128,10 +128,9 @@ def _(mo):
 
 @app.cell
 def _(StudentPopulationSimulator, config_path, eda_config, mo):
-    eda_simulator = StudentPopulationSimulator(eda_config)
-    eda_final_df = eda_simulator.run()
-    eda_result = eda_simulator.last_result
-    assert eda_result is not None
+    eda_final_df = (
+        StudentPopulationSimulator.from_config(eda_config).create_dataset().dataset
+    )
     buildings_per_neighborhood = (
         eda_final_df["neighborhood_id"]
         .value_counts()

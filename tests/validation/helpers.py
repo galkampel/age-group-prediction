@@ -2,12 +2,11 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+import pandas as pd
 import statsmodels.api as sm
 
-from student_simulator.apartment import ApartmentSimulator
 from student_simulator.config import Config, ValidationSettings
-from student_simulator.outcomes import TotalChildrenSimulator
-from student_simulator.pipeline import SimulationResult
+from student_simulator.outcomes import LatentEffects, TotalChildrenSimulator
 
 
 @dataclass(frozen=True)
@@ -19,11 +18,11 @@ class CalibrationCheck:
 
 
 def run_calibration_checks(
-    result: SimulationResult,
+    apartments_df: pd.DataFrame,
     validation: ValidationSettings,
 ) -> list[CalibrationCheck]:
-    """Run warning-level calibration checks for canonical test gates."""
-    counts = result.apartments["n_children_total"].to_numpy(dtype=float)
+    """Run warning-level calibration checks on apartment child totals."""
+    counts = apartments_df["n_children_total"].to_numpy(dtype=float)
     mean_children = float(counts.mean())
     zero_share = float((counts == 0).mean())
 
@@ -60,38 +59,27 @@ class RecoveryResult:
 
 
 def run_recovery_checks(
-    result: SimulationResult,
+    apartments_df: pd.DataFrame,
+    total_effects: LatentEffects,
     config: Config,
     validation: ValidationSettings,
 ) -> list[RecoveryResult]:
-    """Fit oracle and naive NB2 models for test-only coefficient recovery."""
-    apartments = result.apartments
-    buildings = result.buildings
-    neighborhoods = result.neighborhoods
-    context = ApartmentSimulator.join_context(
-        apartments,
-        buildings,
-        neighborhoods,
-    )
+    """Fit oracle and naive NB2 models for test-only coefficient recovery.
+
+    `apartments_df` is the total-children stage's output (context, owner ids and
+    `n_children_total`); `total_effects` are the effects that stage returned.
+    """
     design = TotalChildrenSimulator(
         config.simulation,
         config.total_children,
         config.transforms,
-    ).build_design_matrix(context)
-    response = apartments["n_children_total"].to_numpy(dtype=float)
+    ).build_design_matrix(apartments_df)
+    response = apartments_df["n_children_total"].to_numpy(dtype=float)
 
-    apartment_owners = apartments.merge(
-        buildings[["building_id", "neighborhood_id"]],
-        on="building_id",
-        how="left",
-        validate="many_to_one",
-    )
     offset = (
-        apartment_owners["building_id"].map(
-            result.latent_effects["building_total_count_effect"]
-        )
-        + apartment_owners["neighborhood_id"].map(
-            result.latent_effects["neighborhood_total_count_effect"]
+        apartments_df["building_id"].map(total_effects["building_total_count_effect"])
+        + apartments_df["neighborhood_id"].map(
+            total_effects["neighborhood_total_count_effect"]
         )
     ).to_numpy(dtype=float)
 

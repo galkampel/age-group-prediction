@@ -28,7 +28,9 @@ from student_simulator import StudentPopulationSimulator, load_simulation_config
 def modeling_df() -> pd.DataFrame:
     config_path = Path(__file__).resolve().parents[2] / "configs" / "simulation.toml"
     config = load_simulation_config(config_path)
-    return build_modeling_table(StudentPopulationSimulator(config).run())
+    return build_modeling_table(
+        StudentPopulationSimulator.from_config(config).create_dataset().dataset
+    )
 
 
 def test_named_defaults_define_distinct_component_policies() -> None:

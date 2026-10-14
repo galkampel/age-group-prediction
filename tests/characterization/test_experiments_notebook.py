@@ -71,7 +71,9 @@ def _canonical_hash() -> str:
     )
     table = ShareTransformer(
         ("3_rooms", "4_rooms", "5_rooms", "6_rooms"), reference_column="3_rooms"
-    ).fit_transform(StudentPopulationSimulator(config).run())
+    ).fit_transform(
+        StudentPopulationSimulator.from_config(config).create_dataset().dataset
+    )
     return hashlib.sha256(table.to_csv(index=False).encode()).hexdigest()
 
 

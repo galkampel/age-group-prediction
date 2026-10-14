@@ -49,7 +49,7 @@ def _config_path() -> Path:
 @pytest.fixture(scope="module")
 def source_df() -> pd.DataFrame:
     config = load_simulation_config(_config_path())
-    return StudentPopulationSimulator(config).run()
+    return StudentPopulationSimulator.from_config(config).create_dataset().dataset
 
 
 @pytest.fixture(scope="module")

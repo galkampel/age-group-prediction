@@ -4,13 +4,12 @@
 who verifies it. Self-contained: re-verify every fact against the code of
 the day before relying on it.
 
-**Status (2026-10-14):** approved by the user; **Stop 1 done (uncommitted,
-awaiting the user's review), next Stop 2**. Branch `feat/experiment-notebook`
-(PR D's D1a + D1b committed in 2b13970). This refactor lands before PR D's
-D1c, and Stop 3 updates the notebook's data cell. A whole-file `ruff format`
-of the simulator and its tests (about 340 lines of drift and 17 pre-existing
-lint errors) is a separate pass, once the user is satisfied with the
-refactor (user's call).
+**Status (2026-10-14):** approved by the user; Stop 1 committed (6b90805);
+**Stop 2 done (uncommitted, awaiting the user's review), next Stop 3**.
+Branch `feat/experiment-notebook`. This refactor lands before PR D's D1c.
+The cleanup stop (dead code, then a whole-file `ruff format` of the
+simulator and its tests) comes after Stop 4, once the user is satisfied with
+the refactor (user's call).
 
 **How to work:** the standing rules of
 [EXPERIMENT_NOTEBOOK_PLAN.md §3](EXPERIMENT_NOTEBOOK_PLAN.md): plan mode
@@ -150,20 +149,20 @@ class CohortCompositionSimulator:
 # student_simulator/pipeline.py
 @dataclass(frozen=True)
 class SimulatedPopulation:                      # was SimulationResult
-    """The tables of one dataset and the latent effects that generated it.
+    """The modeling table of one dataset and the latent effects that generated it."""
+    dataset: pd.DataFrame                       # was final_df; one row per building
+    building_effects: pd.DataFrame              # index building_id; columns total_count, cohort
+    neighborhood_effects: pd.DataFrame          # index neighborhood_id; column total_count
+    # User's calls (Stop 2 review): no apartment or stage tables (predictions are
+    # building-level); effects as one wide frame per owner level (lme4's ranef).
 
-    ``building_table`` is the modeling table (one row per building, context
-    plus the four counts); the other tables are the stages it was built
-    from. ``latent_effects`` are the random effects per owner id; they
-    exist for coefficient-recovery checks and never become columns.
-    """
-    neighborhoods: pd.DataFrame
-    buildings: pd.DataFrame
-    apartments: pd.DataFrame
-    building_table: pd.DataFrame                # was final_df
-    latent_effects: LatentEffects = field(repr=False)
+def aggregate_to_buildings(apartments_df, buildings_df, neighborhoods_df) -> pd.DataFrame   # was _to_building_level, public
+    # sums per building reindexed with fill_value=0; two merges in one chain
+    # (neighborhoods how="left", then the sums validate="one_to_one"); then the column
+    # order taken from the frames (frozen by the EDA baseline); no checks: the
+    # identities are the components' and are tested there (user's call)
 
-def aggregate_to_buildings(apartments, buildings, neighborhoods) -> pd.DataFrame   # was _to_building_level, public
+# student_simulator/outcomes.py: COHORT_COLUMNS = ("n_kindergarten", "n_elementary", "n_highschool")
 
 class StudentPopulationSimulator:
     """The flow from neighborhoods to the building table, one generator for every draw."""
@@ -186,35 +185,33 @@ class StudentPopulationSimulator:
         # .building, .transforms, .building.room_mix, .total_children, .cohort;
         # n_neighborhoods and seed from config.simulation
 
-    def create_dataset(self) -> SimulatedPopulation:
-        rng = np.random.default_rng(self.seed)
+    def create_dataset(self, rng: np.random.Generator | None = None) -> SimulatedPopulation:
+        generator = np.random.default_rng(self.seed) if rng is None else rng
         # 1. Context: one row per neighborhood, then buildings inside them, then
         #    one row per apartment with its room count.
-        neighborhoods = self.neighborhood_simulator.sample_neighborhoods(self.n_neighborhoods, rng)
-        buildings = self.building_simulator.sample_buildings(neighborhoods, rng)
-        apartments = self.apartment_simulator.expand_apartments(buildings, rng)
+        neighborhoods_df = self.neighborhood_simulator.sample_neighborhoods(self.n_neighborhoods, generator)
+        buildings_df = self.building_simulator.sample_buildings(neighborhoods_df, generator)
+        apartments_df = self.apartment_simulator.expand_apartments(buildings_df, generator)
         # 2. Outcomes per apartment: the total first, then its split into cohorts.
-        #    Each stage reads the apartment joined to its building and neighborhood.
-        apartment_context = ApartmentSimulator.join_context(apartments, buildings, neighborhoods)
-        apartments_with_totals, total_effects = self.total_children_simulator.sample_total_children(apartment_context, rng)
-        apartments_with_cohorts, cohort_effects = self.cohort_composition_simulator.sample_cohorts(apartments_with_totals, rng)
-        # 3. The modeling table: apartments summed into their buildings, with the
-        #    neighborhood context and three accounting identities checked.
-        building_table = aggregate_to_buildings(apartments_with_cohorts, buildings, neighborhoods)
-        return SimulatedPopulation(neighborhoods, buildings, apartments_with_cohorts, building_table,
-                                   latent_effects={**total_effects, **cohort_effects})
+        apartment_context = ApartmentSimulator.join_context(apartments_df, buildings_df, neighborhoods_df)
+        apartments_with_totals, total_effects = self.total_children_simulator.sample_total_children(apartment_context, generator)
+        apartments_with_cohorts, cohort_effects = self.cohort_composition_simulator.sample_cohorts(apartments_with_totals, generator)
+        # 3. The modeling table: apartments summed into their buildings.
+        return SimulatedPopulation(
+            dataset=aggregate_to_buildings(apartments_with_cohorts, buildings_df, neighborhoods_df),
+            building_effects=pd.DataFrame({"total_count": total_effects["building_total_count_effect"],
+                                           "cohort": cohort_effects["building_cohort_effect"]}),
+            neighborhood_effects=total_effects["neighborhood_total_count_effect"].to_frame("total_count"),
+        )
 ```
 
 Notes for the implementer:
 - `sample_total_children` returns the context **with** `n_children_total`
   (it does today), so the cohort stage takes that frame directly: the second
   `with_context` join and the two `copy(deep=True)`/column-copy dances in
-  `run` disappear. The cohort stage's output keeps the context columns; the
-  `apartments` field of the result is that frame (ids, rooms, context, the
-  four counts), which is what `to_cohort_long` and the recovery helper
-  read. Check `test_cohort_aggregation_stage.py` and `tests/validation/helpers.py`
-  for the columns they expect before deciding whether to drop the context
-  columns from `apartments`; keep whatever a client reads.
+  `run` disappear. Tests of the apartment-level stages take their rows from
+  the test helper `tests/unit/helpers.py::simulate_stages`, which runs the
+  stages in `create_dataset`'s order.
 - `last_result`, `_copy_result`, `run` and `latent_effects()` are deleted.
   No defensive copies: the result is a new object per call; the user's rule
   is "validate only what would otherwise pass silently".
@@ -224,8 +221,9 @@ Notes for the implementer:
 - `n_neighborhoods` and `seed` are validated by nothing new: `default_rng`
   rejects a negative seed; `sample_neighborhoods` already raises on `n <= 0`
   (kept: with `size=0` numpy returns empty arrays silently).
-- `__init__.py`: export `SimulatedPopulation`, `LatentEffects`,
-  `aggregate_to_buildings`; drop `SimulationResult`.
+- `__init__.py`: export `SimulatedPopulation`, `LatentEffects` (the
+  components' return type), `aggregate_to_buildings`, `COHORT_COLUMNS`; drop
+  `SimulationResult`.
 
 ## Stops
 
@@ -258,43 +256,53 @@ Done 2026-10-14, uncommitted.
   `-W error`; the slow recovery + calibration tests 2 passed (3.5 s); the
   independent review found no defects (two naming nits, one applied).
 
-### Stop 2. The orchestrator (files: pipeline.py, __init__.py, tests/unit/test_pipeline.py, the pipeline-level tests of test_apartment_stage.py / test_cohort_aggregation_stage.py / test_total_children_stage.py / test_rng_convention.py, tests/characterization/{test_current_behavior,eda_baseline,test_experiments_notebook}.py, tests/unit/test_{fitted_features,modeling_data,state_bundles,hyperparameter_tuning_integration,inspection_permutation,inspection_shap}.py, tests/validation/{helpers,test_recovery,test_calibration}.py)
+### [x] Stop 2. The orchestrator (files: pipeline.py, outcomes.py `COHORT_COLUMNS`, apartment.py `join_context`, __init__.py; tests/unit/test_{pipeline,rng_convention,apartment_stage,total_children_stage,cohort_aggregation_stage,fitted_features,modeling_data,state_bundles,hyperparameter_tuning_integration,inspection_permutation,inspection_shap}.py, tests/characterization/{test_current_behavior,eda_baseline,test_experiments_notebook}.py, tests/validation/{helpers,test_recovery,test_calibration}.py, notebooks/{01_eda,03_experiments}.py one line each)
 
-- `SimulatedPopulation`, `aggregate_to_buildings`, the new
-  `StudentPopulationSimulator`, `from_config`, `create_dataset` as above.
-- `test_pipeline.py` rewritten: `test_create_dataset_returns_the_building_table_with_the_canonical_columns`,
-  `test_the_building_table_equals_the_aggregated_apartments` (the three
-  accounting identities, by recomputing from `apartments`),
-  `test_latent_effects_hold_the_three_named_effects_per_owner`,
-  `test_the_same_seed_reproduces_the_dataset_and_another_seed_changes_it`,
-  `test_from_config_builds_the_same_dataset_as_explicit_construction`
-  (the white-box construction and the classmethod give equal tables for the
-  same config), `test_components_see_one_shared_generator` (spy: wrap a
-  component's sampling method and assert the `rng` object is the same
-  instance in every call). Delete the `last_result` tests.
-- Validation helpers: `result.final_df` → `result.building_table` (the
-  constructor and `join_context` changed at Stop 1). `test_current_behavior.py`:
-  `run()` + `last_result` → `create_dataset()`. The eight table-only clients:
-  `StudentPopulationSimulator(config).run()` →
-  `StudentPopulationSimulator.from_config(config).create_dataset().building_table`.
-- The stage tests that still reach `run()` for their input
-  (`test_rng_convention.py`'s `_result_before_*`, `test_apartment_stage.py`'s
-  `_small_result`, `test_cohort_aggregation_stage.py`'s `_result`, and
-  `test_total_children_stage.py`'s first test) move to `create_dataset()`.
-- Mutations: (d) drop the `apartment_rows != n_apartments` check in
-  `aggregate_to_buildings` and feed a building with one apartment removed →
-  the accounting test fails; (e) create two generators in `create_dataset`
-  (one per stage) → the shared-generator test fails; (f) in `from_config`
-  pass `config.cohort` settings to the wrong component → the equality test
-  fails.
-- Checks: ruff, mypy, the changed tests under `-W error`, the non-slow
-  suite (expect the same counts minus the two `last_result` tests plus the
-  new ones; report the numbers), and the slow validation tests that touch
-  the simulator: `uv run pytest tests/validation/test_recovery.py tests/validation/test_calibration.py -q`
-  (report the wall time; the recovery test is the one consumer of the
-  latent effects' numeric values).
+Done 2026-10-14, uncommitted; revised after the user's review of the first
+version. The user's questions, the evidence and the decisions:
+- *Is the result object necessary? Why apartments in it?* Predictions are
+  building-level; only the simulator's own validation tests read apartment
+  rows, and they test the total-children stage, which they now run directly
+  (`simulate_stages`). → `SimulatedPopulation(dataset, building_effects,
+  neighborhood_effects)`.
+- *Latent-effects format:* the owners differ (251 buildings, 60
+  neighborhoods). lme4's `ranef()` gives one wide frame per grouping level
+  (joins by id); broom.mixed's `tidy()` one long frame (plots). The
+  consumers join, so: wide, one frame per level. The components keep
+  returning `dict[str, pd.Series]` (`LatentEffects`).
+- *Column constants / preprocessing:* not to preprocessing (the simulator
+  never imports `age_group_prediction`; `preprocessing.py` takes column
+  names as arguments). Four of five deleted; `COHORT_COLUMNS` stays in
+  outcomes.py, where the columns are written. `join_context` joins all
+  neighborhood columns.
+- *`aggregate_to_buildings`:* `apartment_rows` and the fill-and-cast step
+  are gone (`reindex(..., fill_value=0)` keeps int64 zeros for a building
+  without apartments); one merge plus an explicit column order replaces the
+  double join (the order is frozen by the EDA baseline fixture; probed); no
+  checks: each identity is pinned by a component test (test_building.py:69,
+  `test_expand_apartments_matches_building_room_counts`,
+  `test_cohort_counts_nonnegative_and_sum_to_total_per_apartment`).
+- `create_dataset(rng=None)`: a passed generator replaces the seed.
+- Naming pass (user's call): the stage frames carry a `_df` suffix across the
+  simulator (`neighborhoods_df`, `buildings_df`, `apartments_df`: component
+  parameters, `aggregate_to_buildings`, `create_dataset` locals, the
+  `Stages` helper); the modeling table is `population.dataset`; the
+  aggregation is two merges in one chain, then the column order. Mutation j
+  (column order reversed) is caught by the canonical-columns test.
+- Proof: the default `dataset` hashes `f385be22b88aebf7` (251 rows); the
+  three effects equal the previous Series; the calibration and recovery
+  numbers equal Stop 1's (mean 0.600120, zero share 0.609331, oracle max
+  error 0.150019).
+- `test_pipeline.py`: 7 tests (canonical columns, effect frames per owner,
+  seed reproducibility, a passed generator, `from_config` = explicit
+  construction, one shared generator, a building without apartments).
+  `test_apartments_exactly_expand_wide_building_room_counts` was deleted as
+  a duplicate of the component test.
+- Mutations, all caught: e (second generator), f (`n_neighborhoods - 1` in
+  `from_config`), g (`cohort` column dropped), h (passed `rng` ignored),
+  i (no zero fill).
 
-### Stop 3. The notebooks (files: notebooks/03_experiments.py data cell, notebooks/01_eda.py cell at line 131, tests/characterization/test_experiments_notebook.py)
+### Stop 3. The experiment notebook's white box (files: notebooks/03_experiments.py data cell, tests/characterization/test_experiments_notebook.py if needed)
 
 - `03_experiments.py` data cell becomes the white box the user asked for:
   ```python
@@ -304,34 +312,25 @@ Done 2026-10-14, uncommitted.
       ApartmentSimulator(config.simulation, config.building.room_mix),
       TotalChildrenSimulator(config.simulation, config.total_children, config.transforms),
       CohortCompositionSimulator(config.simulation, config.cohort, config.transforms, config.total_children),
-      n_neighborhoods=n_neighborhoods,
-      seed=simulation_seed if simulation_seed is not None else base_config.simulation.seed,
+      n_neighborhoods=config.simulation.n_neighborhoods,
+      seed=config.simulation.seed,
   )
   population = simulator.create_dataset()
-  table = ShareTransformer(...).fit_transform(population.building_table)
+  table = ShareTransformer(...).fit_transform(population.dataset)
   ```
-  with `config` still the overridden config (the building-rate override
-  lives in `config.building`), and `DATA_SETTINGS` reading `simulator.n_neighborhoods`
-  and `simulator.seed`. The `simulation.model_copy(update={"n_neighborhoods": ...})`
-  override is no longer needed for the simulator (it is a constructor
-  argument now); keep `config_params` as the flattened config and add
-  `n_neighborhoods`/`seed` from the simulator to `DATA_SETTINGS` as today.
-  The printed `data` line is unchanged, so the hash stays `c92d4213...` if
-  the draw order is unchanged: **the test's recomputed hash is the check**;
-  if it changes, find out why before accepting (the draw order must be the
-  same as `run`'s: neighborhoods, buildings, apartments, totals, cohorts).
-- `01_eda.py`: `eda_population = StudentPopulationSimulator.from_config(eda_config).create_dataset()`;
-  `eda_final_df` → `eda_population.building_table`; `eda_result` → `eda_population`
-  (grep the notebook for every later use of `eda_result.` and `eda_final_df`).
-- `test_experiments_notebook.py`: `_canonical_hash` uses `from_config(...).create_dataset().building_table`.
+  `config` stays the overridden config, so `DATA_SETTINGS` and the printed
+  `data` line are unchanged: **the test's recomputed hash is the check**
+  (`c92d4213...`); if it changes, find out why before accepting.
+- `01_eda.py` already uses `from_config(...).create_dataset().dataset`
+  (Stop 2); no change.
 - Checks: `marimo check` on both notebooks, the characterization tests,
   the script run of `03_experiments.py`, and `uv run --env-file .env
-  notebooks/01_eda.py` (the EDA notebook as a script; report the time).
+  notebooks/01_eda.py` (report the time).
 
 ### Stop 4. Docs, run as written (files: README.md:65 area, docs/SPLITTING.md §3, docs/HYPERPARAMETER_TUNING.md §2, docs/MODEL_INSPECTION.md §2, docs/BAYESIAN_CONDITIONAL_MODEL.md:673, docs/MODULE_REFERENCE.md simulator rows, docs/EXPERIMENT_NOTEBOOK_PLAN.md §2 "Synthetic data", docs/README.md if it names `run`)
 
 - Each code block: `StudentPopulationSimulator(config).run()` →
-  `StudentPopulationSimulator.from_config(config).create_dataset().building_table`.
+  `StudentPopulationSimulator.from_config(config).create_dataset().dataset`.
   Re-run each block as written (the tuning example 9 s, the inspection
   example 44 s, the split block seconds) and confirm the printed numbers
   are unchanged; if any differ, stop and report (it means the draw order
@@ -340,9 +339,19 @@ Done 2026-10-14, uncommitted.
   `aggregate_to_buildings`, `from_config`, `create_dataset`.
 - A short section in whichever doc describes the simulator (check
   `docs/README.md` for the simulator's guide; if none, `MODULE_REFERENCE.md`
-  is enough): the flow in five lines, what `latent_effects` holds and why
+  is enough): the flow in five lines, what the two effect frames hold and why
   it is returned rather than stored.
 - Historical docs (GATE_*, archive/) untouched.
+
+### Cleanup stop (after Stop 4; user's call)
+
+- Delete dead code with its tests and exports: `positive_part`,
+  `positive_part_interaction`, `normalize_positive_weights` (features.py; no
+  source caller), `ApartmentSimulator.to_cohort_long` (only its own tests),
+  `config.ApartmentSettings` (unused).
+- Then a format-only commit: `ruff format` and `ruff check --fix` on
+  `src/student_simulator` and its tests (drift and import-order errors that
+  predate the refactor).
 
 ## Verification (end to end)
 
@@ -361,10 +370,10 @@ Done 2026-10-14, uncommitted.
 ```
 git add src/student_simulator tests/unit tests/validation/helpers.py docs/SIMULATOR_WHITE_BOX_PLAN.md
 git commit -m "refactor(simulator): name the sampling methods and return the latent effects"
-git add src/student_simulator tests
-git commit -m "refactor(simulator): StudentPopulationSimulator takes its components; create_dataset returns the population and its latent effects"
-git add notebooks tests/characterization
-git commit -m "feat: notebooks build the simulator from its components"
+git add src/student_simulator tests notebooks docs/SIMULATOR_WHITE_BOX_PLAN.md
+git commit -m "refactor(simulator): StudentPopulationSimulator takes its components; create_dataset returns the building table and the latent effects per owner"
+git add notebooks tests/characterization docs/SIMULATOR_WHITE_BOX_PLAN.md
+git commit -m "feat: the experiment notebook builds the simulator from its components"
 git add README.md docs
 git commit -m "docs: simulator examples use from_config and create_dataset"
 ```
