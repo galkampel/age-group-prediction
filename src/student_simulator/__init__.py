@@ -21,7 +21,7 @@ from .outcomes import (
     TotalChildrenSimulator,
 )
 from .pipeline import (
-    SimulatedPopulation,
+    SimulationResult,
     StudentPopulationSimulator,
     aggregate_to_buildings,
 )
@@ -51,7 +51,7 @@ __all__ = [
     "NeighborhoodSettings",
     "RoomMixSettings",
     "SimulationSettings",
-    "SimulatedPopulation",
+    "SimulationResult",
     "StudentPopulationSimulator",
     "TotalChildrenSimulator",
     "TotalChildrenSettings",

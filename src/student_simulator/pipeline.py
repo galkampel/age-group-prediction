@@ -17,11 +17,12 @@ from .outcomes import (
 
 
 @dataclass(frozen=True)
-class SimulatedPopulation:
+class SimulationResult:
     """The dataset of one simulated population and the latent effects behind it.
 
     ``dataset`` has one row per building: its neighborhood context, room
-    counts and the four child counts. The effects are one frame per owner level
+    counts and the three cohort counts (the building's total is their sum,
+    so it is not a column). The effects are one frame per owner level
     (lme4's ``ranef`` layout), indexed by the owner id so they join to
     ``dataset``: ``building_effects`` (``building_id``; columns
     ``total_count``, ``cohort``) and ``neighborhood_effects``
@@ -43,13 +44,13 @@ def aggregate_to_buildings(
     """Sum the apartments' child counts into one row per building.
 
     Columns: `building_id`, the neighborhood columns, the building's room
-    counts and `n_apartments`, then the cohort counts and `n_children_total`.
-    The accounting identities (room counts and apartment rows against
-    `n_apartments`, cohorts against the total) are properties of the
-    components and are tested there.
+    counts and `n_apartments`, then the cohort counts. The total is their sum
+    and is left out. The accounting identities (room counts and apartment rows
+    against `n_apartments`, cohorts against each apartment's total) are
+    properties of the components and are tested there.
     """
     apartment_sums = (
-        apartments_df.groupby("building_id")[[*COHORT_COLUMNS, "n_children_total"]]
+        apartments_df.groupby("building_id")[list(COHORT_COLUMNS)]
         .sum()
         # A building without apartments has no group; its counts are zero.
         .reindex(buildings_df["building_id"], fill_value=0)
@@ -110,9 +111,7 @@ class StudentPopulationSimulator:
             seed=simulation.seed,
         )
 
-    def create_dataset(
-        self, rng: np.random.Generator | None = None
-    ) -> SimulatedPopulation:
+    def simulate(self, rng: np.random.Generator | None = None) -> SimulationResult:
         """Sample one population, every stage drawing from one generator.
 
         Args:
@@ -160,7 +159,7 @@ class StudentPopulationSimulator:
         neighborhood_effects = total_effects[
             "neighborhood_total_count_effect"
         ].to_frame("total_count")
-        return SimulatedPopulation(
+        return SimulationResult(
             dataset=dataset,
             building_effects=building_effects,
             neighborhood_effects=neighborhood_effects,

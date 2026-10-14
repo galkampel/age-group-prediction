@@ -40,7 +40,7 @@ committed yet.
 
 ## 1. Goal
 
-A marimo notebook, `notebooks/03_experiments.py`, that runs one MLflow
+A marimo notebook, `notebooks/02_experiments.py`, that runs one MLflow
 experiment (`age-group-prediction`, or the scratch name from `.env`) on a
 synthetic population. **Each cell is one run, and one run is one setting:**
 
@@ -171,7 +171,7 @@ submodules does not avoid it. The notebook imports submodules for clarity only;
 the cost goes with roadmap step 5 (the old stack's deletion).
 
 **Notebooks** are marimo `.py` files (`notebooks/01_eda.py`,
-`notebooks/03_experiments.py`; the old stack's client `02_model_fitting.py` was
+`notebooks/02_experiments.py`; the old stack's client `02_model_fitting.py` was
 deleted in D1a). Run
 with `uv run --env-file .env --group notebook --group tracking marimo edit
 notebooks/<name>.py` from the repo root.
@@ -423,7 +423,7 @@ settings.
 | A | `feat/hyperparameter-tuning` (existing draft PR #5) | `HyperparameterStudy`, `TrialRecord`, `TuningResult`; `docs/HYPERPARAMETER_TUNING.md`; **PR #5 merged into `main`** | — |
 | B | `feat/split-and-cohort-deviance` (from `main` after A) | `COHORT_POISSON_DEVIANCE`; the three-way split pattern, tested and documented | A merged (so B branches from a `main` that has the models) |
 | C | `feat/feature-importance` (from `main` after B) | `PermutationImportance`, `ShapExplainer`; `docs/MODEL_INSPECTION.md`; closes the inspection plan | B (validation rows for the smoke run; the primary metric) |
-| D | `feat/experiment-notebook` (from `main` after C) | `notebooks/03_experiments.py` (data, split, feature variants, runs, comparison, final run); `mlflow_runs.py` if two cells repeat logging; `docs/EXPERIMENTS.md`; `02_model_fitting.py` deleted | A, B, C |
+| D | `feat/experiment-notebook` (from `main` after C) | `notebooks/02_experiments.py` (data, split, feature variants, runs, comparison, final run); `mlflow_runs.py` if two cells repeat logging; `docs/EXPERIMENTS.md`; `02_model_fitting.py` deleted | A, B, C |
 
 Each PR is small enough to review in one sitting except A, which is the tail of
 an existing plan. Every PR ends with its docs; no handoff doc is kept at a
@@ -727,13 +727,13 @@ models) costs 90 s per 200 rows (27 s with `n_jobs=4`); Model 2 4 s.
 ## 9. PR D: the notebook, the data and MLflow
 
 Branch `feat/experiment-notebook` from `main`. The notebook is a marimo file,
-`notebooks/03_experiments.py`, run as in §2 ("Notebooks"). Each run cell is
+`notebooks/02_experiments.py`, run as in §2 ("Notebooks"). Each run cell is
 guarded by a `mo.ui.run_button()` (as the deleted `02_model_fitting.py` was), so opening the
 notebook fits nothing. Docs in `docs/EXPERIMENTS.md`.
 
 ### [ ] D1. The notebook skeleton
 
-`notebooks/03_experiments.py` is written in five stops, D1a–D1e, so that each
+`notebooks/02_experiments.py` is written in five stops, D1a–D1e, so that each
 notebook section is verified before the next is written. Each stop ends with
 the §3 routine (ruff, `marimo check`, the test file under `-W error`, the
 stop's mutation, the non-slow suite), a file-by-file summary and a suggested
@@ -758,7 +758,7 @@ declarations module (decision 2026-10-14, §2).
     buildings share their neighborhood's draws, SPLITTING.md §5),
     `test_size = 0.2`, `val_size = 0.2` (E6), `n_splits = 5` (E6),
     `n_trials = 30`, `n_resamples = 1000` (D2).
-  - Done when: `uv run --env-file .env notebooks/03_experiments.py` exits 0
+  - Done when: `uv run --env-file .env notebooks/02_experiments.py` exits 0
     and prints the two settings lines; the old notebook is gone; `grep
     02_model_fitting` shows only the "deleted" notes.
   - Test: `test_a_setting_missing_or_changed_in_a_settings_mapping_is_caught`
@@ -927,7 +927,7 @@ holds `test/*` metrics only there.
 | types | `uv run mypy`, then `uv run mypy src/age_group_prediction/<package> <changed tests>` |
 | lint | `uv run ruff check <files>` and `uv run ruff format <files>` |
 | probes (read-only) | `PYTHONPATH=src .venv/bin/python -c "..."` |
-| the notebook | `uv run --env-file .env --group notebook --group tracking marimo edit notebooks/03_experiments.py` |
-| the notebook as a script | `uv run --env-file .env notebooks/03_experiments.py` |
+| the notebook | `uv run --env-file .env --group notebook --group tracking marimo edit notebooks/02_experiments.py` |
+| the notebook as a script | `uv run --env-file .env notebooks/02_experiments.py` |
 | the MLflow UI (scratch) | `uv run --env-file .env --group tracking mlflow ui --backend-store-uri sqlite:///.mlflow-local/mlflow.db --port 5000` |
 | after a `pyproject.toml` edit | `uv run --frozen ...`; the user runs `uv lock` and `uv sync` |

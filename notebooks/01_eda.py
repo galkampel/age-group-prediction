@@ -31,7 +31,7 @@ def _(mo):
 
     The accepted findings from this notebook feed the modeling, selection,
     guarded held-out evaluation, and MLflow workflow in
-    `notebooks/03_experiments.py`.
+    `notebooks/02_experiments.py`.
     """)
     return
 
@@ -128,9 +128,11 @@ def _(mo):
 
 @app.cell
 def _(StudentPopulationSimulator, config_path, eda_config, mo):
-    eda_final_df = (
-        StudentPopulationSimulator.from_config(eda_config).create_dataset().dataset
-    )
+    eda_final_df = StudentPopulationSimulator.from_config(eda_config).simulate().dataset
+    # The dataset leaves out the total; the EDA reports it as the cohorts' sum.
+    eda_final_df["n_children_total"] = eda_final_df[
+        ["n_kindergarten", "n_elementary", "n_highschool"]
+    ].sum(axis=1)
     buildings_per_neighborhood = (
         eda_final_df["neighborhood_id"]
         .value_counts()

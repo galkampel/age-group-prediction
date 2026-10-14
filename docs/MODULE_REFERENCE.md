@@ -195,6 +195,6 @@ docstring describes the run layout in detail. The final path is described in
 | Location | Role | Read more |
 |---|---|---|
 | `notebooks/01_eda.py` | EDA client | [README](../README.md#run-the-modeling-notebook) (opened the same way as the modeling notebook) |
-| `notebooks/03_experiments.py` | The experiment notebook: data, split, feature variants, tuned runs, comparison, final run (rebuilt stack only) | [README](../README.md#run-the-modeling-notebook); [notebook plan](EXPERIMENT_NOTEBOOK_PLAN.md) |
+| `notebooks/02_experiments.py` | The experiment notebook: data, split, feature variants, tuned runs, comparison, final run (rebuilt stack only) | [README](../README.md#run-the-modeling-notebook); [notebook plan](EXPERIMENT_NOTEBOOK_PLAN.md) |
 | `configs/simulation.toml`, `configs/modeling.toml`, `configs/validation.toml` | Simulator, modeling/experiment, and test-only threshold settings | Guide §1 and intro |
 | `tests/unit`, `tests/validation`, `tests/characterization` | Focused contracts; recovery and real-model checks; simulator and notebook behavior | README "Run The Tests" |

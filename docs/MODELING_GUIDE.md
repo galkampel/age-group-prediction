@@ -485,7 +485,7 @@ and [DATA_AND_SPLITTING.md](DATA_AND_SPLITTING.md#4-splitmanifest).
 
 ## 15. Use The Notebook As A Thin Client
 
-*`02_model_fitting.py` was deleted on 2026-10-14; `notebooks/03_experiments.py` replaces it. The text below describes the deleted client of the old stack.*
+*`02_model_fitting.py` was deleted on 2026-10-14; `notebooks/02_experiments.py` replaces it. The text below describes the deleted client of the old stack.*
 
 `notebooks/02_model_fitting.py` orchestrated
 the package APIs and displays evidence; it does not implement model logic.
@@ -499,7 +499,7 @@ and **Run final evaluation (opens lockbox)**.
 
 It can no longer be opened; the README's
 [Run The Modeling Notebook](../README.md#run-the-modeling-notebook) now opens
-`03_experiments.py`, which has none of these controls.
+`02_experiments.py`, which has none of these controls.
 
 The old notebook was for the canonical research workflow and package APIs for
 automation. Do not call model-specific fit/predict methods from new notebook

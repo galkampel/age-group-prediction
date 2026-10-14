@@ -8,7 +8,7 @@ import pandas as pd
 from student_simulator import (
     ApartmentSimulator,
     CohortCompositionSimulator,
-    SimulatedPopulation,
+    SimulationResult,
     StudentPopulationSimulator,
     aggregate_to_buildings,
     load_simulation_config,
@@ -27,11 +27,11 @@ def _config(seed: int = 42) -> Config:
     return with_overrides(cfg, simulation={"seed": seed, "n_neighborhoods": 6})
 
 
-def _population(seed: int = 42) -> SimulatedPopulation:
-    return StudentPopulationSimulator.from_config(_config(seed)).create_dataset()
+def _population(seed: int = 42) -> SimulationResult:
+    return StudentPopulationSimulator.from_config(_config(seed)).simulate()
 
 
-def test_create_dataset_returns_a_nonempty_dataset() -> None:
+def test_simulate_returns_a_nonempty_dataset() -> None:
     assert not _population().dataset.empty
 
 
@@ -180,7 +180,6 @@ def test_aggregate_to_buildings_sums_the_apartment_counts() -> None:
             n_kindergarten=("n_kindergarten", "sum"),
             n_elementary=("n_elementary", "sum"),
             n_highschool=("n_highschool", "sum"),
-            n_children_total=("n_children_total", "sum"),
         )
         .sort_values("building_id")
         .reset_index(drop=True)
@@ -193,7 +192,6 @@ def test_aggregate_to_buildings_sums_the_apartment_counts() -> None:
             "n_kindergarten",
             "n_elementary",
             "n_highschool",
-            "n_children_total",
         ]
     ].sort_values("building_id").reset_index(drop=True)
     pd.testing.assert_frame_equal(expected, grouped)

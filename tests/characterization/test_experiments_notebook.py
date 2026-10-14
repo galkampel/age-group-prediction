@@ -1,6 +1,6 @@
 """Characterize the experiment notebook's script run: setup only, nothing fitted.
 
-The notebook (``notebooks/03_experiments.py``) builds its data in setup cells
+The notebook (``notebooks/02_experiments.py``) builds its data in setup cells
 and will fit models only behind run buttons. A plain script run leaves every
 button unclicked, so it must print the facts of the sections built so far
 and fit nothing. These tests run the notebook as a subprocess and read its
@@ -22,7 +22,7 @@ from age_group_prediction.preprocessing import ShareTransformer
 from student_simulator import StudentPopulationSimulator, load_simulation_config
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
-NOTEBOOK_PATH = PROJECT_ROOT / "notebooks" / "03_experiments.py"
+NOTEBOOK_PATH = PROJECT_ROOT / "notebooks" / "02_experiments.py"
 
 
 def _run(notebook: Path, scratch: Path) -> subprocess.CompletedProcess[str]:
@@ -71,9 +71,7 @@ def _canonical_hash() -> str:
     )
     table = ShareTransformer(
         ("3_rooms", "4_rooms", "5_rooms", "6_rooms"), reference_column="3_rooms"
-    ).fit_transform(
-        StudentPopulationSimulator.from_config(config).create_dataset().dataset
-    )
+    ).fit_transform(StudentPopulationSimulator.from_config(config).simulate().dataset)
     return hashlib.sha256(table.to_csv(index=False).encode()).hexdigest()
 
 

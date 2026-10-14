@@ -35,10 +35,8 @@ def _assert_same_population(first, second) -> None:
     )
 
 
-def test_create_dataset_returns_the_dataset_with_the_canonical_columns() -> None:
-    dataset = (
-        StudentPopulationSimulator.from_config(_config()).create_dataset().dataset
-    )
+def test_simulate_returns_the_dataset_with_the_canonical_columns() -> None:
+    dataset = StudentPopulationSimulator.from_config(_config()).simulate().dataset
 
     assert list(dataset.columns) == [
         "building_id",
@@ -56,13 +54,12 @@ def test_create_dataset_returns_the_dataset_with_the_canonical_columns() -> None
         "n_kindergarten",
         "n_elementary",
         "n_highschool",
-        "n_children_total",
     ]
     assert dataset["building_id"].is_unique
 
 
 def test_effect_frames_have_one_row_per_owner() -> None:
-    population = StudentPopulationSimulator.from_config(_config()).create_dataset()
+    population = StudentPopulationSimulator.from_config(_config()).simulate()
     dataset = population.dataset
 
     assert list(population.building_effects.columns) == ["total_count", "cohort"]
@@ -82,25 +79,23 @@ def test_the_same_seed_reproduces_the_dataset_and_another_seed_changes_it() -> N
     simulator = StudentPopulationSimulator.from_config(_config(seed=42))
     other_seed = StudentPopulationSimulator.from_config(_config(seed=43))
 
-    _assert_same_population(simulator.create_dataset(), simulator.create_dataset())
-    assert not simulator.create_dataset().dataset.equals(
-        other_seed.create_dataset().dataset
-    )
+    _assert_same_population(simulator.simulate(), simulator.simulate())
+    assert not simulator.simulate().dataset.equals(other_seed.simulate().dataset)
 
 
 def test_a_passed_generator_replaces_the_seed_and_is_advanced() -> None:
     simulator = StudentPopulationSimulator.from_config(_config(seed=42))
 
     _assert_same_population(
-        simulator.create_dataset(np.random.default_rng(42)),
-        simulator.create_dataset(),
+        simulator.simulate(np.random.default_rng(42)),
+        simulator.simulate(),
     )
-    assert not simulator.create_dataset(np.random.default_rng(7)).dataset.equals(
-        simulator.create_dataset().dataset
+    assert not simulator.simulate(np.random.default_rng(7)).dataset.equals(
+        simulator.simulate().dataset
     )
     shared = np.random.default_rng(7)
-    assert not simulator.create_dataset(shared).dataset.equals(
-        simulator.create_dataset(shared).dataset
+    assert not simulator.simulate(shared).dataset.equals(
+        simulator.simulate(shared).dataset
     )
 
 
@@ -120,8 +115,8 @@ def test_from_config_builds_the_same_dataset_as_explicit_construction() -> None:
     )
 
     _assert_same_population(
-        explicit.create_dataset(),
-        StudentPopulationSimulator.from_config(config).create_dataset(),
+        explicit.simulate(),
+        StudentPopulationSimulator.from_config(config).simulate(),
     )
 
 
@@ -143,7 +138,7 @@ def test_components_see_one_shared_generator(monkeypatch: pytest.MonkeyPatch) ->
 
         monkeypatch.setattr(component, method, spy)
 
-    simulator.create_dataset()
+    simulator.simulate()
 
     assert len(seen) == 5
     assert all(rng is seen[0] for rng in seen)
@@ -186,7 +181,7 @@ def test_a_building_without_apartments_gets_zero_counts() -> None:
 
     counts = dataset.set_index("building_id").loc[
         "B_000002",
-        ["n_kindergarten", "n_elementary", "n_highschool", "n_children_total"],
+        ["n_kindergarten", "n_elementary", "n_highschool"],
     ]
-    assert counts.tolist() == [0, 0, 0, 0]
-    assert pd.api.types.is_integer_dtype(dataset["n_children_total"])
+    assert counts.tolist() == [0, 0, 0]
+    assert pd.api.types.is_integer_dtype(dataset["n_highschool"])

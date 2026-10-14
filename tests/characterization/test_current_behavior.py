@@ -12,7 +12,7 @@ from pathlib import Path
 import pandas as pd
 
 from student_simulator import (
-    SimulatedPopulation,
+    SimulationResult,
     StudentPopulationSimulator,
     load_simulation_config,
 )
@@ -23,7 +23,7 @@ def _config_path() -> Path:
     return Path(__file__).resolve().parents[2] / "configs" / "simulation.toml"
 
 
-def _run(seed: int = 42, n_neighborhoods: int = 8) -> SimulatedPopulation:
+def _run(seed: int = 42, n_neighborhoods: int = 8) -> SimulationResult:
     """Run a small deterministic simulation for contract checks."""
     config = load_simulation_config(_config_path())
     config = config.model_copy(
@@ -33,7 +33,7 @@ def _run(seed: int = 42, n_neighborhoods: int = 8) -> SimulatedPopulation:
             )
         }
     )
-    return StudentPopulationSimulator.from_config(config).create_dataset()
+    return StudentPopulationSimulator.from_config(config).simulate()
 
 
 def test_dataset_has_expected_columns() -> None:
@@ -53,7 +53,6 @@ def test_dataset_has_expected_columns() -> None:
         "5_rooms",
         "6_rooms",
         "n_apartments",
-        "n_children_total",
         "n_kindergarten",
         "n_elementary",
         "n_highschool",
@@ -95,7 +94,6 @@ def test_dataset_preserves_accounting_identities() -> None:
         "n_kindergarten",
         "n_elementary",
         "n_highschool",
-        "n_children_total",
     ]
     for column in count_columns:
         assert pd.api.types.is_integer_dtype(dataset[column])
@@ -103,10 +101,8 @@ def test_dataset_preserves_accounting_identities() -> None:
 
     room_totals = dataset[["3_rooms", "4_rooms", "5_rooms", "6_rooms"]].sum(axis=1)
     assert room_totals.equals(dataset["n_apartments"])
-    cohort_totals = dataset[["n_kindergarten", "n_elementary", "n_highschool"]].sum(
-        axis=1
-    )
-    assert cohort_totals.equals(dataset["n_children_total"])
+    # The total is the cohorts' sum, so the dataset leaves it out.
+    assert "n_children_total" not in dataset.columns
 
 
 def test_pipeline_reproducibility_and_seed_variation() -> None:

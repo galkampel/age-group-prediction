@@ -347,7 +347,7 @@ def test_total_times_probability_model_with_a_string_column(
             "simulation": config.simulation.model_copy(update={"n_neighborhoods": 20})
         }
     )
-    table = StudentPopulationSimulator.from_config(config).create_dataset().dataset
+    table = StudentPopulationSimulator.from_config(config).simulate().dataset
     numeric = ("ses", "avg_household_size", "median_age", "n_daycares_500m")
     features = FeatureTransformer(
         plans=(

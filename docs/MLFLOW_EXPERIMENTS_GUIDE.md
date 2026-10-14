@@ -69,12 +69,12 @@ if 5000 is occupied.
 
 ### From The Notebook
 
-Open [notebooks/03_experiments.py](../notebooks/03_experiments.py) with the
+Open [notebooks/02_experiments.py](../notebooks/02_experiments.py) with the
 scratch environment configured before starting the kernel:
 
 ```bash
 PYTHONPATH=src uv run --group notebook --group tracking \
-  marimo edit notebooks/03_experiments.py
+  marimo edit notebooks/02_experiments.py
 ```
 
 Step-by-step instructions are in the

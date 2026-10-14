@@ -7,7 +7,7 @@ import pytest
 
 from student_simulator import (
     ApartmentSimulator,
-    SimulatedPopulation,
+    SimulationResult,
     StudentPopulationSimulator,
     load_simulation_config,
 )
@@ -19,14 +19,14 @@ def _config_path() -> Path:
     return Path(__file__).resolve().parents[2] / "configs" / "simulation.toml"
 
 
-def _small_population(seed: int = 42) -> SimulatedPopulation:
+def _small_population(seed: int = 42) -> SimulationResult:
     config = load_simulation_config(_config_path())
     config = with_overrides(
         config,
         simulation={"seed": seed, "n_neighborhoods": 5},
         building={"buildings_per_neighborhood_rate": 1.0},
     )
-    return StudentPopulationSimulator.from_config(config).create_dataset()
+    return StudentPopulationSimulator.from_config(config).simulate()
 
 
 def _small_component(seed: int = 42) -> ApartmentSimulator:

@@ -148,9 +148,9 @@ def capture_eda_baseline() -> dict[str, Any]:
             ),
         }
     )
-    final_df = (
-        StudentPopulationSimulator.from_config(eda_config).create_dataset().dataset
-    )
+    final_df = StudentPopulationSimulator.from_config(eda_config).simulate().dataset
+    # The dataset leaves out the total; the EDA reports it as the cohorts' sum.
+    final_df["n_children_total"] = final_df[list(COHORT_COLUMNS)].sum(axis=1)
     canonical_final_df = _canonicalize_string_columns(final_df)
 
     buildings_per_neighborhood = (

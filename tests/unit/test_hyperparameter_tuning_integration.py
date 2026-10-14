@@ -83,7 +83,7 @@ def _table() -> pd.DataFrame:
             "simulation": config.simulation.model_copy(update={"n_neighborhoods": 20})
         }
     )
-    raw = StudentPopulationSimulator.from_config(config).create_dataset().dataset
+    raw = StudentPopulationSimulator.from_config(config).simulate().dataset
     shares = ShareTransformer(
         ("3_rooms", "4_rooms", "5_rooms", "6_rooms"), reference_column="3_rooms"
     )

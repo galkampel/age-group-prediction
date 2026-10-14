@@ -72,7 +72,7 @@ class Stages(NamedTuple):
 
 
 def simulate_stages(config: Config) -> Stages:
-    """Run the five stages in `create_dataset`'s order on one seeded generator.
+    """Run the five stages in `simulate`'s order on one seeded generator.
 
     The population's output is building-level; tests of the apartment-level
     stages take their rows from here.
