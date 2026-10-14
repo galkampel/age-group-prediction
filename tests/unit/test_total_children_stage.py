@@ -7,8 +7,8 @@ import pandas as pd
 
 from student_simulator import (
     ApartmentSimulator,
+    Config,
     StudentPopulationSimulator,
-    TotalChildrenSimulator,
     load_simulation_config,
 )
 
@@ -19,10 +19,8 @@ def _config_path() -> Path:
     return Path(__file__).resolve().parents[2] / "configs" / "simulation.toml"
 
 
-def _state_for_log_mu_checks(
-) -> tuple[StudentPopulationSimulator, dict[str, pd.DataFrame]]:
+def _state_for_log_mu_checks() -> tuple[Config, dict[str, pd.DataFrame]]:
     cfg = load_simulation_config(_config_path())
-    sim = StudentPopulationSimulator(cfg)
 
     neighborhoods = pd.DataFrame(
         {
@@ -50,10 +48,10 @@ def _state_for_log_mu_checks(
     building_effect = pd.Series([0.0, 0.0], index=["B_001", "B_002"])
     neighborhood_effect = pd.Series([0.0, 0.0], index=["N_001", "N_002"])
 
-    context = ApartmentSimulator.with_context(
+    context = ApartmentSimulator.join_context(
         apartments, buildings, neighborhoods
     )
-    return sim, {
+    return cfg, {
         "context": context,
         "building_effect": building_effect,
         "neighborhood_effect": neighborhood_effect,
@@ -74,8 +72,8 @@ def test_total_children_component_adds_nonnegative_integer_counts() -> None:
 
 
 def test_log_mu_finite_and_positive_mu() -> None:
-    sim, parts = _state_for_log_mu_checks()
-    simulator = make_total_children_simulator(sim.config)
+    cfg, parts = _state_for_log_mu_checks()
+    simulator = make_total_children_simulator(cfg)
 
     log_mu = simulator.compute_log_mu(
         parts["context"],
@@ -91,8 +89,8 @@ def test_log_mu_finite_and_positive_mu() -> None:
 
 def test_total_children_component_keeps_latent_effects_out_of_columns(
 ) -> None:
-    sim, parts = _state_for_log_mu_checks()
-    out = make_total_children_simulator(sim.config).generate(
+    cfg, parts = _state_for_log_mu_checks()
+    out, _ = make_total_children_simulator(cfg).sample_total_children(
         parts["context"],
         rng=np.random.default_rng(123),
     )
@@ -102,15 +100,14 @@ def test_total_children_component_keeps_latent_effects_out_of_columns(
 
 
 def test_generated_random_effects_use_named_owner_sets() -> None:
-    sim, parts = _state_for_log_mu_checks()
-    simulator = make_total_children_simulator(sim.config)
+    cfg, parts = _state_for_log_mu_checks()
+    simulator = make_total_children_simulator(cfg)
     context = parts["context"]
 
-    simulator.generate(
+    _, effects = simulator.sample_total_children(
         context,
         rng=np.random.default_rng(10),
     )
-    effects = simulator.latent_effects()
     building_effect = effects["building_total_count_effect"]
     neighborhood_effect = effects["neighborhood_total_count_effect"]
 
@@ -125,8 +122,8 @@ def test_generated_random_effects_use_named_owner_sets() -> None:
 
 
 def test_room_effect_log_mean_differences_match_coefficients() -> None:
-    sim, _ = _state_for_log_mu_checks()
-    simulator = make_total_children_simulator(sim.config)
+    cfg, _ = _state_for_log_mu_checks()
+    simulator = make_total_children_simulator(cfg)
 
     # Keep contextual terms fixed so room effects can be read directly.
     neighborhoods = pd.DataFrame(
@@ -152,7 +149,7 @@ def test_room_effect_log_mean_differences_match_coefficients() -> None:
     building_effect = pd.Series([0.0], index=["B_001"])
     neighborhood_effect = pd.Series([0.0], index=["N_001"])
 
-    context = ApartmentSimulator.with_context(
+    context = ApartmentSimulator.join_context(
         apartments, buildings, neighborhoods
     )
     log_mu = simulator.compute_log_mu(
@@ -161,7 +158,7 @@ def test_room_effect_log_mean_differences_match_coefficients() -> None:
         neighborhood_effect,
     )
 
-    tcfg = sim.config.total_children
+    tcfg = cfg.total_children
     assert np.isclose(log_mu[1] - log_mu[0], tcfg.room_log_mean_effects[4])
     assert np.isclose(log_mu[2] - log_mu[0], tcfg.room_log_mean_effects[5])
     assert np.isclose(log_mu[3] - log_mu[0], tcfg.room_log_mean_effects[6])
@@ -178,8 +175,8 @@ def test_household_size_main_effect_positive_for_supported_rooms() -> None:
 
 
 def test_shared_effects_constant_for_same_owner_descendants() -> None:
-    sim, _ = _state_for_log_mu_checks()
-    simulator = make_total_children_simulator(sim.config)
+    cfg, _ = _state_for_log_mu_checks()
+    simulator = make_total_children_simulator(cfg)
 
     apartments = pd.DataFrame(
         {
@@ -207,7 +204,7 @@ def test_shared_effects_constant_for_same_owner_descendants() -> None:
     building_effect = pd.Series([0.7, -0.2], index=["B_001", "B_002"])
     neighborhood_effect = pd.Series([0.5, -0.1], index=["N_001", "N_002"])
 
-    context = ApartmentSimulator.with_context(
+    context = ApartmentSimulator.join_context(
         apartments, buildings, neighborhoods
     )
     log_mu = simulator.compute_log_mu(

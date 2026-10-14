@@ -54,19 +54,58 @@ def test_cohort_counts_nonnegative_and_sum_to_total_per_apartment() -> None:
 def test_cohort_component_returns_counts_without_latent_columns() -> None:
     cfg = load_simulation_config(_config_path())
     result = _result(StudentPopulationSimulator(cfg))
-    context = ApartmentSimulator.with_context(
+    context = ApartmentSimulator.join_context(
         result.apartments,
         result.buildings,
         result.neighborhoods,
     )
 
-    out = make_cohort_simulator(cfg).generate(
+    out, _ = make_cohort_simulator(cfg).sample_cohorts(
         context,
         rng=np.random.default_rng(71),
     )
 
     cohort_sum = out[["n_kindergarten", "n_elementary", "n_highschool"]].sum(axis=1)
     assert np.array_equal(cohort_sum.to_numpy(), out["n_children_total"].to_numpy())
+    assert not any("effect" in column for column in out.columns)
+
+
+def test_cohort_effect_is_returned_per_building_and_not_as_a_column() -> None:
+    cfg = load_simulation_config(_config_path())
+    apartments = pd.DataFrame(
+        {
+            "apartment_id": ["A_00000001", "A_00000002", "A_00000003"],
+            "building_id": ["B_000001", "B_000001", "B_000002"],
+            "rooms": [3, 5, 4],
+            "n_children_total": [2, 0, 3],
+        }
+    )
+    buildings = pd.DataFrame(
+        {
+            "building_id": ["B_000001", "B_000002"],
+            "neighborhood_id": ["N_001", "N_002"],
+        }
+    )
+    neighborhoods = pd.DataFrame(
+        {
+            "neighborhood_id": ["N_001", "N_002"],
+            "ses": [0.0, 0.5],
+            "avg_household_size": [2.6, 3.0],
+            "median_age": [37.0, 42.0],
+            "n_daycares_500m": [0, 2],
+            "school_status": ["none", "existing"],
+        }
+    )
+    context = ApartmentSimulator.join_context(apartments, buildings, neighborhoods)
+
+    out, effects = make_cohort_simulator(cfg).sample_cohorts(
+        context, rng=np.random.default_rng(5)
+    )
+
+    assert set(effects) == {"building_cohort_effect"}
+    building_effect = effects["building_cohort_effect"]
+    assert building_effect.index.tolist() == ["B_000001", "B_000002"]
+    assert building_effect.index.name == "building_id"
     assert not any("effect" in column for column in out.columns)
 
 
@@ -94,8 +133,8 @@ def test_zero_child_apartment_receives_all_zero_cohorts() -> None:
             "school_status": ["none"],
         }
     )
-    context = ApartmentSimulator.with_context(apartments, buildings, neighborhoods)
-    out = simulator.generate(context, rng=np.random.default_rng(123))
+    context = ApartmentSimulator.join_context(apartments, buildings, neighborhoods)
+    out, _ = simulator.sample_cohorts(context, rng=np.random.default_rng(123))
     assert int(out.loc[0, "n_kindergarten"]) == 0
     assert int(out.loc[0, "n_elementary"]) == 0
     assert int(out.loc[0, "n_highschool"]) == 0
@@ -202,7 +241,7 @@ def test_derived_apartment_and_long_cohort_views() -> None:
     buildings = result.buildings
     neighborhoods = result.neighborhoods
 
-    model_view = ApartmentSimulator.with_context(
+    model_view = ApartmentSimulator.join_context(
         apartments,
         buildings,
         neighborhoods,

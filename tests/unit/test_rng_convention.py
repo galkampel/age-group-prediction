@@ -84,23 +84,23 @@ def _result_before_cohort() -> tuple[object, object]:
 def test_neighborhood_component_rng_convention() -> None:
     cfg = _config()
     simulator = make_neighborhood_simulator(cfg)
-    none_a = simulator.generate(
+    none_a = simulator.sample_neighborhoods(
         cfg.simulation.n_neighborhoods
     )
-    none_b = simulator.generate(
+    none_b = simulator.sample_neighborhoods(
         cfg.simulation.n_neighborhoods
     )
     pd.testing.assert_frame_equal(none_a, none_b)
 
-    seed_a = simulator.generate(
+    seed_a = simulator.sample_neighborhoods(
         cfg.simulation.n_neighborhoods,
         rng=np.random.default_rng(123),
     )
-    seed_b = simulator.generate(
+    seed_b = simulator.sample_neighborhoods(
         cfg.simulation.n_neighborhoods,
         rng=np.random.default_rng(123),
     )
-    seed_c = simulator.generate(
+    seed_c = simulator.sample_neighborhoods(
         cfg.simulation.n_neighborhoods,
         rng=np.random.default_rng(124),
     )
@@ -114,17 +114,17 @@ def test_building_stage_rng_convention() -> None:
     simulator = make_building_simulator(cfg)
     neighborhoods = _base_neighborhoods()
 
-    none_a = simulator.generate(neighborhoods)
-    none_b = simulator.generate(neighborhoods)
+    none_a = simulator.sample_buildings(neighborhoods)
+    none_b = simulator.sample_buildings(neighborhoods)
     pd.testing.assert_frame_equal(none_a, none_b)
 
-    seed_a = simulator.generate(
+    seed_a = simulator.sample_buildings(
         neighborhoods, rng=np.random.default_rng(222)
     )
-    seed_b = simulator.generate(
+    seed_b = simulator.sample_buildings(
         neighborhoods, rng=np.random.default_rng(222)
     )
-    seed_c = simulator.generate(
+    seed_c = simulator.sample_buildings(
         neighborhoods, rng=np.random.default_rng(223)
     )
 
@@ -138,13 +138,13 @@ def test_apartment_component_rng_convention() -> None:
     buildings = _base_buildings()
 
     pd.testing.assert_frame_equal(
-        simulator.generate(buildings),
-        simulator.generate(buildings),
+        simulator.expand_apartments(buildings),
+        simulator.expand_apartments(buildings),
     )
 
-    seed_a = simulator.generate(buildings, rng=np.random.default_rng(333))
-    seed_b = simulator.generate(buildings, rng=np.random.default_rng(333))
-    seed_c = simulator.generate(buildings, rng=np.random.default_rng(334))
+    seed_a = simulator.expand_apartments(buildings, rng=np.random.default_rng(333))
+    seed_b = simulator.expand_apartments(buildings, rng=np.random.default_rng(333))
+    seed_c = simulator.expand_apartments(buildings, rng=np.random.default_rng(334))
 
     pd.testing.assert_frame_equal(seed_a, seed_b)
     assert not seed_a.equals(seed_c)
@@ -154,20 +154,20 @@ def test_total_children_component_rng_convention() -> None:
     result, cfg = _result_before_total_children()
     simulator = make_total_children_simulator(cfg)
 
-    context = ApartmentSimulator.with_context(
+    context = ApartmentSimulator.join_context(
         result.apartments,
         result.buildings,
         result.neighborhoods,
     )
 
     pd.testing.assert_frame_equal(
-        simulator.generate(context),
-        simulator.generate(context),
+        simulator.sample_total_children(context)[0],
+        simulator.sample_total_children(context)[0],
     )
 
-    seed_a = simulator.generate(context, rng=np.random.default_rng(444))
-    seed_b = simulator.generate(context, rng=np.random.default_rng(444))
-    seed_c = simulator.generate(context, rng=np.random.default_rng(445))
+    seed_a = simulator.sample_total_children(context, rng=np.random.default_rng(444))[0]
+    seed_b = simulator.sample_total_children(context, rng=np.random.default_rng(444))[0]
+    seed_c = simulator.sample_total_children(context, rng=np.random.default_rng(445))[0]
 
     pd.testing.assert_frame_equal(seed_a, seed_b)
     assert not seed_a.equals(seed_c)
@@ -176,20 +176,20 @@ def test_total_children_component_rng_convention() -> None:
 def test_cohort_component_rng_convention() -> None:
     result, cfg = _result_before_cohort()
     simulator = make_cohort_simulator(cfg)
-    context = ApartmentSimulator.with_context(
+    context = ApartmentSimulator.join_context(
         result.apartments,
         result.buildings,
         result.neighborhoods,
     )
 
     pd.testing.assert_frame_equal(
-        simulator.generate(context),
-        simulator.generate(context),
+        simulator.sample_cohorts(context)[0],
+        simulator.sample_cohorts(context)[0],
     )
 
-    seed_a = simulator.generate(context, rng=np.random.default_rng(555))
-    seed_b = simulator.generate(context, rng=np.random.default_rng(555))
-    seed_c = simulator.generate(context, rng=np.random.default_rng(556))
+    seed_a = simulator.sample_cohorts(context, rng=np.random.default_rng(555))[0]
+    seed_b = simulator.sample_cohorts(context, rng=np.random.default_rng(555))[0]
+    seed_c = simulator.sample_cohorts(context, rng=np.random.default_rng(556))[0]
 
     pd.testing.assert_frame_equal(seed_a, seed_b)
     assert not seed_a.equals(seed_c)

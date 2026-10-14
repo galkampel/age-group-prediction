@@ -185,7 +185,7 @@ class StudentPopulationSimulator:
         neighborhoods = NeighborhoodSimulator(
             self.config.simulation,
             self.config.neighborhood,
-        ).generate(
+        ).sample_neighborhoods(
             self.config.simulation.n_neighborhoods,
             rng=generator,
         )
@@ -193,18 +193,18 @@ class StudentPopulationSimulator:
             self.config.simulation,
             self.config.building,
             self.config.transforms,
-        ).generate(
+        ).sample_buildings(
             neighborhoods,
             rng=generator,
         )
         apartments = ApartmentSimulator(
             self.config.simulation,
             self.config.building.room_mix,
-        ).generate(
+        ).expand_apartments(
             buildings,
             rng=generator,
         )
-        context = ApartmentSimulator.with_context(
+        context = ApartmentSimulator.join_context(
             apartments,
             buildings,
             neighborhoods,
@@ -214,22 +214,24 @@ class StudentPopulationSimulator:
             self.config.total_children,
             self.config.transforms,
         )
-        generated_totals = total_children.generate(context, rng=generator)
+        generated_totals, total_effects = total_children.sample_total_children(
+            context, rng=generator
+        )
         apartments_with_totals = apartments.copy(deep=True)
         apartments_with_totals["n_children_total"] = generated_totals[
             "n_children_total"
         ].to_numpy()
-        cohort_context = ApartmentSimulator.with_context(
+        cohort_context = ApartmentSimulator.join_context(
             apartments_with_totals,
             buildings,
             neighborhoods,
         )
-        generated_cohorts = CohortCompositionSimulator(
+        generated_cohorts, _ = CohortCompositionSimulator(
             self.config.simulation,
             self.config.cohort,
             self.config.transforms,
             self.config.total_children,
-        ).generate(
+        ).sample_cohorts(
             cohort_context,
             rng=generator,
         )
@@ -248,7 +250,7 @@ class StudentPopulationSimulator:
             buildings=buildings.copy(deep=True),
             apartments=apartments_with_cohorts.copy(deep=True),
             final_df=final_df.copy(deep=True),
-            latent_effects=total_children.latent_effects(),
+            latent_effects=total_effects,
         )
         self._last_result = result
         return result.final_df.copy(deep=True)

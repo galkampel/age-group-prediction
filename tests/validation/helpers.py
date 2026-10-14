@@ -68,7 +68,7 @@ def run_recovery_checks(
     apartments = result.apartments
     buildings = result.buildings
     neighborhoods = result.neighborhoods
-    context = ApartmentSimulator.with_context(
+    context = ApartmentSimulator.join_context(
         apartments,
         buildings,
         neighborhoods,

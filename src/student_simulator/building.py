@@ -27,12 +27,17 @@ class BuildingSimulator:
         self._room_mix = settings.room_mix
         self._transforms = transforms
 
-    def generate(
+    def sample_buildings(
         self,
         neighborhoods: pd.DataFrame,
         rng: np.random.Generator | None = None,
     ) -> pd.DataFrame:
-        """Generate buildings for the supplied neighborhoods.
+        """Sample the buildings of each neighborhood and their room counts.
+
+        Draws, in order: a building count per neighborhood, an apartment total
+        per building, then per building a Dirichlet room mix (tilted by the
+        neighborhood's SES and household size) and a multinomial split of the
+        total into room counts. Configured overrides replace the first two.
 
         Args:
             neighborhoods: Public neighborhood rows containing IDs, SES, and
@@ -52,6 +57,7 @@ class BuildingSimulator:
             np.random.default_rng(self._default_seed) if rng is None else rng
         )
         # Sample one building count per neighborhood, honoring any configured
+        # override.
         buildings_per_neighborhood = self._sample_building_counts(
             len(neighborhoods), generator
         )

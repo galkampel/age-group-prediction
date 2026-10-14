@@ -18,12 +18,14 @@ class ApartmentSimulator:
         self._default_seed = simulation.seed
         self._supported_rooms = room_mix.supported_rooms
 
-    def generate(
+    def expand_apartments(
         self,
         buildings: pd.DataFrame,
         rng: np.random.Generator | None = None,
     ) -> pd.DataFrame:
         """Expand wide building room counts into canonical apartment rows.
+
+        Draws one permutation per building, which orders its apartments.
 
         Args:
             buildings: One row per building with `{room}_rooms` columns and
@@ -62,7 +64,7 @@ class ApartmentSimulator:
         return pd.DataFrame(apartment_rows)
 
     @staticmethod
-    def with_context(
+    def join_context(
         apartments: pd.DataFrame,
         buildings: pd.DataFrame,
         neighborhoods: pd.DataFrame,

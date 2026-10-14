@@ -73,7 +73,7 @@ def test_apartments_exactly_expand_wide_building_room_counts() -> None:
     assert pd.api.types.is_integer_dtype(apartments["rooms"])
 
 
-def test_apartment_component_generate_matches_building_room_counts() -> None:
+def test_expand_apartments_matches_building_room_counts() -> None:
     buildings = pd.DataFrame(
         {
             "building_id": ["B_000001", "B_000002"],
@@ -87,7 +87,7 @@ def test_apartment_component_generate_matches_building_room_counts() -> None:
     )
     simulator = _small_component(seed=101)
 
-    apartments = simulator.generate(buildings)
+    apartments = simulator.expand_apartments(buildings)
 
     assert apartments["apartment_id"].is_unique
     assert apartments["building_id"].isin(buildings["building_id"]).all()
@@ -99,7 +99,7 @@ def test_apartment_component_generate_matches_building_room_counts() -> None:
             assert actual_counts.get((building["building_id"], room), 0) == building[f"{room}_rooms"]
 
 
-def test_apartment_component_with_context_adds_expected_columns() -> None:
+def test_join_context_adds_expected_columns() -> None:
     apartments = pd.DataFrame(
         {
             "apartment_id": ["A_00000001", "A_00000002"],
@@ -124,7 +124,7 @@ def test_apartment_component_with_context_adds_expected_columns() -> None:
         }
     )
 
-    out = ApartmentSimulator.with_context(apartments, buildings, neighborhoods)
+    out = ApartmentSimulator.join_context(apartments, buildings, neighborhoods)
 
     assert list(out.columns) == [
         "apartment_id",
@@ -141,7 +141,7 @@ def test_apartment_component_with_context_adds_expected_columns() -> None:
     assert out["neighborhood_id"].tolist() == ["N_001", "N_002"]
 
 
-def test_apartment_component_with_context_enforces_many_to_one_cardinality() -> None:
+def test_join_context_enforces_many_to_one_cardinality() -> None:
     apartments = pd.DataFrame(
         {
             "apartment_id": ["A_00000001"],
@@ -167,7 +167,7 @@ def test_apartment_component_with_context_enforces_many_to_one_cardinality() -> 
     )
 
     with pytest.raises(pd.errors.MergeError):
-        ApartmentSimulator.with_context(apartments, duplicate_buildings, neighborhoods)
+        ApartmentSimulator.join_context(apartments, duplicate_buildings, neighborhoods)
 
 
 def test_apartment_component_to_cohort_long_preserves_rowwise_totals() -> None:

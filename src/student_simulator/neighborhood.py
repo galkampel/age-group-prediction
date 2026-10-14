@@ -19,12 +19,15 @@ class NeighborhoodSimulator:
         self._default_n_neighborhoods = simulation.n_neighborhoods
         self._settings = settings
 
-    def generate(
+    def sample_neighborhoods(
         self,
         n_neighborhoods: int | None = None,
         rng: np.random.Generator | None = None,
     ) -> pd.DataFrame:
-        """Generate one public row per neighborhood.
+        """Sample one public row per neighborhood.
+
+        Draws, in order: SES, median age, household size (from median age),
+        daycare counts (from SES and median age), and school status.
 
         Args:
             n_neighborhoods: Number of rows to generate. Uses the configured

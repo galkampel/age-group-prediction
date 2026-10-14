@@ -4,13 +4,13 @@
 who verifies it. Self-contained: re-verify every fact against the code of
 the day before relying on it.
 
-**Status (2026-10-14):** approved by the user; **nothing implemented yet,
-next Stop 1**. Branch `feat/experiment-notebook`, which also holds the
-uncommitted PR D work (D1a + D1b of
-[EXPERIMENT_NOTEBOOK_PLAN.md](EXPERIMENT_NOTEBOOK_PLAN.md) §9: the new
-`notebooks/03_experiments.py`, its test, the deleted `02_model_fitting.py`
-and the doc rewiring); `git status` shows those files. This refactor lands
-before PR D's D1c, and Stop 3 updates the notebook's data cell.
+**Status (2026-10-14):** approved by the user; **Stop 1 done (uncommitted,
+awaiting the user's review), next Stop 2**. Branch `feat/experiment-notebook`
+(PR D's D1a + D1b committed in 2b13970). This refactor lands before PR D's
+D1c, and Stop 3 updates the notebook's data cell. A whole-file `ruff format`
+of the simulator and its tests (about 340 lines of drift and 17 pre-existing
+lint errors) is a separate pass, once the user is satisfied with the
+refactor (user's call).
 
 **How to work:** the standing rules of
 [EXPERIMENT_NOTEBOOK_PLAN.md §3](EXPERIMENT_NOTEBOOK_PLAN.md): plan mode
@@ -45,17 +45,16 @@ the cohort stage's building effect is thrown away. The user wants:
 The user's model of the RNG is the right one and stays: one generator is
 created once per dataset and passed to every component in order.
 
-### Three calls settled by best practice (the user asked)
+### Three calls settled (the user asked)
 
-- **Who owns the seed.** Today every component constructor takes
-  `SimulationSettings` only to read a default seed it never uses when a
-  generator is passed. Best practice (scikit-learn, numpy's own API): a
-  component takes **only its own settings**, and the one thing that draws
-  the generator is the one that owns the seed. So `seed` and
-  `n_neighborhoods` move to the orchestrator, which calls
-  `np.random.default_rng(seed)` once in `create_dataset` and passes the
-  generator down, as `run` does now. `rng` becomes a required argument of
-  every component's sampling method (no silent fallback seed).
+- **Who owns the seed (user's call, 2026-10-14, replacing "components take
+  only their own settings").** Components keep `SimulationSettings` in their
+  constructors and `rng` stays **optional** on every sampling method: when
+  omitted, the component creates `np.random.default_rng(simulation.seed)`
+  (and `NeighborhoodSimulator` defaults `n_neighborhoods` from it), as
+  before the refactor. The orchestrator still owns the dataset's seed: it
+  calls `np.random.default_rng(seed)` once in `create_dataset` and passes
+  the generator to every stage in order.
 - **Latent effects: no flag.** A boolean that changes what a method returns
   makes two return types for one name and forces every caller to remember
   the flag; a result object with a `latent_effects` field costs nothing when
@@ -95,7 +94,10 @@ created once per dataset and passed to every component in order.
   `test_total_children_stage.py`, `test_rng_convention.py`,
   `tests/validation/{helpers,test_recovery,test_calibration}.py`,
   `tests/characterization/test_current_behavior.py`, `notebooks/01_eda.py`
-  (cell at line 131), `notebooks/03_experiments.py` (data cell). Component
+  (cell at line 131), `notebooks/03_experiments.py` (data cell), and, found
+  at Stop 1, eight more that call `StudentPopulationSimulator(config).run()`
+  for a table: `tests/unit/test_{fitted_features,modeling_data,state_bundles,hyperparameter_tuning_integration,inspection_permutation,inspection_shap}.py`,
+  `tests/characterization/{eda_baseline,test_experiments_notebook}.py`. Component
   factories live in `tests/unit/helpers.py` (`make_*_simulator(config)`).
   Doc blocks run as written: `docs/HYPERPARAMETER_TUNING.md` §2,
   `docs/MODEL_INSPECTION.md` §2, `docs/SPLITTING.md` §3, `README.md:65`,
@@ -111,18 +113,18 @@ created once per dataset and passed to every component in order.
 ```python
 # student_simulator/neighborhood.py
 class NeighborhoodSimulator:
-    def __init__(self, settings: NeighborhoodSettings) -> None
-    def sample_neighborhoods(self, n_neighborhoods: int, rng: np.random.Generator) -> pd.DataFrame
+    def __init__(self, simulation: SimulationSettings, settings: NeighborhoodSettings) -> None
+    def sample_neighborhoods(self, n_neighborhoods: int | None = None, rng: np.random.Generator | None = None) -> pd.DataFrame
 
 # student_simulator/building.py
 class BuildingSimulator:
-    def __init__(self, settings: BuildingSettings, transforms: TransformSettings) -> None
-    def sample_buildings(self, neighborhoods: pd.DataFrame, rng: np.random.Generator) -> pd.DataFrame
+    def __init__(self, simulation: SimulationSettings, settings: BuildingSettings, transforms: TransformSettings) -> None
+    def sample_buildings(self, neighborhoods: pd.DataFrame, rng: np.random.Generator | None = None) -> pd.DataFrame
 
 # student_simulator/apartment.py
 class ApartmentSimulator:
-    def __init__(self, room_mix: RoomMixSettings) -> None
-    def expand_apartments(self, buildings: pd.DataFrame, rng: np.random.Generator) -> pd.DataFrame
+    def __init__(self, simulation: SimulationSettings, room_mix: RoomMixSettings) -> None
+    def expand_apartments(self, buildings: pd.DataFrame, rng: np.random.Generator | None = None) -> pd.DataFrame
     @staticmethod
     def join_context(apartments, buildings, neighborhoods) -> pd.DataFrame      # was with_context
     @staticmethod
@@ -132,16 +134,16 @@ class ApartmentSimulator:
 LatentEffects = dict[str, pd.Series]   # effect name -> one value per owner id (the Series index)
 
 class TotalChildrenSimulator:
-    def __init__(self, settings: TotalChildrenSettings, transforms: TransformSettings) -> None
-    def sample_total_children(self, apartment_context, rng) -> tuple[pd.DataFrame, LatentEffects]
+    def __init__(self, simulation: SimulationSettings, settings: TotalChildrenSettings, transforms: TransformSettings) -> None
+    def sample_total_children(self, apartment_context, rng=None) -> tuple[pd.DataFrame, LatentEffects]
         # effects: "building_total_count_effect", "neighborhood_total_count_effect"
     def compute_log_mu(...), def build_design_matrix(...)                        # unchanged
     # latent_effects() and the private stash are deleted
 
 class CohortCompositionSimulator:
-    def __init__(self, settings: CohortSettings, transforms: TransformSettings,
+    def __init__(self, simulation: SimulationSettings, settings: CohortSettings, transforms: TransformSettings,
                  total_children: TotalChildrenSettings) -> None
-    def sample_cohorts(self, apartment_context, rng) -> tuple[pd.DataFrame, LatentEffects]
+    def sample_cohorts(self, apartment_context, rng=None) -> tuple[pd.DataFrame, LatentEffects]
         # effects: "building_cohort_effect" (today discarded)
     def compute_theta(...), def cohort_probabilities(...)                        # unchanged
 
@@ -180,8 +182,9 @@ class StudentPopulationSimulator:
 
     @classmethod
     def from_config(cls, config: Config) -> StudentPopulationSimulator
-        # the five constructions from config.neighborhood, .building, .transforms,
-        # .building.room_mix, .total_children, .cohort; n_neighborhoods and seed from config.simulation
+        # the five constructions from config.simulation (first argument of each), .neighborhood,
+        # .building, .transforms, .building.room_mix, .total_children, .cohort;
+        # n_neighborhoods and seed from config.simulation
 
     def create_dataset(self) -> SimulatedPopulation:
         rng = np.random.default_rng(self.seed)
@@ -219,49 +222,43 @@ Notes for the implementer:
   few lines; the numbered comments in `create_dataset` are the notes the
   user asked for. The existing per-draw comments in the components stay.
 - `n_neighborhoods` and `seed` are validated by nothing new: `default_rng`
-  rejects a negative seed; `sample_neighborhoods` already raises on `n <= 0`.
+  rejects a negative seed; `sample_neighborhoods` already raises on `n <= 0`
+  (kept: with `size=0` numpy returns empty arrays silently).
 - `__init__.py`: export `SimulatedPopulation`, `LatentEffects`,
   `aggregate_to_buildings`; drop `SimulationResult`.
 
 ## Stops
 
-### Stop 1. The five components (files: neighborhood.py, building.py, apartment.py, outcomes.py, tests/unit/helpers.py, tests/unit/test_{neighborhood,building,apartment_stage,total_children_stage,cohort_aggregation_stage,rng_convention}.py)
+### [x] Stop 1. The five components (files: neighborhood.py, building.py, apartment.py, outcomes.py, pipeline.py `run()` adapter, tests/unit/test_{neighborhood,building,apartment_stage,total_children_stage,cohort_aggregation_stage,rng_convention,design}.py, tests/validation/helpers.py)
 
-- Constructors drop `simulation`; `rng` becomes required; methods renamed as
-  in the target API; `TotalChildrenSimulator`/`CohortCompositionSimulator`
-  return `(frame, effects)`; `latent_effects()` and `_latent_effects` deleted;
-  `with_context` → `join_context`.
-- `tests/unit/helpers.py`: the five `make_*_simulator(config)` factories
-  take the new signatures (every component test goes through them, so the
-  tests change only where they call `generate` or read effects).
-- Tests to rewrite (names state the mistake): in `test_total_children_stage.py`
-  `test_generated_random_effects_use_named_owner_sets` reads the returned
-  effects; `test_total_children_component_keeps_latent_effects_out_of_columns`
-  unpacks the tuple. In `test_cohort_aggregation_stage.py` add
-  `test_cohort_effect_is_returned_per_building_and_not_as_a_column` (the
-  new `building_cohort_effect` Series: index = building ids, name
-  `building_id`, and no `effect` column in the frame). `test_rng_convention.py`'s
-  five component tests keep their shape (same seed twice equal, another
-  seed differs) with the new method names; the pipeline-level tests there
-  move to stop 2.
-- Mutation table: (a) return `neighborhood_effect` under the building key →
-  the owner-set test fails; (b) drop `building_cohort_effect` from the
-  cohort return → the new test fails; (c) reuse `rng` default seed instead
-  of the passed `rng` in one component → that component's rng-convention
-  test fails.
-- `pipeline.py` is broken at this stop (it still calls `generate`); run the
-  component tests only: `uv run pytest tests/unit/test_neighborhood.py
-  tests/unit/test_building.py tests/unit/test_apartment_stage.py
-  tests/unit/test_total_children_stage.py tests/unit/test_cohort_aggregation_stage.py
-  tests/unit/test_rng_convention.py -q -W error -k "not run_ and not pipeline"`
-  (adjust `-k` to the stage tests that go through `StudentPopulationSimulator`;
-  list them in the stop report). ruff, then `uv run mypy src/student_simulator`:
-  the package is not in mypy's `files`; today it reports 4 pre-existing
-  errors, all in `config.py` (lines 32, 82, 104, 184). The bar for each stop
-  is "no new error outside config.py"; report the count. The notebook plan's
-  routine (`uv run mypy`) stays green because it never sees this package.
+Done 2026-10-14, uncommitted.
+- Methods renamed as in the target API (`sample_neighborhoods`,
+  `sample_buildings`, `expand_apartments`, `join_context`,
+  `sample_total_children`, `sample_cohorts`); constructors and the optional
+  `rng` unchanged (user's call). The two outcome stages return
+  `(frame, LatentEffects)`; `building_cohort_effect` is now returned;
+  `latent_effects()` and `_latent_effects` deleted. Each sampling docstring
+  says what it draws, in order, and from which columns.
+- `run()` adapted (new names, tuples unpacked, same draw order, same two
+  effects) so the suite stays green; Stop 2 replaces it. Proof: the default
+  config's building table, apartments and both effects hash identically
+  before and after (building table `f385be22b88aebf7`, 251 rows).
+- Tests: renamed to the new methods; `_state_for_log_mu_checks` returns the
+  `Config`; new `test_cohort_effect_is_returned_per_building_and_not_as_a_column`
+  (hand-built context, independent of `run()`). `tests/unit/helpers.py`
+  unchanged.
+- Mutations, all caught: c1–c5 (each sampling method ignores the passed
+  `rng`) → its rng-convention test; (a) neighborhood effect under the
+  building key → the owner-set test; (b) cohort effects `{}` → the new test.
+  Lesson: clear `__pycache__` and set `PYTHONDONTWRITEBYTECODE=1` per
+  mutation; two same-size mutations written in the same second reuse a stale
+  `.pyc` and look uncaught.
+- Checks: ruff no new error (17 pre-existing, one fewer than HEAD); mypy
+  `src/student_simulator` 4 errors, all in config.py; the touched tests under
+  `-W error`; the slow recovery + calibration tests 2 passed (3.5 s); the
+  independent review found no defects (two naming nits, one applied).
 
-### Stop 2. The orchestrator (files: pipeline.py, __init__.py, tests/unit/test_pipeline.py, the pipeline-level tests of test_apartment_stage.py / test_cohort_aggregation_stage.py / test_total_children_stage.py / test_rng_convention.py, tests/characterization/test_current_behavior.py, tests/validation/{helpers,test_recovery,test_calibration}.py)
+### Stop 2. The orchestrator (files: pipeline.py, __init__.py, tests/unit/test_pipeline.py, the pipeline-level tests of test_apartment_stage.py / test_cohort_aggregation_stage.py / test_total_children_stage.py / test_rng_convention.py, tests/characterization/{test_current_behavior,eda_baseline,test_experiments_notebook}.py, tests/unit/test_{fitted_features,modeling_data,state_bundles,hyperparameter_tuning_integration,inspection_permutation,inspection_shap}.py, tests/validation/{helpers,test_recovery,test_calibration}.py)
 
 - `SimulatedPopulation`, `aggregate_to_buildings`, the new
   `StudentPopulationSimulator`, `from_config`, `create_dataset` as above.
@@ -275,10 +272,15 @@ Notes for the implementer:
   same config), `test_components_see_one_shared_generator` (spy: wrap a
   component's sampling method and assert the `rng` object is the same
   instance in every call). Delete the `last_result` tests.
-- Validation helpers: `result.final_df` → `result.building_table`;
-  `TotalChildrenSimulator(config.simulation, ...)` → the new constructor;
-  `with_context` → `join_context`. `test_current_behavior.py`: `run()` +
-  `last_result` → `create_dataset()`.
+- Validation helpers: `result.final_df` → `result.building_table` (the
+  constructor and `join_context` changed at Stop 1). `test_current_behavior.py`:
+  `run()` + `last_result` → `create_dataset()`. The eight table-only clients:
+  `StudentPopulationSimulator(config).run()` →
+  `StudentPopulationSimulator.from_config(config).create_dataset().building_table`.
+- The stage tests that still reach `run()` for their input
+  (`test_rng_convention.py`'s `_result_before_*`, `test_apartment_stage.py`'s
+  `_small_result`, `test_cohort_aggregation_stage.py`'s `_result`, and
+  `test_total_children_stage.py`'s first test) move to `create_dataset()`.
 - Mutations: (d) drop the `apartment_rows != n_apartments` check in
   `aggregate_to_buildings` and feed a building with one apartment removed →
   the accounting test fails; (e) create two generators in `create_dataset`
@@ -297,11 +299,11 @@ Notes for the implementer:
 - `03_experiments.py` data cell becomes the white box the user asked for:
   ```python
   simulator = StudentPopulationSimulator(
-      NeighborhoodSimulator(config.neighborhood),
-      BuildingSimulator(config.building, config.transforms),
-      ApartmentSimulator(config.building.room_mix),
-      TotalChildrenSimulator(config.total_children, config.transforms),
-      CohortCompositionSimulator(config.cohort, config.transforms, config.total_children),
+      NeighborhoodSimulator(config.simulation, config.neighborhood),
+      BuildingSimulator(config.simulation, config.building, config.transforms),
+      ApartmentSimulator(config.simulation, config.building.room_mix),
+      TotalChildrenSimulator(config.simulation, config.total_children, config.transforms),
+      CohortCompositionSimulator(config.simulation, config.cohort, config.transforms, config.total_children),
       n_neighborhoods=n_neighborhoods,
       seed=simulation_seed if simulation_seed is not None else base_config.simulation.seed,
   )
@@ -357,8 +359,8 @@ Notes for the implementer:
 ## Suggested commits (one per stop)
 
 ```
-git add src/student_simulator tests/unit
-git commit -m "refactor(simulator): components take their own settings and return their latent effects"
+git add src/student_simulator tests/unit tests/validation/helpers.py docs/SIMULATOR_WHITE_BOX_PLAN.md
+git commit -m "refactor(simulator): name the sampling methods and return the latent effects"
 git add src/student_simulator tests
 git commit -m "refactor(simulator): StudentPopulationSimulator takes its components; create_dataset returns the population and its latent effects"
 git add notebooks tests/characterization
