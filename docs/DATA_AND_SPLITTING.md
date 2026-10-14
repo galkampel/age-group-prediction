@@ -254,12 +254,12 @@ text. These identities are stored in the selection freeze.
 
 ## 8. The Canonical Lockbox
 
-The canonical manifest is `artifacts/lockbox/split_manifest.json`. The path is
-not a package constant; it is built only in `notebooks/02_model_fitting.py`,
-which loads the manifest if it exists, otherwise splits with
-`np.random.default_rng(randomness.default_seed)` and persists it, and in both
-cases replays it to obtain the training partition. `artifacts/lockbox/` is
-git-ignored.
+The canonical manifest is `artifacts/lockbox/split_manifest.json`. The path
+was not a package constant; it was built only in `notebooks/02_model_fitting.py`
+(deleted 2026-10-14), which loaded the manifest if it existed, otherwise split
+with `np.random.default_rng(randomness.default_seed)` and persisted it, and in
+both cases replayed it to obtain the training partition. `artifacts/lockbox/`
+is git-ignored.
 
 Rules:
 
@@ -312,9 +312,8 @@ dataclass default and an unknown key raises `ValueError`.
   persistence, replay, folds), `tests/unit/test_experiment.py` (partition
   checks and fold coverage), `tests/unit/test_modeling_config.py` (config
   loading), `tests/unit/test_final_evaluation.py` (manifest fingerprint and
-  replay during final evaluation), and
-  `tests/characterization/test_model_fitting_notebook.py` (notebook in a
-  copied project).
+  replay during final evaluation); the notebook characterization test was
+  deleted with the notebook on 2026-10-14.
 - [MODELING_GUIDE.md](MODELING_GUIDE.md) Sections 2–4,
   [FEATURE_ENGINEERING.md](FEATURE_ENGINEERING.md),
   [CROSS_VALIDATION_AND_SELECTION.md](CROSS_VALIDATION_AND_SELECTION.md),

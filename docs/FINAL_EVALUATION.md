@@ -7,8 +7,8 @@ holdout, recording the result under guarded MLflow runs, and serving each refit
 as a pickle-free pyfunc model. Everything here is derived from
 `src/age_group_prediction/experiment/final_evaluation.py`,
 `experiment/evidence.py`, `tracking/final.py`, `tracking/runs.py`,
-`tracking/pyfunc_model.py`, and the final controls in
-`notebooks/02_model_fitting.py`.
+`tracking/pyfunc_model.py`, and the final controls of the deleted
+`notebooks/02_model_fitting.py` (removed 2026-10-14).
 
 **There is intentionally no runnable example.** Opening the canonical lockbox
 is an irreversible project action.
@@ -21,8 +21,7 @@ any choice, would turn it into a selection set. The code therefore makes
 evaluation one-way: the freeze can accept test metrics once, and the tracking
 guards refuse duplicate or divergent attempts.
 
-**Status.** Project records ([README](../README.md#run-the-modeling-notebook),
-[MLflow guide](MLFLOW_EXPERIMENTS_GUIDE.md#8-understand-final-run-semantics),
+**Status.** Project records ([MLflow guide](MLFLOW_EXPERIMENTS_GUIDE.md#8-understand-final-run-semantics),
 and [docs/README.md](README.md#current-status)) state that the canonical final
 evaluation has already run and selected the Bayesian conditional model, with
 the other two approaches as comparators. The code does not record this, and

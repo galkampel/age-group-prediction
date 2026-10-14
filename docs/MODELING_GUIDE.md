@@ -485,7 +485,9 @@ and [DATA_AND_SPLITTING.md](DATA_AND_SPLITTING.md#4-splitmanifest).
 
 ## 15. Use The Notebook As A Thin Client
 
-[notebooks/02_model_fitting.py](../notebooks/02_model_fitting.py) orchestrates
+*`02_model_fitting.py` was deleted on 2026-10-14; `notebooks/03_experiments.py` replaces it. The text below describes the deleted client of the old stack.*
+
+`notebooks/02_model_fitting.py` orchestrated
 the package APIs and displays evidence; it does not implement model logic.
 Running it as a plain Python script performs setup only: it loads the persisted
 `artifacts/lockbox/split_manifest.json` (creating it if absent) and replays it
@@ -495,11 +497,11 @@ button. Final evaluation requires both the confirmation checkbox **I understand
 this opens the one-time test holdout and cannot be undone for this manifest.**
 and **Run final evaluation (opens lockbox)**.
 
-To open it, follow
-[Run The Modeling Notebook](../README.md#run-the-modeling-notebook) in the
-README.
+It can no longer be opened; the README's
+[Run The Modeling Notebook](../README.md#run-the-modeling-notebook) now opens
+`03_experiments.py`, which has none of these controls.
 
-Use the notebook for the canonical research workflow and package APIs for
+The old notebook was for the canonical research workflow and package APIs for
 automation. Do not call model-specific fit/predict methods from new notebook
 cells, reconstruct candidates by hand, read the holdout before the pretest
 freeze, or add an unguarded final-evaluation path.
