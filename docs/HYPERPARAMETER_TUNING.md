@@ -440,9 +440,8 @@ and column-wise histograms, `deterministic=True`), and the worked example's
 study with 1, 4 and 8 threads was identical too: on this setup the thread count
 changes the speed, not the fit.
 
-The notebook plan names four seeds (E12): `split_seed`, `cv_seed`, `study_seed`
-(one per study, `study_seed + i` for the i-th cohort or component) and
-`estimator_seed`, all logged.
+The notebook plan uses one logged `seed` for every random component (E12);
+the i-th study of a run, per cohort or component, gets `seed + i`.
 
 ## 9. Making A Model Tunable
 
