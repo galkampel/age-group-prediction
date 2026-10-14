@@ -15,12 +15,16 @@ PR C done: `PermutationImportance` (C1), `ShapExplainer` (C2), the smoke run and
 [MODEL_INSPECTION.md](MODEL_INSPECTION.md) (C3); PR #16 squash-merged into
 `main` as `49301d0` (2026-10-13); non-slow suite 1299 passed, 1 skipped,
 1 xfailed, re-verified 2026-10-14. PR D in progress on
-`feat/experiment-notebook`: D1a and D1b done (uncommitted). **Paused:** the
-simulator is refactored first ([SIMULATOR_WHITE_BOX_PLAN.md](SIMULATOR_WHITE_BOX_PLAN.md),
-four stops; its Stop 3 rewrites the notebook's data cell), then D1c (§9).
+`feat/experiment-notebook`: D1a and D1b committed (`2b13970`); the simulator
+refactor ([SIMULATOR_WHITE_BOX_PLAN.md](SIMULATOR_WHITE_BOX_PLAN.md)) Stops 1–3
+committed (`6b90805`, `59d15d6`, `e66b97d`), which moved the notebook to
+`notebooks/02_experiments.py` and rewrote its data cell. **Next: D1c**, in the
+user's order of work recorded in
+[EXPERIMENT_NOTEBOOK_HANDOFF.md](EXPERIMENT_NOTEBOOK_HANDOFF.md) (split,
+feature configurations, tuning, inspection check, MLflow runs).
 
-**Branch state:** `feat/experiment-notebook` from `main` at `49301d0`; nothing
-committed yet.
+**Branch state:** `feat/experiment-notebook` from `main` at `49301d0`, HEAD
+`e66b97d`; non-slow suite 1294 passed, 1 skipped, 1 xfailed.
 
 ## Contents
 
@@ -771,7 +775,8 @@ declarations module (decision 2026-10-14, §2).
     `data_hash`, `config_params`), now part of section 1) Data generation,
     written in the same stop as D1a.
   - Done when: the script prints `data rows=1529 neighborhoods=150
-    data_hash=c92d4213...`; `marimo edit` shows the data settings, the three
+    data_hash=e1dd694935d0...` (it was `c92d4213...` until the dataset
+    dropped `n_children_total`); `marimo edit` shows the data settings, the three
     facts, the count of `config_params` and the head of `X`.
   - Tests: `test_an_override_not_reaching_the_simulator_is_caught` (rows
     1529, neighborhoods 150, hash equal to the one the test recomputes from

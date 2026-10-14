@@ -4,12 +4,11 @@
 who verifies it. Self-contained: re-verify every fact against the code of
 the day before relying on it.
 
-**Status (2026-10-14):** approved by the user; Stops 1 and 2 committed
-(6b90805, 59d15d6); **Stop 3 done (uncommitted, awaiting the user's review),
-next Stop 4**. Branch `feat/experiment-notebook`. This refactor lands before
-PR D's D1c. The cleanup stop (dead code, then a whole-file `ruff format` of
-the simulator and its tests) comes after Stop 4, once the user is satisfied
-with the refactor (user's call).
+**Status (2026-10-14):** approved by the user; Stops 1–3 committed
+(`6b90805`, `59d15d6`, `e66b97d`). **Next: Stop 4** (docs) and then the
+cleanup stop (dead code, then a whole-file `ruff format` of the simulator and
+its tests, once the user is satisfied). The experiment notebook continues in
+parallel from [EXPERIMENT_NOTEBOOK_HANDOFF.md](EXPERIMENT_NOTEBOOK_HANDOFF.md).
 
 **How to work:** the standing rules of
 [EXPERIMENT_NOTEBOOK_PLAN.md §3](EXPERIMENT_NOTEBOOK_PLAN.md): plan mode
@@ -372,8 +371,8 @@ overrides and the seed reach the simulator.
 - `uv run pytest tests/validation/test_recovery.py -q`: the oracle fit with
   the returned effects as offset still recovers the coefficients.
 - `uv run --env-file .env notebooks/02_experiments.py` prints
-  `data rows=1529 neighborhoods=150 data_hash=c92d4213...` (same population
-  as before the refactor).
+  `data rows=1529 neighborhoods=150 data_hash=e1dd694935d0...` (the population
+  of Stop 3, after the dataset dropped `n_children_total`).
 - `grep -rn 'last_result\|final_df\|SimulationResult\|with_context\|\.run(' src tests notebooks docs/*.md README.md`
   shows only historical docs.
 
