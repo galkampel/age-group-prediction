@@ -136,37 +136,6 @@ def test_a_dropped_position_mapping_in_the_split_is_caught(
     }
 
 
-def test_a_feature_variant_with_the_wrong_columns_is_caught(
-    default_run: subprocess.CompletedProcess[str],
-) -> None:
-    # FeatureTransformer does not keep n_apartments out of a GLM declaration:
-    # a plan listing it fits silently (measured: total_base with 10 columns
-    # instead of 9). Only the trees keep it as a feature beside the offset
-    # (FEATURE_TRANSFORMATIONS.md §3.3, §4.4). A wrong interaction operand
-    # fails the fit, so the script exits non-zero and the fixture fails. The
-    # counts do not catch an uncentered daycare operand (same count; each
-    # product correlates 0.85-0.86 with its room share instead of -0.04-0.06).
-    counts = {
-        "tree": "10",
-        "tree__ses_quadratic": "11",
-        "total_base": "9",
-        "total__ses_quadratic": "10",
-        "total__daycare_log1p": "9",
-        "total__room_share_x_household_size": "12",
-        "total__room_share_x_ses": "12",
-        "total__room_share_x_household_size_and_ses": "15",
-        "cohort_probability_base": "9",
-        "composition__daycare_log1p": "9",
-        "composition__room_share_x_median_age": "12",
-        "composition__room_share_x_daycare": "12",
-        "composition__room_share_x_median_age_and_daycare": "15",
-    }
-    assert _printed(default_run.stdout, "variants") == counts
-    assert _printed(default_run.stdout, "n_apartments_feature") == {
-        name: str(name.startswith("tree")) for name in counts
-    }
-
-
 def test_a_seed_override_not_reaching_the_simulator_is_caught(tmp_path: Path) -> None:
     # The default keeps the config's seed, so only a run with the override set
     # shows whether it is wired: the population and the printed seed must change.

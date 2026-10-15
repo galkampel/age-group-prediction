@@ -19,15 +19,15 @@ PR C done: `PermutationImportance` (C1), `ShapExplainer` (C2), the smoke run and
 refactor ([SIMULATOR_WHITE_BOX_PLAN.md](SIMULATOR_WHITE_BOX_PLAN.md)) Stops 1–3
 committed (`6b90805`, `59d15d6`, `e66b97d`), which moved the notebook to
 `notebooks/02_experiments.py` and rewrote its data cell; D1c (the split,
-`split_method = "random"` for now) committed (`537158a`); D1d (the feature
-variants) written 2026-10-15, awaiting the user's commit. **Next: step 3,
+`split_method = "random"` for now) committed (`537158a`); D1d (13 feature
+variants) committed (`98640ba`). **Next: step 3,
 tuning Model 1 and Model 2 by CV on the training part**, in the
 user's order of work recorded in
 [EXPERIMENT_NOTEBOOK_HANDOFF.md](EXPERIMENT_NOTEBOOK_HANDOFF.md) (split,
 feature configurations, tuning, inspection check, MLflow runs).
 
 **Branch state:** `feat/experiment-notebook` from `main` at `49301d0`, HEAD
-`537158a` plus the uncommitted D1d; non-slow suite 1296 passed, 1 skipped, 1 xfailed.
+`98640ba`; non-slow suite 1295 passed, 1 skipped, 1 xfailed.
 
 ## Contents
 
@@ -811,9 +811,10 @@ declarations module (decision 2026-10-14, §2).
 - [x] **D1d. C6 feature variants.**
   - Written: section 4): a shared-plans cell (§8.0, §8.2's six plans named
     once, §8.5.1's `ses_sq`, §8.5.2's `daycare_sat` and §8.5.4's
-    `daycare_centered`), a variants cell (`FEATURE_VARIANTS`, 13
-    declarations, each listing its plans explicitly), and a check cell
-    fitting a clone of each on `X_train`.
+    `daycare_centered`) and a variants cell (`FEATURE_VARIANTS`, 13
+    declarations, each listing its plans explicitly). Committed as
+    `98640ba`; the user removed the check cell that fitted each variant on
+    `X_train` and printed its columns.
   - The 13 variants (user's review 2026-10-15): `tree` and
     `tree__ses_quadratic` (§8.1); `total_base` and §8.5's candidates 2-4;
     `cohort_probability_base` and §8.5's candidates 5-6; and §6's second
@@ -823,21 +824,18 @@ declarations module (decision 2026-10-14, §2).
     `composition__room_share_x_median_age_and_daycare`. The daycare operand
     is centered (§8.5.4): each product correlates −0.04 to 0.06 with its room
     share on the training part, 0.85 to 0.86 uncentered.
-  - Done when: the script prints `variants tree=10 tree__ses_quadratic=11
-    ...` and `n_apartments_feature tree=True ...`; the columns table in
-    `marimo edit` shows §8's names (`n_daycares_500m_sat`, `ses_squared`,
-    `4_rooms_share_x_avg_household_size`).
+  - Done when: the notebook runs as a script; the declarations match §8 and
+    §6 (reviewed by an independent build, 2026-10-15).
   - Exposure rule, verified 2026-10-15: only the two tree variants keep
     `n_apartments` (feature and offset, §3.3); every GLM variant lacks it
     (§4.4). They drop it only because no plan lists it (`remainder="drop"`);
     `FeatureTransformer` does not enforce the rule, and a plan listing it
     fits silently (`total_base` with 10 columns).
-  - Test: `test_a_feature_variant_with_the_wrong_columns_is_caught` (the
-    counts 10/11/9/10/9/12/12/15/9/9/12/12/15, measured; `n_apartments` a
-    feature in the tree variants only). Mutations (done): `n_apartments`
-    added to `total_base` fails on the count; an interaction operand no plan
-    emits raises at fit, the script exits non-zero and the fixture fails.
-    Not caught: an uncentered daycare operand (same count).
+  - No test: with the check cell removed, nothing prints the columns. The
+    counts (10/11/9/10/9/12/12/15/9/9/12/12/15) and the `n_apartments`
+    rule were verified by probe and review on 2026-10-15 only; a GLM
+    variant listing `n_apartments` would now fit unnoticed until step 3
+    fits models on the variants.
 - [ ] **D1e. C7 MLflow guard.**
   - Written: the MLflow cell (scratch store only, `set_experiment`, refusal
     on the canonical store).
