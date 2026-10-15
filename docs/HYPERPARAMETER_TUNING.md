@@ -489,6 +489,13 @@ then assembled into one `TotalTimesProbabilityModel` and refit.
 - **A NaN score** from the evaluator raises and stops the study (the trial
   FAILs); a plain objective's NaN only fails its trial, and the search goes on
   with a FAIL record.
+- **A metric's own error stops the study too.** Optuna catches nothing by
+  default, so an exception inside the metric propagates out of `optimize`
+  (the trials so far stay in `optuna_study_`). Measured 2026-10-15: a Gaussian
+  LightGBM `CountModel` without an exposure predicted a negative count in trial
+  4 and scikit-learn's Poisson deviance raised; `CountModel.predict` now floors
+  the mean at `np.finfo(float).eps`, so that trial scores a large deviance and
+  the study goes on.
 
 ## 11. What Remains
 

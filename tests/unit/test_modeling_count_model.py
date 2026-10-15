@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 from typing import Self
 
 import numpy as np
@@ -24,6 +25,7 @@ from age_group_prediction.modeling import (
     NegativeBinomialRegressor,
     Regressor,
 )
+from age_group_prediction.scoring import POISSON_DEVIANCE
 
 
 def _data(rows: int = 300) -> tuple[pd.DataFrame, pd.Series, np.ndarray]:
@@ -312,9 +314,29 @@ def test_the_gaussian_weighted_rate_is_least_squares_of_the_count() -> None:
         design, Y, sample_weight=1 / EXPOSURE
     )
 
+    # The model floors its mean (3 of these 300 least-squares counts are negative).
     np.testing.assert_allclose(
-        model.predict(X, exposure=EXPOSURE), count_model.predict(design), rtol=1e-8
+        model.predict(X, exposure=EXPOSURE),
+        np.maximum(count_model.predict(design), np.finfo(float).eps),
+        rtol=1e-8,
     )
+
+
+def test_a_negative_gaussian_prediction_breaking_the_deviance_is_caught() -> None:
+    # A Gaussian loss extrapolates below zero; unfloored, scikit-learn's
+    # Poisson deviance raises on it and stops a whole tuning study (measured,
+    # docs/HYPERPARAMETER_TUNING.md §10). A floor of 0 would still raise.
+    X_line = pd.DataFrame({"ses": [0.0, 1.0, 2.0, 3.0]})
+    y_line = pd.Series([1.0, 2.0, 3.0, 4.0])  # y = 1 + ses
+    X_below = pd.DataFrame({"ses": [-3.0]})
+    assert LinearRegression().fit(X_line, y_line).predict(X_below)[0] < 0
+
+    model = CountModel(estimator=LinearRegression()).fit(X_line, y_line)
+    prediction = model.predict(X_below)
+
+    assert 0 < prediction[0] <= np.finfo(float).eps
+    # A count of 5: at np.finfo(float).tiny the deviance overflows under -W error.
+    assert math.isfinite(model.evaluate([5.0], prediction, POISSON_DEVIANCE))
 
 
 def test_predict_follows_how_the_model_was_fitted() -> None:

@@ -15,6 +15,11 @@ from .base import BaseAgeGroupModel
 
 __all__ = ["CountModel", "ExposureRegressor", "Regressor"]
 
+# The smallest mean count predict returns. A Gaussian loss (identity link) can
+# predict a negative count; at 0 the Poisson deviance raises and at
+# np.finfo(float).tiny its y / y_pred overflows, at eps it is large and finite.
+_PREDICTION_FLOOR = float(np.finfo(float).eps)
+
 
 class Regressor(Protocol):
     """What ``estimator`` must do: scikit-learn's regressor API with ``sample_weight``."""
@@ -73,6 +78,9 @@ class CountModel(BaseAgeGroupModel):
 
     Without ``use_exposure`` a passed exposure is ignored. Why each case, and
     the penalty under the rate: ``docs/INDEPENDENT_COHORT_MODELS.md`` §2.
+    ``predict`` floors the mean at a tiny positive value, so a Gaussian loss's
+    negative prediction scores badly under the Poisson deviance instead of
+    raising; a log-link estimator never reaches it.
     """
 
     def __init__(
@@ -134,4 +142,4 @@ class CountModel(BaseAgeGroupModel):
                 f"{type(estimator).__name__}.fit takes neither `exposure` nor "
                 "`sample_weight`"
             )
-        return np.asarray(prediction, dtype=float)
+        return np.maximum(np.asarray(prediction, dtype=float), _PREDICTION_FLOOR)
