@@ -43,6 +43,20 @@ def _(mo):
 def _():
     import hashlib
 
+    from sklearn.base import clone
+
+    from age_group_prediction.feature_engineering import (
+        Center,
+        CenterByReferencePoint,
+        ColumnPlan,
+        DomainScale,
+        FeatureTransformer,
+        Interaction,
+        OneHot,
+        Quadratic,
+        RelativeSaturation,
+        Standardize,
+    )
     from age_group_prediction.preprocessing import ExposureTransformer, ShareTransformer
     from age_group_prediction.splitting import Splitter
     from student_simulator import (
@@ -58,11 +72,21 @@ def _():
     return (
         ApartmentSimulator,
         BuildingSimulator,
+        Center,
+        CenterByReferencePoint,
         CohortCompositionSimulator,
+        ColumnPlan,
+        DomainScale,
         ExposureTransformer,
+        FeatureTransformer,
+        Interaction,
         NeighborhoodSimulator,
+        OneHot,
+        Quadratic,
+        RelativeSaturation,
         ShareTransformer,
         Splitter,
+        Standardize,
         StudentPopulationSimulator,
         TotalChildrenSimulator,
         hashlib,
@@ -313,26 +337,7 @@ def _(
         f"split n_train={len(train_index)} n_val={len(val_index)} "
         f"n_test={len(test_index)}"
     )
-    return (
-        X_test,
-        X_train,
-        X_val,
-        Y_test,
-        Y_train,
-        Y_val,
-        building_id_test,
-        building_id_train,
-        building_id_val,
-        exposure_test,
-        exposure_train,
-        exposure_val,
-        groups_test,
-        groups_train,
-        groups_val,
-        split_groups,
-        splitter,
-        train_index,
-    )
+    return split_groups, splitter, train_index
 
 
 @app.cell
@@ -341,7 +346,301 @@ def _(n_splits, seed, split_groups, splitter, train_index):
     # What cv.split takes: the training rows' groups, or None under random,
     # since KFold warns when given groups (an error under -W error).
     cv_groups = None if split_groups is None else split_groups.iloc[train_index]
-    return cv, cv_groups
+    return
+
+
+@app.cell(hide_code=True)
+def _(mo):
+    mo.md(r"""
+    ## 4) Feature variants
+
+    The declarations of `docs/FEATURE_TRANSFORMATIONS.md` §8. `n_apartments`
+    is a feature *and* the offset for the trees (§3.3: the offset asserts
+    proportionality, the feature lets the trees learn departures from it),
+    and only the exposure for the GLM stages (§4.4), so no GLM declaration
+    lists it. `FeatureTransformer` does not enforce that; the declarations
+    do, and the check below prints it. The interactions are §8.5's candidates
+    (the first choice per stage, §6.2-§6.3) plus §6's second choice per stage
+    and §6.5's recommended pair per stage. Each variant is fitted once on the
+    training part as a check; every model fits its own copy.
+    """)
+    return
+
+
+@app.cell
+def _(
+    Center,
+    CenterByReferencePoint,
+    ColumnPlan,
+    DomainScale,
+    OneHot,
+    Quadratic,
+    RelativeSaturation,
+    Standardize,
+):
+    # §8.0: the 3-room share is the omitted reference.
+    ROOM_SHARES = ("4_rooms_share", "5_rooms_share", "6_rooms_share")
+    school_transformer = OneHot(
+        categories=("none", "existing", "planned"), reference_category="none"
+    )
+    # §8.2: the plans of total_base, named once for the variants below.
+    ses_plan = ColumnPlan(name="ses", columns="ses", transforms=(Standardize(),))
+    household_plan = ColumnPlan(
+        name="household", columns="avg_household_size", transforms=(Standardize(),)
+    )
+    median_age_plan = ColumnPlan(
+        name="median_age", columns="median_age", transforms=(Standardize(),)
+    )
+    room_share_plan = ColumnPlan(
+        name="room_share",
+        columns=ROOM_SHARES,
+        transforms=(Center(), DomainScale(scale=0.1)),
+    )
+    daycare_plan = ColumnPlan(
+        name="daycare", columns="n_daycares_500m", transforms=(DomainScale(scale=2.0),)
+    )
+    school_plan = ColumnPlan(
+        name="school", columns="school_status", transforms=(school_transformer,)
+    )
+
+    ses_squared_plan = ColumnPlan(
+        name="ses_sq",
+        columns="ses",
+        transforms=(CenterByReferencePoint(reference_point=0.0), Quadratic()),
+    )
+    # §8.5.2: replaces daycare_plan; the column becomes n_daycares_500m_sat.
+    daycare_saturation_plan = ColumnPlan(
+        name="daycare_sat",
+        columns="n_daycares_500m",
+        transforms=(RelativeSaturation(),),
+    )
+    # §8.5.4: replaces daycare_plan when daycare is an interaction operand.
+    # Centered, each product barely correlates with its room share (-0.04 to
+    # 0.06 on the training part; 0.85 to 0.86 with the uncentered d/2).
+    daycare_centered_plan = ColumnPlan(
+        name="daycare_centered",
+        columns="n_daycares_500m",
+        transforms=(Center(), DomainScale(scale=2.0)),
+    )
+    return (
+        ROOM_SHARES,
+        daycare_centered_plan,
+        daycare_plan,
+        daycare_saturation_plan,
+        household_plan,
+        median_age_plan,
+        room_share_plan,
+        school_plan,
+        ses_plan,
+        ses_squared_plan,
+    )
+
+
+@app.cell
+def _(
+    ColumnPlan,
+    FeatureTransformer,
+    Interaction,
+    ROOM_SHARES,
+    daycare_centered_plan,
+    daycare_plan,
+    daycare_saturation_plan,
+    household_plan,
+    median_age_plan,
+    room_share_plan,
+    school_plan,
+    ses_plan,
+    ses_squared_plan,
+):
+    # §8.1: trees take the numerics untouched, n_apartments among them.
+    tree_numeric_plan = ColumnPlan(
+        name="numeric",
+        columns=(
+            *ROOM_SHARES,
+            "ses",
+            "avg_household_size",
+            "median_age",
+            "n_daycares_500m",
+            "n_apartments",
+        ),
+    )
+    tree = FeatureTransformer(plans=(tree_numeric_plan, school_plan))
+    # §8.1's SES-quadratic variant.
+    tree__ses_quadratic = FeatureTransformer(
+        plans=(tree_numeric_plan, ses_squared_plan, school_plan)
+    )
+
+    # §8.2: n_apartments is the exposure only, never a plan.
+    total_base = FeatureTransformer(
+        plans=(
+            ses_plan,
+            household_plan,
+            median_age_plan,
+            room_share_plan,
+            daycare_plan,
+            school_plan,
+        ),
+    )
+    # §8.5: candidates 2-4, each changing the total stage once.
+    total__ses_quadratic = FeatureTransformer(
+        plans=(
+            ses_plan,
+            household_plan,
+            median_age_plan,
+            room_share_plan,
+            daycare_plan,
+            school_plan,
+            ses_squared_plan,
+        ),
+    )
+    total__daycare_log1p = FeatureTransformer(
+        plans=(
+            ses_plan,
+            household_plan,
+            median_age_plan,
+            room_share_plan,
+            daycare_saturation_plan,
+            school_plan,
+        ),
+    )
+    total__room_share_x_household_size = FeatureTransformer(
+        plans=(
+            ses_plan,
+            household_plan,
+            median_age_plan,
+            room_share_plan,
+            daycare_plan,
+            school_plan,
+        ),
+        interactions=tuple(
+            Interaction(left=share, right="avg_household_size") for share in ROOM_SHARES
+        ),
+    )
+    # §6.2: the second choice; §6.5: the total-stage pair.
+    total__room_share_x_ses = FeatureTransformer(
+        plans=(
+            ses_plan,
+            household_plan,
+            median_age_plan,
+            room_share_plan,
+            daycare_plan,
+            school_plan,
+        ),
+        interactions=tuple(
+            Interaction(left=share, right="ses") for share in ROOM_SHARES
+        ),
+    )
+    total__room_share_x_household_size_and_ses = FeatureTransformer(
+        plans=(
+            ses_plan,
+            household_plan,
+            median_age_plan,
+            room_share_plan,
+            daycare_plan,
+            school_plan,
+        ),
+        interactions=(
+            *(
+                Interaction(left=share, right="avg_household_size")
+                for share in ROOM_SHARES
+            ),
+            *(Interaction(left=share, right="ses") for share in ROOM_SHARES),
+        ),
+    )
+
+    # §8.3: the same plans as total_base; the model takes no exposure.
+    cohort_probability_base = FeatureTransformer(
+        plans=(
+            ses_plan,
+            household_plan,
+            median_age_plan,
+            room_share_plan,
+            daycare_plan,
+            school_plan,
+        ),
+    )
+    # §8.5: candidates 5-6, each changing the composition stage once.
+    composition__daycare_log1p = FeatureTransformer(
+        plans=(
+            ses_plan,
+            household_plan,
+            median_age_plan,
+            room_share_plan,
+            daycare_saturation_plan,
+            school_plan,
+        ),
+    )
+    composition__room_share_x_median_age = FeatureTransformer(
+        plans=(
+            ses_plan,
+            household_plan,
+            median_age_plan,
+            room_share_plan,
+            daycare_plan,
+            school_plan,
+        ),
+        interactions=tuple(
+            Interaction(left=share, right="median_age") for share in ROOM_SHARES
+        ),
+    )
+    # §6.3: the second choice; §6.5: the composition-stage pair. Daycare is
+    # centered as an operand (§8.5.4).
+    composition__room_share_x_daycare = FeatureTransformer(
+        plans=(
+            ses_plan,
+            household_plan,
+            median_age_plan,
+            room_share_plan,
+            daycare_centered_plan,
+            school_plan,
+        ),
+        interactions=tuple(
+            Interaction(left=share, right="n_daycares_500m") for share in ROOM_SHARES
+        ),
+    )
+    composition__room_share_x_median_age_and_daycare = FeatureTransformer(
+        plans=(
+            ses_plan,
+            household_plan,
+            median_age_plan,
+            room_share_plan,
+            daycare_centered_plan,
+            school_plan,
+        ),
+        interactions=(
+            *(Interaction(left=share, right="median_age") for share in ROOM_SHARES),
+            *(
+                Interaction(left=share, right="n_daycares_500m")
+                for share in ROOM_SHARES
+            ),
+        ),
+    )
+
+    FEATURE_VARIANTS = {
+        "tree": tree,
+        "tree__ses_quadratic": tree__ses_quadratic,
+        "total_base": total_base,
+        "total__ses_quadratic": total__ses_quadratic,
+        "total__daycare_log1p": total__daycare_log1p,
+        "total__room_share_x_household_size": total__room_share_x_household_size,
+        "total__room_share_x_ses": total__room_share_x_ses,
+        "total__room_share_x_household_size_and_ses": (
+            total__room_share_x_household_size_and_ses
+        ),
+        "cohort_probability_base": cohort_probability_base,
+        "composition__daycare_log1p": composition__daycare_log1p,
+        "composition__room_share_x_median_age": composition__room_share_x_median_age,
+        "composition__room_share_x_daycare": composition__room_share_x_daycare,
+        "composition__room_share_x_median_age_and_daycare": (
+            composition__room_share_x_median_age_and_daycare
+        ),
+    }
+    return
+
+
+@app.cell
+def _():
+    return
 
 
 if __name__ == "__main__":
