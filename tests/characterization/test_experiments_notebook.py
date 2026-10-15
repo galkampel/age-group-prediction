@@ -99,7 +99,7 @@ def test_a_setting_missing_or_changed_in_a_settings_mapping_is_caught(
     }
     assert _printed(default_run.stdout, "experiment_settings") == {
         "seed": "42",
-        "split_method": "grouped",
+        "split_method": "random",
         "test_size": "0.2",
         "val_size": "0.2",
         "n_splits": "5",
@@ -117,6 +117,22 @@ def test_an_override_not_reaching_the_simulator_is_caught(
         "rows": "1529",
         "neighborhoods": "150",
         "data_hash": _canonical_hash(),
+    }
+
+
+def test_a_dropped_position_mapping_in_the_split_is_caught(
+    default_run: subprocess.CompletedProcess[str],
+) -> None:
+    # Measured on this table (random, seed 42): a second share of 0.2 instead
+    # of val_size / (1 - test_size) = 0.25 gives 978/245/306, and the whole
+    # table given to the second call gives 1146/383/306. The sizes do not
+    # catch the second call's positions used as table positions (917/306/306
+    # with 250 rows in two parts); the notebook maps them with
+    # train_val_index[...] instead.
+    assert _printed(default_run.stdout, "split") == {
+        "n_train": "917",
+        "n_val": "306",
+        "n_test": "306",
     }
 
 

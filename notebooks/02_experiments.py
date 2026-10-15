@@ -44,6 +44,7 @@ def _():
     import hashlib
 
     from age_group_prediction.preprocessing import ExposureTransformer, ShareTransformer
+    from age_group_prediction.splitting import Splitter
     from student_simulator import (
         ApartmentSimulator,
         BuildingSimulator,
@@ -61,6 +62,7 @@ def _():
         ExposureTransformer,
         NeighborhoodSimulator,
         ShareTransformer,
+        Splitter,
         StudentPopulationSimulator,
         TotalChildrenSimulator,
         hashlib,
@@ -154,7 +156,7 @@ def _(ExposureTransformer, df, hashlib):
     exposure = ExposureTransformer(exposure_col).fit_transform(df)
 
     print(X.shape, Y.shape, groups.shape, exposure.shape)
-    return X, data_hash, groups
+    return X, Y, data_hash, exposure, groups, id_col
 
 
 @app.cell
@@ -209,7 +211,7 @@ def _(mo):
 @app.cell
 def _(mo, pd):
     seed = 42
-    split_method = "grouped"  # "random", "stratified_by_group" or "grouped"
+    split_method = "random"  # "random", "stratified_by_group" or "grouped"
     test_size = 0.2  # share of the whole table
     val_size = 0.2  # share of the whole table, so 0.25 of the remainder
     n_splits = 5
@@ -231,7 +233,115 @@ def _(mo, pd):
         + " ".join(f"{k}={v}" for k, v in EXPERIMENT_SETTINGS.items())
     )
     mo.md(f"```text\n{pd.DataFrame([EXPERIMENT_SETTINGS]).to_string(index=False)}\n```")
+    return n_splits, seed, split_method, test_size, val_size
+
+
+@app.cell(hide_code=True)
+def _(mo):
+    mo.md(r"""
+    ## 3) Train, validation and test split
+
+    Two holdouts with one `Splitter`: the test part from the table, then the
+    validation part from the rest (`val_size / (1 - test_size)` of it, so
+    `val_size` of the table). Each call returns positions in the frame it was
+    given, so the second call's positions are inside the remainder;
+    `train_val_index[...]` maps them back to table positions, and every part
+    is taken by position with `.iloc`. The training part's folds come from
+    the same splitter, so a run cannot pair one method's split with another's
+    folds.
+    """)
     return
+
+
+@app.cell
+def _(
+    Splitter,
+    X,
+    Y,
+    df,
+    exposure,
+    groups,
+    id_col,
+    seed,
+    split_method,
+    test_size,
+    val_size,
+):
+    splitter = Splitter(split_method)
+    split_groups = None if split_method == "random" else groups  # random reads none
+    train_val_index, test_index = splitter.train_test_indices(
+        df, split_groups, test_size=test_size, random_state=seed
+    )
+    groups_train_val = (
+        None if split_groups is None else split_groups.iloc[train_val_index]
+    )
+    train_sub, val_sub = splitter.train_test_indices(
+        df.iloc[train_val_index],
+        groups_train_val,
+        test_size=val_size / (1 - test_size),
+        random_state=seed,
+    )
+    # The second call returns positions inside the remainder: map them back
+    # to table positions.
+    train_index, val_index = train_val_index[train_sub], train_val_index[val_sub]
+    # training, validation, and test splits
+    X_train, Y_train, exposure_train, groups_train = (
+        X.iloc[train_index],
+        Y.iloc[train_index],
+        exposure.iloc[train_index],
+        groups.iloc[train_index],
+    )
+    X_val, Y_val, exposure_val, groups_val = (
+        X.iloc[val_index],
+        Y.iloc[val_index],
+        exposure.iloc[val_index],
+        groups.iloc[val_index],
+    )
+    X_test, Y_test, exposure_test, groups_test = (
+        X.iloc[test_index],
+        Y.iloc[test_index],
+        exposure.iloc[test_index],
+        groups.iloc[test_index],
+    )
+
+    building_id_train, building_id_val, building_id_test = (
+        df[id_col].iloc[train_index],
+        df[id_col].iloc[val_index],
+        df[id_col].iloc[test_index],
+    )
+    print(
+        f"split n_train={len(train_index)} n_val={len(val_index)} "
+        f"n_test={len(test_index)}"
+    )
+    return (
+        X_test,
+        X_train,
+        X_val,
+        Y_test,
+        Y_train,
+        Y_val,
+        building_id_test,
+        building_id_train,
+        building_id_val,
+        exposure_test,
+        exposure_train,
+        exposure_val,
+        groups_test,
+        groups_train,
+        groups_val,
+        split_groups,
+        splitter,
+        train_index,
+    )
+
+
+@app.cell
+def _(n_splits, seed, split_groups, splitter, train_index):
+    cv = splitter.cv(n_splits=n_splits, random_state=seed)
+    # What cv.split takes: the training rows' groups, or None under random,
+    # since KFold warns when given groups (an error under -W error).
+    cv_groups = None if split_groups is None else split_groups.iloc[train_index]
+    return cv, cv_groups
 
 
 if __name__ == "__main__":

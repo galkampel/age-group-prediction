@@ -18,13 +18,15 @@ PR C done: `PermutationImportance` (C1), `ShapExplainer` (C2), the smoke run and
 `feat/experiment-notebook`: D1a and D1b committed (`2b13970`); the simulator
 refactor ([SIMULATOR_WHITE_BOX_PLAN.md](SIMULATOR_WHITE_BOX_PLAN.md)) Stops 1–3
 committed (`6b90805`, `59d15d6`, `e66b97d`), which moved the notebook to
-`notebooks/02_experiments.py` and rewrote its data cell. **Next: D1c**, in the
+`notebooks/02_experiments.py` and rewrote its data cell; D1c (the split,
+`split_method = "random"` for now) written 2026-10-15, awaiting the user's
+commit. **Next: D1d**, in the
 user's order of work recorded in
 [EXPERIMENT_NOTEBOOK_HANDOFF.md](EXPERIMENT_NOTEBOOK_HANDOFF.md) (split,
 feature configurations, tuning, inspection check, MLflow runs).
 
 **Branch state:** `feat/experiment-notebook` from `main` at `49301d0`, HEAD
-`e66b97d`; non-slow suite 1294 passed, 1 skipped, 1 xfailed.
+`3dbafdb` plus the uncommitted D1c; non-slow suite 1295 passed, 1 skipped, 1 xfailed.
 
 ## Contents
 
@@ -757,9 +759,10 @@ declarations module (decision 2026-10-14, §2).
     Data settings: `config_path = configs/simulation.toml`,
     `n_neighborhoods = 150`, `buildings_per_neighborhood_rate = 9.0`,
     `simulation_seed` = the config's 42 unless overridden. Experiment
-    settings: `seed = 42` (E12), `split_method = "grouped"` (B2 left the
-    choice to PR D; `grouped` is the honest one for a population whose
-    buildings share their neighborhood's draws, SPLITTING.md §5),
+    settings: `seed = 42` (E12), `split_method = "random"` (user's call
+    2026-10-15 at D1c, "for now"; B2 left the choice to PR D. `grouped` is
+    the honest one for a population whose buildings share their
+    neighborhood's draws, SPLITTING.md §5, and stays one setting away),
     `test_size = 0.2`, `val_size = 0.2` (E6), `n_splits = 5` (E6),
     `n_trials = 30`, `n_resamples = 1000` (D2).
   - Done when: `uv run --env-file .env notebooks/02_experiments.py` exits 0
@@ -786,14 +789,24 @@ declarations module (decision 2026-10-14, §2).
     Mutations: drop the `buildings_per_neighborhood_rate` override, so rows
     differ from 1529 and the first fails; drop the seed override from the
     `model_copy` update, so the second fails.
-- [ ] **D1c. C5 split.**
-  - Written: the three-way split cell (SPLITTING.md §3 with the settings).
-  - Done when: the script prints `n_train=908 n_val=311 n_test=310
-    overlap=0`; the table of neighborhoods per part in `marimo edit` matches
-    SPLITTING.md §3's table.
-  - Test: `..._splits_without_overlap` (the three sizes sum to 1529, overlap
-    0, sizes = §3's `grouped` row). Mutation: drop the `train_val_index[...]`
-    mapping, so `overlap` is not 0 and the test fails.
+- [x] **D1c. C5 split.**
+  - Written: section 3) with the split cell (SPLITTING.md §3 with the
+    settings, by position: the second call's positions are mapped back with
+    `train_val_index[...]` and every part, `X_`/`Y_`/`exposure_`/`groups_`/
+    `building_id_` for train, val, test, is taken with `.iloc`, user's
+    rewrite 2026-10-15) and a `cv` cell (`cv` and `cv_groups`, the groups
+    `cv.split` takes, `None` under `random` since `KFold` raises under
+    `-W error` when given groups). No overlap check and no display table
+    (user's review, 2026-10-15).
+  - Done when: the script prints `split n_train=917 n_val=306 n_test=306`
+    (§3's `random` row).
+  - Test: `test_a_dropped_position_mapping_in_the_split_is_caught` (the
+    exact sizes). Measured 2026-10-15: a second share of 0.2 gives
+    978 / 245 / 306; the whole table in the second call, silent under
+    `random`, gives 1146 / 383 / 306; the second call's positions used as
+    table labels keep the sizes (250 rows in two parts), which the sizes do
+    not catch (user's call). Mutation (done): the second share written as
+    `val_size`, the test fails on 978 / 245.
 - [ ] **D1d. C6 feature variants.**
   - Written: the feature variants cell (FEATURE_TRANSFORMATIONS.md §8 written
     out, tuples for columns, every variant fitted once on the training part).
