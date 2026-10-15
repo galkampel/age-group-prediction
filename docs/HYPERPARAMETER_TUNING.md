@@ -237,8 +237,8 @@ value per row of `X` (checked; a longer one would be sliced to size silently).
 
 Two uses beyond a study. `optuna.trial.FixedTrial(params)` scores one setting
 without a search, with the same folds; and an **empty search space** scores a
-model that has no hyperparameters (D20), as the notebook's NB2 run does, in a
-study of one trial (more trials would repeat the same fit):
+model as it is (D20), here NB2 at its defaults, in a study of one trial (more
+trials would repeat the same fit):
 
 ```python
 from optuna.trial import FixedTrial

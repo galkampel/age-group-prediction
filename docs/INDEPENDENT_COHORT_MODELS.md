@@ -207,8 +207,9 @@ $$
 with $b$, $\beta$ and $\alpha$ fitted jointly by maximum likelihood ($\alpha$ is free,
 unlike a GLM with a fixed $\alpha$). `predict(X, exposure=E)` is $E\cdot\exp(b + X\beta)$
 from the stored `intercept_` and `coef_` (what statsmodels' `results.predict(exog,
-exposure=E)` computes; $1.1 \times 10^{-14}$); `dispersion_` is $\alpha$. One setting,
-`max_iter=500`; unpenalized.
+exposure=E)` computes; $1.1 \times 10^{-14}$); `dispersion_` is $\alpha$, estimated or
+given. Three settings: `dispersion=None` (estimate $\alpha$; a float fixes it), `alpha=0.0`
+(the L1 penalty on $\beta$) and `max_iter=500`.
 
 **The fit, and why each choice.** BFGS (`method="bfgs"`), the preliminary Poisson fit too
 (`optim_kwds_prelim`): statsmodels' default Newton preliminary fit raises `LinAlgError` on
@@ -224,9 +225,36 @@ preparation, `PoissonRegressor` does not check either, and statsmodels fits
 a non-integer `y` silently ($\alpha$ 0.038 instead of 0.096 on `y + 0.5`). **Code:**
 `negative_binomial.py`.
 
+**Two hyperparameters, `dispersion` and `alpha` (2026-10-15).** For tuning, $\alpha$ and
+the L1 penalty are searched together, and each fit is one stage: with `dispersion=d` the
+model is statsmodels' `GLM(y, design, family=NegativeBinomial(alpha=d), exposure=E)` at
+that fixed $\alpha$, by IRLS when `alpha=0` (equal to the discrete fit's coefficients at
+its own $\hat\alpha$ to $5 \times 10^{-7}$, 6 ms) and otherwise by
+`fit_regularized(method="elastic_net", alpha=[0, a, …, a], L1_wt=1, maxiter=200,
+cnvrg_tol=1e-6)`: coordinate descent on statsmodels' objective $-\ell/n + \sum_j a|\beta_j|$
+($a$ on the per-observation scale), the intercept's penalty 0 (statsmodels penalizes every
+column it is given). Both read the result's `converged` flag (IRLS sets it with no
+warning; the elastic net warns only) and raise `RuntimeError`. A penalty without a
+dispersion raises: the free-$\alpha$ penalized fit is the discrete model's own
+`fit_regularized(method="l1")`, whose only installed solver, SLSQP, did not reach the
+penalized optimum on the simulator's totals (917 rows, `total_base`): from a zero start it
+trimmed coefficients erratically (4 to 9 of 9 across folds at one $a$) with failed quality
+checks, and from the MLE start with `acc=1e-14` it kept 9 of 9 up to $a = 3$, where the
+optimum is all zeros (`l1_cvxopt_cp` needs cvxopt, not installed). A two-stage fit
+($\hat\alpha$ by maximum likelihood, then the penalized GLM at it) was rejected by the
+user. Measured on the same data: unpenalized, the 5-fold Poisson deviance of the total
+barely moves with the dispersion (4.006–4.015 over 0.001–3, the MLE's 0.12 giving
+4.007); at $a = 0.03$ it has a shallow optimum, 3.974 at dispersion 0.03, 3.977 at 0.12
+and 4.034 at 0.001; over $a$ at the MLE dispersion the path is monotone (9 → 0
+coefficients) and smooth: 4.007 (0), 3.997 (0.01), 3.979 (0.03), 4.045 (0.1), 4.250
+(0.3), 4.866 (1). The maximum-likelihood dispersions on the training part are 0.12
+(total), 0.15, 0.12 and 0.18 (the cohorts). The search ranges: `dispersion` in
+$[10^{-2}, 1]$ and `alpha` in $[10^{-3}, 1]$, both log. statsmodels' descent defaults (50
+iterations, tolerance $10^{-10}$) warned at small $a$; 200 at $10^{-6}$ gave the same path
+without a warning, 0.005–0.07 s per fit.
+
 **Why statsmodels' discrete NB, and not:** `GLM(family=NegativeBinomial(alpha))` ($\alpha$
-must be fixed; its `fit_regularized(alpha, L1_wt=0)` is an L2 variant for later if tuning
-needs one); PR #11's torch objective (no torch in `modeling/`); `glum` (not installed,
+must be fixed: it is the fixed-dispersion stage above, never the estimate); PR #11's torch objective (no torch in `modeling/`); `glum` (not installed,
 $\theta$ fixed); a LightGBM / XGBoost custom objective (no NB objective; it would re-create
 the torch code); scikit-learn (`TweedieRegressor` is not NB).
 
@@ -281,7 +309,7 @@ classes of the old stack.
 | Class | Settings (defaults) | `fit` takes | Fitted state | `predict` returns |
 |---|---|---|---|---|
 | `CountModel` | `estimator` (required: a `Regressor`, `fit(X, y, sample_weight=None)` / `predict(X)`, or an `ExposureRegressor`, `fit(X, y, exposure=None)` / `predict(X, exposure=None)`); `use_exposure=False`; `feature_transformer=None` | the raw table with `feature_transformer`, otherwise the design matrix; one count column; `exposure=` (the raw $E$), required with `use_exposure`, ignored without | `estimator_`, `use_exposure_`, `feature_transformer_` | the mean count, a 1-D array; it follows how the model was fitted (an exposure is required if it was fitted with one) |
-| `NegativeBinomialRegressor` | `max_iter=500` | `X`, the counts `y`, `exposure=None` (raw) | `intercept_`, `coef_`, `dispersion_` ($\alpha$), `n_features_in_`, `feature_names_in_` | $E\cdot\exp(b + X\beta)$, or $\exp(b + X\beta)$ without an exposure |
+| `NegativeBinomialRegressor` | `dispersion=None` ($\alpha$ estimated, or fixed by a float), `alpha=0.0` (L1 on $\beta$, needs a fixed dispersion), `max_iter=500` | `X`, the counts `y`, `exposure=None` (raw) | `intercept_`, `coef_`, `dispersion_` ($\alpha$), `n_features_in_`, `feature_names_in_` | $E\cdot\exp(b + X\beta)$, or $\exp(b + X\beta)$ without an exposure |
 | `IndependentCohortModels` | `cohort_models` (a mapping cohort → `BaseAgeGroupModel`) | the raw table, a DataFrame of cohort counts, `exposure=` for every cohort | `cohort_models_` | a DataFrame, one column per cohort in `y`'s order, indexed like `X` |
 
 Every model has `evaluate(y_true, y_pred, metric)` with a `Metric`
