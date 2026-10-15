@@ -51,8 +51,9 @@ Each step is one or more plan stops. Plan each in plan mode, one step per approv
    - Study i gets `seed + i` (E12). The budget is `n_trials=30` and `n_splits=5`; record the
      wall time.
    - The feature variants per model: `tree` / `tree__ses_quadratic` for LightGBM,
-     `total_*` for the total stage, `cohort_probability_base` / `composition__*` for the
-     probability stage (§2 below).
+     `glm_base` / `count__*` for the count models (Model 1's cohorts, Model 2's total),
+     `glm_base` / `probability__*` for the probability model (§2 below; renamed
+     2026-10-15 from `total_*` / `cohort_probability_base` / `composition__*`).
 4. **Check that bootstrapping and feature importance work** (plan stop D2 steps 3–4, as a
    working check before any logging).
    - Guide: [MODEL_INSPECTION.md](MODEL_INSPECTION.md) (§2 worked example, §3 bootstrap, §4
@@ -92,14 +93,16 @@ Each step is one or more plan stops. Plan each in plan mode, one step per approv
       `KFold` raises under `-W error` when given groups. The cell returns nothing today.
   - **Section 4, feature variants:**
     - A shared-plans cell names each plan once, and a variants cell builds
-      `FEATURE_VARIANTS`, 13 declarations:
+      `FEATURE_VARIANTS`, 12 declarations (renamed 2026-10-15: one `glm_base` replaces the
+      identical `total_base` and `cohort_probability_base`; `total__*` → `count__*`,
+      `composition__*` → `probability__*`):
       - tree: `tree`, `tree__ses_quadratic`;
-      - total stage: `total_base`, `total__ses_quadratic`, `total__daycare_log1p`,
-        `total__room_share_x_household_size`, `total__room_share_x_ses`,
-        `total__room_share_x_household_size_and_ses`;
-      - composition stage: `cohort_probability_base`, `composition__daycare_log1p`,
-        `composition__room_share_x_median_age`, `composition__room_share_x_daycare`,
-        `composition__room_share_x_median_age_and_daycare`.
+      - count models: `glm_base`, `count__ses_quadratic`, `count__daycare_log1p`,
+        `count__room_share_x_household_size`, `count__room_share_x_ses`,
+        `count__room_share_x_household_size_and_ses`;
+      - probability model: `glm_base`, `probability__daycare_log1p`,
+        `probability__room_share_x_median_age`, `probability__room_share_x_daycare`,
+        `probability__room_share_x_median_age_and_daycare`.
     - `n_apartments` is a plan only in the tree variants (verified by probe 2026-10-15). The
       daycare operand of the two daycare interactions is centered (FEATURE_TRANSFORMATIONS.md
       §8.5.4).

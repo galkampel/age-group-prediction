@@ -257,7 +257,7 @@ def _(mo, pd):
         + " ".join(f"{k}={v}" for k, v in EXPERIMENT_SETTINGS.items())
     )
     mo.md(f"```text\n{pd.DataFrame([EXPERIMENT_SETTINGS]).to_string(index=False)}\n```")
-    return n_splits, seed, split_method, test_size, val_size
+    return n_splits, n_trials, seed, split_method, test_size, val_size
 
 
 @app.cell(hide_code=True)
@@ -346,7 +346,7 @@ def _(n_splits, seed, split_groups, splitter, train_index):
     # What cv.split takes: the training rows' groups, or None under random,
     # since KFold warns when given groups (an error under -W error).
     cv_groups = None if split_groups is None else split_groups.iloc[train_index]
-    return
+    return cv, cv_groups
 
 
 @app.cell(hide_code=True)
@@ -383,7 +383,7 @@ def _(
     school_transformer = OneHot(
         categories=("none", "existing", "planned"), reference_category="none"
     )
-    # §8.2: the plans of total_base, named once for the variants below.
+    # §8.2: the plans of glm_base, named once for the variants below.
     ses_plan = ColumnPlan(name="ses", columns="ses", transforms=(Standardize(),))
     household_plan = ColumnPlan(
         name="household", columns="avg_household_size", transforms=(Standardize(),)
@@ -470,8 +470,9 @@ def _(
         plans=(tree_numeric_plan, ses_squared_plan, school_plan)
     )
 
-    # §8.2: n_apartments is the exposure only, never a plan.
-    total_base = FeatureTransformer(
+    # §8.2: the base of every GLM, count or probability model; n_apartments is
+    # the exposure only, never a plan.
+    glm_base = FeatureTransformer(
         plans=(
             ses_plan,
             household_plan,
@@ -481,8 +482,8 @@ def _(
             school_plan,
         ),
     )
-    # §8.5: candidates 2-4, each changing the total stage once.
-    total__ses_quadratic = FeatureTransformer(
+    # §8.5: candidates 2-4, each changing the count model's plans once.
+    count__ses_quadratic = FeatureTransformer(
         plans=(
             ses_plan,
             household_plan,
@@ -493,7 +494,7 @@ def _(
             ses_squared_plan,
         ),
     )
-    total__daycare_log1p = FeatureTransformer(
+    count__daycare_log1p = FeatureTransformer(
         plans=(
             ses_plan,
             household_plan,
@@ -503,7 +504,7 @@ def _(
             school_plan,
         ),
     )
-    total__room_share_x_household_size = FeatureTransformer(
+    count__room_share_x_household_size = FeatureTransformer(
         plans=(
             ses_plan,
             household_plan,
@@ -517,7 +518,7 @@ def _(
         ),
     )
     # §6.2: the second choice; §6.5: the total-stage pair.
-    total__room_share_x_ses = FeatureTransformer(
+    count__room_share_x_ses = FeatureTransformer(
         plans=(
             ses_plan,
             household_plan,
@@ -530,7 +531,7 @@ def _(
             Interaction(left=share, right="ses") for share in ROOM_SHARES
         ),
     )
-    total__room_share_x_household_size_and_ses = FeatureTransformer(
+    count__room_share_x_household_size_and_ses = FeatureTransformer(
         plans=(
             ses_plan,
             household_plan,
@@ -548,19 +549,9 @@ def _(
         ),
     )
 
-    # §8.3: the same plans as total_base; the model takes no exposure.
-    cohort_probability_base = FeatureTransformer(
-        plans=(
-            ses_plan,
-            household_plan,
-            median_age_plan,
-            room_share_plan,
-            daycare_plan,
-            school_plan,
-        ),
-    )
-    # §8.5: candidates 5-6, each changing the composition stage once.
-    composition__daycare_log1p = FeatureTransformer(
+    # §8.3: the probability model takes the same base (§8.2) without an
+    # exposure; §8.5's candidates 5-6 each change its plans once.
+    probability__daycare_log1p = FeatureTransformer(
         plans=(
             ses_plan,
             household_plan,
@@ -570,7 +561,7 @@ def _(
             school_plan,
         ),
     )
-    composition__room_share_x_median_age = FeatureTransformer(
+    probability__room_share_x_median_age = FeatureTransformer(
         plans=(
             ses_plan,
             household_plan,
@@ -585,7 +576,7 @@ def _(
     )
     # §6.3: the second choice; §6.5: the composition-stage pair. Daycare is
     # centered as an operand (§8.5.4).
-    composition__room_share_x_daycare = FeatureTransformer(
+    probability__room_share_x_daycare = FeatureTransformer(
         plans=(
             ses_plan,
             household_plan,
@@ -598,7 +589,7 @@ def _(
             Interaction(left=share, right="n_daycares_500m") for share in ROOM_SHARES
         ),
     )
-    composition__room_share_x_median_age_and_daycare = FeatureTransformer(
+    probability__room_share_x_median_age_and_daycare = FeatureTransformer(
         plans=(
             ses_plan,
             household_plan,
@@ -619,28 +610,292 @@ def _(
     FEATURE_VARIANTS = {
         "tree": tree,
         "tree__ses_quadratic": tree__ses_quadratic,
-        "total_base": total_base,
-        "total__ses_quadratic": total__ses_quadratic,
-        "total__daycare_log1p": total__daycare_log1p,
-        "total__room_share_x_household_size": total__room_share_x_household_size,
-        "total__room_share_x_ses": total__room_share_x_ses,
-        "total__room_share_x_household_size_and_ses": (
-            total__room_share_x_household_size_and_ses
+        "glm_base": glm_base,
+        "count__ses_quadratic": count__ses_quadratic,
+        "count__daycare_log1p": count__daycare_log1p,
+        "count__room_share_x_household_size": count__room_share_x_household_size,
+        "count__room_share_x_ses": count__room_share_x_ses,
+        "count__room_share_x_household_size_and_ses": (
+            count__room_share_x_household_size_and_ses
         ),
-        "cohort_probability_base": cohort_probability_base,
-        "composition__daycare_log1p": composition__daycare_log1p,
-        "composition__room_share_x_median_age": composition__room_share_x_median_age,
-        "composition__room_share_x_daycare": composition__room_share_x_daycare,
-        "composition__room_share_x_median_age_and_daycare": (
-            composition__room_share_x_median_age_and_daycare
+        "probability__daycare_log1p": probability__daycare_log1p,
+        "probability__room_share_x_median_age": probability__room_share_x_median_age,
+        "probability__room_share_x_daycare": probability__room_share_x_daycare,
+        "probability__room_share_x_median_age_and_daycare": (
+            probability__room_share_x_median_age_and_daycare
         ),
     }
-    return
+    return (FEATURE_VARIANTS,)
 
 
 @app.cell
 def _():
     return
+
+
+@app.cell(hide_code=True)
+def _(mo):
+    mo.md(r"""
+    ## 5) Hyperparameter tuning
+
+    One Optuna study per component, by cross-validation on the training
+    part: a `CountModel` is scored by its Poisson deviance (each cohort's
+    column for Model 1, the row sums for Model 2's total), the
+    `CohortProbabilityModel` by the cohort log loss. The i-th study of a
+    run gets `seed + i`, so the studies of one run do not share their
+    startup trials. The estimator, its feature variant and the exposure
+    are settings, each a run of its own with the same seeds and folds: in
+    one study a categorical LightGBM loss split the budget unevenly and
+    its best trial was worse than either loss alone, and six GLM variants
+    would get five trials each. NB2 tunes its dispersion and its L1
+    penalty. A Gaussian loss can predict a negative count; `CountModel`
+    floors its mean, so such a trial scores badly instead of stopping the
+    study. The run cells sit behind buttons: opening the notebook fits
+    nothing.
+    """)
+    return
+
+
+@app.cell
+def _():
+    import time
+
+    import optuna
+    from lightgbm import LGBMClassifier, LGBMRegressor
+    from sklearn.linear_model import LogisticRegression, PoissonRegressor
+
+    from age_group_prediction.hyperparameter_tuning import (
+        CategoricalParameter,
+        CVHyperparameterEvaluator,
+        FloatParameter,
+        HyperparameterStudy,
+        IntParameter,
+    )
+    from age_group_prediction.modeling import (
+        CohortProbabilityModel,
+        CountModel,
+        IndependentCohortModels,
+        NegativeBinomialRegressor,
+        TotalTimesProbabilityModel,
+    )
+    from age_group_prediction.scoring import (
+        COHORT_LOG_LOSS,
+        COHORT_POISSON_DEVIANCE,
+        POISSON_DEVIANCE,
+    )
+
+    # Optuna logs every trial at INFO.
+    optuna.logging.set_verbosity(optuna.logging.WARNING)
+    return (
+        COHORT_LOG_LOSS,
+        COHORT_POISSON_DEVIANCE,
+        CVHyperparameterEvaluator,
+        CategoricalParameter,
+        CohortProbabilityModel,
+        CountModel,
+        FloatParameter,
+        HyperparameterStudy,
+        IndependentCohortModels,
+        IntParameter,
+        LGBMClassifier,
+        LGBMRegressor,
+        LogisticRegression,
+        NegativeBinomialRegressor,
+        POISSON_DEVIANCE,
+        PoissonRegressor,
+        TotalTimesProbabilityModel,
+        time,
+    )
+
+
+@app.cell
+def _(CategoricalParameter, FloatParameter, IntParameter):
+    # The names are set_params keys: estimator__ reaches the model's estimator.
+    # No isotonic: its lowest score block can hold no child of a cohort and
+    # then maps a building there to probability 0, an infinite log loss
+    # (measured 2026-10-15 with the LightGBM classifier).
+    CALIBRATION = CategoricalParameter(
+        "calibration_method", [None, "temperature", "sigmoid"]
+    )
+    LGBM_SPACE = [
+        IntParameter("estimator__max_depth", 3, 8),
+        IntParameter("estimator__num_leaves", 7, 63),
+        IntParameter("estimator__min_child_samples", 5, 40),
+        FloatParameter("estimator__learning_rate", 0.01, 0.2, log=True),
+        IntParameter("estimator__n_estimators", 50, 400),
+        FloatParameter("estimator__reg_alpha", 1e-8, 10.0, log=True),
+        FloatParameter("estimator__reg_lambda", 1e-8, 10.0, log=True),
+        FloatParameter("estimator__min_split_gain", 0.0, 1.0),
+        FloatParameter("estimator__subsample", 0.7, 1.0),
+        FloatParameter("estimator__colsample_bytree", 0.7, 1.0),
+    ]
+    SEARCH_SPACES = {
+        "lgbm": LGBM_SPACE,
+        "poisson_glm": [FloatParameter("estimator__alpha", 1e-4, 10.0, log=True)],
+        # The estimated dispersions are 0.12 to 0.18; the penalty's path runs
+        # from the unpenalized fit at 1e-3 to all-zero coefficients at 1.
+        "nb2": [
+            FloatParameter("estimator__dispersion", 0.01, 1.0, log=True),
+            FloatParameter("estimator__alpha", 1e-3, 1.0, log=True),
+        ],
+        "logistic": [
+            FloatParameter("estimator__C", 1e-3, 100.0, log=True),
+            CALIBRATION,
+        ],
+        "lgbm_classifier": [*LGBM_SPACE, CALIBRATION],
+    }
+    return (SEARCH_SPACES,)
+
+
+@app.cell
+def _(
+    LGBMClassifier,
+    LGBMRegressor,
+    LogisticRegression,
+    NegativeBinomialRegressor,
+    PoissonRegressor,
+    SEARCH_SPACES,
+    seed,
+):
+    # Each template: (estimator, search space, the FEATURE_VARIANTS keys it runs on).
+    # The trees take n_apartments as a feature and the offset; the GLMs take it
+    # as the exposure only (docs/FEATURE_TRANSFORMATIONS.md §3.3, §4.4), and the
+    # logistic model needs the scaled plans (it does not converge on `tree`).
+    # subsample_freq=1: LightGBM ignores subsample without it; n_jobs=1: one
+    # thread per fit.
+    TREE_VARIANTS = ("tree", "tree__ses_quadratic")
+    COUNT_GLM_VARIANTS = (
+        "glm_base",
+        "count__ses_quadratic",
+        "count__daycare_log1p",
+        "count__room_share_x_household_size",
+        "count__room_share_x_ses",
+        "count__room_share_x_household_size_and_ses",
+    )
+    PROBABILITY_GLM_VARIANTS = (
+        "glm_base",
+        "probability__daycare_log1p",
+        "probability__room_share_x_median_age",
+        "probability__room_share_x_daycare",
+        "probability__room_share_x_median_age_and_daycare",
+    )
+    REGRESSORS = {
+        "lgbm_poisson": (
+            LGBMRegressor(
+                objective="poisson",
+                subsample_freq=1,
+                n_jobs=1,
+                verbosity=-1,
+                random_state=seed,
+            ),
+            SEARCH_SPACES["lgbm"],
+            TREE_VARIANTS,
+        ),
+        "lgbm_gaussian": (
+            LGBMRegressor(
+                objective="regression",
+                subsample_freq=1,
+                n_jobs=1,
+                verbosity=-1,
+                random_state=seed,
+            ),
+            SEARCH_SPACES["lgbm"],
+            TREE_VARIANTS,
+        ),
+        "poisson_glm": (
+            PoissonRegressor(max_iter=1000),
+            SEARCH_SPACES["poisson_glm"],
+            COUNT_GLM_VARIANTS,
+        ),
+        "nb2": (
+            NegativeBinomialRegressor(),
+            SEARCH_SPACES["nb2"],
+            COUNT_GLM_VARIANTS,
+        ),
+    }
+    CLASSIFIERS = {
+        "logistic": (
+            LogisticRegression(max_iter=1000),
+            SEARCH_SPACES["logistic"],
+            PROBABILITY_GLM_VARIANTS,
+        ),
+        "lgbm": (
+            LGBMClassifier(
+                objective="multiclass",
+                subsample_freq=1,
+                n_jobs=1,
+                verbosity=-1,
+                random_state=seed,
+            ),
+            SEARCH_SPACES["lgbm_classifier"],
+            TREE_VARIANTS,
+        ),
+    }
+    return CLASSIFIERS, REGRESSORS
+
+
+@app.cell
+def _(CLASSIFIERS, REGRESSORS):
+    # Model 1, one per cohort: (regressor, feature variant, use_exposure), every
+    # regressor on each of its variants, with and without the exposure. Without
+    # it a GLM is size-blind, since no GLM variant lists n_apartments.
+    MODEL1_SETTINGS = {
+        f"{regressor}__{variant}__{'exposure' if use_exposure else 'no_exposure'}": (
+            regressor,
+            variant,
+            use_exposure,
+        )
+        for regressor, (_, _, variants) in REGRESSORS.items()
+        for variant in variants
+        for use_exposure in (True, False)
+    }
+    PROBABILITY_SETTINGS = {
+        f"{classifier}__{variant}": (classifier, variant)
+        for classifier, (_, _, variants) in CLASSIFIERS.items()
+        for variant in variants
+    }
+    # Model 2: (total setting, probability setting). The total is a Model 1
+    # setting on the row sums; the components are fitted independently, so
+    # each is tuned once and the pairs are assembled from the tuned components.
+    MODEL2_SETTINGS = {
+        f"{total}__{probability}": (total, probability)
+        for total in MODEL1_SETTINGS
+        for probability in PROBABILITY_SETTINGS
+    }
+    return MODEL1_SETTINGS, MODEL2_SETTINGS, PROBABILITY_SETTINGS
+
+
+@app.cell
+def _(CVHyperparameterEvaluator, HyperparameterStudy, time):
+    def tune_component(
+        model,
+        parameters,
+        X,
+        y,
+        *,
+        exposure,
+        metric,
+        study_seed,
+        cv,
+        cv_groups,
+        n_trials,
+    ):
+        """One study of ``model`` on the rows of ``X``; the result and its seconds.
+
+        An empty ``parameters`` scores the model as it is, in one trial: more
+        trials would repeat the same fit.
+        """
+        evaluator = CVHyperparameterEvaluator(model, parameters, cv=cv, metric=metric)
+        study = HyperparameterStudy(
+            seed=study_seed, n_trials=n_trials if parameters else 1
+        )
+        start = time.perf_counter()
+        result = study.optimize(
+            lambda trial: evaluator.evaluate(trial, X, y, cv_groups, exposure=exposure)
+        )
+        return result, time.perf_counter() - start
+
+    return (tune_component,)
 
 
 if __name__ == "__main__":

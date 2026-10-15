@@ -157,8 +157,8 @@ base.building.model_copy(update={"buildings_per_neighborhood_rate": 9.0})})`
 the validated exposure; `preprocessing.ShareTransformer` the room shares.
 
 **Feature declarations.** `tree` (§8.1), `total_base` (§8.2),
-`cohort_probability_base` (§8.3) and the §8.5 candidates exist **only as code
-blocks** in [FEATURE_TRANSFORMATIONS.md](FEATURE_TRANSFORMATIONS.md) §8; nothing
+`cohort_probability_base` (§8.3; the notebook names the two identical bases
+`glm_base`, D1d) and the §8.5 candidates exist **only as code blocks** in [FEATURE_TRANSFORMATIONS.md](FEATURE_TRANSFORMATIONS.md) §8; nothing
 in `src/` defines them. **Decision 2026-10-14:** they stay written out in the
 notebook; no module in `src/` (the user's call: explicit in the notebook, a
 module only if a second client appears).
@@ -815,13 +815,15 @@ declarations module (decision 2026-10-14, §2).
     declarations, each listing its plans explicitly). Committed as
     `98640ba`; the user removed the check cell that fitted each variant on
     `X_train` and printed its columns.
-  - The 13 variants (user's review 2026-10-15): `tree` and
-    `tree__ses_quadratic` (§8.1); `total_base` and §8.5's candidates 2-4;
-    `cohort_probability_base` and §8.5's candidates 5-6; and §6's second
-    choice and §6.5's pair per stage: `total__room_share_x_ses`,
-    `total__room_share_x_household_size_and_ses`,
-    `composition__room_share_x_daycare`,
-    `composition__room_share_x_median_age_and_daycare`. The daycare operand
+  - The 12 variants (user's review 2026-10-15; renamed the same day, one
+    `glm_base` replacing the identical `total_base` and
+    `cohort_probability_base`, `total__*` → `count__*` for the count models,
+    `composition__*` → `probability__*` for the probability model): `tree`
+    and `tree__ses_quadratic` (§8.1); `glm_base` and §8.5's candidates 2-4;
+    §8.5's candidates 5-6; and §6's second choice and §6.5's pair per stage:
+    `count__room_share_x_ses`, `count__room_share_x_household_size_and_ses`,
+    `probability__room_share_x_daycare`,
+    `probability__room_share_x_median_age_and_daycare`. The daycare operand
     is centered (§8.5.4): each product correlates −0.04 to 0.06 with its room
     share on the training part, 0.85 to 0.86 uncentered.
   - Done when: the notebook runs as a script; the declarations match §8 and
@@ -830,9 +832,9 @@ declarations module (decision 2026-10-14, §2).
     `n_apartments` (feature and offset, §3.3); every GLM variant lacks it
     (§4.4). They drop it only because no plan lists it (`remainder="drop"`);
     `FeatureTransformer` does not enforce the rule, and a plan listing it
-    fits silently (`total_base` with 10 columns).
+    fits silently (`glm_base` with 10 columns).
   - No test: with the check cell removed, nothing prints the columns. The
-    counts (10/11/9/10/9/12/12/15/9/9/12/12/15) and the `n_apartments`
+    counts (10/11/9/10/9/12/12/15/9/12/12/15) and the `n_apartments`
     rule were verified by probe and review on 2026-10-15 only; a GLM
     variant listing `n_apartments` would now fit unnoticed until step 3
     fits models on the variants.
