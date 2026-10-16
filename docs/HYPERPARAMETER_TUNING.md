@@ -453,9 +453,11 @@ parameter checks over every model in the package. Nested names reach inside:
 `estimator__alpha` for a `CountModel`'s regressor, `total_model__estimator__alpha`
 and `probability_model__calibration_method` for `TotalTimesProbabilityModel`.
 
-Two composites are tuned per component, not as one object. `IndependentCohortModels`
-does not forward `set_params` into its mapping, so Model 1 is tuned as one study
-per cohort `CountModel` (§2). Model 2 is tuned as two studies (the notebook plan's
+`IndependentCohortModels` forwards `cohort_models__<cohort>__<param>` into its mapping
+(and `cohort_models__<cohort>` replaces one model), so Model 1 is tuned as one study on
+the composite with `COHORT_POISSON_DEVIANCE`, each cohort's parameters named by its
+prefix ([Independent cohort models §3](INDEPENDENT_COHORT_MODELS.md#3-independentcohortmodels)).
+Model 2 is tuned as two studies (the notebook plan's
 E4): the total `CountModel` on `POISSON_DEVIANCE` of `y.sum(axis=1)` and the
 `CohortProbabilityModel` on `COHORT_LOG_LOSS` of `y`; the tuned components are
 then assembled into one `TotalTimesProbabilityModel` and refit.

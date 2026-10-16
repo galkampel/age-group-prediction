@@ -288,11 +288,16 @@ order at fit whatever the mapping's order, indexed like `X`.
   (`Counter`, not sets: a duplicated column would reach its model as a DataFrame).
 - *The targets come from `y` only.* With `remainder="drop"` (the §8 transformers) `X` may
   keep the target columns; `predict` needs none.
-- *Each cohort is tuned on its own.* A nested name such as
-  `cohort_models__n_kindergarten__estimator__learning_rate` raises `AttributeError`: tune
-  each `CountModel` (its nested names work), then assemble the mapping or replace it with
-  `set_params(cohort_models=...)`. The cohorts are independent, so no study tunes them
-  together.
+- *The cohorts are tuned together, through nested names.* `get_params(deep=True)` lists
+  `cohort_models__<cohort>` (the model) and `cohort_models__<cohort>__<param>` (its own
+  parameters, `cohort_models__n_kindergarten__estimator__learning_rate`), and `set_params`
+  takes them: a nested name reaches that cohort's model, `cohort_models__<cohort>` replaces
+  one model, `cohort_models` the mapping (applied first, as scikit-learn applies a whole
+  object before its nested names, so a name set together with a new mapping lands on the
+  new model). A cohort name must not contain `__` (the name is split at it; not checked).
+  `clone` copies the mapping value by value, so the tuner's `clone(model).set_params(...)`
+  leaves the template untouched. One study then tunes every cohort on the composite's
+  score ([Hyperparameter tuning §9](HYPERPARAMETER_TUNING.md#9-making-a-model-tunable)).
 - *Set before `fit`.* The models and their estimators and transformers are cloned in
   `fit`; `predict` follows the fitted copies, so a refit equals a fresh fit (the contract
   test). A plain `dict` suffices for the mapping.
@@ -310,7 +315,7 @@ classes of the old stack.
 |---|---|---|---|---|
 | `CountModel` | `estimator` (required: a `Regressor`, `fit(X, y, sample_weight=None)` / `predict(X)`, or an `ExposureRegressor`, `fit(X, y, exposure=None)` / `predict(X, exposure=None)`); `use_exposure=False`; `feature_transformer=None` | the raw table with `feature_transformer`, otherwise the design matrix; one count column; `exposure=` (the raw $E$), required with `use_exposure`, ignored without | `estimator_`, `use_exposure_`, `feature_transformer_` | the mean count, a 1-D array; it follows how the model was fitted (an exposure is required if it was fitted with one) |
 | `NegativeBinomialRegressor` | `dispersion=None` ($\alpha$ estimated, or fixed by a float), `alpha=0.0` (L1 on $\beta$, needs a fixed dispersion), `max_iter=500` | `X`, the counts `y`, `exposure=None` (raw) | `intercept_`, `coef_`, `dispersion_` ($\alpha$), `n_features_in_`, `feature_names_in_` | $E\cdot\exp(b + X\beta)$, or $\exp(b + X\beta)$ without an exposure |
-| `IndependentCohortModels` | `cohort_models` (a mapping cohort → `BaseAgeGroupModel`) | the raw table, a DataFrame of cohort counts, `exposure=` for every cohort | `cohort_models_` | a DataFrame, one column per cohort in `y`'s order, indexed like `X` |
+| `IndependentCohortModels` | `cohort_models` (a mapping cohort → `BaseAgeGroupModel`); nested: `cohort_models__<cohort>__<param>`, `cohort_models__<cohort>` | the raw table, a DataFrame of cohort counts, `exposure=` for every cohort | `cohort_models_` | a DataFrame, one column per cohort in `y`'s order, indexed like `X` |
 
 Every model has `evaluate(y_true, y_pred, metric)` with a `Metric`
 (`POISSON_DEVIANCE`, `RMSE`, `MAE`, or a custom one). Build LightGBM with `n_jobs=1`
@@ -391,6 +396,8 @@ data is prepared.
 | `RuntimeError` "NB2 did not converge" | `NegativeBinomialRegressor` stopped at `max_iter`; also the outcome of an exposure of 0, negative or NaN |
 | `ValueError` "exposure has shape" | an exposure that is not one value per row at `NegativeBinomialRegressor.predict` |
 | `ValueError` "cohort_models has … but y's columns are" | the mapping's keys differ from `y`'s columns |
+| `KeyError` | `set_params` with a misspelt cohort in a nested name (`cohort_models__n_kindergarden__…`) |
+| `ValueError` "Invalid parameter" (scikit-learn's) | `set_params` with a misspelt parameter name; the message names the model it was tried on (the cohort's `CountModel` or its estimator) |
 | `NotFittedError` | `predict` before `fit` |
 
 Left to the estimator: an unknown objective, an all-zero `y` under a Poisson loss
