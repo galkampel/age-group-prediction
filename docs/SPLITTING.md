@@ -81,9 +81,9 @@ from student_simulator import StudentPopulationSimulator
 from student_simulator.config import load_simulation_config
 
 base = load_simulation_config("configs/simulation.yml")
-config = base.model_copy(update={
-    "simulation": base.simulation.model_copy(update={"n_neighborhoods": 150}),
-    "building": base.building.model_copy(update={"buildings_per_neighborhood_rate": 9.0}),
+config = base.with_overrides({
+    "simulation": {"n_neighborhoods": 150},
+    "building": {"buildings_per_neighborhood_rate": 9.0},
 })
 table = StudentPopulationSimulator(config).run()
 

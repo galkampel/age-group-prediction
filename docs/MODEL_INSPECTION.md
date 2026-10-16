@@ -62,9 +62,9 @@ from age_group_prediction.utils import take_rows
 from student_simulator import StudentPopulationSimulator, load_simulation_config
 
 base = load_simulation_config("configs/simulation.yml")
-config = base.model_copy(update={
-    "simulation": base.simulation.model_copy(update={"n_neighborhoods": 150}),
-    "building": base.building.model_copy(update={"buildings_per_neighborhood_rate": 9.0}),
+config = base.with_overrides({
+    "simulation": {"n_neighborhoods": 150},
+    "building": {"buildings_per_neighborhood_rate": 9.0},
 })
 table = ShareTransformer(
     ("3_rooms", "4_rooms", "5_rooms", "6_rooms"), reference_column="3_rooms"

@@ -248,6 +248,30 @@ class Config(_Settings):
             )
         return self
 
+    def with_overrides(self, overrides: Mapping[str, Mapping[str, object]]) -> Config:
+        """A copy with ``overrides`` (section -> field -> value) applied and validated.
+
+        Unlike ``model_copy(update=...)``, which skips validation, every value
+        is coerced to its field's type (``9`` to ``9.0`` for a float) and every
+        section and cross-section check runs again; a bad value raises
+        ``ConfigError``. The transform settings may be named ``transforms``,
+        the attribute, or ``features``, the file's key; errors use the latter.
+        """
+        raw = self.model_dump()
+        # The dump names the section by its attribute; validation reads the
+        # file's key. Renamed before merging, so an override under either name
+        # lands in the one section validation reads.
+        raw["features"] = raw.pop("transforms")
+        for section, fields in overrides.items():
+            key = "features" if section == "transforms" else section
+            # An unknown section or field is left to extra="forbid".
+            raw[key] = {**raw.get(key, {}), **fields}
+        try:
+            return Config.model_validate(raw)
+        except ValidationError as error:
+            _raise_config_error(error)
+            raise AssertionError("unreachable")
+
 
 def _validate_min_max(minimum: float, maximum: float, path: str) -> None:
     """Require a coherent inclusive numeric range."""

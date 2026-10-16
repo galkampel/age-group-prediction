@@ -149,10 +149,9 @@ building: `building_id`, `neighborhood_id`, `ses`, `avg_household_size`,
 `n_apartments`, `n_kindergarten`, `n_elementary`, `n_highschool`,
 `n_children_total`. `Config` is a frozen pydantic model loaded by
 `load_simulation_config("configs/simulation.yml")` (seed 42, 60
-neighborhoods); the notebook overrides it with `base.model_copy(update={"simulation":
-base.simulation.model_copy(update={"n_neighborhoods": 150}), "building":
-base.building.model_copy(update={"buildings_per_neighborhood_rate": 9.0})})`
-(150 neighborhoods × 9 buildings, 1529 rows).
+neighborhoods); the notebook overrides it with `base.with_overrides({"simulation":
+{"n_neighborhoods": 150}, "building": {"buildings_per_neighborhood_rate": 9.0}})`,
+validated, unlike `model_copy` (150 neighborhoods × 9 buildings, 1529 rows).
 `preprocessing.ExposureTransformer("n_apartments").fit_transform(table)` gives
 the validated exposure; `preprocessing.ShareTransformer` the room shares.
 

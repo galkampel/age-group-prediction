@@ -105,19 +105,17 @@ def _(load_simulation_config, mo):
     simulation_seed = None  # None: the config's seed; an int overrides it
 
     base_config = load_simulation_config(config_path)
-    config = base_config.model_copy(
-        update={
-            "simulation": base_config.simulation.model_copy(
-                update={
-                    "n_neighborhoods": n_neighborhoods,
-                    **({} if simulation_seed is None else {"seed": simulation_seed}),
-                }
-            ),
-            "building": base_config.building.model_copy(
-                update={
-                    "buildings_per_neighborhood_rate": buildings_per_neighborhood_rate
-                }
-            ),
+    # Validated, unlike model_copy: each value is coerced to its field's type
+    # (9 to 9.0), so the config hash does not depend on how it was typed.
+    config = base_config.with_overrides(
+        {
+            "simulation": {
+                "n_neighborhoods": n_neighborhoods,
+                **({} if simulation_seed is None else {"seed": simulation_seed}),
+            },
+            "building": {
+                "buildings_per_neighborhood_rate": buildings_per_neighborhood_rate
+            },
         }
     )
     # The effective values, read back from the config: what every run logs.

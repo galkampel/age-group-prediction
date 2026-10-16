@@ -151,3 +151,37 @@ def test_an_empty_file_fails_as_a_config_error(tmp_path: Path) -> None:
 
     with pytest.raises(ConfigError, match=r"valid dictionary"):
         load_simulation_config(cfg_path)
+
+
+def test_an_override_is_coerced_to_its_field_type() -> None:
+    # model_copy(update=...) would keep the int, and the notebook's config
+    # hash would then differ for the same data.
+    config = load_simulation_config(_config_path())
+    as_int = config.with_overrides({"building": {"buildings_per_neighborhood_rate": 9}})
+
+    assert isinstance(as_int.building.buildings_per_neighborhood_rate, float)
+
+
+@pytest.mark.parametrize("section", ["transforms", "features"])
+def test_the_transform_settings_take_either_name(section: str) -> None:
+    # The attribute and the file's key name the same section; an override
+    # under the file's key was once overwritten by the dump's, silently.
+    config = load_simulation_config(_config_path())
+    overridden = config.with_overrides({section: {"room_reference": 5.0}})
+
+    assert overridden.transforms.room_reference == 5.0
+
+
+def test_an_override_runs_the_cross_section_checks() -> None:
+    # model_copy(update=...) accepts two values for 60 neighborhoods silently.
+    config = load_simulation_config(_config_path())
+
+    with pytest.raises(ConfigError, match=r"building.buildings_per_neighborhood"):
+        config.with_overrides({"building": {"buildings_per_neighborhood": (1, 2)}})
+
+
+def test_an_override_of_an_unknown_field_is_rejected() -> None:
+    config = load_simulation_config(_config_path())
+
+    with pytest.raises(ConfigError, match=r"simulation.n_neighbourhoods"):
+        config.with_overrides({"simulation": {"n_neighbourhoods": 150}})

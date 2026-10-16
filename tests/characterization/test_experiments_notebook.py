@@ -73,12 +73,10 @@ def _flatten(mapping: dict, prefix: str = "") -> dict:
 def _canonical_hash() -> str:
     """The config hash of the notebook's defaults, computed here."""
     base = load_simulation_config(PROJECT_ROOT / "configs" / "simulation.yml")
-    config = base.model_copy(
-        update={
-            "simulation": base.simulation.model_copy(update={"n_neighborhoods": 150}),
-            "building": base.building.model_copy(
-                update={"buildings_per_neighborhood_rate": 9.0}
-            ),
+    config = base.with_overrides(
+        {
+            "simulation": {"n_neighborhoods": 150},
+            "building": {"buildings_per_neighborhood_rate": 9.0},
         }
     )
     config_params = _flatten(config.model_dump())
