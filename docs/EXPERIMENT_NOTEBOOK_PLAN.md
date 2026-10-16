@@ -378,7 +378,7 @@ explained rows.
 
 | kind | content |
 |---|---|
-| params | setting: `composite`, `family_total` / `family_cohort` / `family_probability`, `feature_variant`, `use_exposure`; the simulator `Config` flattened from `model_dump()` (dotted keys) and a data hash (SHA-256 of the table's CSV bytes, own 3-line helper; `hashing.py` is old-stack); `split_method`, `seed`, `test_size`, `val_size`, `n_train` / `n_val` / `n_test`; the search space (parameter name → bounds); `n_trials`, `n_splits`, `aggregation` |
+| params | setting: `composite`, `family_total` / `family_cohort` / `family_probability`, `feature_variant`, `use_exposure`; the simulator `Config` flattened from `model_dump()` (dotted keys) and a config hash (SHA-256 of the sorted, flattened `config_params` as JSON: the data's version, by its recipe: a change to the simulator's code under the same config keeps the hash; `hashing.py` is old-stack); `split_method`, `seed`, `test_size`, `val_size`, `n_train` / `n_val` / `n_test`; the search space (parameter name → bounds); `n_trials`, `n_splits`, `aggregation` |
 | metrics | E3's validation set (`val/<metric>` mean, `val/<metric>/lower`, `.../upper`); per child study `cv/best_value`, `cv/best_std_error` (nested runs), from `TuningResult.best_value` and the best record's `std_error`, in the metric's own sign (A3); `best_value` is the aggregation's value (the CV mean under `WeightedMean`, mean + z·SE under `UpperBound`), so `aggregation` is logged as a param beside it |
 | artifacts | `trials.csv` (one row per `TrialRecord`), `best_params.json`, `model.joblib` (the refit model), `importance/permutation_val.csv`, `importance/permutation_train.csv`, `importance/shap_values.csv` (mean |SHAP| per column and cohort), plots `importance/permutation_val.png` (bar with error bars), `importance/shap_bar.png`, `importance/shap_beeswarm_<cohort>.png`, `features.txt` (`repr` of the feature transformers) |
 | tags | `setting` (a short name, the cell's title), `final=true` on the one test run |
@@ -790,6 +790,11 @@ declarations module (decision 2026-10-14, §2).
     Mutations: drop the `buildings_per_neighborhood_rate` override, so rows
     differ from 1529 and the first fails; drop the seed override from the
     `model_copy` update, so the second fails.
+  - *Superseded 2026-10-16:* `data_hash` became `config_hash` (E9). The script
+    prints `config_hash=dd15b2407967...`, the first test recomputes the config
+    hash, and the seed test also asserts 1561 rows at seed 7: the hash shows
+    only that the seed reached the config, the rows that it reached the
+    simulator.
 - [x] **D1c. C5 split.**
   - Written: section 3) with the split cell (SPLITTING.md §3 with the
     settings, by position: the second call's positions are mapped back with

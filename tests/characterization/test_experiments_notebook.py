@@ -11,6 +11,7 @@ marimo versions.
 from __future__ import annotations
 
 import hashlib
+import json
 import os
 import subprocess
 import sys
@@ -18,8 +19,7 @@ from pathlib import Path
 
 import pytest
 
-from age_group_prediction.preprocessing import ShareTransformer
-from student_simulator import StudentPopulationSimulator, load_simulation_config
+from student_simulator import load_simulation_config
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 NOTEBOOK_PATH = PROJECT_ROOT / "notebooks" / "02_experiments.py"
@@ -58,8 +58,20 @@ def _printed(stdout: str, prefix: str) -> dict[str, str]:
     return {name: value for name, value in pairs}
 
 
+def _flatten(mapping: dict, prefix: str = "") -> dict:
+    """The notebook's ``flatten``, copied: the notebook cannot be imported here."""
+    flat = {}
+    for key, value in mapping.items():
+        name = f"{prefix}{key}"
+        if isinstance(value, dict):
+            flat.update(_flatten(value, f"{name}."))
+        else:
+            flat[name] = value
+    return flat
+
+
 def _canonical_hash() -> str:
-    """The hash of the table the notebook's defaults build, computed here."""
+    """The config hash of the notebook's defaults, computed here."""
     base = load_simulation_config(PROJECT_ROOT / "configs" / "simulation.yml")
     config = base.model_copy(
         update={
@@ -69,10 +81,10 @@ def _canonical_hash() -> str:
             ),
         }
     )
-    table = ShareTransformer(
-        ("3_rooms", "4_rooms", "5_rooms", "6_rooms"), reference_column="3_rooms"
-    ).fit_transform(StudentPopulationSimulator.from_config(config).simulate().dataset)
-    return hashlib.sha256(table.to_csv(index=False).encode()).hexdigest()
+    config_params = _flatten(config.model_dump())
+    return hashlib.sha256(
+        json.dumps(config_params, sort_keys=True).encode()
+    ).hexdigest()
 
 
 @pytest.fixture(scope="module")
@@ -111,12 +123,12 @@ def test_a_setting_missing_or_changed_in_a_settings_mapping_is_caught(
 def test_an_override_not_reaching_the_simulator_is_caught(
     default_run: subprocess.CompletedProcess[str],
 ) -> None:
-    # The config alone gives 60 neighborhoods and far fewer rows; a hash over
-    # less than the full table would also differ from the one computed here.
+    # The config alone gives 60 neighborhoods and far fewer rows; a config
+    # hash without the overrides would also differ from the one computed here.
     assert _printed(default_run.stdout, "data") == {
         "rows": "1529",
         "neighborhoods": "150",
-        "data_hash": _canonical_hash(),
+        "config_hash": _canonical_hash(),
     }
 
 
@@ -138,7 +150,9 @@ def test_a_dropped_position_mapping_in_the_split_is_caught(
 
 def test_a_seed_override_not_reaching_the_simulator_is_caught(tmp_path: Path) -> None:
     # The default keeps the config's seed, so only a run with the override set
-    # shows whether it is wired: the population and the printed seed must change.
+    # shows whether it is wired: the printed seed and the config hash must
+    # change, and so must the population (1561 rows at seed 7, measured), which
+    # the hash alone cannot show.
     source = NOTEBOOK_PATH.read_text(encoding="utf-8")
     assert source.count("simulation_seed = None") == 1
     # A copy beside a configs/ link, because the notebook finds the config
@@ -156,7 +170,9 @@ def test_a_seed_override_not_reaching_the_simulator_is_caught(tmp_path: Path) ->
     result = _run(notebook_copy, tmp_path / "store")
     assert result.returncode == 0, result.stderr
     assert _printed(result.stdout, "data_settings")["simulation_seed"] == "7"
-    assert _printed(result.stdout, "data")["data_hash"] != _canonical_hash()
+    printed = _printed(result.stdout, "data")
+    assert printed["config_hash"] != _canonical_hash()
+    assert printed["rows"] == "1561"
 
 
 def test_a_tuning_cell_outside_a_run_button_is_caught() -> None:

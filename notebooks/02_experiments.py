@@ -32,7 +32,7 @@ def _(mo):
     mo.md(r"""
     ## 1) Data generation
 
-    A synthetic population of buildings from `configs/simulation.toml`, with
+    A synthetic population of buildings from `configs/simulation.yml`, with
     the overrides below. The simulator's own seed fixes the population; leave
     `simulation_seed` as `None` to keep the config's value.
     """)
@@ -42,17 +42,18 @@ def _(mo):
 @app.cell
 def _():
     import hashlib
+    import json
 
     from sklearn.base import clone
 
     from age_group_prediction.feature_engineering import (
         Center,
         CenterByReferencePoint,
-        ColumnPlan,
         DomainScale,
         FeatureTransformer,
         Interaction,
         OneHot,
+        Plan,
         Quadratic,
         RelativeSaturation,
         Standardize,
@@ -75,13 +76,13 @@ def _():
         Center,
         CenterByReferencePoint,
         CohortCompositionSimulator,
-        ColumnPlan,
         DomainScale,
         ExposureTransformer,
         FeatureTransformer,
         Interaction,
         NeighborhoodSimulator,
         OneHot,
+        Plan,
         Quadratic,
         RelativeSaturation,
         ShareTransformer,
@@ -90,6 +91,7 @@ def _():
         StudentPopulationSimulator,
         TotalChildrenSimulator,
         hashlib,
+        json,
         load_simulation_config,
     )
 
@@ -97,7 +99,7 @@ def _():
 @app.cell
 def _(load_simulation_config, mo):
     project_root = mo.notebook_dir().parent
-    config_path = project_root / "configs" / "simulation.toml"
+    config_path = project_root / "configs" / "simulation.yml"
     n_neighborhoods = 150  # the config has 60
     buildings_per_neighborhood_rate = 9.0
     simulation_seed = None  # None: the config's seed; an int overrides it
@@ -167,10 +169,7 @@ def _(
 
 
 @app.cell
-def _(ExposureTransformer, df, hashlib):
-    # Compute a hash of the dataset for reproducibility.
-    data_hash = hashlib.sha256(df.to_csv(index=False).encode()).hexdigest()
-
+def _(ExposureTransformer, df):
     targets = ["n_kindergarten", "n_elementary", "n_highschool"]
     exposure_col = "n_apartments"
     groups_col = "neighborhood_id"
@@ -180,7 +179,7 @@ def _(ExposureTransformer, df, hashlib):
     exposure = ExposureTransformer(exposure_col).fit_transform(df)
 
     print(X.shape, Y.shape, groups.shape, exposure.shape)
-    return X, Y, data_hash, exposure, groups, id_col
+    return X, Y, exposure, groups, id_col
 
 
 @app.cell
@@ -189,7 +188,7 @@ def _():
 
 
 @app.cell
-def _(DATA_SETTINGS, X, config, data_hash, df, groups, mo, pd):
+def _(DATA_SETTINGS, X, config, df, groups, hashlib, json, mo, pd):
     def flatten(mapping: dict, prefix: str = "") -> dict:
         """``{"a": {"b": 1}}`` to ``{"a.b": 1}``: MLflow parameters are flat."""
         flat = {}
@@ -202,9 +201,16 @@ def _(DATA_SETTINGS, X, config, data_hash, df, groups, mo, pd):
         return flat
 
     config_params = flatten(config.model_dump())
+    # The data's version: the effective config (overrides included). Keys
+    # sorted, so the hash does not depend on the dump's order.
+    config_hash = hashlib.sha256(
+        json.dumps(config_params, sort_keys=True).encode()
+    ).hexdigest()
 
     print("data_settings " + " ".join(f"{k}={v}" for k, v in DATA_SETTINGS.items()))
-    print(f"data rows={len(df)} neighborhoods={groups.nunique()} data_hash={data_hash}")
+    print(
+        f"data rows={len(df)} neighborhoods={groups.nunique()} config_hash={config_hash}"
+    )
     mo.vstack(
         [
             mo.md(f"```text\n{pd.DataFrame([DATA_SETTINGS]).to_string(index=False)}\n```"),
@@ -212,11 +218,11 @@ def _(DATA_SETTINGS, X, config, data_hash, df, groups, mo, pd):
                 f"**{len(df):,} buildings** in {groups.nunique()} neighborhoods; "
                 f"{len(config_params)} configuration parameters."
             ),
-            mo.md(f"```text\ndata hash: {data_hash}\n```"),
+            mo.md(f"```text\nconfig hash: {config_hash}\n```"),
             mo.md(f"```text\n{X.head().to_string(index=False)}\n```"),
         ]
     )
-    return
+    return config_hash, config_params
 
 
 @app.cell(hide_code=True)
@@ -381,147 +387,132 @@ def _(mo):
 def _(
     Center,
     CenterByReferencePoint,
-    ColumnPlan,
     DomainScale,
     OneHot,
+    Plan,
     Quadratic,
     RelativeSaturation,
     Standardize,
 ):
     # §8.0: the 3-room share is the omitted reference.
     ROOM_SHARES = ("4_rooms_share", "5_rooms_share", "6_rooms_share")
-    school_transformer = OneHot(
-        categories=("none", "existing", "planned"), reference_category="none"
+    # The treatments, named for what they do; each variant below applies them
+    # to its columns. scale_by: DomainScale divides by it, so a one-unit
+    # change of the output is 0.1 or 2 of the input.
+    passthrough_plan = Plan(name="passthrough")  # the identity
+    standardize_plan = Plan(name="standardize", transforms=(Standardize(),))
+    center_scale_by_tenth_plan = Plan(
+        name="center_scale_by_0.1", transforms=(Center(), DomainScale(scale=0.1))
     )
-    # §8.2: the plans of glm_base, named once for the variants below.
-    ses_plan = ColumnPlan(name="ses", columns="ses", transforms=(Standardize(),))
-    household_plan = ColumnPlan(
-        name="household", columns="avg_household_size", transforms=(Standardize(),)
+    scale_by_two_plan = Plan(name="scale_by_2", transforms=(DomainScale(scale=2.0),))
+    # §8.5.4: daycare as an interaction operand. Centered, each product barely
+    # correlates with its room share (-0.04 to 0.06 on the training part; 0.85
+    # to 0.86 with the uncentered d/2).
+    center_scale_by_two_plan = Plan(
+        name="center_scale_by_2", transforms=(Center(), DomainScale(scale=2.0))
     )
-    median_age_plan = ColumnPlan(
-        name="median_age", columns="median_age", transforms=(Standardize(),)
+    one_hot_plan = Plan(
+        name="one_hot",
+        transforms=(
+            OneHot(
+                categories=("none", "existing", "planned"),
+                reference_category="none",
+            ),
+        ),
     )
-    room_share_plan = ColumnPlan(
-        name="room_share",
-        columns=ROOM_SHARES,
-        transforms=(Center(), DomainScale(scale=0.1)),
-    )
-    daycare_plan = ColumnPlan(
-        name="daycare", columns="n_daycares_500m", transforms=(DomainScale(scale=2.0),)
-    )
-    school_plan = ColumnPlan(
-        name="school", columns="school_status", transforms=(school_transformer,)
-    )
-
-    ses_squared_plan = ColumnPlan(
-        name="ses_sq",
-        columns="ses",
+    square_around_zero_plan = Plan(
+        name="square_around_0",
         transforms=(CenterByReferencePoint(reference_point=0.0), Quadratic()),
     )
-    # §8.5.2: replaces daycare_plan; the column becomes n_daycares_500m_sat.
-    daycare_saturation_plan = ColumnPlan(
-        name="daycare_sat",
-        columns="n_daycares_500m",
-        transforms=(RelativeSaturation(),),
-    )
-    # §8.5.4: replaces daycare_plan when daycare is an interaction operand.
-    # Centered, each product barely correlates with its room share (-0.04 to
-    # 0.06 on the training part; 0.85 to 0.86 with the uncentered d/2).
-    daycare_centered_plan = ColumnPlan(
-        name="daycare_centered",
-        columns="n_daycares_500m",
-        transforms=(Center(), DomainScale(scale=2.0)),
+    # §8.5.2: the column becomes <column>_sat.
+    relative_saturation_plan = Plan(
+        name="relative_saturation", transforms=(RelativeSaturation(),)
     )
     return (
         ROOM_SHARES,
-        daycare_centered_plan,
-        daycare_plan,
-        daycare_saturation_plan,
-        household_plan,
-        median_age_plan,
-        room_share_plan,
-        school_plan,
-        ses_plan,
-        ses_squared_plan,
+        center_scale_by_tenth_plan,
+        center_scale_by_two_plan,
+        one_hot_plan,
+        passthrough_plan,
+        relative_saturation_plan,
+        scale_by_two_plan,
+        square_around_zero_plan,
+        standardize_plan,
     )
 
 
 @app.cell
 def _(
-    ColumnPlan,
     FeatureTransformer,
     Interaction,
     ROOM_SHARES,
-    daycare_centered_plan,
-    daycare_plan,
-    daycare_saturation_plan,
-    household_plan,
-    median_age_plan,
-    room_share_plan,
-    school_plan,
-    ses_plan,
-    ses_squared_plan,
+    center_scale_by_tenth_plan,
+    center_scale_by_two_plan,
+    one_hot_plan,
+    passthrough_plan,
+    relative_saturation_plan,
+    scale_by_two_plan,
+    square_around_zero_plan,
+    standardize_plan,
 ):
     # §8.1: trees take the numerics untouched, n_apartments among them.
-    tree_numeric_plan = ColumnPlan(
-        name="numeric",
-        columns=(
-            *ROOM_SHARES,
-            "ses",
-            "avg_household_size",
-            "median_age",
-            "n_daycares_500m",
-            "n_apartments",
-        ),
+    tree_numerics = [
+        *ROOM_SHARES,
+        "ses",
+        "avg_household_size",
+        "median_age",
+        "n_daycares_500m",
+        "n_apartments",
+    ]
+    tree = FeatureTransformer(
+        column_plans=(
+            (passthrough_plan, tree_numerics),
+            (one_hot_plan, ["school_status"]),
+        )
     )
-    tree = FeatureTransformer(plans=(tree_numeric_plan, school_plan))
     # §8.1's SES-quadratic variant.
     tree__ses_quadratic = FeatureTransformer(
-        plans=(tree_numeric_plan, ses_squared_plan, school_plan)
+        column_plans=(
+            (passthrough_plan, tree_numerics),
+            (square_around_zero_plan, ["ses"]),
+            (one_hot_plan, ["school_status"]),
+        )
     )
 
     # §8.2: the base of every GLM, count or probability model; n_apartments is
-    # the exposure only, never a plan.
+    # the exposure only, never a plan's column.
     glm_base = FeatureTransformer(
-        plans=(
-            ses_plan,
-            household_plan,
-            median_age_plan,
-            room_share_plan,
-            daycare_plan,
-            school_plan,
+        column_plans=(
+            (standardize_plan, ["ses", "avg_household_size", "median_age"]),
+            (center_scale_by_tenth_plan, list(ROOM_SHARES)),
+            (scale_by_two_plan, ["n_daycares_500m"]),
+            (one_hot_plan, ["school_status"]),
         ),
     )
     # §8.5: candidates 2-4, each changing the count model's plans once.
     count__ses_quadratic = FeatureTransformer(
-        plans=(
-            ses_plan,
-            household_plan,
-            median_age_plan,
-            room_share_plan,
-            daycare_plan,
-            school_plan,
-            ses_squared_plan,
+        column_plans=(
+            (standardize_plan, ["ses", "avg_household_size", "median_age"]),
+            (center_scale_by_tenth_plan, list(ROOM_SHARES)),
+            (scale_by_two_plan, ["n_daycares_500m"]),
+            (one_hot_plan, ["school_status"]),
+            (square_around_zero_plan, ["ses"]),
         ),
     )
     count__daycare_log1p = FeatureTransformer(
-        plans=(
-            ses_plan,
-            household_plan,
-            median_age_plan,
-            room_share_plan,
-            daycare_saturation_plan,
-            school_plan,
+        column_plans=(
+            (standardize_plan, ["ses", "avg_household_size", "median_age"]),
+            (center_scale_by_tenth_plan, list(ROOM_SHARES)),
+            (relative_saturation_plan, ["n_daycares_500m"]),
+            (one_hot_plan, ["school_status"]),
         ),
     )
     count__room_share_x_household_size = FeatureTransformer(
-        plans=(
-            ses_plan,
-            household_plan,
-            median_age_plan,
-            room_share_plan,
-            daycare_plan,
-            school_plan,
+        column_plans=(
+            (standardize_plan, ["ses", "avg_household_size", "median_age"]),
+            (center_scale_by_tenth_plan, list(ROOM_SHARES)),
+            (scale_by_two_plan, ["n_daycares_500m"]),
+            (one_hot_plan, ["school_status"]),
         ),
         interactions=tuple(
             Interaction(left=share, right="avg_household_size") for share in ROOM_SHARES
@@ -529,26 +520,22 @@ def _(
     )
     # §6.2: the second choice; §6.5: the total-stage pair.
     count__room_share_x_ses = FeatureTransformer(
-        plans=(
-            ses_plan,
-            household_plan,
-            median_age_plan,
-            room_share_plan,
-            daycare_plan,
-            school_plan,
+        column_plans=(
+            (standardize_plan, ["ses", "avg_household_size", "median_age"]),
+            (center_scale_by_tenth_plan, list(ROOM_SHARES)),
+            (scale_by_two_plan, ["n_daycares_500m"]),
+            (one_hot_plan, ["school_status"]),
         ),
         interactions=tuple(
             Interaction(left=share, right="ses") for share in ROOM_SHARES
         ),
     )
     count__room_share_x_household_size_and_ses = FeatureTransformer(
-        plans=(
-            ses_plan,
-            household_plan,
-            median_age_plan,
-            room_share_plan,
-            daycare_plan,
-            school_plan,
+        column_plans=(
+            (standardize_plan, ["ses", "avg_household_size", "median_age"]),
+            (center_scale_by_tenth_plan, list(ROOM_SHARES)),
+            (scale_by_two_plan, ["n_daycares_500m"]),
+            (one_hot_plan, ["school_status"]),
         ),
         interactions=(
             *(
@@ -562,23 +549,19 @@ def _(
     # §8.3: the probability model takes the same base (§8.2) without an
     # exposure; §8.5's candidates 5-6 each change its plans once.
     probability__daycare_log1p = FeatureTransformer(
-        plans=(
-            ses_plan,
-            household_plan,
-            median_age_plan,
-            room_share_plan,
-            daycare_saturation_plan,
-            school_plan,
+        column_plans=(
+            (standardize_plan, ["ses", "avg_household_size", "median_age"]),
+            (center_scale_by_tenth_plan, list(ROOM_SHARES)),
+            (relative_saturation_plan, ["n_daycares_500m"]),
+            (one_hot_plan, ["school_status"]),
         ),
     )
     probability__room_share_x_median_age = FeatureTransformer(
-        plans=(
-            ses_plan,
-            household_plan,
-            median_age_plan,
-            room_share_plan,
-            daycare_plan,
-            school_plan,
+        column_plans=(
+            (standardize_plan, ["ses", "avg_household_size", "median_age"]),
+            (center_scale_by_tenth_plan, list(ROOM_SHARES)),
+            (scale_by_two_plan, ["n_daycares_500m"]),
+            (one_hot_plan, ["school_status"]),
         ),
         interactions=tuple(
             Interaction(left=share, right="median_age") for share in ROOM_SHARES
@@ -587,26 +570,22 @@ def _(
     # §6.3: the second choice; §6.5: the composition-stage pair. Daycare is
     # centered as an operand (§8.5.4).
     probability__room_share_x_daycare = FeatureTransformer(
-        plans=(
-            ses_plan,
-            household_plan,
-            median_age_plan,
-            room_share_plan,
-            daycare_centered_plan,
-            school_plan,
+        column_plans=(
+            (standardize_plan, ["ses", "avg_household_size", "median_age"]),
+            (center_scale_by_tenth_plan, list(ROOM_SHARES)),
+            (center_scale_by_two_plan, ["n_daycares_500m"]),
+            (one_hot_plan, ["school_status"]),
         ),
         interactions=tuple(
             Interaction(left=share, right="n_daycares_500m") for share in ROOM_SHARES
         ),
     )
     probability__room_share_x_median_age_and_daycare = FeatureTransformer(
-        plans=(
-            ses_plan,
-            household_plan,
-            median_age_plan,
-            room_share_plan,
-            daycare_centered_plan,
-            school_plan,
+        column_plans=(
+            (standardize_plan, ["ses", "avg_household_size", "median_age"]),
+            (center_scale_by_tenth_plan, list(ROOM_SHARES)),
+            (center_scale_by_two_plan, ["n_daycares_500m"]),
+            (one_hot_plan, ["school_status"]),
         ),
         interactions=(
             *(Interaction(left=share, right="median_age") for share in ROOM_SHARES),
@@ -664,8 +643,12 @@ def _(mo):
     scored on training and validation. NB2 tunes its dispersion and its L1
     penalty; a Gaussian loss can predict a negative count, which
     `CountModel` floors, so the trial scores badly instead of stopping the
-    study. The run cells sit behind buttons: opening the notebook fits
-    nothing.
+    study. Model 2 is tuned the same way, one study per pair of a total
+    family (the list `MODEL2_TOTALS`, edited after Model 1's table) and a
+    classifier family, under `total_model__…` and `probability_model__…`;
+    the probability model ignores the exposure, and its calibration is
+    searched. The last table shows each model's best family on validation.
+    The run cells sit behind buttons: opening the notebook fits nothing.
     """)
     return
 
@@ -843,11 +826,16 @@ def _(
             [*SEARCH_SPACES["nb2"], USE_EXPOSURE, count_variant],
         ),
     }
-    CLASSIFIERS = {
+    # Each probability family likewise; the probability model ignores the
+    # exposure, and its calibration is in the search space.
+    probability_variant = KeyedParameter(
+        "feature_transformer",
+        {name: FEATURE_VARIANTS[name] for name in PROBABILITY_GLM_VARIANTS},
+    )
+    PROBABILITY_FAMILIES = {
         "logistic": (
             LogisticRegression(max_iter=1000),
-            SEARCH_SPACES["logistic"],
-            PROBABILITY_GLM_VARIANTS,
+            [*SEARCH_SPACES["logistic"], probability_variant],
         ),
         "lgbm": (
             LGBMClassifier(
@@ -857,11 +845,10 @@ def _(
                 verbosity=-1,
                 random_state=seed,
             ),
-            SEARCH_SPACES["lgbm_classifier"],
-            TREE_VARIANTS,
+            [*SEARCH_SPACES["lgbm_classifier"], tree_variant],
         ),
     }
-    return CLASSIFIERS, COHORTS, COUNT_FAMILIES
+    return COHORTS, COUNT_FAMILIES, PROBABILITY_FAMILIES
 
 
 @app.cell
@@ -898,7 +885,7 @@ def _(
         )
         for family, (estimator, parameters) in COUNT_FAMILIES.items()
     }
-    return (MODEL1_EVALUATORS,)
+    return MODEL1_EVALUATORS, prefixed
 
 
 @app.cell
@@ -967,93 +954,133 @@ def _(
 
 @app.cell
 def _(
-    COHORTS,
     COHORT_POISSON_DEVIANCE,
     CategoricalParameter,
     Counter,
     KeyedParameter,
+    POISSON_DEVIANCE,
+    pd,
+):
+    def score_best(
+        evaluators,
+        results,
+        components,
+        *,
+        X_train,
+        Y_train,
+        X_val,
+        Y_val,
+        exposure_train,
+        exposure_val,
+    ):
+        """Refit each family's best combination on the training part; the models and three tables.
+
+        ``results`` maps a family to ``(TuningResult, seconds)``; ``components``
+        are the set_params prefixes of the parts a trial chooses for
+        (``cohort_models__<cohort>`` or ``total_model`` / ``probability_model``).
+        The tables: the Poisson deviance per cohort and of the composite on
+        training and validation; the best categorical choices per component;
+        the trials per arm of every categorical, so a starved arm is visible
+        before a family is declared worse.
+        """
+        models = {}
+        score_rows, choice_rows, arm_rows = [], [], []
+        for family, (result, seconds) in results.items():
+            evaluator = evaluators[family]
+            model = evaluator.build_model(result.best_params).fit(
+                X_train, Y_train, exposure=exposure_train
+            )
+            models[family] = model
+            pred_train = model.predict(X_train, exposure=exposure_train)
+            pred_val = model.predict(X_val, exposure=exposure_val)
+            for cohort in Y_train.columns:
+                score_rows.append(
+                    {
+                        "family": family,
+                        "cohort": cohort,
+                        "train": model.evaluate(
+                            Y_train[cohort], pred_train[cohort], POISSON_DEVIANCE
+                        ),
+                        "val": model.evaluate(
+                            Y_val[cohort], pred_val[cohort], POISSON_DEVIANCE
+                        ),
+                    }
+                )
+            score_rows.append(
+                {
+                    "family": family,
+                    "cohort": "composite",
+                    "cv_best": result.best_value,
+                    "train": model.evaluate(
+                        Y_train, pred_train, COHORT_POISSON_DEVIANCE
+                    ),
+                    "val": model.evaluate(Y_val, pred_val, COHORT_POISSON_DEVIANCE),
+                    "seconds": seconds,
+                }
+            )
+            categoricals = [
+                p
+                for p in evaluator.parameters
+                if isinstance(p, (CategoricalParameter, KeyedParameter))
+            ]
+            for component in components:
+                prefix = f"{component}__"
+                choice_rows.append(
+                    {
+                        "family": family,
+                        "component": component,
+                        **{
+                            p.name.removeprefix(prefix): result.best_params[p.name]
+                            for p in categoricals
+                            if p.name.startswith(prefix)
+                        },
+                    }
+                )
+            for p in categoricals:
+                counts = Counter(trial.params[p.name] for trial in result.trials)
+                arm_rows.extend(
+                    {
+                        "family": family,
+                        "parameter": p.name,
+                        "value": value,
+                        "n_trials": count,
+                    }
+                    for value, count in counts.items()
+                )
+        return (
+            models,
+            pd.DataFrame(score_rows),
+            pd.DataFrame(choice_rows),
+            pd.DataFrame(arm_rows),
+        )
+
+    return (score_best,)
+
+
+@app.cell
+def _(
+    COHORTS,
     MODEL1_EVALUATORS,
     MODEL1_RESULTS,
-    POISSON_DEVIANCE,
     X_train,
     X_val,
     Y_train,
     Y_val,
     exposure_train,
     exposure_val,
-    pd,
+    score_best,
 ):
-    MODEL1_MODELS = {}
-    _model1_rows, _model1_choice_rows, _model1_arm_rows = [], [], []
-    for _family, (_result, _seconds) in MODEL1_RESULTS.items():
-        _evaluator = MODEL1_EVALUATORS[_family]
-        # The best combination, refit on the training part.
-        _model = _evaluator.build_model(_result.best_params).fit(
-            X_train, Y_train, exposure=exposure_train
-        )
-        MODEL1_MODELS[_family] = _model
-        _pred_train = _model.predict(X_train, exposure=exposure_train)
-        _pred_val = _model.predict(X_val, exposure=exposure_val)
-        for _cohort in COHORTS:
-            _model1_rows.append(
-                {
-                    "family": _family,
-                    "cohort": _cohort,
-                    "train": _model.evaluate(
-                        Y_train[_cohort], _pred_train[_cohort], POISSON_DEVIANCE
-                    ),
-                    "val": _model.evaluate(
-                        Y_val[_cohort], _pred_val[_cohort], POISSON_DEVIANCE
-                    ),
-                }
-            )
-            _prefix = f"cohort_models__{_cohort}__"
-            _model1_choice_rows.append(
-                {
-                    "family": _family,
-                    "cohort": _cohort,
-                    **{
-                        name.removeprefix(_prefix): value
-                        for name, value in _result.best_params.items()
-                        if name.startswith(_prefix)
-                        and name.removeprefix(_prefix)
-                        in (
-                            "feature_transformer",
-                            "use_exposure",
-                            "estimator__objective",
-                        )
-                    },
-                }
-            )
-        _model1_rows.append(
-            {
-                "family": _family,
-                "cohort": "composite",
-                "cv_best": _result.best_value,
-                "train": _model.evaluate(Y_train, _pred_train, COHORT_POISSON_DEVIANCE),
-                "val": _model.evaluate(Y_val, _pred_val, COHORT_POISSON_DEVIANCE),
-                "seconds": _seconds,
-            }
-        )
-        # Trials per arm of every categorical: a starved arm is visible before
-        # a family is declared worse.
-        for _parameter in _evaluator.parameters:
-            if isinstance(_parameter, (CategoricalParameter, KeyedParameter)):
-                _counts = Counter(
-                    trial.params[_parameter.name] for trial in _result.trials
-                )
-                _model1_arm_rows.extend(
-                    {
-                        "family": _family,
-                        "parameter": _parameter.name,
-                        "value": value,
-                        "n_trials": count,
-                    }
-                    for value, count in _counts.items()
-                )
-    model1_df = pd.DataFrame(_model1_rows)
-    model1_choices_df = pd.DataFrame(_model1_choice_rows)
-    model1_arms_df = pd.DataFrame(_model1_arm_rows)
+    MODEL1_MODELS, model1_df, model1_choices_df, model1_arms_df = score_best(
+        MODEL1_EVALUATORS,
+        MODEL1_RESULTS,
+        [f"cohort_models__{cohort}" for cohort in COHORTS],
+        X_train=X_train,
+        Y_train=Y_train,
+        X_val=X_val,
+        Y_val=Y_val,
+        exposure_train=exposure_train,
+        exposure_val=exposure_val,
+    )
     return MODEL1_MODELS, model1_arms_df, model1_choices_df, model1_df
 
 
@@ -1063,12 +1090,161 @@ def _(mo, model1_arms_df, model1_choices_df, model1_df):
         [
             mo.md("**Model 1: cohort Poisson deviance** (cv_best: the study's value)"),
             mo.md(f"```text\n{model1_df.round(4).to_string(index=False)}\n```"),
-            mo.md("**Best combination per cohort**"),
+            mo.md("**Best combination per component** (one per cohort)"),
             mo.md(f"```text\n{model1_choices_df.to_string(index=False)}\n```"),
             mo.md("**Trials per arm**"),
             mo.md(f"```text\n{model1_arms_df.to_string(index=False)}\n```"),
         ]
     )
+
+
+@app.cell
+def _():
+    # Model 2's total families, a list to edit after Model 1's table above. The
+    # pairs tuned are this list × the probability families.
+    MODEL2_TOTALS = ["lgbm", "poisson_glm", "nb2"]
+    return (MODEL2_TOTALS,)
+
+
+@app.cell
+def _(
+    COHORT_POISSON_DEVIANCE,
+    COUNT_FAMILIES,
+    CVHyperparameterEvaluator,
+    CohortProbabilityModel,
+    CountModel,
+    MODEL2_TOTALS,
+    PROBABILITY_FAMILIES,
+    TotalTimesProbabilityModel,
+    cv,
+    prefixed,
+):
+    # Model 2, one evaluator per (total, probability) pair: the total's
+    # parameters under total_model__, the classifier's under probability_model__.
+    MODEL2_EVALUATORS = {
+        f"{total}__{probability}": CVHyperparameterEvaluator(
+            TotalTimesProbabilityModel(
+                total_model=CountModel(estimator=COUNT_FAMILIES[total][0]),
+                probability_model=CohortProbabilityModel(estimator=estimator),
+            ),
+            [
+                *prefixed("total_model", COUNT_FAMILIES[total][1]),
+                *prefixed("probability_model", parameters),
+            ],
+            cv=cv,
+            metric=COHORT_POISSON_DEVIANCE,
+        )
+        for total in MODEL2_TOTALS
+        for probability, (estimator, parameters) in PROBABILITY_FAMILIES.items()
+    }
+    return (MODEL2_EVALUATORS,)
+
+
+@app.cell
+def _(MODEL2_EVALUATORS, mo):
+    run_model2 = mo.ui.run_button(label="Tune Model 2")
+    mo.md(
+        f"{run_model2} {len(MODEL2_EVALUATORS)} studies × `n_trials` trials, in "
+        "parallel; ≈ 12 min at 200 for six."
+    )
+    return (run_model2,)
+
+
+@app.cell
+def _(
+    MODEL2_EVALUATORS,
+    Parallel,
+    X_train,
+    Y_train,
+    cv_groups,
+    delayed,
+    exposure_train,
+    mo,
+    n_trials,
+    run_model2,
+    seed,
+    tune_model,
+):
+    mo.stop(not run_model2.value, mo.md("Click the button to tune Model 2."))
+    # One process per pair; study i gets seed + i.
+    model2_runs = Parallel(n_jobs=len(MODEL2_EVALUATORS))(
+        delayed(tune_model)(
+            evaluator,
+            X_train,
+            Y_train,
+            exposure=exposure_train,
+            cv_groups=cv_groups,
+            study_seed=seed + i,
+            n_trials=n_trials,
+        )
+        for i, evaluator in enumerate(MODEL2_EVALUATORS.values())
+    )
+    MODEL2_RESULTS = dict(zip(MODEL2_EVALUATORS, model2_runs, strict=True))
+    return (MODEL2_RESULTS,)
+
+
+@app.cell
+def _(
+    MODEL2_EVALUATORS,
+    MODEL2_RESULTS,
+    X_train,
+    X_val,
+    Y_train,
+    Y_val,
+    exposure_train,
+    exposure_val,
+    score_best,
+):
+    MODEL2_MODELS, model2_df, model2_choices_df, model2_arms_df = score_best(
+        MODEL2_EVALUATORS,
+        MODEL2_RESULTS,
+        ["total_model", "probability_model"],
+        X_train=X_train,
+        Y_train=Y_train,
+        X_val=X_val,
+        Y_val=Y_val,
+        exposure_train=exposure_train,
+        exposure_val=exposure_val,
+    )
+    return MODEL2_MODELS, model2_arms_df, model2_choices_df, model2_df
+
+
+@app.cell
+def _(mo, model2_arms_df, model2_choices_df, model2_df):
+    mo.vstack(
+        [
+            mo.md("**Model 2: cohort Poisson deviance** (cv_best: the study's value)"),
+            mo.md(f"```text\n{model2_df.round(4).to_string(index=False)}\n```"),
+            mo.md("**Best combination per component**"),
+            mo.md(f"```text\n{model2_choices_df.to_string(index=False)}\n```"),
+            mo.md("**Trials per arm**"),
+            mo.md(f"```text\n{model2_arms_df.to_string(index=False)}\n```"),
+        ]
+    )
+
+
+@app.cell
+def _(mo, model1_df, model2_df, pd):
+    # Each model's best family on validation, from the composite rows. A fresh
+    # index: the two frames' labels overlap, and idxmin + loc would return both.
+    _composites = pd.concat(
+        [
+            model1_df[model1_df["cohort"] == "composite"].assign(model="model1"),
+            model2_df[model2_df["cohort"] == "composite"].assign(model="model2"),
+        ],
+        ignore_index=True,
+    )
+    best_df = _composites.loc[
+        _composites.groupby("model")["val"].idxmin(),
+        ["model", "family", "cv_best", "train", "val"],
+    ]
+    mo.vstack(
+        [
+            mo.md("**Best family per model** (validation cohort Poisson deviance)"),
+            mo.md(f"```text\n{best_df.round(4).to_string(index=False)}\n```"),
+        ]
+    )
+    return (best_df,)
 
 
 if __name__ == "__main__":
