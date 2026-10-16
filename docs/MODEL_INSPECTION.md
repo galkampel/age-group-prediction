@@ -50,7 +50,7 @@ import pandas as pd
 from lightgbm import LGBMRegressor
 from sklearn.linear_model import LogisticRegression, PoissonRegressor
 
-from age_group_prediction.feature_engineering import ColumnPlan, FeatureTransformer, OneHot, Standardize
+from age_group_prediction.feature_engineering import FeatureTransformer, OneHot, Plan, Standardize
 from age_group_prediction.inspection import BootstrapEvaluator, PermutationImportance, ShapExplainer
 from age_group_prediction.modeling import (
     CohortProbabilityModel, CountModel, IndependentCohortModels, TotalTimesProbabilityModel,
@@ -72,13 +72,16 @@ table = ShareTransformer(
 cohorts = ["n_kindergarten", "n_elementary", "n_highschool"]
 numeric = ("4_rooms_share", "5_rooms_share", "6_rooms_share", "ses",
            "avg_household_size", "median_age", "n_daycares_500m", "n_apartments")
-school = ColumnPlan(
-    name="school", columns=("school_status",),
-    transforms=(OneHot(categories=("none", "existing", "planned"), reference_category="none"),),
+school = (
+    Plan(
+        name="one_hot",
+        transforms=(OneHot(categories=("none", "existing", "planned"), reference_category="none"),),
+    ),
+    ["school_status"],
 )
-tree = FeatureTransformer(plans=(ColumnPlan(name="numeric", columns=numeric), school))
+tree = FeatureTransformer(column_plans=((Plan(name="passthrough"), list(numeric)), school))
 linear = FeatureTransformer(
-    plans=(ColumnPlan(name="numeric", columns=numeric, transforms=(Standardize(),)), school)
+    column_plans=((Plan(name="standardize", transforms=(Standardize(),)), list(numeric)), school)
 )
 X, Y = table[[*numeric, "school_status"]], table[cohorts]
 exposure = ExposureTransformer("n_apartments").fit_transform(table)

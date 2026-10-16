@@ -6,7 +6,7 @@ from collections.abc import Callable, Sequence
 
 import numpy as np
 import pandas as pd
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 from sklearn.base import BaseEstimator, TransformerMixin
 from sklearn.compose import ColumnTransformer
 from sklearn.pipeline import Pipeline
@@ -26,27 +26,21 @@ _TransformerTuple = tuple[
 ]
 
 
-class ColumnPlan(BaseModel):
-    """One named group of columns and the transforms applied to them.
+class Plan(BaseModel):
+    """One treatment: a named chain of transforms, with no transforms an identity.
 
-    Columns are grouped by shared treatment. The same column may appear in
-    several plans, which is how a derived term joins the one it derives from.
+    The columns it applies to are declared beside it in
+    :class:`FeatureTransformer`'s ``column_plans``, so one plan serves every
+    column that shares the treatment.
     """
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     name: str = Field(min_length=1)
-    columns: tuple[str, ...] = Field(min_length=1)
     transforms: tuple[Transform, ...] = ()
 
-    @field_validator("columns", mode="before")
-    @classmethod
-    def _accept_a_bare_column(cls, value: str | Sequence[str]) -> Sequence[str]:
-        """Let a one-column plan pass the name itself rather than a list."""
-        return (value,) if isinstance(value, str) else value
-
     @model_validator(mode="after")
-    def _check_input_signs(self) -> ColumnPlan:
+    def _check_input_signs(self) -> Plan:
         """Reject a step needing non-negative input once negatives are certain."""
         # The step after which negatives are certain. Only then is the plan
         # refused; otherwise a bad value is the data's, caught at fit or
@@ -115,7 +109,13 @@ class Interaction(BaseModel):
 
 
 class FeatureTransformer(TransformerMixin, BaseEstimator):
-    """Turns a set of column plans into a fitted design matrix.
+    """Turns ``column_plans``, ``(plan, columns)`` pairs, into a fitted design matrix.
+
+    Each pair applies one plan to the columns listed with it, always a list:
+    as in scikit-learn, a bare column name would mean a 1-D selection. A column may
+    appear in several pairs, which is how a derived term joins the one it
+    derives from; a plan may appear in one pair only, so list every column
+    that shares it there.
 
     Statistics are learned in :meth:`fit` and reused by every
     :meth:`transform`, so a validation fold is centered by the training fold's
@@ -129,14 +129,14 @@ class FeatureTransformer(TransformerMixin, BaseEstimator):
 
     def __init__(
         self,
-        plans: tuple[ColumnPlan, ...] = (),
+        column_plans: Sequence[tuple[Plan, Sequence[str]]] = (),
         *,
         interactions: Sequence[Interaction] = (),
         remainder: str = "drop",
     ) -> None:
         # Stored verbatim: set_params assigns attributes without re-entering
         # __init__, so validating here would be skipped by GridSearchCV.
-        self.plans = plans
+        self.column_plans = column_plans
         self.interactions = interactions
         self.remainder = remainder
 
@@ -147,12 +147,25 @@ class FeatureTransformer(TransformerMixin, BaseEstimator):
         fit is left to it, and whether the exposure is also a predictor is the
         caller's modeling choice, not this class's.
         """
-        if not self.plans and self.remainder == "drop":
+        if not self.column_plans and self.remainder == "drop":
             # A legal but empty matrix, shape (n, 0), which nobody complains about.
             raise ValueError(
                 "A transformer that drops unplanned columns needs at least one "
                 "plan; otherwise the design matrix has no columns"
             )
+        for plan, columns in self.column_plans:
+            if isinstance(columns, str):
+                # scikit-learn reads a string as a 1-D selection, which most
+                # transformers refuse; list() here would instead split it into
+                # characters, and "se" would select "s" and "e" silently.
+                raise TypeError(
+                    f"Plan {plan.name!r} takes a list of columns, not the "
+                    f"string {columns!r}"
+                )
+            if not columns:
+                # ColumnTransformer skips an entry that selects nothing, so
+                # the plan would vanish from the matrix without an error.
+                raise ValueError(f"Plan {plan.name!r} is applied to no columns")
 
     def fit(self, X: pd.DataFrame, y: object = None) -> FeatureTransformer:
         """Learn the transforms from ``X`` and record the resulting columns."""
@@ -181,8 +194,8 @@ class FeatureTransformer(TransformerMixin, BaseEstimator):
     def _build(self) -> Pipeline:
         """Return the unfitted pipeline the plans and interactions describe."""
         transformers: list[_TransformerTuple] = []
-        for plan in self.plans:
-            transformers.append((plan.name, plan.build(), list(plan.columns)))
+        for plan, columns in self.column_plans:
+            transformers.append((plan.name, plan.build(), list(columns)))
         column_transformer = ColumnTransformer(
             transformers,
             remainder=self.remainder,

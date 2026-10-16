@@ -13,9 +13,9 @@ from pydantic import ValidationError
 from sklearn.linear_model import LogisticRegression, PoissonRegressor
 
 from age_group_prediction.feature_engineering import (
-    ColumnPlan,
     FeatureTransformer,
     OneHot,
+    Plan,
     Standardize,
 )
 from age_group_prediction.inspection import PermutationImportance
@@ -183,17 +183,19 @@ def test_total_times_probability_model_with_a_string_column() -> None:
     table = StudentPopulationSimulator.from_config(config).simulate().dataset
     numeric = ("ses", "avg_household_size", "median_age", "n_daycares_500m")
     features = FeatureTransformer(
-        plans=(
-            ColumnPlan(name="numeric", columns=numeric, transforms=(Standardize(),)),
-            ColumnPlan(
-                name="school",
-                columns=("school_status",),
-                transforms=(
-                    OneHot(
-                        categories=("none", "existing", "planned"),
-                        reference_category="none",
+        column_plans=(
+            (Plan(name="numeric", transforms=(Standardize(),)), list(numeric)),
+            (
+                Plan(
+                    name="school",
+                    transforms=(
+                        OneHot(
+                            categories=("none", "existing", "planned"),
+                            reference_category="none",
+                        ),
                     ),
                 ),
+                ["school_status"],
             ),
         )
     )

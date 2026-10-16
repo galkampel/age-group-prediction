@@ -3,10 +3,11 @@
 Each transformation is its own model carrying exactly the parameters it needs,
 so a missing or nonsensical parameter is a construction-time error rather than
 a failure deep inside a fold. :mod:`transforms` holds those transformations;
-:mod:`transformer` groups them into named column plans and fits them.
+:mod:`transformer` groups them into named plans, applies each to its
+columns and fits them.
 """
 
-from .transformer import ColumnPlan, FeatureTransformer, Interaction
+from .transformer import FeatureTransformer, Interaction, Plan
 from .transforms import (
     Center,
     CenterByReferencePoint,
@@ -25,7 +26,6 @@ from .transforms import (
 __all__ = [
     "Center",
     "CenterByReferencePoint",
-    "ColumnPlan",
     "DomainMinMax",
     "DomainScale",
     "FeatureTransformer",
@@ -34,6 +34,7 @@ __all__ = [
     "Log1p",
     "Log1pRatioScaler",
     "OneHot",
+    "Plan",
     "Quadratic",
     "RelativeSaturation",
     "Standardize",

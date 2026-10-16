@@ -158,7 +158,7 @@ def test_every_member_is_listed_once() -> None:
 
 @pytest.mark.parametrize("transform", _EVERY_MEMBER, ids=lambda t: t.kind)
 def test_every_member_declares_its_sign_behavior(transform) -> None:
-    # ColumnPlan rejects a log of a column an earlier step may have made
+    # Plan rejects a log of a column an earlier step may have made
     # negative; it can only do so if every step states what it does to signs.
     declared = (transform.negative_output, transform.needs_nonnegative_input)
     assert declared == _SIGN_BEHAVIOR[transform.kind]

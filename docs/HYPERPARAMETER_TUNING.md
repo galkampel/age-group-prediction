@@ -45,7 +45,7 @@ lives in `src` (the notebook plan's D1).
 import optuna
 from lightgbm import LGBMRegressor
 
-from age_group_prediction.feature_engineering import ColumnPlan, FeatureTransformer, OneHot
+from age_group_prediction.feature_engineering import FeatureTransformer, OneHot, Plan
 from age_group_prediction.hyperparameter_tuning import (
     CVHyperparameterEvaluator,
     FloatParameter,
@@ -70,18 +70,18 @@ table = ShareTransformer(
 ).fit_transform(StudentPopulationSimulator(config).run())
 cohorts = ["n_kindergarten", "n_elementary", "n_highschool"]
 
+one_hot = Plan(
+    name="one_hot",
+    transforms=(OneHot(categories=("none", "existing", "planned"), reference_category="none"),),
+)
 tree = FeatureTransformer(
-    plans=(
-        ColumnPlan(
-            name="numeric",
-            columns=("4_rooms_share", "5_rooms_share", "6_rooms_share", "ses",
-                     "avg_household_size", "median_age", "n_daycares_500m", "n_apartments"),
+    column_plans=(
+        (
+            Plan(name="passthrough"),
+            ["4_rooms_share", "5_rooms_share", "6_rooms_share", "ses",
+             "avg_household_size", "median_age", "n_daycares_500m", "n_apartments"],
         ),
-        ColumnPlan(
-            name="school",
-            columns=("school_status",),
-            transforms=(OneHot(categories=("none", "existing", "planned"), reference_category="none"),),
-        ),
+        (one_hot, ["school_status"]),
     )
 )
 

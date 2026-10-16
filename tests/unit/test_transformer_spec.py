@@ -1,4 +1,4 @@
-"""Tests for declaring a design matrix: column plans and their validation.
+"""Tests for declaring a design matrix: plans, their columns and their validation.
 
 A malformed declaration should be refused before any data is involved, so most
 of these assert that something raises. Per-plan rules fail when the plan is
@@ -20,7 +20,6 @@ from sklearn.preprocessing import StandardScaler
 from age_group_prediction.feature_engineering import (
     Center,
     CenterByReferencePoint,
-    ColumnPlan,
     DomainMinMax,
     DomainScale,
     FeatureTransformer,
@@ -28,6 +27,7 @@ from age_group_prediction.feature_engineering import (
     Log,
     Log1p,
     OneHot,
+    Plan,
     Quadratic,
     RelativeSaturation,
     Standardize,
@@ -51,28 +51,27 @@ _ONE_OF_EACH_TRANSFORM = (
 )
 
 
-def _plan(name: str, *columns: str, transforms=()) -> ColumnPlan:
-    return ColumnPlan(name=name, columns=columns, transforms=transforms)
+def _pair(name: str, *columns: str, transforms=()) -> tuple[Plan, list[str]]:
+    """One ``column_plans`` entry: a plan and the columns it is applied to."""
+    return (Plan(name=name, transforms=transforms), list(columns))
 
 
-# --- ColumnPlan: building one group's chain ----------------------------------
+# --- Plan: building one treatment's chain ------------------------------------
 
 
 def test_a_plan_without_transforms_is_a_passthrough() -> None:
-    plan = ColumnPlan(name="ses_raw", columns=("ses",))
+    plan = Plan(name="passthrough")
     assert plan.build() == "passthrough"
 
 
 def test_a_single_transform_needs_no_pipeline_wrapper() -> None:
-    plan = ColumnPlan(name="ses_z", columns=("ses",), transforms=(Standardize(),))
+    plan = Plan(name="standardize", transforms=(Standardize(),))
     assert isinstance(plan.build(), StandardScaler)
 
 
 def test_a_chain_builds_a_pipeline_in_declaration_order() -> None:
-    plan = ColumnPlan(
-        name="room_share",
-        columns=("3_rooms_share",),
-        transforms=(Center(), DomainScale(scale=0.1)),
+    plan = Plan(
+        name="center_scale_by_0.1", transforms=(Center(), DomainScale(scale=0.1))
     )
     built = plan.build()
     assert isinstance(built, Pipeline)
@@ -82,16 +81,14 @@ def test_a_chain_builds_a_pipeline_in_declaration_order() -> None:
 def test_a_chain_may_repeat_a_kind() -> None:
     # Index-prefixed step names; a bare kind would collide and sklearn would
     # reject the Pipeline.
-    plan = ColumnPlan(name="twice", columns=("ses",), transforms=(Center(), Center()))
+    plan = Plan(name="twice", transforms=(Center(), Center()))
     assert [name for name, _ in plan.build().steps] == ["0_center", "1_center"]
 
 
 def test_a_room_share_chain_centers_then_rescales() -> None:
     df = pd.DataFrame({"3_rooms_share": [0.1, 0.2, 0.3]})
-    plan = ColumnPlan(
-        name="room_share",
-        columns=("3_rooms_share",),
-        transforms=(Center(), DomainScale(scale=0.1)),
+    plan = Plan(
+        name="center_scale_by_0.1", transforms=(Center(), DomainScale(scale=0.1))
     )
     transformed = plan.build().fit_transform(df)
     # (x - 0.2) / 0.1, so the coefficient reads per 10 percentage points.
@@ -99,9 +96,7 @@ def test_a_room_share_chain_centers_then_rescales() -> None:
 
 
 def test_a_chain_names_its_output_for_the_last_renaming_step() -> None:
-    plan = ColumnPlan(
-        name="ses_z_sq", columns=("ses",), transforms=(Standardize(), Quadratic())
-    )
+    plan = Plan(name="standardize_squared", transforms=(Standardize(), Quadratic()))
     built = plan.build().fit(pd.DataFrame({"ses": [1.0, 2.0, 3.0]}))
     assert list(built.get_feature_names_out()) == ["ses_squared"]
 
@@ -109,18 +104,16 @@ def test_a_chain_names_its_output_for_the_last_renaming_step() -> None:
 def test_a_plan_accepts_every_transform_in_the_vocabulary() -> None:
     # Each in its own plan, since a one-hot may not share one.
     for index, transform in enumerate(_ONE_OF_EACH_TRANSFORM):
-        plan = _plan(f"p{index}", f"c{index}", transforms=(transform,))
+        plan, _ = _pair(f"p{index}", f"c{index}", transforms=(transform,))
         assert plan.transforms == (transform,)
 
 
-# --- ColumnPlan: what cannot be declared -------------------------------------
+# --- Plan: what cannot be declared -------------------------------------------
 
 
-def test_a_plan_rejects_an_empty_name_or_no_columns() -> None:
+def test_a_plan_rejects_an_empty_name() -> None:
     with pytest.raises(ValidationError, match="at least 1 character"):
-        ColumnPlan(name="", columns=("ses",))
-    with pytest.raises(ValidationError, match="at least 1 item"):
-        ColumnPlan(name="empty", columns=())
+        Plan(name="")
 
 
 @pytest.mark.parametrize(
@@ -143,12 +136,12 @@ def test_a_log_after_centering_is_rejected_when_declared(earlier, log) -> None:
         ValidationError,
         match=rf"'c'.*{log.kind}.*{earlier.kind} .*always emits.*before {earlier.kind}",
     ):
-        _plan("c", "ses", transforms=(earlier, log))
+        _pair("c", "ses", transforms=(earlier, log))
 
 
 def test_a_sign_preserving_step_does_not_clear_negatives() -> None:
     with pytest.raises(ValidationError, match="log.*center"):
-        _plan("c", "ses", transforms=(Center(), DomainScale(scale=0.1), Log()))
+        _pair("c", "ses", transforms=(Center(), DomainScale(scale=0.1), Log()))
 
 
 @pytest.mark.parametrize(
@@ -165,33 +158,33 @@ def test_a_sign_preserving_step_does_not_clear_negatives() -> None:
     ids=lambda steps: "-".join(step.kind for step in steps),
 )
 def test_a_log_after_a_data_dependent_step_is_left_to_the_data(earlier) -> None:
-    plan = _plan("c", "ses", transforms=(*earlier, Log()))
+    pair = _pair("c", "ses", transforms=(*earlier, Log()))
     # ses [2, 3, 4]: DomainMinMax gives [0.25, 0.375, 0.5], Log gives values
     # above 0, and the centered chain gives [0.45, 0.5, 0.55]; either way the
     # final log is finite.
     df = pd.DataFrame({"ses": [2.0, 3.0, 4.0]})
-    transformed = FeatureTransformer(plans=(plan,)).fit_transform(df)
+    transformed = FeatureTransformer(column_plans=(pair,)).fit_transform(df)
     assert np.isfinite(transformed["ses"]).all()
 
 
 @pytest.mark.filterwarnings("ignore:.*encountered in log:RuntimeWarning")
 def test_a_data_dependent_bad_value_is_caught_by_the_output_check() -> None:
     # The declared minimum maps to 0, and log 0 is -inf.
-    plan = _plan("c", "ses", transforms=(DomainMinMax(minimum=1.0, maximum=3.0), Log()))
+    pair = _pair("c", "ses", transforms=(DomainMinMax(minimum=1.0, maximum=3.0), Log()))
     with pytest.raises(ValueError, match="non-finite"):
-        FeatureTransformer(plans=(plan,)).fit_transform(_frame())
+        FeatureTransformer(column_plans=(pair,)).fit_transform(_frame())
 
 
 def test_squaring_clears_negatives() -> None:
-    plan = _plan("c", "ses", transforms=(Center(), Quadratic(), Log1p()))
-    transformed = FeatureTransformer(plans=(plan,)).fit_transform(_frame())
+    pair = _pair("c", "ses", transforms=(Center(), Quadratic(), Log1p()))
+    transformed = FeatureTransformer(column_plans=(pair,)).fit_transform(_frame())
     # ses [1, 2, 3] centers to [-1, 0, 1] and squares to [1, 0, 1].
     np.testing.assert_allclose(transformed["ses_squared"], np.log1p([1.0, 0.0, 1.0]))
 
 
 def test_centering_after_a_log_is_allowed() -> None:
-    plan = _plan("c", "ses", transforms=(Log(), Center()))
-    transformed = FeatureTransformer(plans=(plan,)).fit_transform(_frame())
+    pair = _pair("c", "ses", transforms=(Log(), Center()))
+    transformed = FeatureTransformer(column_plans=(pair,)).fit_transform(_frame())
     assert transformed["ses"].mean() == pytest.approx(0.0)
 
 
@@ -199,15 +192,10 @@ def test_a_plan_named_remainder_is_rejected_when_fitted() -> None:
     # Not checked here: "remainder" is ColumnTransformer's own entry name and
     # it refuses the clash itself. Pinned because the guarantee is now its.
     transformer = FeatureTransformer(
-        plans=(_plan("remainder", "ses", transforms=(Standardize(),)),)
+        column_plans=(_pair("remainder", "ses", transforms=(Standardize(),)),)
     )
     with pytest.raises(ValueError, match="remainder"):
         transformer.fit(pd.DataFrame({"ses": [1.0, 2.0, 3.0]}))
-
-
-def test_a_single_column_may_be_given_as_a_bare_string() -> None:
-    # The common case, so it should not require a one-element sequence.
-    assert ColumnPlan(name="ses_z", columns="ses").columns == ("ses",)
 
 
 # --- Delegated: mistakes nothing here checks, because something else does ----
@@ -229,7 +217,7 @@ def _frame() -> pd.DataFrame:
 
 def test_repeated_columns_in_one_plan_are_rejected_when_fitted() -> None:
     with pytest.raises(ValueError, match="unique column names"):
-        FeatureTransformer(plans=(_plan("dup", "ses", "ses"),)).fit(_frame())
+        FeatureTransformer(column_plans=(_pair("dup", "ses", "ses"),)).fit(_frame())
 
 
 def test_a_one_hot_over_two_columns_is_rejected_when_fitted() -> None:
@@ -238,7 +226,9 @@ def test_a_one_hot_over_two_columns_is_rejected_when_fitted() -> None:
     encoder = OneHot(categories=("none", "existing"), reference_category="none")
     with pytest.raises(ValueError, match="Shape mismatch"):
         FeatureTransformer(
-            plans=(_plan("cats", "school_status", "zone", transforms=(encoder,)),)
+            column_plans=(
+                _pair("cats", "school_status", "zone", transforms=(encoder,)),
+            )
         ).fit(_frame())
 
 
@@ -246,34 +236,32 @@ def test_a_one_hot_chained_with_another_transform_is_rejected_when_fitted() -> N
     encoder = OneHot(categories=("none", "existing"), reference_category="none")
     with pytest.raises(ValueError, match="could not convert string to float"):
         FeatureTransformer(
-            plans=(_plan("odd", "school_status", transforms=(Standardize(), encoder)),)
+            column_plans=(
+                _pair("odd", "school_status", transforms=(Standardize(), encoder)),
+            )
         ).fit(_frame())
 
 
 def test_a_missing_planned_column_is_rejected_when_fitted() -> None:
     with pytest.raises(ValueError, match="absent"):
         FeatureTransformer(
-            plans=(_plan("nope", "absent", transforms=(Standardize(),)),)
+            column_plans=(_pair("nope", "absent", transforms=(Standardize(),)),)
         ).fit(_frame())
 
 
 def test_colliding_output_names_are_rejected_when_fitted() -> None:
     with pytest.raises(ValueError, match="are not unique"):
         FeatureTransformer(
-            plans=(
-                _plan("ses_z", "ses", transforms=(Standardize(),)),
-                _plan("ses_centered", "ses", transforms=(Center(),)),
+            column_plans=(
+                _pair("ses_z", "ses", transforms=(Standardize(),)),
+                _pair("ses_centered", "ses", transforms=(Center(),)),
             )
         ).fit(_frame())
 
 
 def test_a_plan_round_trips_with_its_transform_subclasses_intact() -> None:
-    plan = ColumnPlan(
-        name="daycare",
-        columns=("n_daycares_500m",),
-        transforms=(DomainMinMax(minimum=0.0, maximum=8.0),),
-    )
-    restored = ColumnPlan.model_validate(plan.model_dump())
+    plan = Plan(name="min_max", transforms=(DomainMinMax(minimum=0.0, maximum=8.0),))
+    restored = Plan.model_validate(plan.model_dump())
     assert restored == plan
     assert isinstance(restored.transforms[0], DomainMinMax)
 
@@ -282,7 +270,7 @@ def test_a_plan_round_trips_with_its_transform_subclasses_intact() -> None:
 
 
 def _transformer(**overrides) -> FeatureTransformer:
-    defaults = {"plans": (_plan("ses_z", "ses", transforms=(Standardize(),)),)}
+    defaults = {"column_plans": (_pair("ses_z", "ses", transforms=(Standardize(),)),)}
     return FeatureTransformer(**{**defaults, **overrides})
 
 
@@ -291,19 +279,51 @@ def test_a_declaration_error_is_raised_by_validate_not_by_construction() -> None
     # placed there would be skipped by GridSearchCV. validate() is the
     # chokepoint, and fit() calls it -- so constructing an invalid declaration
     # must succeed and only validate() may refuse it.
-    transformer = FeatureTransformer(plans=(), remainder="drop")
+    transformer = FeatureTransformer(column_plans=(), remainder="drop")
     with pytest.raises(ValueError, match="no columns"):
         transformer.validate()
 
 
-def test_duplicate_plan_names_are_rejected_when_fitted() -> None:
-    # Not checked in validate(): ColumnTransformer refuses duplicate entry
-    # names itself. Pinned because the guarantee is now its.
-    transformer = FeatureTransformer(
-        plans=(
-            _plan("ses_z", "ses", transforms=(Standardize(),)),
-            _plan("ses_z", "median_age", transforms=(Standardize(),)),
+def test_one_plan_serves_every_listed_column() -> None:
+    # One treatment over several columns is the same matrix as one pair per
+    # column: StandardScaler learns each column's own mean and scale.
+    df = pd.DataFrame({"ses": [1.0, 2.0, 4.0], "median_age": [30.0, 35.0, 50.0]})
+    standardize = Plan(name="standardize", transforms=(Standardize(),))
+    shared = FeatureTransformer(column_plans=((standardize, ["ses", "median_age"]),))
+    separate = FeatureTransformer(
+        column_plans=(
+            _pair("ses_z", "ses", transforms=(Standardize(),)),
+            _pair("age_z", "median_age", transforms=(Standardize(),)),
         )
+    )
+    pd.testing.assert_frame_equal(shared.fit_transform(df), separate.fit_transform(df))
+
+
+def test_a_plan_applied_to_no_columns_is_rejected_by_validate() -> None:
+    # ColumnTransformer skips an entry that selects nothing, so the plan would
+    # vanish from the matrix without an error.
+    transformer = FeatureTransformer(
+        column_plans=(_pair("ses_z", transforms=(Standardize(),)),)
+    )
+    with pytest.raises(ValueError, match="'ses_z' is applied to no columns"):
+        transformer.validate()
+
+
+def test_a_bare_column_name_is_rejected_by_validate() -> None:
+    # list() would split it into characters, and with columns "s" and "e" in
+    # the frame, "se" would select them without an error.
+    transformer = FeatureTransformer(column_plans=((Plan(name="passthrough"), "se"),))
+    with pytest.raises(TypeError, match="a list of columns, not the string 'se'"):
+        transformer.validate()
+
+
+def test_one_plan_used_twice_in_a_transformer_is_rejected_when_fitted() -> None:
+    # Not checked in validate(): ColumnTransformer refuses duplicate entry
+    # names itself. Pinned because the guarantee is now its; list every
+    # column that shares the plan in one pair instead.
+    standardize = Plan(name="standardize", transforms=(Standardize(),))
+    transformer = FeatureTransformer(
+        column_plans=((standardize, ["ses"]), (standardize, ["median_age"]))
     )
     with pytest.raises(ValueError, match="not unique"):
         transformer.fit(pd.DataFrame({"ses": [1.0, 2.0], "median_age": [3.0, 4.0]}))
@@ -314,30 +334,30 @@ def test_one_column_may_feed_several_plans() -> None:
     # stay legal, and it is legal precisely because the two emit different
     # columns.
     transformer = _transformer(
-        plans=(
-            _plan("ses_z", "ses", transforms=(Standardize(),)),
-            _plan("ses_z_sq", "ses", transforms=(Standardize(), Quadratic())),
+        column_plans=(
+            _pair("ses_z", "ses", transforms=(Standardize(),)),
+            _pair("ses_z_sq", "ses", transforms=(Standardize(), Quadratic())),
         )
     )
     names = transformer.fit(pd.DataFrame({"ses": [1.0, 2.0, 3.0]}))
     assert list(names.get_feature_names_out()) == ["ses", "ses_squared"]
 
 
-def test_dropping_everything_needs_at_least_one_plan() -> None:
+def test_dropping_everything_needs_at_least_one_pair() -> None:
     # An empty ColumnTransformer with remainder="drop" is legal for sklearn and
     # yields a design matrix with zero columns, which is never intended.
     with pytest.raises(ValueError, match="no columns"):
-        FeatureTransformer(plans=(), remainder="drop").validate()
+        FeatureTransformer(column_plans=(), remainder="drop").validate()
 
 
 def test_an_empty_passthrough_transformer_is_meaningful() -> None:
     # Every column, untouched, is a real configuration.
-    FeatureTransformer(plans=(), remainder="passthrough").validate()
+    FeatureTransformer(column_plans=(), remainder="passthrough").validate()
 
 
 # --- Interactions: what can be declared --------------------------------------
 #
-# An Interaction is to the interaction step what a ColumnPlan is to the base
+# An Interaction is to the interaction step what a plan is to the base
 # matrix: it names the columns, and a transform does the arithmetic. Its sides
 # name design-matrix columns -- what a plan emits, not what it consumes --
 # because the step runs on the plans' output.
@@ -348,10 +368,10 @@ def _interacting_transformer(
 ) -> FeatureTransformer:
     """A transformer whose base matrix is ses, ses_squared, 3_rooms_share."""
     return FeatureTransformer(
-        plans=(
-            _plan("ses_z", "ses", transforms=(Standardize(),)),
-            _plan("ses_sq", "ses", transforms=(Standardize(), Quadratic())),
-            _plan("room_share", "3_rooms_share", transforms=(Center(),)),
+        column_plans=(
+            _pair("ses_z", "ses", transforms=(Standardize(),)),
+            _pair("ses_sq", "ses", transforms=(Standardize(), Quadratic())),
+            _pair("room_share", "3_rooms_share", transforms=(Center(),)),
         ),
         interactions=interactions,
     )
@@ -445,10 +465,10 @@ def test_an_interaction_may_not_shadow_a_base_column() -> None:
     # A product carrying a column's name would replace it; the base entry and
     # the product entry then emit the same name, which is refused.
     transformer = FeatureTransformer(
-        plans=(
-            _plan("ses_z", "ses", transforms=(Standardize(),)),
-            _plan("age", "median_age", transforms=(Standardize(),)),
-            _plan("collides", "ses_x_median_age"),
+        column_plans=(
+            _pair("ses_z", "ses", transforms=(Standardize(),)),
+            _pair("age", "median_age", transforms=(Standardize(),)),
+            _pair("collides", "ses_x_median_age"),
         ),
         interactions=(Interaction(left="ses", right="median_age"),),
     )
@@ -476,15 +496,15 @@ def test_cloning_preserves_the_declaration() -> None:
     # copy is made -- so the parameters must survive it untouched.
     original = _transformer(remainder="passthrough")
     copy = clone(original)
-    assert copy.plans == original.plans
+    assert copy.column_plans == original.column_plans
     assert copy.remainder == original.remainder
 
 
-def test_build_returns_one_column_transformer_entry_per_plan() -> None:
+def test_build_returns_one_column_transformer_entry_per_pair() -> None:
     transformer = _transformer(
-        plans=(
-            _plan("ses_z", "ses", transforms=(Standardize(),)),
-            _plan("room_share", "3_rooms_share", "4_rooms_share"),
+        column_plans=(
+            _pair("ses_z", "ses", transforms=(Standardize(),)),
+            _pair("room_share", "3_rooms_share", "4_rooms_share"),
         )
     )
     # _build() returns the whole pipeline; the "column_transformer" step has the plans.

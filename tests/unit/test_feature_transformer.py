@@ -15,7 +15,6 @@ from sklearn.exceptions import NotFittedError
 from age_group_prediction.feature_engineering import (
     Center,
     CenterByReferencePoint,
-    ColumnPlan,
     DomainMinMax,
     DomainScale,
     FeatureTransformer,
@@ -23,14 +22,16 @@ from age_group_prediction.feature_engineering import (
     Log,
     Log1p,
     OneHot,
+    Plan,
     Quadratic,
     RelativeSaturation,
     Standardize,
 )
 
 
-def _plan(name: str, *columns: str, transforms=()) -> ColumnPlan:
-    return ColumnPlan(name=name, columns=columns, transforms=transforms)
+def _pair(name: str, *columns: str, transforms=()) -> tuple[Plan, list[str]]:
+    """One ``column_plans`` entry: a plan and the columns it is applied to."""
+    return (Plan(name=name, transforms=transforms), list(columns))
 
 
 def _frame() -> pd.DataFrame:
@@ -51,19 +52,19 @@ def _frame() -> pd.DataFrame:
 
 def _tf(**overrides) -> FeatureTransformer:
     defaults = {
-        "plans": (
-            _plan(
+        "column_plans": (
+            _pair(
                 "room_share",
                 "3_rooms_share",
                 "4_rooms_share",
                 transforms=(Center(), DomainScale(scale=0.1)),
             ),
-            _plan(
+            _pair(
                 "daycare",
                 "n_daycares_500m",
                 transforms=(DomainMinMax(minimum=0.0, maximum=8.0),),
             ),
-            _plan(
+            _pair(
                 "school",
                 "school_status",
                 transforms=(
@@ -106,8 +107,8 @@ def test_a_relative_saturation_centers_on_log1p_of_the_mean() -> None:
     # expressed in the original counts, so the output is not mean-zero.
     df = pd.DataFrame({"n_daycares_500m": [0.0, 4.0, 8.0]})
     transformer = FeatureTransformer(
-        plans=(
-            _plan("daycare", "n_daycares_500m", transforms=(RelativeSaturation(),)),
+        column_plans=(
+            _pair("daycare", "n_daycares_500m", transforms=(RelativeSaturation(),)),
         ),
     )
     out = transformer.fit_transform(df)
@@ -121,9 +122,9 @@ def test_ses_is_measured_from_the_reference_point_not_the_fold_mean() -> None:
     # [1, 0, 1], measured from the fold instead.
     reference = CenterByReferencePoint(reference_point=0.0)
     transformer = FeatureTransformer(
-        plans=(
-            _plan("ses", "ses", transforms=(reference,)),
-            _plan("ses_sq", "ses", transforms=(reference, Quadratic())),
+        column_plans=(
+            _pair("ses", "ses", transforms=(reference,)),
+            _pair("ses_sq", "ses", transforms=(reference, Quadratic())),
         ),
     )
     out = transformer.fit_transform(_frame())
@@ -149,7 +150,7 @@ def test_unplanned_columns_are_dropped_by_default() -> None:
 
 def test_a_passthrough_remainder_keeps_unplanned_columns_untouched() -> None:
     transformer = FeatureTransformer(
-        plans=(_plan("ses_z", "ses", transforms=(Standardize(),)),),
+        column_plans=(_pair("ses_z", "ses", transforms=(Standardize(),)),),
         remainder="passthrough",
     )
     out = transformer.fit_transform(_frame())
@@ -248,7 +249,7 @@ def test_an_interaction_may_name_a_passthrough_remainder_column() -> None:
     # The step meets the real matrix rather than the plans' declared output
     # names, so a column the remainder carried through is a legal operand.
     transformer = FeatureTransformer(
-        plans=(_plan("ses_z", "ses", transforms=(Standardize(),)),),
+        column_plans=(_pair("ses_z", "ses", transforms=(Standardize(),)),),
         interactions=(Interaction(left="ses", right="unplanned"),),
         remainder="passthrough",
     )
@@ -307,7 +308,7 @@ def test_a_log_over_a_zero_is_caught_by_the_output_check() -> None:
     # numpy returns -inf without raising, so the poisoned column is what is
     # detected rather than the input that caused it.
     transformer = FeatureTransformer(
-        plans=(_plan("daycare", "n_daycares_500m", transforms=(Log(),)),),
+        column_plans=(_pair("daycare", "n_daycares_500m", transforms=(Log(),)),),
     )
     with pytest.raises(ValueError, match="non-finite") as excinfo:
         transformer.fit_transform(_frame())
@@ -318,7 +319,7 @@ def test_a_log_over_a_zero_is_caught_by_the_output_check() -> None:
 def test_a_log1p_at_minus_one_is_caught_by_the_output_check() -> None:
     df = pd.DataFrame({"balance": [-1.0, 0.0, 1.0]})
     transformer = FeatureTransformer(
-        plans=(_plan("balance", "balance", transforms=(Log1p(),)),),
+        column_plans=(_pair("balance", "balance", transforms=(Log1p(),)),),
     )
     with pytest.raises(ValueError, match="non-finite"):
         transformer.fit_transform(df)
@@ -328,7 +329,7 @@ def test_a_relative_saturation_below_minus_one_is_rejected_at_fit() -> None:
     # This one still fails during fit: the scaler validates its own input.
     df = pd.DataFrame({"balance": [-2.0, 0.0, 1.0]})
     transformer = FeatureTransformer(
-        plans=(_plan("balance", "balance", transforms=(RelativeSaturation(),)),),
+        column_plans=(_pair("balance", "balance", transforms=(RelativeSaturation(),)),),
     )
     with pytest.raises(ValueError, match="greater than -1"):
         transformer.fit(df)
@@ -338,7 +339,7 @@ def test_a_relative_saturation_below_minus_one_is_rejected_at_fit() -> None:
 def test_a_later_frame_that_poisons_the_matrix_is_rejected_too() -> None:
     # The fit df is fine; the one being transformed is not.
     transformer = FeatureTransformer(
-        plans=(_plan("count", "count", transforms=(Log(),)),),
+        column_plans=(_pair("count", "count", transforms=(Log(),)),),
     ).fit(pd.DataFrame({"count": [1.0, 2.0, 3.0]}))
     with pytest.raises(ValueError, match="non-finite"):
         transformer.transform(pd.DataFrame({"count": [1.0, 0.0, 3.0]}))

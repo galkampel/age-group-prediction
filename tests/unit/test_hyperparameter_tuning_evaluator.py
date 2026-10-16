@@ -24,8 +24,8 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.utils.validation import check_is_fitted
 
 from age_group_prediction.feature_engineering.transformer import (
-    ColumnPlan,
     FeatureTransformer,
+    Plan,
 )
 from age_group_prediction.feature_engineering.transforms import Standardize
 from age_group_prediction.hyperparameter_tuning import (
@@ -449,9 +449,7 @@ def test_matches_a_hand_written_fold_loop() -> None:
     )
     y = pd.Series(rng.poisson(df["n"] * np.exp(-2 + 0.4 * df["ses"])), index=df.index)
     tree = FeatureTransformer(
-        plans=(
-            ColumnPlan(name="num", columns=("ses", "n"), transforms=(Standardize(),)),
-        )
+        column_plans=((Plan(name="num", transforms=(Standardize(),)), ["ses", "n"]),)
     )
     cv = Splitter("grouped").cv(n_splits=3, random_state=0)
     model = CountModel(
@@ -583,7 +581,7 @@ def test_each_split_method_scores_its_own_folds(method: Method) -> None:
 
 def _transformer(column: str) -> FeatureTransformer:
     return FeatureTransformer(
-        plans=(ColumnPlan(name=column, columns=(column,), transforms=(Standardize(),)),)
+        column_plans=((Plan(name=column, transforms=(Standardize(),)), [column]),)
     )
 
 

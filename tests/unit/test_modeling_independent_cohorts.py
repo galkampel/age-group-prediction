@@ -11,8 +11,8 @@ from sklearn.base import clone
 
 from age_group_prediction.feature_engineering import (
     Center,
-    ColumnPlan,
     FeatureTransformer,
+    Plan,
 )
 from age_group_prediction.modeling import (
     CountModel,
@@ -28,9 +28,7 @@ def _lightgbm() -> LGBMRegressor:
 
 
 def _features(column: str) -> FeatureTransformer:
-    return FeatureTransformer(
-        (ColumnPlan(name=column, columns=(column,), transforms=(Center(),)),)
-    )
+    return FeatureTransformer(((Plan(name=column, transforms=(Center(),)), [column]),))
 
 
 def _table(n_rows: int = 200) -> tuple[pd.DataFrame, pd.DataFrame, pd.Series]:

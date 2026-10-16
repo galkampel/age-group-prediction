@@ -35,8 +35,8 @@ from sklearn.utils.estimator_checks import (
 import age_group_prediction.modeling as modeling_package
 from age_group_prediction.feature_engineering import (
     Center,
-    ColumnPlan,
     FeatureTransformer,
+    Plan,
 )
 from age_group_prediction.modeling import (
     BaseAgeGroupModel,
@@ -93,9 +93,7 @@ def _independent_cohorts_example() -> Example:
             "b": rng.poisson(np.exp(0.5 - 0.3 * X["x"])),
         }
     )
-    features = FeatureTransformer(
-        (ColumnPlan(name="x", columns=("x",), transforms=(Center(),)),)
-    )
+    features = FeatureTransformer(((Plan(name="x", transforms=(Center(),)), ["x"]),))
     model = IndependentCohortModels(
         {
             cohort: CountModel(estimator=_lightgbm(), feature_transformer=features)

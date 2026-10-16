@@ -17,9 +17,9 @@ from lightgbm import LGBMRegressor
 from optuna.trial import TrialState
 
 from age_group_prediction.feature_engineering import (
-    ColumnPlan,
     FeatureTransformer,
     OneHot,
+    Plan,
 )
 from age_group_prediction.hyperparameter_tuning import (
     CVHyperparameterEvaluator,
@@ -41,21 +41,19 @@ COHORTS = ("n_kindergarten", "n_elementary", "n_highschool")
 ROOM_SHARES = ("4_rooms_share", "5_rooms_share", "6_rooms_share")
 SCHOOL = OneHot(categories=("none", "existing", "planned"), reference_category="none")
 tree = FeatureTransformer(
-    plans=(
-        ColumnPlan(
-            name="numeric",
-            columns=(
+    column_plans=(
+        (
+            Plan(name="passthrough"),
+            [
                 *ROOM_SHARES,
                 "ses",
                 "avg_household_size",
                 "median_age",
                 "n_daycares_500m",
                 "n_apartments",
-            ),
+            ],
         ),
-        # A tuple: the doc's columns="school_status" runs (a validator wraps
-        # it) but ColumnPlan.columns is typed tuple[str, ...], so mypy rejects it.
-        ColumnPlan(name="school", columns=("school_status",), transforms=(SCHOOL,)),
+        (Plan(name="school", transforms=(SCHOOL,)), ["school_status"]),
     ),
 )
 

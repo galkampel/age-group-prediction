@@ -13,9 +13,9 @@ from pydantic import ValidationError
 from sklearn.linear_model import LogisticRegression, PoissonRegressor
 
 from age_group_prediction.feature_engineering import (
-    ColumnPlan,
     FeatureTransformer,
     OneHot,
+    Plan,
     Standardize,
 )
 from age_group_prediction.inspection import ShapExplainer
@@ -111,7 +111,7 @@ def _fitted_count_model() -> tuple[CountModel, pd.DataFrame, np.ndarray]:
     exposure = rng.uniform(5.0, 50.0, size=60)
     y = rng.poisson(np.exp(0.5 * X_train["x"] - 0.3 * X_train["z"]) * exposure)
     features = FeatureTransformer(
-        plans=(ColumnPlan(name="x", columns=("x",), transforms=(Standardize(),)),)
+        column_plans=((Plan(name="x", transforms=(Standardize(),)), ["x"]),)
     )
     model = CountModel(
         estimator=PoissonRegressor(), use_exposure=True, feature_transformer=features
@@ -350,17 +350,19 @@ def test_total_times_probability_model_with_a_string_column(
     table = StudentPopulationSimulator.from_config(config).simulate().dataset
     numeric = ("ses", "avg_household_size", "median_age", "n_daycares_500m")
     features = FeatureTransformer(
-        plans=(
-            ColumnPlan(name="numeric", columns=numeric, transforms=(Standardize(),)),
-            ColumnPlan(
-                name="school",
-                columns=("school_status",),
-                transforms=(
-                    OneHot(
-                        categories=("none", "existing", "planned"),
-                        reference_category="none",
+        column_plans=(
+            (Plan(name="numeric", transforms=(Standardize(),)), list(numeric)),
+            (
+                Plan(
+                    name="school",
+                    transforms=(
+                        OneHot(
+                            categories=("none", "existing", "planned"),
+                            reference_category="none",
+                        ),
                     ),
                 ),
+                ["school_status"],
             ),
         )
     )

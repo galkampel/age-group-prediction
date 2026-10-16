@@ -20,8 +20,8 @@ from sklearn.utils.validation import check_is_fitted
 
 from age_group_prediction.feature_engineering import (
     Center,
-    ColumnPlan,
     FeatureTransformer,
+    Plan,
 )
 from age_group_prediction.modeling import (
     CalibrationMethod,
@@ -169,7 +169,7 @@ def test_probabilities_are_named_like_y_and_indexed_like_x(with_features: bool) 
     X_new = X.iloc[:5].set_index(pd.Index([10, 20, 30, 40, 50]))
     features = FeatureTransformer(
         tuple(
-            ColumnPlan(name=column, columns=(column,), transforms=(Center(),))
+            (Plan(name=column, transforms=(Center(),)), [column])
             for column in ("u", "v")
         )
     )
@@ -296,9 +296,7 @@ def test_the_feature_transformer_is_fitted_on_the_buildings(
         np.vstack([rng.multinomial(t, [0.3, 0.4, 0.3]) for t in totals]),
         columns=COHORTS,
     )
-    features = FeatureTransformer(
-        (ColumnPlan(name="u", columns=("u",), transforms=(Center(),)),)
-    )
+    features = FeatureTransformer(((Plan(name="u", transforms=(Center(),)), ["u"]),))
 
     model = CohortProbabilityModel(
         estimator=_logistic(),
@@ -337,7 +335,7 @@ def test_a_failed_refit_keeps_the_previous_feature_transformer() -> None:
     # rows on the failed refit's statistics, beside the old classifier.
     features = FeatureTransformer(
         tuple(
-            ColumnPlan(name=column, columns=(column,), transforms=(Center(),))
+            (Plan(name=column, transforms=(Center(),)), [column])
             for column in ("u", "v")
         )
     )

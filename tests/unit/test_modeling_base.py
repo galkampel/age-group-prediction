@@ -13,8 +13,8 @@ from sklearn.utils.validation import check_is_fitted
 
 from age_group_prediction.feature_engineering import (
     Center,
-    ColumnPlan,
     FeatureTransformer,
+    Plan,
 )
 from age_group_prediction.modeling import BaseAgeGroupModel
 from age_group_prediction.scoring import Metric
@@ -71,9 +71,7 @@ class _FeatureModel(BaseAgeGroupModel):
 
 
 def _centering() -> FeatureTransformer:
-    return FeatureTransformer(
-        (ColumnPlan(name="x", columns=("x",), transforms=(Center(),)),)
-    )
+    return FeatureTransformer(((Plan(name="x", transforms=(Center(),)), ["x"]),))
 
 
 def _table() -> tuple[pd.DataFrame, pd.Series]:

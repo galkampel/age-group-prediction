@@ -851,11 +851,21 @@ supplied here, at the call site.
 
 ```python
 from age_group_prediction.feature_engineering import (
-    Center, CenterByReferencePoint, ColumnPlan, DomainMinMax, DomainScale,
-    FeatureTransformer, Interaction, OneHot, Quadratic, RelativeSaturation,
-    Standardize,
+    Center, CenterByReferencePoint, DomainMinMax, DomainScale,
+    FeatureTransformer, Interaction, OneHot, Plan, Quadratic,
+    RelativeSaturation, Standardize,
 )
 ```
+
+**A plan is a treatment, not a column group.** `Plan(name, transforms)` names
+a chain of transforms (none: the identity, a passthrough), and
+`FeatureTransformer(column_plans=((plan, [columns]), ...))` applies each plan
+to the columns listed beside it. Plans are named for what they do
+(`standardize`, `center_scale_by_0.1`), so one plan serves every column that
+shares the treatment, and each transform still learns its statistics per
+column. The columns are always a list, even for one column: as in
+scikit-learn's `ColumnTransformer`, a bare name would mean a 1-D selection,
+and `validate()` rejects it.
 
 **The vocabulary.** What each transform emits, what it learns at fit, and
 when to choose it over its neighbour:
@@ -874,7 +884,7 @@ when to choose it over its neighbour:
 
 `Log1pRatioScaler` is the fitted scikit-learn estimator `RelativeSaturation`
 builds. Import it directly for a pipeline of your own or an `isinstance` check;
-inside a `ColumnPlan`, declare `RelativeSaturation()`.
+inside a `Plan`, declare `RelativeSaturation()`.
 
 Four rules that the declarations depend on:
 
@@ -888,6 +898,9 @@ Four rules that the declarations depend on:
   `n_daycares_500m` fails at fit rather than quietly meaning something else.
 - **The same column may feed several plans.** That is how `ses` and
   `ses_squared` sit side by side.
+- **A plan is used once per transformer.** List every column that shares it in
+  its one pair; a second pair with the same plan is rejected at fit (the entry
+  names collide), and a pair with no columns is rejected by `validate()`.
 - **A log never follows centering, standardizing or relative saturation.**
   `Log`, `Log1p` and `RelativeSaturation` may not come after `Center`,
   `Standardize` or `RelativeSaturation` in a plan's chain: a column measured
@@ -911,8 +924,20 @@ shares = ShareTransformer(
 table = shares.fit_transform(raw_table)  # adds 4_, 5_ and 6_rooms_share
 
 ROOM_SHARES = ("4_rooms_share", "5_rooms_share", "6_rooms_share")
-SCHOOL = OneHot(
-    categories=("none", "existing", "planned"), reference_category="none"
+
+# The treatments the declarations below apply. scale_by: DomainScale divides
+# by it, so a one-unit change of the output is 0.1 or 2 of the input.
+passthrough = Plan(name="passthrough")  # the identity
+standardize = Plan(name="standardize", transforms=(Standardize(),))
+center_scale_by_tenth = Plan(
+    name="center_scale_by_0.1", transforms=(Center(), DomainScale(scale=0.1))
+)
+scale_by_two = Plan(name="scale_by_2", transforms=(DomainScale(scale=2.0),))
+one_hot = Plan(
+    name="one_hot",
+    transforms=(
+        OneHot(categories=("none", "existing", "planned"), reference_category="none"),
+    ),
 )
 ```
 
@@ -923,19 +948,19 @@ through untouched and only the categorical is encoded.
 
 ```python
 tree = FeatureTransformer(
-    plans=(
-        ColumnPlan(
-            name="numeric",
-            columns=(
+    column_plans=(
+        (
+            passthrough,
+            [
                 *ROOM_SHARES,
                 "ses",
                 "avg_household_size",
                 "median_age",
                 "n_daycares_500m",
                 "n_apartments",
-            ),
+            ],
         ),
-        ColumnPlan(name="school", columns="school_status", transforms=(SCHOOL,)),
+        (one_hot, ["school_status"]),
     ),
 )
 ```
@@ -988,17 +1013,17 @@ cohort_models = IndependentCohortModels({
 predictions = cohort_models.predict(valid_df, exposure=exposure.loc[valid_df.index])
 ```
 
-**SES-quadratic variant.** Add one plan; `ses` itself stays, because the squared
+**SES-quadratic variant.** Add one pair; `ses` itself stays, because the squared
 column earns its place only by being non-monotone (§3.2). It squares the
 deviation from the SES reference point 0.0, average SES, not from the fold
 mean:
 
 ```python
-ColumnPlan(
-    name="ses_sq",
-    columns="ses",
+square_around_zero = Plan(
+    name="square_around_0",
     transforms=(CenterByReferencePoint(reference_point=0.0), Quadratic()),
 )
+(square_around_zero, ["ses"])
 ```
 
 Not offered for Model A: the `log1p` daycare form (indistinguishable from linear
@@ -1012,25 +1037,11 @@ The offset makes the linear predictor a per-apartment rate, so
 
 ```python
 total_base = FeatureTransformer(
-    plans=(
-        ColumnPlan(name="ses", columns="ses", transforms=(Standardize(),)),
-        ColumnPlan(
-            name="household", columns="avg_household_size", transforms=(Standardize(),)
-        ),
-        ColumnPlan(
-            name="median_age", columns="median_age", transforms=(Standardize(),)
-        ),
-        ColumnPlan(
-            name="room_share",
-            columns=ROOM_SHARES,
-            transforms=(Center(), DomainScale(scale=0.1)),
-        ),
-        ColumnPlan(
-            name="daycare",
-            columns="n_daycares_500m",
-            transforms=(DomainScale(scale=2.0),),
-        ),
-        ColumnPlan(name="school", columns="school_status", transforms=(SCHOOL,)),
+    column_plans=(
+        (standardize, ["ses", "avg_household_size", "median_age"]),
+        (center_scale_by_tenth, list(ROOM_SHARES)),
+        (scale_by_two, ["n_daycares_500m"]),
+        (one_hot, ["school_status"]),
     ),
 )
 ```
@@ -1040,9 +1051,9 @@ per 10 percentage points of share for the room shares (§4.3); per 2 daycares
 for the daycare term (§4.1); contrasts against `none` for the school dummies
 (§4.6).
 
-Unlike Model A, B and C do not list `n_apartments` among the plans, so building
-size enters **only** as the offset (§4.4). The package does not enforce that;
-the declaration is what expresses it. The exposure is not the transformer's:
+Unlike Model A, B and C do not list `n_apartments` among the plans' columns,
+so building size enters **only** as the offset (§4.4). The package does not
+enforce that; the declaration is what expresses it. The exposure is not the transformer's:
 the model takes it separately, as `exposure=`, where it cannot be mistaken for
 a predictor, and forms the offset $\log n$ itself. Build it with
 `ExposureTransformer` on the full table before splitting, as in §8.1.
@@ -1082,7 +1093,7 @@ from sklearn.linear_model import LogisticRegression
 from age_group_prediction.modeling import CohortProbabilityModel
 
 cohort_probability_base = FeatureTransformer(
-    plans=total_base.plans,      # identical; only the model differs, taking no exposure
+    column_plans=total_base.column_plans,  # identical; only the model differs, taking no exposure
 )
 probability_model = CohortProbabilityModel(
     estimator=LogisticRegression(),  # or LGBMClassifier(...), RandomForestClassifier(...)
@@ -1131,10 +1142,10 @@ written out; the other is the base declaration above, unchanged.
 | # | Candidate | Total | Composition |
 |---|---|---|---|
 | 1 | base | `total_base` | `cohort_probability_base` |
-| 2 | `total__ses_quadratic` | + the plan in 8.5.1 | base |
-| 3 | `total__daycare_log1p` | daycare plan replaced, 8.5.2 | base |
+| 2 | `total__ses_quadratic` | + the pair in 8.5.1 | base |
+| 3 | `total__daycare_log1p` | daycare pair replaced, 8.5.2 | base |
 | 4 | `total__room_share_x_household_size` | + the interactions in 8.5.3 | base |
-| 5 | `composition__daycare_log1p` | base | daycare plan replaced, 8.5.2 |
+| 5 | `composition__daycare_log1p` | base | daycare pair replaced, 8.5.2 |
 | 6 | `composition__room_share_x_median_age` | base | + the interactions in 8.5.4 |
 | 7 | combined | whichever total forms won | whichever composition forms won |
 
@@ -1143,19 +1154,15 @@ written out; the other is the base declaration above, unchanged.
 Square the deviation from the SES reference point 0.0, as in Model A: $\beta_1$,
 on the base plan's $z$, is then the slope at the reference point, and
 $\beta_2$ the curvature around it, per population SD² (§4.2). `ses` keeps its
-own plan; this one is added beside it.
+standardized pair; this one is added beside it.
 
 ```python
-ColumnPlan(
-    name="ses_sq",
-    columns="ses",
-    transforms=(CenterByReferencePoint(reference_point=0.0), Quadratic()),
-)
+(square_around_zero, ["ses"])  # the plan of §8.1
 ```
 
 #### 8.5.2 Daycare, centered `log1p` (candidates 3 and 5)
 
-Replaces the daycare plan rather than joining it. `RelativeSaturation` emits
+Replaces the daycare pair rather than joining it. `RelativeSaturation` emits
 $\log(1+d) - \log(1 + \bar d)$ — `log1p` of the mean, not the mean of `log1p` —
 so the reference stays in the original counts and the coefficient is an
 elasticity (§4.1, candidate 2). Its input must be greater than −1, where
@@ -1163,9 +1170,10 @@ elasticity (§4.1, candidate 2). Its input must be greater than −1, where
 the public `Log1pRatioScaler`.
 
 ```python
-ColumnPlan(
-    name="daycare", columns="n_daycares_500m", transforms=(RelativeSaturation(),)
+relative_saturation = Plan(
+    name="relative_saturation", transforms=(RelativeSaturation(),)
 )
+(relative_saturation, ["n_daycares_500m"])  # in place of (scale_by_two, ...)
 ```
 
 **The column is now `n_daycares_500m_sat`.** Any interaction naming it must use
