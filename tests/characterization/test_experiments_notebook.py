@@ -103,7 +103,7 @@ def test_a_setting_missing_or_changed_in_a_settings_mapping_is_caught(
         "test_size": "0.2",
         "val_size": "0.2",
         "n_splits": "5",
-        "n_trials": "30",
+        "n_trials": "200",
         "n_resamples": "1000",
     }
 
@@ -157,3 +157,18 @@ def test_a_seed_override_not_reaching_the_simulator_is_caught(tmp_path: Path) ->
     assert result.returncode == 0, result.stderr
     assert _printed(result.stdout, "data_settings")["simulation_seed"] == "7"
     assert _printed(result.stdout, "data")["data_hash"] != _canonical_hash()
+
+
+def test_a_tuning_cell_outside_a_run_button_is_caught() -> None:
+    # A cell that tunes without `mo.stop(not <button>.value)` would fit three
+    # studies on every script run, the notebook test included. A string check
+    # on the cells that name `tune_model` (the run cell calls it through
+    # joblib's `delayed`): the stop's presence, not its position; the script
+    # run's wall time above is the behavioural guard.
+    source = NOTEBOOK_PATH.read_text(encoding="utf-8")
+    cells = source.split("@app.cell")
+    tuning_cells = [
+        cell for cell in cells if "tune_model" in cell and "def tune_model(" not in cell
+    ]
+    assert len(tuning_cells) >= 1
+    assert all("mo.stop(not " in cell for cell in tuning_cells)
