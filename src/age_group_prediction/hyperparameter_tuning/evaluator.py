@@ -149,7 +149,16 @@ class CVHyperparameterEvaluator:
 
         Called once per trial and for the final refit. A copy, so the
         template stays unfitted; one copy serves every fold, because ``fit``
-        replaces all fitted state.
+        replaces all fitted state. A keyed parameter's key is resolved to its
+        object here, so ``build_model(result.best_params)`` rebuilds the best
+        model from the JSON-safe dict.
         """
-        model: BaseAgeGroupModel = clone(self.model).set_params(**params)
+        # A name outside `parameters` (a value added by hand to best_params
+        # for a direct call) passes through as given.
+        by_name = {p.name: p for p in self.parameters}
+        resolved = {
+            name: by_name[name].resolve(value) if name in by_name else value
+            for name, value in params.items()
+        }
+        model: BaseAgeGroupModel = clone(self.model).set_params(**resolved)
         return model

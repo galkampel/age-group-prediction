@@ -10,15 +10,19 @@ converted.
 
 Categorical choices are Optuna's scalar choice types, ``None``, ``bool``,
 ``int``, ``float`` and ``str``, so a trial's parameters are immutable, plain
-Python values; a numpy integer is rejected, like a numpy bound.
+Python values; a numpy integer is rejected, like a numpy bound. An object
+choice (a ``FeatureTransformer``) goes through :class:`KeyedParameter`: Optuna
+searches its string keys and :meth:`Parameter.resolve` returns the object.
 """
 
 from __future__ import annotations
 
 import warnings
 from abc import ABC, abstractmethod
+from collections.abc import Mapping
 from dataclasses import KW_ONLY
 from math import isfinite
+from types import MappingProxyType
 from typing import Annotated, Any, get_args
 
 from optuna.distributions import (
@@ -41,6 +45,7 @@ __all__ = [
     "CategoricalParameter",
     "FloatParameter",
     "IntParameter",
+    "KeyedParameter",
     "Parameter",
 ]
 
@@ -66,6 +71,10 @@ class Parameter(ABC):
     @abstractmethod
     def suggest(self, trial: BaseTrial) -> Any:
         """Draw this parameter's value for ``trial``."""
+
+    def resolve(self, value: Any) -> Any:
+        """The model's value for ``value``: itself, unless a subclass maps it."""
+        return value
 
     @abstractmethod
     def _distribution(self) -> BaseDistribution:
@@ -168,3 +177,33 @@ class CategoricalParameter(Parameter):
 
     def _distribution(self) -> CategoricalDistribution:
         return CategoricalDistribution(self.choices)
+
+
+def _read_only(choices: Mapping[str, Any]) -> Mapping[str, Any]:
+    # A copy the caller cannot edit: an item assigned later would change what
+    # trials resolve while best_params still says the key.
+    return MappingProxyType(dict(choices))
+
+
+@pydantic_dataclass(frozen=True, config=STRICT)
+class KeyedParameter(Parameter):
+    """One of ``choices`` by key, drawn by ``trial.suggest_categorical`` over the keys.
+
+    Optuna searches the string keys, so ``best_params`` stays JSON, and
+    :meth:`resolve` returns the key's object (a ``FeatureTransformer``) for
+    ``set_params``. ``choices`` is kept read-only. A keyed parameter does not
+    survive plain ``pickle`` (a ``mappingproxy``); joblib's loky and cloudpickle do.
+    """
+
+    choices: Annotated[Mapping[str, Any], AfterValidator(_read_only)]
+
+    def suggest(self, trial: BaseTrial) -> str:
+        """Draw a key for ``trial``."""
+        return trial.suggest_categorical(self.name, tuple(self.choices))
+
+    def resolve(self, value: str) -> Any:
+        """The object under key ``value``; ``KeyError`` for an unknown key."""
+        return self.choices[value]
+
+    def _distribution(self) -> CategoricalDistribution:
+        return CategoricalDistribution(tuple(self.choices))

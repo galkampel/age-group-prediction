@@ -28,6 +28,7 @@ from age_group_prediction.hyperparameter_tuning import (
     CategoricalParameter,
     FloatParameter,
     IntParameter,
+    KeyedParameter,
 )
 
 NUMERIC = (FloatParameter, IntParameter)
@@ -290,6 +291,7 @@ def test_package_exports_the_public_names() -> None:
         "FloatParameter",
         "HyperparameterStudy",
         "IntParameter",
+        "KeyedParameter",
         "Mean",
         "Parameter",
         "TrialRecord",
@@ -298,3 +300,48 @@ def test_package_exports_the_public_names() -> None:
         "WeightedMean",
         "corrected_std_error",
     }
+
+
+def test_keyed_choices_reach_optuna_as_keys_in_order() -> None:
+    # The objects handed to Optuna would be stored by reference and could not
+    # be written to JSON; a reordered tuple would change a seeded study's draws.
+    choices = {"tree": object(), "glm": object()}
+    parameter = KeyedParameter("p", choices)
+    trial = _trial()
+
+    value = parameter.suggest(trial)
+
+    assert trial.distributions["p"] == CategoricalDistribution(("tree", "glm"))
+    assert value in choices
+
+
+def test_resolve_returns_the_object_for_its_key() -> None:
+    # The key set on the model, or another key's object, would fit the wrong
+    # features.
+    tree, glm = object(), object()
+    parameter = KeyedParameter("p", {"tree": tree, "glm": glm})
+
+    assert parameter.resolve("tree") is tree
+    assert parameter.resolve("glm") is glm
+    with pytest.raises(KeyError, match="oak"):
+        parameter.resolve("oak")
+
+
+def test_keyed_choices_cannot_be_edited_after_build() -> None:
+    # A dict kept by reference lets a later item assignment change what the
+    # trials resolve while best_params still says the key.
+    choices = {"tree": object()}
+    parameter = KeyedParameter("p", choices)
+
+    choices["tree"] = object()
+    with pytest.raises(TypeError, match="does not support item assignment"):
+        parameter.choices["tree"] = object()  # type: ignore[index]
+
+    assert parameter.resolve("tree") is not choices["tree"]
+
+
+def test_non_string_keys_are_rejected() -> None:
+    # A dict folds True, 1 and 1.0 into one key silently, so two choices would
+    # become one; string keys cannot collide.
+    with pytest.raises(ValueError, match="validation error"):
+        KeyedParameter("p", {1: object()})  # type: ignore[dict-item]

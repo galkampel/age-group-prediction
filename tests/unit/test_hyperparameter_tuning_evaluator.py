@@ -33,6 +33,7 @@ from age_group_prediction.hyperparameter_tuning import (
     CVHyperparameterEvaluator,
     FloatParameter,
     IntParameter,
+    KeyedParameter,
     Mean,
     UpperBound,
     WeightedMean,
@@ -575,3 +576,69 @@ def test_each_split_method_scores_its_own_folds(method: Method) -> None:
     )
     if method == "grouped":
         assert trial.user_attrs["fold_sizes"] == [20, 5, 3]  # unequal folds
+
+
+# --- keyed parameters -------------------------------------------------
+
+
+def _transformer(column: str) -> FeatureTransformer:
+    return FeatureTransformer(
+        plans=(ColumnPlan(name=column, columns=(column,), transforms=(Standardize(),)),)
+    )
+
+
+def test_build_model_resolves_a_keyed_parameter() -> None:
+    # The key itself set on the model would reach fit as the feature transformer.
+    ses, n = _transformer("ses"), _transformer("n")
+    evaluator = _evaluator(
+        model=CountModel(estimator=LGBMRegressor(n_jobs=1, verbosity=-1)),
+        parameters=[KeyedParameter("feature_transformer", {"ses": ses, "n": n})],
+    )
+
+    model = evaluator.build_model({"feature_transformer": "n"})
+
+    assert model.get_params()["feature_transformer"] is n
+
+
+def test_a_name_without_a_parameter_passes_through() -> None:
+    # build_model is also called directly, e.g. with a value added by hand to
+    # best_params; a name outside `parameters` must reach set_params as given,
+    # not raise KeyError.
+    model = _evaluator(parameters=[]).build_model({"alpha": 3.0})
+
+    assert model.get_params()["alpha"] == 3.0
+
+
+def test_best_params_of_a_keyed_study_are_json_and_refit_via_fixed_trial() -> None:
+    # An object leaking into the trial's params could not be written to JSON,
+    # and FixedTrial(best_params) could not rebuild the score.
+    rng = np.random.default_rng(0)
+    groups = np.repeat(np.arange(6), [5, 10, 20, 30, 45, 10])
+    rows = len(groups)
+    df = pd.DataFrame({"ses": rng.normal(size=rows), "n": rng.normal(size=rows)})
+    y = pd.Series(rng.poisson(np.exp(0.5 + 0.4 * df["ses"])))
+    variants = {"ses": _transformer("ses"), "n": _transformer("n")}
+    evaluator = CVHyperparameterEvaluator(
+        CountModel(
+            estimator=LGBMRegressor(objective="poisson", n_jobs=1, verbosity=-1)
+        ),
+        [
+            KeyedParameter("feature_transformer", variants),
+            IntParameter("estimator__n_estimators", 5, 20),
+        ],
+        cv=Splitter("grouped").cv(n_splits=3, random_state=0),
+        metric=POISSON_DEVIANCE,
+    )
+    study = optuna.create_study(sampler=optuna.samplers.RandomSampler(seed=0))
+    study.optimize(lambda trial: evaluator.evaluate(trial, df, y, groups), n_trials=3)
+
+    best = study.best_params
+    assert json.loads(json.dumps(best)) == best
+    assert best["feature_transformer"] in variants
+    refit = evaluator.evaluate(FixedTrial(best), df, y, groups)
+    assert refit == pytest.approx(study.best_value)
+    model = evaluator.build_model(best)
+    assert (
+        model.get_params()["feature_transformer"]
+        is variants[best["feature_transformer"]]
+    )

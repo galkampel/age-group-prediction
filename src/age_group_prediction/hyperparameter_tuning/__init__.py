@@ -28,6 +28,7 @@ from .parameters import (
     CategoricalParameter,
     FloatParameter,
     IntParameter,
+    KeyedParameter,
     Parameter,
 )
 from .study import HyperparameterStudy, TrialRecord, TuningResult
@@ -39,6 +40,7 @@ __all__ = [
     "FloatParameter",
     "HyperparameterStudy",
     "IntParameter",
+    "KeyedParameter",
     "Mean",
     "Parameter",
     "TrialRecord",

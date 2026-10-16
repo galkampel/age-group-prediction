@@ -164,13 +164,19 @@ would reuse the first value).
 | `FloatParameter(name, low, high, *, log=False, step=None)` | `suggest_float` | `log` needs `low > 0`; `step` must divide `high − low`; not both |
 | `IntParameter(name, low, high, *, log=False, step=1)` | `suggest_int` | `log` needs `low ≥ 1` and `step == 1` |
 | `CategoricalParameter(name, choices)` | `suggest_categorical` | choices are `None`, `bool`, `int`, finite `float` or `str`; a list is stored as a tuple; a set is rejected (its order varies between runs) |
+| `KeyedParameter(name, choices)` | `suggest_categorical` over the keys | `choices` is a `Mapping[str, Any]`, stored read-only; the trial gets a key, `resolve(key)` gives its object (a `FeatureTransformer`) |
 
 Choices are restricted to Optuna's own scalar types (D18) because Optuna hands a
 choice back by reference: a list choice edited through a result changed the kept
 study and the parameter itself, and a tuple or an object cannot be written to
 JSON. For the same reason a NaN or infinite float choice is rejected: it would reach
 `best_params`, and strict JSON cannot write it. A `np.float64` is a `float` and is kept
-as given; a `np.int64` is rejected.
+as given; a `np.int64` is rejected. An object choice goes through `KeyedParameter`:
+Optuna sees the string keys, so `best_params` stays JSON and `FixedTrial(best_params)`
+checks key membership, and the evaluator's `build_model` resolves the key to its object
+(§4). The keys are stored in a read-only copy (`MappingProxyType`), so an item assigned
+to the caller's dict later cannot change what a key resolves to; that copy does not
+survive plain `pickle`, while joblib's loky workers and cloudpickle carry it.
 
 ```python
 import numpy as np
@@ -214,8 +220,8 @@ otherwise come after a fold was fitted.
 `evaluate(trial, X, y, groups=None, *, exposure=None) -> float` does, per trial:
 
 1. suggest every parameter once and build one copy of the model
-   (`build_model(params)`: `clone`, then `set_params`, which raises on a
-   misspelt name);
+   (`build_model(params)`: each keyed parameter's key resolved to its object,
+   then `clone` and `set_params`, which raises on a misspelt name);
 2. for each fold, slice `X`, `y` and `exposure` by position (`take_rows`), fit the
    copy on the training rows (the model fits its own `feature_transformer` there,
    so no validation statistic leaks), predict and score the validation rows with
