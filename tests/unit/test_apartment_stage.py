@@ -16,7 +16,7 @@ from tests.unit.helpers import make_apartment_simulator, with_overrides
 
 
 def _config_path() -> Path:
-    return Path(__file__).resolve().parents[2] / "configs" / "simulation.toml"
+    return Path(__file__).resolve().parents[2] / "configs" / "simulation.yml"
 
 
 def _small_population(seed: int = 42) -> SimulationResult:

@@ -15,7 +15,7 @@ from tests.unit.helpers import make_total_children_simulator, simulate_stages
 
 
 def _config_path() -> Path:
-    return Path(__file__).resolve().parents[2] / "configs" / "simulation.toml"
+    return Path(__file__).resolve().parents[2] / "configs" / "simulation.yml"
 
 
 def _state_for_log_mu_checks() -> tuple[Config, dict[str, pd.DataFrame]]:

@@ -3,24 +3,20 @@ from pathlib import Path
 import pytest
 
 from student_simulator import load_simulation_config
-from student_simulator.config import load_validation_config
 from tests.unit.helpers import simulate_stages
-from tests.validation.helpers import run_recovery_checks
+from tests.validation.helpers import VALIDATION, run_recovery_checks
 
 
 @pytest.mark.slow
 def test_oracle_nb2_recovers_fixed_effects() -> None:
     """Verify oracle recovery with generated offsets from the generator."""
     config = load_simulation_config(
-        Path(__file__).resolve().parents[2] / "configs" / "simulation.toml"
-    )
-    validation = load_validation_config(
-        Path(__file__).resolve().parents[2] / "configs" / "validation.toml"
+        Path(__file__).resolve().parents[2] / "configs" / "simulation.yml"
     )
     stages = simulate_stages(config)
 
     results = run_recovery_checks(
-        stages.apartments_with_totals, stages.total_effects, config, validation
+        stages.apartments_with_totals, stages.total_effects, config, VALIDATION
     )
     oracle = next(
         check

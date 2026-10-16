@@ -60,7 +60,7 @@ def _printed(stdout: str, prefix: str) -> dict[str, str]:
 
 def _canonical_hash() -> str:
     """The hash of the table the notebook's defaults build, computed here."""
-    base = load_simulation_config(PROJECT_ROOT / "configs" / "simulation.toml")
+    base = load_simulation_config(PROJECT_ROOT / "configs" / "simulation.yml")
     config = base.model_copy(
         update={
             "simulation": base.simulation.model_copy(update={"n_neighborhoods": 150}),
@@ -92,7 +92,7 @@ def test_a_setting_missing_or_changed_in_a_settings_mapping_is_caught(
     # left out of them is a value left out of MLflow, and a default that
     # drifts from the notebook plan's §9 D1a goes unnoticed.
     assert _printed(default_run.stdout, "data_settings") == {
-        "config_path": "configs/simulation.toml",
+        "config_path": "configs/simulation.yml",
         "n_neighborhoods": "150",
         "buildings_per_neighborhood_rate": "9.0",
         "simulation_seed": "42",

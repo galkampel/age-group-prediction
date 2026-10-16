@@ -148,7 +148,7 @@ building: `building_id`, `neighborhood_id`, `ses`, `avg_household_size`,
 `median_age`, `n_daycares_500m`, `school_status`, `3_rooms`…`6_rooms`,
 `n_apartments`, `n_kindergarten`, `n_elementary`, `n_highschool`,
 `n_children_total`. `Config` is a frozen pydantic model loaded by
-`load_simulation_config("configs/simulation.toml")` (seed 42, 60
+`load_simulation_config("configs/simulation.yml")` (seed 42, 60
 neighborhoods); the notebook overrides it with `base.model_copy(update={"simulation":
 base.simulation.model_copy(update={"n_neighborhoods": 150}), "building":
 base.building.model_copy(update={"buildings_per_neighborhood_rate": 9.0})})`
@@ -418,7 +418,7 @@ place when needed (user's call 2026-10-14, replacing the four named seeds). The 
 after the other with a fixed `n_trials`, so a seeded sampler reproduces it
 (A4b dropped `n_jobs`, timeouts and `is_reproducible`: no client used them).
 The synthetic population's own seed is the simulator config's
-(`configs/simulation.toml`, 42), shown and overridable in the notebook's data
+(`configs/simulation.yml`, 42), shown and overridable in the notebook's data
 settings.
 
 ---

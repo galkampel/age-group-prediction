@@ -61,7 +61,7 @@ from student_simulator import StudentPopulationSimulator, load_simulation_config
 
 optuna.logging.set_verbosity(optuna.logging.WARNING)
 
-config = load_simulation_config("configs/simulation.toml")
+config = load_simulation_config("configs/simulation.yml")
 config = config.model_copy(
     update={"simulation": config.simulation.model_copy(update={"n_neighborhoods": 20})}
 )

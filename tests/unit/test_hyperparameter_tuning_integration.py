@@ -76,7 +76,7 @@ PARAMETERS = [
 
 def _table() -> pd.DataFrame:
     """The simulator at 20 neighborhoods (79 buildings), room shares added."""
-    path = Path(__file__).resolve().parents[2] / "configs" / "simulation.toml"
+    path = Path(__file__).resolve().parents[2] / "configs" / "simulation.yml"
     config = load_simulation_config(path)
     config = config.model_copy(
         update={

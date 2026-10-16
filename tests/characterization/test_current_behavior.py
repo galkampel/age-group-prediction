@@ -20,7 +20,7 @@ from student_simulator import (
 
 def _config_path() -> Path:
     """Return the canonical simulation configuration path."""
-    return Path(__file__).resolve().parents[2] / "configs" / "simulation.toml"
+    return Path(__file__).resolve().parents[2] / "configs" / "simulation.yml"
 
 
 def _run(seed: int = 42, n_neighborhoods: int = 8) -> SimulationResult:

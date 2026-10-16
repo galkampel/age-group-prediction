@@ -49,7 +49,7 @@ from student_simulator import (
 @pytest.fixture(scope="module")
 def modeling_df() -> pd.DataFrame:
     """Return the modeling table built from the stage-1 simulation config."""
-    config_path = Path(__file__).resolve().parents[2] / "configs" / "simulation.toml"
+    config_path = Path(__file__).resolve().parents[2] / "configs" / "simulation.yml"
     config = load_simulation_config(config_path)
     dataset = StudentPopulationSimulator.from_config(config).simulate().dataset
     # build_modeling_table (old stack) reads the total, which the dataset leaves out.

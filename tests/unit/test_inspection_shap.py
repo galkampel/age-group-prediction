@@ -340,7 +340,7 @@ def test_total_times_probability_model_with_a_string_column(
     # Catches the real-model path: the transformer inside predict must see
     # the string column school_status as fitted, and the explanation must
     # carry the cohort names.
-    path = Path(__file__).resolve().parents[2] / "configs" / "simulation.toml"
+    path = Path(__file__).resolve().parents[2] / "configs" / "simulation.yml"
     config = load_simulation_config(path)
     config = config.model_copy(
         update={

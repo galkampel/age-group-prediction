@@ -69,7 +69,7 @@ table and retains named intermediate tables for research inspection through
 ```python
 from student_simulator import StudentPopulationSimulator, load_simulation_config
 
-config = load_simulation_config("configs/simulation.toml")
+config = load_simulation_config("configs/simulation.yml")
 simulator = StudentPopulationSimulator(config)
 final_df = simulator.run()
 details = simulator.last_result

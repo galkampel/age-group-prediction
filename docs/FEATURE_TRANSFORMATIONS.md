@@ -16,7 +16,7 @@ coefficient means, and why the alternatives were rejected.
 | **C** | `BayesianConditionalModel` | Hierarchical NB2 total plus a composition stage; uses B's frozen specs; `Normal(0, 0.5)` coefficient priors |
 
 **Reference statistics.** All numbers below come from simulated populations
-(`configs/simulation.toml`), pooling 10 or 20 runs of about 250 buildings in 60
+(`configs/simulation.yml`), pooling 10 or 20 runs of about 250 buildings in 60
 neighborhoods each.
 
 | Feature | Mean | SD | Range | Notes |
@@ -154,7 +154,7 @@ means.
 **The SES reference point: 0.0.** A substantive turning point is a better $c$
 than the mean, and here one is named:
 - **What it is.** 0.0 is the simulated population mean (`ses_mean` in
-  `configs/simulation.toml`, with `ses_sd = 1.0`): average SES, neither poor
+  `configs/simulation.yml`, with `ses_sd = 1.0`): average SES, neither poor
   nor rich. The squared column then reads as the squared distance from average
   SES, in population SDs.
 - **Why not the fold mean.** `Center` would use the fold's mean, which moves
@@ -173,7 +173,7 @@ an effect in both tails, which is why the distance from average SES is the
 quantity to model. The simulator does not generate that. There, the SES
 U-shape is in the **number of children**: the total-children log-mean has a
 $0.05\,\text{ses}^2$ term with its vertex at 0 and no linear SES term
-(`ses_quadratic_coef` in `configs/simulation.toml`). `avg_household_size` is
+(`ses_quadratic_coef` in `configs/simulation.yml`). `avg_household_size` is
 drawn from median age plus noise, independently of SES, so the r = −0.13 in the
 table above is sampling variation, not an effect. In this data, then, the
 squared deviation can pick up a U-shape in child counts; it says nothing about

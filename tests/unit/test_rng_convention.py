@@ -27,7 +27,7 @@ from tests.unit.helpers import (
 
 
 def _config_path() -> Path:
-    return Path(__file__).resolve().parents[2] / "configs" / "simulation.toml"
+    return Path(__file__).resolve().parents[2] / "configs" / "simulation.yml"
 
 
 def _config(seed: int = 123, n_neighborhoods: int = 6):

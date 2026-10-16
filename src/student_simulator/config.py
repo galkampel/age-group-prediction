@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 from typing import Literal, Mapping
-import tomllib
 
+import yaml
 from pydantic import (
     BaseModel,
     ConfigDict,
@@ -213,7 +213,7 @@ class ValidationSettings(_Settings):
 
 
 class Config(_Settings):
-    """Complete generation configuration loaded from the stage TOML file."""
+    """Complete generation configuration loaded from the stage YAML file."""
 
     simulation: SimulationSettings
     transforms: TransformSettings = Field(validation_alias="features")
@@ -279,10 +279,14 @@ def _validate_probability_map(
         )
 
 
-def _load_toml(path: str | Path) -> dict[str, object]:
-    """Load TOML into the raw mapping accepted by the typed models."""
-    with Path(path).open("rb") as file_obj:
-        return tomllib.load(file_obj)
+def _load_yaml(path: str | Path) -> object:
+    """Load YAML into the raw data the typed models validate.
+
+    An empty file loads as ``None`` and fails validation like any other
+    non-mapping, so nothing is checked here.
+    """
+    with Path(path).open(encoding="utf-8") as file_obj:
+        return yaml.safe_load(file_obj)
 
 
 def _raise_config_error(error: ValidationError) -> None:
@@ -296,21 +300,10 @@ def _raise_config_error(error: ValidationError) -> None:
 
 
 def load_simulation_config(path: str | Path) -> Config:
-    """Load strict immutable generation settings from a stage TOML file."""
-    raw = _load_toml(path)
+    """Load strict immutable generation settings from a stage YAML file."""
+    raw = _load_yaml(path)
     try:
         return Config.model_validate(raw)
     except ValidationError as error:
         _raise_config_error(error)
         raise AssertionError("unreachable")
-
-
-def load_validation_config(path: str | Path) -> ValidationSettings:
-    """Load strict test-only calibration and recovery thresholds."""
-    raw = _load_toml(path)
-    try:
-        return ValidationSettings.model_validate(raw["validation"])
-    except (KeyError, ValidationError) as error:
-        if isinstance(error, ValidationError):
-            _raise_config_error(error)
-        raise ConfigError("missing key: config.validation") from error

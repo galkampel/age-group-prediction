@@ -129,7 +129,7 @@ config = replace(
 )
 
 source_df = StudentPopulationSimulator(
-    load_simulation_config("configs/simulation.toml")
+    load_simulation_config("configs/simulation.yml")
 ).run()
 neighborhoods = sorted(source_df["neighborhood_id"].unique())[:8]
 scratch_source = source_df[source_df["neighborhood_id"].isin(neighborhoods)]

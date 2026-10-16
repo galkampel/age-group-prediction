@@ -19,7 +19,7 @@ from tests.unit.helpers import make_cohort_simulator, simulate_stages, with_over
 
 
 def _config_path() -> Path:
-    return Path(__file__).resolve().parents[2] / "configs" / "simulation.toml"
+    return Path(__file__).resolve().parents[2] / "configs" / "simulation.yml"
 
 
 def _config(seed: int = 42) -> Config:

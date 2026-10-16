@@ -42,7 +42,7 @@ modules have no module docstrings; their classes and functions do.
 | Module | Responsibility | Main public API | Depends on |
 |---|---|---|---|
 | `__init__.py` | Public package surface (27 names) | Re-exports the classes and functions below | All modules below |
-| `config.py` | Strict, immutable generation settings loaded from `configs/simulation.toml`; test-only thresholds from `configs/validation.toml` | `load_simulation_config`, `load_validation_config`, `Config`, `SimulationSettings`, `NeighborhoodSettings`, `BuildingSettings`, `RoomMixSettings`, `TotalChildrenSettings`, `CohortSettings`, `TransformSettings`, `ValidationSettings`, `ConfigError` | — |
+| `config.py` | Strict, immutable generation settings loaded from `configs/simulation.yml`; the test-only thresholds' `ValidationSettings` | `load_simulation_config`, `Config`, `SimulationSettings`, `NeighborhoodSettings`, `BuildingSettings`, `RoomMixSettings`, `TotalChildrenSettings`, `CohortSettings`, `TransformSettings`, `ValidationSettings`, `ConfigError` | — |
 | `features.py` | Shared feature transforms used by generation | `scale_household_size`, `scale_median_age`, `center_rooms`, `daycare_saturation`, `positive_part`, `positive_part_interaction`, `normalize_positive_weights`, `stable_row_normalize`, `expected_room_probabilities` | — |
 | `neighborhood.py` | One row of public context per neighborhood | `NeighborhoodSimulator.generate(n_neighborhoods, rng)` | `config` |
 | `building.py` | Buildings per neighborhood with apartment room composition | `BuildingSimulator.generate(neighborhoods, rng)` | `config`, `features` |
@@ -196,5 +196,5 @@ docstring describes the run layout in detail. The final path is described in
 |---|---|---|
 | `notebooks/01_eda.py` | EDA client | [README](../README.md#run-the-modeling-notebook) (opened the same way as the modeling notebook) |
 | `notebooks/02_experiments.py` | The experiment notebook: data, split, feature variants, tuned runs, comparison, final run (rebuilt stack only) | [README](../README.md#run-the-modeling-notebook); [notebook plan](EXPERIMENT_NOTEBOOK_PLAN.md) |
-| `configs/simulation.toml`, `configs/modeling.toml`, `configs/validation.toml` | Simulator, modeling/experiment, and test-only threshold settings | Guide §1 and intro |
+| `configs/simulation.yml`, `configs/modeling.toml` | Simulator and modeling/experiment settings | Guide §1 and intro |
 | `tests/unit`, `tests/validation`, `tests/characterization` | Focused contracts; recovery and real-model checks; simulator and notebook behavior | README "Run The Tests" |

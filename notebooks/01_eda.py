@@ -86,7 +86,7 @@ def _(mo):
 @app.cell
 def _(load_simulation_config, mo):
     project_root = mo.notebook_dir().parent
-    config_path = project_root / "configs" / "simulation.toml"
+    config_path = project_root / "configs" / "simulation.yml"
     base_eda_config = load_simulation_config(config_path)
     # Override the number of neighborhoods and buildings per neighborhood for EDA purposes
     eda_config = base_eda_config.model_copy(

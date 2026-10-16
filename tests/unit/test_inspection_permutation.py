@@ -173,7 +173,7 @@ def test_invalid_settings_raise(settings: dict[str, Any]) -> None:
 def test_total_times_probability_model_with_a_string_column() -> None:
     # Catches a scorer that turns X into an array (the string column and the
     # transformer would break) or that mishandles a DataFrame y.
-    path = Path(__file__).resolve().parents[2] / "configs" / "simulation.toml"
+    path = Path(__file__).resolve().parents[2] / "configs" / "simulation.yml"
     config = load_simulation_config(path)
     config = config.model_copy(
         update={

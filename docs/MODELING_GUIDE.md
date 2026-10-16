@@ -44,7 +44,7 @@ behavior.
 ```python
 from student_simulator import StudentPopulationSimulator, load_simulation_config
 
-simulation_config = load_simulation_config("configs/simulation.toml")
+simulation_config = load_simulation_config("configs/simulation.yml")
 simulator = StudentPopulationSimulator(simulation_config)
 source_df = simulator.run()
 ```
@@ -52,7 +52,7 @@ source_df = simulator.run()
 The output has one row per building. It includes identifiers, prediction-time
 features, room counts, and the targets `n_kindergarten`, `n_elementary`,
 `n_highschool`, and `n_children_total`. The simulator configuration is
-controlled by [configs/simulation.toml](../configs/simulation.toml), not
+controlled by [configs/simulation.yml](../configs/simulation.yml), not
 `modeling.toml`.
 
 **Guarantees and pitfalls.** Treat simulator internals and latent random

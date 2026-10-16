@@ -22,7 +22,7 @@ from tests.unit.helpers import with_overrides
 
 def _config(seed: int = 42) -> Config:
     config = load_simulation_config(
-        Path(__file__).resolve().parents[2] / "configs" / "simulation.toml"
+        Path(__file__).resolve().parents[2] / "configs" / "simulation.yml"
     )
     return with_overrides(config, simulation={"seed": seed, "n_neighborhoods": 5})
 
