@@ -15,11 +15,6 @@ from .base import BaseAgeGroupModel
 
 __all__ = ["CountModel", "ExposureRegressor", "Regressor"]
 
-# The smallest mean count predict returns. A Gaussian loss (identity link) can
-# predict a negative count; at 0 the Poisson deviance raises and at
-# np.finfo(float).tiny its y / y_pred overflows, at eps it is large and finite.
-_PREDICTION_FLOOR = float(np.finfo(float).eps)
-
 
 class Regressor(Protocol):
     """What ``estimator`` must do: scikit-learn's regressor API with ``sample_weight``."""
@@ -78,9 +73,12 @@ class CountModel(BaseAgeGroupModel):
 
     Without ``use_exposure`` a passed exposure is ignored. Why each case, and
     the penalty under the rate: ``docs/INDEPENDENT_COHORT_MODELS.md`` §2.
-    ``predict`` floors the mean at a tiny positive value, so a Gaussian loss's
-    negative prediction scores badly under the Poisson deviance instead of
-    raising; a log-link estimator never reaches it.
+
+    ``y_min``, if given, floors the predicted mean. A Gaussian loss (identity
+    link) can predict a negative count, on which the Poisson deviance raises;
+    floored at ``np.finfo(float).eps`` it scores badly instead (a floor of 0
+    still raises, one of ``np.finfo(float).tiny`` overflows ``y / y_pred``).
+    ``None``: no floor; a log-link estimator never needs one.
     """
 
     def __init__(
@@ -89,16 +87,20 @@ class CountModel(BaseAgeGroupModel):
         estimator: Regressor | ExposureRegressor,
         use_exposure: bool = False,
         feature_transformer: FeatureTransformer | None = None,
+        y_min: float | None = None,
     ) -> None:
         # Stored verbatim: set_params assigns attributes without re-entering here.
         self.estimator = estimator
         self.use_exposure = use_exposure
         self.feature_transformer = feature_transformer
+        self.y_min = y_min
 
     def fit(
         self, X: pd.DataFrame, y: pd.Series, exposure: ArrayLike | None = None
     ) -> Self:
         """Fit a copy of ``estimator`` on ``X`` and ``y``; ``exposure`` is raw, not its log."""
+        if self.y_min is not None and not (np.isfinite(self.y_min) and self.y_min > 0):
+            raise ValueError(f"y_min must be finite and positive, got {self.y_min}")
         exposure_values = self._check_exposure(X, exposure, expected=self.use_exposure)
         feature_transformer, X = self._fit_features(X, y)
         # A copy, so the caller's template stays unfitted across folds.
@@ -131,15 +133,16 @@ class CountModel(BaseAgeGroupModel):
         X = self._transform_features(X)
         estimator = self.estimator_
         if exposure_values is None:
-            prediction = estimator.predict(X)
+            y_pred = estimator.predict(X)
         elif _takes_exposure(estimator):
-            prediction = estimator.predict(X, exposure=exposure_values)
+            y_pred = estimator.predict(X, exposure=exposure_values)
         elif _takes_sample_weight(estimator):
-            prediction = np.asarray(estimator.predict(X), dtype=float) * exposure_values
+            y_pred = np.asarray(estimator.predict(X), dtype=float) * exposure_values
         else:
             # Unreachable after a fit that succeeded: fit raised for it.
             raise TypeError(
                 f"{type(estimator).__name__}.fit takes neither `exposure` nor "
                 "`sample_weight`"
             )
-        return np.maximum(np.asarray(prediction, dtype=float), _PREDICTION_FLOOR)
+        y_pred = np.asarray(y_pred, dtype=float)
+        return y_pred if self.y_min is None else np.maximum(y_pred, self.y_min)

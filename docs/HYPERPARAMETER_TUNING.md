@@ -499,9 +499,9 @@ then assembled into one `TotalTimesProbabilityModel` and refit.
   default, so an exception inside the metric propagates out of `optimize`
   (the trials so far stay in `optuna_study_`). Measured 2026-10-15: a Gaussian
   LightGBM `CountModel` without an exposure predicted a negative count in trial
-  4 and scikit-learn's Poisson deviance raised; `CountModel.predict` now floors
-  the mean at `np.finfo(float).eps`, so that trial scores a large deviance and
-  the study goes on.
+  4 and scikit-learn's Poisson deviance raised; with `y_min=np.finfo(float).eps`,
+  `CountModel.predict` floors the mean, so that trial scores a large deviance
+  and the study goes on.
 
 ## 11. What Remains
 

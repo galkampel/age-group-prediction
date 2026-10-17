@@ -104,8 +104,8 @@ $f(x_b)$.
   too. Without the weight (a plain regression of $r_b$) the mean would be the same but
   every building would count equally, a $\operatorname{Var}(y_b) \propto E_b^2$
   assumption. The one Gaussian caveat: $f(x_b)$ can be negative, as it already could
-  without an exposure; `predict` floors the mean at `np.finfo(float).eps`, so such a
-  building scores a large but finite Poisson deviance instead of raising in the metric
+  without an exposure; with `y_min=np.finfo(float).eps`, `predict` floors the mean, so
+  such a building scores a large but finite Poisson deviance instead of raising in the metric
   (at 0 scikit-learn's deviance raises; measured 2026-10-15, a Gaussian LightGBM without
   an exposure predicted a negative count in the fourth trial of a study and stopped it).
 
