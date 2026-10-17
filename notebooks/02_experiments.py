@@ -60,6 +60,7 @@ def _():
     )
     from age_group_prediction.preprocessing import ExposureTransformer, ShareTransformer
     from age_group_prediction.splitting import Splitter
+    from age_group_prediction.utils import AgeGroupDataset
     from student_simulator import (
         ApartmentSimulator,
         BuildingSimulator,
@@ -71,6 +72,7 @@ def _():
     )
 
     return (
+        AgeGroupDataset,
         ApartmentSimulator,
         BuildingSimulator,
         Center,
@@ -172,12 +174,13 @@ def _(ExposureTransformer, df):
     exposure_col = "n_apartments"
     groups_col = "neighborhood_id"
     id_col = "building_id"
-    X, Y, groups = df.drop(columns=[id_col, groups_col, *targets]), df[targets], df[groups_col]
+    X, Y = df.drop(columns=[id_col, groups_col, *targets]), df[targets]
+    groups, ids = df[groups_col], df[id_col]
     # Checks every exposure is finite and > 0; the models leave that to it.
     exposure = ExposureTransformer(exposure_col).fit_transform(df)
 
     print(X.shape, Y.shape, groups.shape, exposure.shape)
-    return X, Y, exposure, groups, id_col
+    return X, Y, exposure, groups, ids
 
 
 @app.cell
@@ -207,7 +210,8 @@ def _(DATA_SETTINGS, X, config, df, groups, hashlib, json, mo, pd):
 
     print("data_settings " + " ".join(f"{k}={v}" for k, v in DATA_SETTINGS.items()))
     print(
-        f"data rows={len(df)} neighborhoods={groups.nunique()} config_hash={config_hash}"
+        f"data rows={len(df)} neighborhoods={groups.nunique()} "
+        f"config_hash={config_hash}"
     )
     mo.vstack(
         [
@@ -283,20 +287,22 @@ def _(mo):
 
 @app.cell
 def _(
+    AgeGroupDataset,
     Splitter,
     X,
     Y,
     df,
     exposure,
     groups,
-    id_col,
+    ids,
     seed,
     split_method,
     test_size,
     val_size,
 ):
     splitter = Splitter(split_method)
-    split_groups = None if split_method == "random" else groups  # random reads none
+    # random reads none
+    split_groups = None if split_method == "random" else groups
     train_val_index, test_index = splitter.train_test_indices(
         df, split_groups, test_size=test_size, random_state=seed
     )
@@ -312,54 +318,30 @@ def _(
     # The second call returns positions inside the remainder: map them back
     # to table positions.
     train_index, val_index = train_val_index[train_sub], train_val_index[val_sub]
-    # training, validation, and test splits
-    X_train, Y_train, exposure_train, groups_train = (
-        X.iloc[train_index],
-        Y.iloc[train_index],
-        exposure.iloc[train_index],
-        groups.iloc[train_index],
-    )
-    X_val, Y_val, exposure_val, groups_val = (
-        X.iloc[val_index],
-        Y.iloc[val_index],
-        exposure.iloc[val_index],
-        groups.iloc[val_index],
-    )
-    X_test, Y_test, exposure_test, groups_test = (
-        X.iloc[test_index],
-        Y.iloc[test_index],
-        exposure.iloc[test_index],
-        groups.iloc[test_index],
-    )
-
-    building_id_train, building_id_val, building_id_test = (
-        df[id_col].iloc[train_index],
-        df[id_col].iloc[val_index],
-        df[id_col].iloc[test_index],
+    # One record per part, each component taken at the part's positions.
+    train_age_group, val_age_group, test_age_group = (
+        AgeGroupDataset(
+            X=X.iloc[index],
+            Y=Y.iloc[index],
+            exposure=exposure.iloc[index],
+            groups=groups.iloc[index],
+            ids=ids.iloc[index],
+        )
+        for index in (train_index, val_index, test_index)
     )
     print(
         f"split n_train={len(train_index)} n_val={len(val_index)} "
         f"n_test={len(test_index)}"
     )
-    return (
-        X_train,
-        X_val,
-        Y_train,
-        Y_val,
-        exposure_train,
-        exposure_val,
-        split_groups,
-        splitter,
-        train_index,
-    )
+    return splitter, train_age_group, val_age_group
 
 
 @app.cell
-def _(n_splits, seed, split_groups, splitter, train_index):
+def _(n_splits, seed, split_method, splitter, train_age_group):
     cv = splitter.cv(n_splits=n_splits, random_state=seed)
     # What cv.split takes: the training rows' groups, or None under random,
     # since KFold warns when given groups (an error under -W error).
-    cv_groups = None if split_groups is None else split_groups.iloc[train_index]
+    cv_groups = None if split_method == "random" else train_age_group.groups
     return cv, cv_groups
 
 
@@ -403,12 +385,6 @@ def _(
         name="center_scale_by_0.1", transforms=(Center(), DomainScale(scale=0.1))
     )
     scale_by_two_plan = Plan(name="scale_by_2", transforms=(DomainScale(scale=2.0),))
-    # §8.5.4: daycare as an interaction operand. Centered, each product barely
-    # correlates with its room share (-0.04 to 0.06 on the training part; 0.85
-    # to 0.86 with the uncentered d/2).
-    center_scale_by_two_plan = Plan(
-        name="center_scale_by_2", transforms=(Center(), DomainScale(scale=2.0))
-    )
     one_hot_plan = Plan(
         name="one_hot",
         transforms=(
@@ -429,7 +405,6 @@ def _(
     return (
         ROOM_SHARES,
         center_scale_by_tenth_plan,
-        center_scale_by_two_plan,
         one_hot_plan,
         passthrough_plan,
         relative_saturation_plan,
@@ -445,7 +420,6 @@ def _(
     Interaction,
     ROOM_SHARES,
     center_scale_by_tenth_plan,
-    center_scale_by_two_plan,
     one_hot_plan,
     passthrough_plan,
     relative_saturation_plan,
@@ -565,13 +539,14 @@ def _(
             Interaction(left=share, right="median_age") for share in ROOM_SHARES
         ),
     )
-    # §6.3: the second choice; §6.5: the composition-stage pair. Daycare is
-    # centered as an operand (§8.5.4).
+    # §6.3: the second choice; §6.5: the composition-stage pair. Daycare enters
+    # as d/2, uncentered, so 0 = no daycares and each share's main effect is
+    # read there (§8.5.4).
     probability__room_share_x_daycare = FeatureTransformer(
         column_plans=(
             (standardize_plan, ["ses", "avg_household_size", "median_age"]),
             (center_scale_by_tenth_plan, list(ROOM_SHARES)),
-            (center_scale_by_two_plan, ["n_daycares_500m"]),
+            (scale_by_two_plan, ["n_daycares_500m"]),
             (one_hot_plan, ["school_status"]),
         ),
         interactions=tuple(
@@ -582,7 +557,7 @@ def _(
         column_plans=(
             (standardize_plan, ["ses", "avg_household_size", "median_age"]),
             (center_scale_by_tenth_plan, list(ROOM_SHARES)),
-            (center_scale_by_two_plan, ["n_daycares_500m"]),
+            (scale_by_two_plan, ["n_daycares_500m"]),
             (one_hot_plan, ["school_status"]),
         ),
         interactions=(
@@ -640,7 +615,7 @@ def _(mo):
     Only each family's best combination is refit on the training part and
     scored on training and validation. NB2 tunes its dispersion and its L1
     penalty; a Gaussian loss can predict a negative count, which
-    `CountModel` floors, so the trial scores badly instead of stopping the
+    `CountModel` floors at `y_min` (eps), so the trial scores badly instead of stopping the
     study. Model 2 is tuned the same way, one study per pair of a total
     family (the list `MODEL2_TOTALS`, edited after Model 1's table) and a
     classifier family, under `total_model__…` and `probability_model__…`;
@@ -657,6 +632,7 @@ def _():
     import time
     from collections import Counter
 
+    import numpy as np
     import optuna
     from joblib import Parallel, delayed
     from lightgbm import LGBMClassifier, LGBMRegressor
@@ -709,6 +685,7 @@ def _():
         TotalTimesProbabilityModel,
         dataclasses,
         delayed,
+        np,
         optuna,
         time,
     )
@@ -765,6 +742,7 @@ def _(
     PoissonRegressor,
     SEARCH_SPACES,
     Y,
+    np,
     seed,
 ):
     # The trees take n_apartments as a feature and the offset; the GLMs take it
@@ -773,6 +751,9 @@ def _(
     # subsample_freq=1: LightGBM ignores subsample without it; n_jobs=1: one
     # thread per fit.
     COHORTS = list(Y.columns)
+    # The smallest mean a CountModel predicts: a Gaussian loss can predict a
+    # negative count, the Poisson deviance raises at 0 and stays finite at eps.
+    PREDICTION_FLOOR = float(np.finfo(float).eps)
     TREE_VARIANTS = ("tree", "tree__ses_quadratic")
     COUNT_GLM_VARIANTS = (
         "glm_base",
@@ -846,7 +827,7 @@ def _(
             [*SEARCH_SPACES["lgbm_classifier"], tree_variant],
         ),
     }
-    return COHORTS, COUNT_FAMILIES, PROBABILITY_FAMILIES
+    return COHORTS, COUNT_FAMILIES, PREDICTION_FLOOR, PROBABILITY_FAMILIES
 
 
 @app.cell
@@ -857,6 +838,7 @@ def _(
     CVHyperparameterEvaluator,
     CountModel,
     IndependentCohortModels,
+    PREDICTION_FLOOR,
     cv,
     dataclasses,
 ):
@@ -871,7 +853,10 @@ def _(
     MODEL1_EVALUATORS = {
         family: CVHyperparameterEvaluator(
             IndependentCohortModels(
-                {cohort: CountModel(estimator=estimator) for cohort in COHORTS}
+                {
+                    cohort: CountModel(estimator=estimator, y_min=PREDICTION_FLOOR)
+                    for cohort in COHORTS
+                }
             ),
             [
                 parameter
@@ -921,15 +906,13 @@ def _(mo):
 def _(
     MODEL1_EVALUATORS,
     Parallel,
-    X_train,
-    Y_train,
     cv_groups,
     delayed,
-    exposure_train,
     mo,
     n_trials,
     run_model1,
     seed,
+    train_age_group,
     tune_model,
 ):
     mo.stop(not run_model1.value, mo.md("Click the button to tune Model 1."))
@@ -937,9 +920,9 @@ def _(
     model1_runs = Parallel(n_jobs=len(MODEL1_EVALUATORS))(
         delayed(tune_model)(
             evaluator,
-            X_train,
-            Y_train,
-            exposure=exposure_train,
+            train_age_group.X,
+            train_age_group.Y,
+            exposure=train_age_group.exposure,
             cv_groups=cv_groups,
             study_seed=seed + i,
             n_trials=n_trials,
@@ -963,13 +946,8 @@ def _(
         evaluators,
         results,
         components,
-        *,
-        X_train,
-        Y_train,
-        X_val,
-        Y_val,
-        exposure_train,
-        exposure_val,
+        train_age_group,
+        val_age_group,
     ):
         """Refit each family's best combination on the training part; the models and three tables.
 
@@ -981,6 +959,16 @@ def _(
         the trials per arm of every categorical, so a starved arm is visible
         before a family is declared worse.
         """
+        X_train, Y_train, exposure_train = (
+            train_age_group.X,
+            train_age_group.Y,
+            train_age_group.exposure,
+        )
+        X_val, Y_val, exposure_val = (
+            val_age_group.X,
+            val_age_group.Y,
+            val_age_group.exposure,
+        )
         models = {}
         score_rows, choice_rows, arm_rows = [], [], []
         for family, (result, seconds) in results.items():
@@ -1060,24 +1048,16 @@ def _(
     COHORTS,
     MODEL1_EVALUATORS,
     MODEL1_RESULTS,
-    X_train,
-    X_val,
-    Y_train,
-    Y_val,
-    exposure_train,
-    exposure_val,
     score_best,
+    train_age_group,
+    val_age_group,
 ):
     MODEL1_MODELS, model1_df, model1_choices_df, model1_arms_df = score_best(
         MODEL1_EVALUATORS,
         MODEL1_RESULTS,
         [f"cohort_models__{cohort}" for cohort in COHORTS],
-        X_train=X_train,
-        Y_train=Y_train,
-        X_val=X_val,
-        Y_val=Y_val,
-        exposure_train=exposure_train,
-        exposure_val=exposure_val,
+        train_age_group,
+        val_age_group,
     )
     return MODEL1_MODELS, model1_arms_df, model1_choices_df, model1_df
 
@@ -1112,6 +1092,7 @@ def _(
     CohortProbabilityModel,
     CountModel,
     MODEL2_TOTALS,
+    PREDICTION_FLOOR,
     PROBABILITY_FAMILIES,
     TotalTimesProbabilityModel,
     cv,
@@ -1122,7 +1103,9 @@ def _(
     MODEL2_EVALUATORS = {
         f"{total}__{probability}": CVHyperparameterEvaluator(
             TotalTimesProbabilityModel(
-                total_model=CountModel(estimator=COUNT_FAMILIES[total][0]),
+                total_model=CountModel(
+                    estimator=COUNT_FAMILIES[total][0], y_min=PREDICTION_FLOOR
+                ),
                 probability_model=CohortProbabilityModel(estimator=estimator),
             ),
             [
@@ -1152,15 +1135,13 @@ def _(MODEL2_EVALUATORS, mo):
 def _(
     MODEL2_EVALUATORS,
     Parallel,
-    X_train,
-    Y_train,
     cv_groups,
     delayed,
-    exposure_train,
     mo,
     n_trials,
     run_model2,
     seed,
+    train_age_group,
     tune_model,
 ):
     mo.stop(not run_model2.value, mo.md("Click the button to tune Model 2."))
@@ -1168,9 +1149,9 @@ def _(
     model2_runs = Parallel(n_jobs=len(MODEL2_EVALUATORS))(
         delayed(tune_model)(
             evaluator,
-            X_train,
-            Y_train,
-            exposure=exposure_train,
+            train_age_group.X,
+            train_age_group.Y,
+            exposure=train_age_group.exposure,
             cv_groups=cv_groups,
             study_seed=seed + i,
             n_trials=n_trials,
@@ -1185,24 +1166,16 @@ def _(
 def _(
     MODEL2_EVALUATORS,
     MODEL2_RESULTS,
-    X_train,
-    X_val,
-    Y_train,
-    Y_val,
-    exposure_train,
-    exposure_val,
     score_best,
+    train_age_group,
+    val_age_group,
 ):
     MODEL2_MODELS, model2_df, model2_choices_df, model2_arms_df = score_best(
         MODEL2_EVALUATORS,
         MODEL2_RESULTS,
         ["total_model", "probability_model"],
-        X_train=X_train,
-        Y_train=Y_train,
-        X_val=X_val,
-        Y_val=Y_val,
-        exposure_train=exposure_train,
-        exposure_val=exposure_val,
+        train_age_group,
+        val_age_group,
     )
     return MODEL2_MODELS, model2_arms_df, model2_choices_df, model2_df
 

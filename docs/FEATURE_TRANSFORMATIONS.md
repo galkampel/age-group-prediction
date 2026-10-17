@@ -1211,11 +1211,15 @@ The second choice is room shares × `n_daycares_500m`, which targets the
 kindergarten cohort directly; §6.5 measures that pair at 0.28 and 2.6. Under
 candidate 5 the operand is `n_daycares_500m_sat`.
 
-**Center the linear daycare column before using it as an operand.** $d/2$ has
-mean 1.4, so its product with a room share correlates 0.85 with that share's
-main effect and has SD 1.3 to 1.9. With `Center() → DomainScale(scale=2.0)`
-the correlation is about 0 and the SD 0.66 to 0.99. The cost is the
-"no daycare" baseline (§4.1). `n_daycares_500m_sat` is already centered.
+**Keep the linear daycare column uncentered as an operand.** $d/2$ has mean
+1.4, so its product with a room share correlates 0.85 with that share's main
+effect (SD 1.3 to 1.9); `Center() → DomainScale(scale=2.0)` would bring that to
+about 0 (SD 0.66 to 0.99). Centering only reparameterizes the model:
+unpenalized, the predictions are the same, and only the coefficients' meaning
+(and, under a penalty, the shrinkage) changes. Uncentered, 0 is "no daycares"
+(§4.1) and each share's main effect is read at no daycares. The collinearity
+costs wider standard errors on those main effects, since no daycares covers 6%
+of buildings. `n_daycares_500m_sat` is already centered.
 
 **Do not combine** room shares × `avg_household_size` with room shares ×
 `median_age`: the moderators correlate −0.44 and the blocks 0.52 (§6.5).
