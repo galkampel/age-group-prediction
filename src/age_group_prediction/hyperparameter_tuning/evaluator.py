@@ -56,7 +56,7 @@ class CVHyperparameterEvaluator:
     rejects the values LightGBM would accept silently. Rows are paired by
     position, so take its training rows by the positions
     ``Splitter.train_test_indices`` returned, the ones that gave ``X``.
-    A greater-is-better metric is negated, so the study always minimizes.
+    A metric whose direction is "maximize" is negated, so the study always minimizes.
     An empty ``parameters`` scores the model as given, so pair it with
     ``n_trials=1``: more trials would repeat the same fit.
     The model transforms its own features (its ``feature_transformer``),
@@ -112,7 +112,7 @@ class CVHyperparameterEvaluator:
             model.fit(X_train, y_train, exposure=exposure_train)
             y_val_pred = model.predict(X_val, exposure=exposure_val)
             value = model.evaluate(y_val, y_val_pred, self.metric)
-            score = -value if self.metric.greater_is_better else value
+            score = -value if self.metric.direction == "maximize" else value
             # Checked before report: Optuna stores a NaN intermediate silently.
             if not math.isfinite(score):
                 raise ValueError(
@@ -131,7 +131,7 @@ class CVHyperparameterEvaluator:
         trial.set_user_attr("fold_sizes", fold_sizes)
         # The study reads these to report the metric in its own sign.
         trial.set_user_attr("metric_name", self.metric.name)
-        trial.set_user_attr("greater_is_better", self.metric.greater_is_better)
+        trial.set_user_attr("direction", self.metric.direction)
         return self.aggregation.aggregate(scores, fold_sizes)
 
     @staticmethod

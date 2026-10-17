@@ -29,7 +29,7 @@ class TrialRecord:
     """One trial that ran, with the metric in its own sign.
 
     ``value`` and ``fold_values`` undo the negation the evaluator applies to
-    a greater-is-better metric (D12), from the sign it recorded on this trial;
+    a metric to maximize (D12), from the direction it recorded on this trial;
     the search compared ``-value`` then, kept in ``optuna_study_``. All but
     ``number``, ``state`` and ``params`` are ``None`` unless the trial is
     COMPLETE; the folds are ``None`` too for an objective that does not
@@ -81,9 +81,9 @@ def _record_dict(record: TrialRecord) -> dict[str, Any]:
 
 
 def _sign(trial: FrozenTrial) -> float:
-    # The evaluator negates a greater-is-better metric (D12); this undoes it.
+    # The evaluator negates a metric to maximize (D12); this undoes it.
     # Absent (a plain objective): the value is the score.
-    return -1.0 if trial.user_attrs.get("greater_is_better", False) else 1.0
+    return -1.0 if trial.user_attrs.get("direction") == "maximize" else 1.0
 
 
 def _trial_record(trial: FrozenTrial) -> TrialRecord:

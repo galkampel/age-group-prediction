@@ -71,7 +71,7 @@ class BaseAgeGroupModel(BaseEstimator, ABC):
 
     def evaluate(self, y_true: ArrayLike, y_pred: ArrayLike, metric: Metric) -> float:
         """Score ``y_pred`` against ``y_true`` with one metric."""
-        return float(metric.function(y_true, y_pred))
+        return metric(y_true, y_pred)
 
     def _fit_features(
         self, X: pd.DataFrame, y: pd.Series | pd.DataFrame

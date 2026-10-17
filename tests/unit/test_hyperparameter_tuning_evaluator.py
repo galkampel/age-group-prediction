@@ -42,6 +42,7 @@ from age_group_prediction.modeling import BaseAgeGroupModel, CountModel
 from age_group_prediction.scoring import (
     COHORT_LOG_LOSS,
     POISSON_DEVIANCE,
+    Direction,
     Metric,
     cohort_log_loss,
 )
@@ -96,13 +97,13 @@ def _listed(exposure: ArrayLike | None) -> list[float] | None:
     return None if exposure is None else np.asarray(exposure).tolist()
 
 
-def _mean_of_y(*, greater_is_better: bool = False) -> Metric:
+def _mean_of_y(*, direction: Direction = "minimize") -> Metric:
     # The fold score is the mean target of the validation rows, which a test
     # can compute from the folds alone.
     return Metric(
         "mean_of_y",
         lambda y_true, y_pred: float(np.mean(np.asarray(y_true, dtype=float))),
-        greater_is_better=greater_is_better,
+        direction=direction,
     )
 
 
@@ -317,9 +318,9 @@ def test_a_missing_exposure_raises_the_models_error() -> None:
         evaluator.evaluate(FixedTrial({"estimator__n_estimators": 2}), X, Y, GROUPS)
 
 
-@pytest.mark.parametrize("greater_is_better", [True, False])
-def test_the_score_is_signed_by_the_metrics_direction(greater_is_better: bool) -> None:
-    metric = _mean_of_y(greater_is_better=greater_is_better)
+@pytest.mark.parametrize("direction", ["maximize", "minimize"])
+def test_the_score_is_signed_by_the_metrics_direction(direction: Direction) -> None:
+    metric = _mean_of_y(direction=direction)
 
     value = _evaluator(metric=metric).evaluate(FixedTrial({"alpha": 1.0}), X, Y, GROUPS)
 
@@ -330,7 +331,7 @@ def test_the_score_is_signed_by_the_metrics_direction(greater_is_better: bool) -
         )
     )
     assert pooled > 0
-    assert value == pytest.approx(-pooled if greater_is_better else pooled)
+    assert value == pytest.approx(-pooled if direction == "maximize" else pooled)
 
 
 @pytest.mark.parametrize("bad", [math.nan, math.inf, -math.inf])
@@ -380,9 +381,9 @@ def test_each_fold_reports_its_score_and_the_value_is_the_aggregation(
     assert study.trials[0].value == pytest.approx(rule(scores, sizes))
 
 
-@pytest.mark.parametrize("greater_is_better", [True, False])
-def test_a_completed_trial_records_its_folds(greater_is_better: bool) -> None:
-    evaluator = _evaluator(metric=_mean_of_y(greater_is_better=greater_is_better))
+@pytest.mark.parametrize("direction", ["maximize", "minimize"])
+def test_a_completed_trial_records_its_folds(direction: Direction) -> None:
+    evaluator = _evaluator(metric=_mean_of_y(direction=direction))
     study = _optimize(evaluator, n_trials=1)
     fixed = FixedTrial({"alpha": 1.0})
     evaluator.evaluate(fixed, X, Y, GROUPS)
@@ -393,11 +394,11 @@ def test_a_completed_trial_records_its_folds(greater_is_better: bool) -> None:
             "fold_scores",
             "fold_sizes",
             "metric_name",
-            "greater_is_better",
+            "direction",
         }
         assert attrs["metric_name"] == evaluator.metric.name
-        assert attrs["greater_is_better"] is greater_is_better
-        sign = -1.0 if greater_is_better else 1.0
+        assert attrs["direction"] == direction
+        sign = -1.0 if direction == "maximize" else 1.0
         assert attrs["fold_scores"] == pytest.approx([sign * s for s in scores])
         assert attrs["fold_sizes"] == sizes
         # JSON-native, as sqlite storage requires.
@@ -485,7 +486,7 @@ def test_matches_a_hand_written_fold_loop() -> None:
         y_val_pred = fitted.predict(
             transformer.transform(df.iloc[val]), exposure=exposure[val]
         )
-        scores.append(float(POISSON_DEVIANCE.function(y.iloc[val], y_val_pred)))
+        scores.append(float(POISSON_DEVIANCE(y.iloc[val], y_val_pred)))
         sizes.append(len(val))
     assert len(set(sizes)) > 1
     assert value == pytest.approx(np.average(scores, weights=sizes))

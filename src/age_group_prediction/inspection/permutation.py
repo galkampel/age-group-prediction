@@ -32,7 +32,7 @@ class PermutationImportance:
 
         importance = score(original X) - score(X with the column shuffled)
 
-    averaged over the repeats; a loss (``greater_is_better=False``) enters
+    averaged over the repeats; a loss (``direction="minimize"``) enters
     negated, so the importance is in the metric's units and positive means
     the column helps, whichever way the metric points. Held-out rows answer
     "what matters for the prediction"; the training rows show what the model
@@ -62,7 +62,7 @@ class PermutationImportance:
         """
         # scikit-learn scores "greater is better", so a loss is negated: the
         # drop of the score is then positive for a column the model uses.
-        sign = 1.0 if self.metric.greater_is_better else -1.0
+        sign = 1.0 if self.metric.direction == "maximize" else -1.0
 
         def score(
             estimator: BaseAgeGroupModel, X_permuted: pd.DataFrame, y_true: Any

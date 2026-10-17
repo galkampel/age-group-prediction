@@ -224,11 +224,11 @@ otherwise come after a fold was fitted.
    copy on the training rows (the model fits its own `feature_transformer` there,
    so no validation statistic leaks), predict and score the validation rows with
    `model.evaluate(y_val, y_val_pred, metric)`;
-3. negate the score if the metric is greater-is-better, so the study always
+3. negate the score if the metric's direction is "maximize", so the study always
    minimizes (D12); raise on a NaN or infinite score (Optuna would store it
    silently); report the fold's own score to the pruner (§7);
 4. after the last fold, record `fold_scores`, `fold_sizes`, `metric_name` and
-   `greater_is_better` on the trial (the study reads them) and return
+   `direction` on the trial (the study reads them) and return
    `aggregation.aggregate(scores, fold_sizes)`.
 
 `X` is the raw table (a numpy array works only with a model that takes the

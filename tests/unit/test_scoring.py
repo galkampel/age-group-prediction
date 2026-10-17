@@ -45,8 +45,18 @@ def test_ready_made_metrics_wrap_their_function(
 ) -> None:
     assert metric.name == name
     assert metric.function is function
-    # All are losses; a tuner relies on this to negate them.
-    assert metric.greater_is_better is False
+    # All are losses; a tuner relies on this to minimize them.
+    assert metric.direction == "minimize"
+
+
+def test_calling_a_metric_applies_its_function_as_a_float() -> None:
+    # Catches a call that returns the NumPy scalar, which MLflow and json reject.
+    metric = Metric("mae", lambda y_true, y_pred: np.float64(0.5))
+
+    value = metric([1.0], [1.5])
+
+    assert value == 0.5
+    assert type(value) is float
 
 
 # --- cohort_log_loss --------------------------------------------------
@@ -179,10 +189,17 @@ def test_cohort_poisson_deviance_pairs_dataframes_by_position() -> None:
     [
         lambda: Metric("", mean_absolute_error),
         lambda: Metric("custom", 3),  # type: ignore[arg-type]
-        lambda: Metric("custom", mean_absolute_error, 1),  # type: ignore[arg-type]
-        lambda: Metric("custom", mean_absolute_error, greater_is_beter=True),  # type: ignore[call-arg]
+        lambda: Metric("custom", mean_absolute_error, "min"),  # type: ignore[arg-type]
+        lambda: Metric("custom", mean_absolute_error, direction=True),  # type: ignore[arg-type]
+        lambda: Metric("custom", mean_absolute_error, greater_is_better=True),  # type: ignore[call-arg]
     ],
-    ids=["empty-name", "not-callable", "int-direction", "misspelled-field"],
+    ids=[
+        "empty-name",
+        "not-callable",
+        "unknown-direction",
+        "bool-direction",
+        "old-field",
+    ],
 )
 def test_invalid_metric_is_rejected(build: Callable[[], Metric]) -> None:
     with pytest.raises((ValueError, TypeError)):

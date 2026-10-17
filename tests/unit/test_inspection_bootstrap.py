@@ -14,7 +14,7 @@ from sklearn.linear_model import LogisticRegression
 
 from age_group_prediction.inspection import BootstrapEvaluator, BootstrapResult
 from age_group_prediction.modeling import BaseAgeGroupModel, CohortProbabilityModel
-from age_group_prediction.scoring import COHORT_LOG_LOSS, Metric
+from age_group_prediction.scoring import COHORT_LOG_LOSS, Direction, Metric
 
 # y is the row id, and the spy model predicts it too, so a metric can tell
 # which rows a replicate drew and whether y and the predictions stay paired.
@@ -60,10 +60,10 @@ def _evaluate(
     recorder: _RecordingMetric,
     groups: np.ndarray | None = None,
     *,
-    greater_is_better: bool = False,
+    direction: Direction = "minimize",
     **settings: Any,
 ) -> BootstrapResult:
-    metric = Metric("mean_id", recorder, greater_is_better=greater_is_better)
+    metric = Metric("mean_id", recorder, direction=direction)
     kwargs: dict[str, Any] = {"metric": metric, "n_resamples": 50, "random_state": 0}
     evaluator = BootstrapEvaluator(**(kwargs | settings))
     return evaluator.evaluate(_SpyModel(), X, Y, groups)
@@ -134,11 +134,11 @@ def test_predict_is_called_once_with_the_exposure() -> None:
     assert model.predict_exposures[0] is EXPOSURE
 
 
-def test_greater_is_better_metric_is_reported_raw() -> None:
+def test_a_metric_to_maximize_is_reported_raw() -> None:
     # Catches the tuner's sign flip being applied here: the interval is in the
     # metric's own units.
     recorder = _RecordingMetric()
-    result = _evaluate(recorder, greater_is_better=True)
+    result = _evaluate(recorder, direction="maximize")
     assert result.mean == pytest.approx(np.mean(recorder.scores))
     assert result.mean > 0
 

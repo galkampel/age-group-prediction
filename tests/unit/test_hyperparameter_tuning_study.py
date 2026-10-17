@@ -161,17 +161,17 @@ def _evaluator_like(trial: optuna.Trial) -> float:
     trial.set_user_attr("fold_scores", FOLD_SCORES)
     trial.set_user_attr("fold_sizes", FOLD_SIZES)
     trial.set_user_attr("metric_name", "poisson_deviance")
-    trial.set_user_attr("greater_is_better", False)
+    trial.set_user_attr("direction", "minimize")
     return 1.1
 
 
 def _negated_r2_like(trial: optuna.Trial) -> float:
-    """Records what the evaluator records for a greater-is-better metric."""
+    """Records what the evaluator records for a metric to maximize."""
     trial.suggest_float("x", 0.0, 1.0)
     trial.set_user_attr("fold_scores", [-0.6, -0.7, -0.8])
     trial.set_user_attr("fold_sizes", FOLD_SIZES)
     trial.set_user_attr("metric_name", "r2")
-    trial.set_user_attr("greater_is_better", True)
+    trial.set_user_attr("direction", "maximize")
     return -0.7
 
 
@@ -237,7 +237,7 @@ def test_a_loss_is_reported_as_it_is() -> None:
     assert result.metric_name == "poisson_deviance"
 
 
-def test_a_greater_is_better_metric_is_reported_in_its_own_sign() -> None:
+def test_a_metric_to_maximize_is_reported_in_its_own_sign() -> None:
     study = HyperparameterStudy(seed=0, n_trials=1)
     result = study.optimize(_negated_r2_like)
     record = result.trials[0]
@@ -252,7 +252,9 @@ def test_each_trial_is_reported_in_its_own_metric_sign() -> None:
     # its own trial's sign, not the best trial's.
     def objective(trial: optuna.Trial) -> float:
         trial.suggest_float("x", 0.0, 1.0)
-        trial.set_user_attr("greater_is_better", trial.number == 1)
+        trial.set_user_attr(
+            "direction", "maximize" if trial.number == 1 else "minimize"
+        )
         return 2.0 if trial.number == 0 else -3.0
 
     result = HyperparameterStudy(seed=0, n_trials=2).optimize(objective)
@@ -260,7 +262,7 @@ def test_each_trial_is_reported_in_its_own_metric_sign() -> None:
 
 
 def test_a_plain_objective_is_reported_unsigned() -> None:
-    # No greater_is_better attr: the objective's return is the value as is.
+    # No direction attr: the objective's return is the value as is.
     study = HyperparameterStudy(seed=0, n_trials=1)
     result = study.optimize(_objective)
     assert result.metric_name is None

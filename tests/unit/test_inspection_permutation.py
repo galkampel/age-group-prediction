@@ -26,7 +26,7 @@ from age_group_prediction.modeling import (
     TotalTimesProbabilityModel,
 )
 from age_group_prediction.preprocessing import ExposureTransformer
-from age_group_prediction.scoring import COHORT_POISSON_DEVIANCE, Metric
+from age_group_prediction.scoring import COHORT_POISSON_DEVIANCE, Direction, Metric
 from student_simulator import StudentPopulationSimulator, load_simulation_config
 
 # A shuffled index that is not 0..n-1, so code pairing rows by label fails.
@@ -71,9 +71,9 @@ class _RecordingMetric:
 
 
 def _compute(
-    recorder: _RecordingMetric, *, greater_is_better: bool = False, **settings: Any
+    recorder: _RecordingMetric, *, direction: Direction = "minimize", **settings: Any
 ) -> tuple[_SpyModel, pd.DataFrame]:
-    metric = Metric("mae", recorder, greater_is_better=greater_is_better)
+    metric = Metric("mae", recorder, direction=direction)
     kwargs: dict[str, Any] = {
         "metric": metric,
         "n_repeats": N_REPEATS,
@@ -98,7 +98,7 @@ def test_a_positive_importance_means_the_column_helps_under_both_directions() ->
     # the used column as positive.
     _, loss_result = _compute(_RecordingMetric())
     recorder = _RecordingMetric()
-    gain = Metric("gain", lambda t, p: -recorder(t, p), greater_is_better=True)
+    gain = Metric("gain", lambda t, p: -recorder(t, p), direction="maximize")
     gain_result = PermutationImportance(
         gain, N_REPEATS, random_state=0
     ).compute_importances(_SpyModel(), X, Y, exposure=EXPOSURE)
