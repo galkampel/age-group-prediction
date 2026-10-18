@@ -44,8 +44,6 @@ def _():
     import hashlib
     import json
 
-    from sklearn.base import clone
-
     from age_group_prediction.feature_engineering import (
         Center,
         CenterByReferencePoint,
@@ -601,27 +599,27 @@ def _(mo):
     ## 5) Hyperparameter tuning
 
     One Optuna study per model family, on the composite: the model that is
-    scored is the model that is tuned, by the cohort Poisson deviance of
-    its cross-validation folds on the training part. A trial chooses, per
-    cohort, the exposure on or off, the feature variant, the LightGBM loss
-    (Poisson or Gaussian) and the estimator's hyperparameters, under the
-    names `cohort_models__<cohort>__<parameter>`. The feature variant is a
-    `KeyedParameter`: Optuna searches its names, so `best_params` stays
-    plain JSON, and the evaluator resolves a name to its transformer.
-    `n_trials = 200`: at 30 a categorical arm starves (a Poisson/Gaussian
-    study split 10/20 and did worse than either loss alone); the table of
-    trials per arm shows it. The i-th study gets `seed + i`, so the studies
-    do not share their startup trials; they run in parallel with joblib.
-    Only each family's best combination is refit on the training part and
-    scored on training and validation. NB2 tunes its dispersion and its L1
-    penalty; a Gaussian loss can predict a negative count, which
-    `CountModel` floors at `y_min` (eps), so the trial scores badly instead of stopping the
-    study. Model 2 is tuned the same way, one study per pair of a total
-    family (the list `MODEL2_TOTALS`, edited after Model 1's table) and a
-    classifier family, under `total_model__…` and `probability_model__…`;
-    the probability model ignores the exposure, and its calibration is
-    searched. The last table shows each model's best family on validation.
-    The run cells sit behind buttons: opening the notebook fits nothing.
+    scored is the model that is tuned, by the cohort Poisson deviance of its
+    cross-validation folds on the training part, the plain mean over folds. A
+    trial's choices are a frozen dataclass: per cohort (per component for
+    Model 2) the exposure on or off, the feature variant by name, the LightGBM
+    loss (Poisson or Gaussian) and the estimator's hyperparameters, under the
+    names `<component>__<parameter>`. The dataclass builds its model with
+    constructor calls, and `dataclasses.asdict` is its JSON record.
+    `n_trials = 200`: at 30 a categorical arm starves (a Poisson/Gaussian study
+    split 10/20 and did worse than either loss alone); the table of trials per
+    arm shows it. The i-th study gets `seed + i`; the studies of one model run
+    in parallel with joblib. A trial whose fit raises (an NB2 fit that does not
+    converge) is marked failed and the study goes on; the tables count them.
+    Only each family's best run is rebuilt, refit on the training part and
+    scored on training and validation. A Gaussian loss can predict a negative
+    count, which `CountModel` floors at `y_min` (eps). Model 2 is tuned the
+    same way, one study per pair of a total family (the list `MODEL2_TOTALS`,
+    edited after Model 1's table) and a classifier family, under `total__…`
+    and `probability__…`; the probability model ignores the exposure, and its
+    calibration is searched. The last table shows each model's best family on
+    validation. The run cells sit behind buttons: opening the notebook fits
+    nothing.
     """)
     return
 
@@ -631,21 +629,18 @@ def _():
     import dataclasses
     import time
     from collections import Counter
+    from functools import partial
 
     import numpy as np
     import optuna
     from joblib import Parallel, delayed
     from lightgbm import LGBMClassifier, LGBMRegressor
+    from optuna.distributions import CategoricalDistribution
+    from optuna.samplers import TPESampler
+    from optuna.trial import FixedTrial, TrialState
     from sklearn.linear_model import LogisticRegression, PoissonRegressor
+    from sklearn.metrics import mean_poisson_deviance
 
-    from age_group_prediction.hyperparameter_tuning import (
-        CategoricalParameter,
-        CVHyperparameterEvaluator,
-        FloatParameter,
-        HyperparameterStudy,
-        IntParameter,
-        KeyedParameter,
-    )
     from age_group_prediction.modeling import (
         CohortProbabilityModel,
         CountModel,
@@ -653,107 +648,61 @@ def _():
         NegativeBinomialRegressor,
         TotalTimesProbabilityModel,
     )
-    from age_group_prediction.scoring import (
-        COHORT_LOG_LOSS,
-        COHORT_POISSON_DEVIANCE,
-        POISSON_DEVIANCE,
-    )
+    from age_group_prediction.scoring import Metric, cohort_poisson_deviance
 
     # Optuna logs every trial at INFO; the tuning function repeats this in
     # each joblib worker.
     optuna.logging.set_verbosity(optuna.logging.WARNING)
     return (
-        COHORT_LOG_LOSS,
-        COHORT_POISSON_DEVIANCE,
-        CVHyperparameterEvaluator,
-        CategoricalParameter,
+        CategoricalDistribution,
         CohortProbabilityModel,
         CountModel,
         Counter,
-        FloatParameter,
-        HyperparameterStudy,
+        FixedTrial,
         IndependentCohortModels,
-        IntParameter,
-        KeyedParameter,
         LGBMClassifier,
         LGBMRegressor,
         LogisticRegression,
+        Metric,
         NegativeBinomialRegressor,
-        POISSON_DEVIANCE,
         Parallel,
         PoissonRegressor,
+        TPESampler,
         TotalTimesProbabilityModel,
+        TrialState,
+        cohort_poisson_deviance,
         dataclasses,
         delayed,
+        mean_poisson_deviance,
         np,
         optuna,
+        partial,
         time,
     )
 
 
 @app.cell
-def _(CategoricalParameter, FloatParameter, IntParameter):
-    # The names are set_params keys: estimator__ reaches the model's estimator.
-    # No isotonic: its lowest score block can hold no child of a cohort and
-    # then maps a building there to probability 0, an infinite log loss
-    # (measured 2026-10-15 with the LightGBM classifier).
-    CALIBRATION = CategoricalParameter(
-        "calibration_method", [None, "temperature", "sigmoid"]
+def _(Metric, cohort_poisson_deviance, mean_poisson_deviance):
+    # The study's objective and the tables' per-cohort score, with the direction
+    # Optuna is given; a loss, so "minimize".
+    COHORT_POISSON_DEVIANCE = Metric(
+        "cohort_poisson_deviance", cohort_poisson_deviance, direction="minimize"
     )
-    LGBM_SPACE = [
-        IntParameter("estimator__max_depth", 3, 8),
-        IntParameter("estimator__num_leaves", 7, 63),
-        IntParameter("estimator__min_child_samples", 5, 40),
-        FloatParameter("estimator__learning_rate", 0.01, 0.2, log=True),
-        IntParameter("estimator__n_estimators", 50, 400),
-        FloatParameter("estimator__reg_alpha", 1e-8, 10.0, log=True),
-        FloatParameter("estimator__reg_lambda", 1e-8, 10.0, log=True),
-        FloatParameter("estimator__min_split_gain", 0.0, 1.0),
-        FloatParameter("estimator__subsample", 0.7, 1.0),
-        FloatParameter("estimator__colsample_bytree", 0.7, 1.0),
-    ]
-    SEARCH_SPACES = {
-        "lgbm": LGBM_SPACE,
-        "poisson_glm": [FloatParameter("estimator__alpha", 1e-4, 10.0, log=True)],
-        # The estimated dispersions are 0.12 to 0.18; the penalty's path runs
-        # from the unpenalized fit at 1e-3 to all-zero coefficients at 1.
-        "nb2": [
-            FloatParameter("estimator__dispersion", 0.01, 1.0, log=True),
-            FloatParameter("estimator__alpha", 1e-3, 1.0, log=True),
-        ],
-        "logistic": [
-            FloatParameter("estimator__C", 1e-3, 100.0, log=True),
-            CALIBRATION,
-        ],
-        "lgbm_classifier": [*LGBM_SPACE, CALIBRATION],
-    }
-    return (SEARCH_SPACES,)
+    POISSON_DEVIANCE = Metric(
+        "poisson_deviance", mean_poisson_deviance, direction="minimize"
+    )
+    return COHORT_POISSON_DEVIANCE, POISSON_DEVIANCE
 
 
 @app.cell
-def _(
-    CategoricalParameter,
-    FEATURE_VARIANTS,
-    KeyedParameter,
-    LGBMClassifier,
-    LGBMRegressor,
-    LogisticRegression,
-    NegativeBinomialRegressor,
-    PoissonRegressor,
-    SEARCH_SPACES,
-    Y,
-    np,
-    seed,
-):
-    # The trees take n_apartments as a feature and the offset; the GLMs take it
-    # as the exposure only (docs/FEATURE_TRANSFORMATIONS.md §3.3, §4.4), and the
-    # logistic model needs the scaled plans (it does not converge on `tree`).
-    # subsample_freq=1: LightGBM ignores subsample without it; n_jobs=1: one
-    # thread per fit.
+def _(Y, np):
     COHORTS = list(Y.columns)
     # The smallest mean a CountModel predicts: a Gaussian loss can predict a
     # negative count, the Poisson deviance raises at 0 and stays finite at eps.
     PREDICTION_FLOOR = float(np.finfo(float).eps)
+    # The trees take n_apartments as a feature and the offset; the GLMs take it
+    # as the exposure only (docs/FEATURE_TRANSFORMATIONS.md §3.3, §4.4), and the
+    # logistic model needs the scaled plans (it does not converge on `tree`).
     TREE_VARIANTS = ("tree", "tree__ses_quadratic")
     COUNT_GLM_VARIANTS = (
         "glm_base",
@@ -770,452 +719,17 @@ def _(
         "probability__room_share_x_daycare",
         "probability__room_share_x_median_age_and_daycare",
     )
-    # What a trial chooses for one count component besides the estimator's
-    # hyperparameters. The variant is searched by name and resolved to its
-    # transformer by the evaluator.
-    USE_EXPOSURE = CategoricalParameter("use_exposure", [True, False])
-    LGBM_OBJECTIVE = CategoricalParameter(
-        "estimator__objective", ["poisson", "regression"]
+    COUNT_FAMILIES = ("lgbm", "poisson_glm", "nb2")
+    PROBABILITY_FAMILIES = ("logistic", "lgbm")
+    return (
+        COHORTS,
+        COUNT_FAMILIES,
+        COUNT_GLM_VARIANTS,
+        PREDICTION_FLOOR,
+        PROBABILITY_FAMILIES,
+        PROBABILITY_GLM_VARIANTS,
+        TREE_VARIANTS,
     )
-    tree_variant = KeyedParameter(
-        "feature_transformer", {name: FEATURE_VARIANTS[name] for name in TREE_VARIANTS}
-    )
-    count_variant = KeyedParameter(
-        "feature_transformer",
-        {name: FEATURE_VARIANTS[name] for name in COUNT_GLM_VARIANTS},
-    )
-    # Each count family: (estimator, the parameters of one count component).
-    COUNT_FAMILIES = {
-        "lgbm": (
-            LGBMRegressor(
-                objective="poisson",
-                subsample_freq=1,
-                n_jobs=1,
-                verbosity=-1,
-                random_state=seed,
-            ),
-            [*SEARCH_SPACES["lgbm"], LGBM_OBJECTIVE, USE_EXPOSURE, tree_variant],
-        ),
-        "poisson_glm": (
-            PoissonRegressor(max_iter=1000),
-            [*SEARCH_SPACES["poisson_glm"], USE_EXPOSURE, count_variant],
-        ),
-        "nb2": (
-            NegativeBinomialRegressor(),
-            [*SEARCH_SPACES["nb2"], USE_EXPOSURE, count_variant],
-        ),
-    }
-    # Each probability family likewise; the probability model ignores the
-    # exposure, and its calibration is in the search space.
-    probability_variant = KeyedParameter(
-        "feature_transformer",
-        {name: FEATURE_VARIANTS[name] for name in PROBABILITY_GLM_VARIANTS},
-    )
-    PROBABILITY_FAMILIES = {
-        "logistic": (
-            LogisticRegression(max_iter=1000),
-            [*SEARCH_SPACES["logistic"], probability_variant],
-        ),
-        "lgbm": (
-            LGBMClassifier(
-                objective="multiclass",
-                subsample_freq=1,
-                n_jobs=1,
-                verbosity=-1,
-                random_state=seed,
-            ),
-            [*SEARCH_SPACES["lgbm_classifier"], tree_variant],
-        ),
-    }
-    return COHORTS, COUNT_FAMILIES, PREDICTION_FLOOR, PROBABILITY_FAMILIES
-
-
-@app.cell
-def _(
-    COHORTS,
-    COHORT_POISSON_DEVIANCE,
-    COUNT_FAMILIES,
-    CVHyperparameterEvaluator,
-    CountModel,
-    IndependentCohortModels,
-    PREDICTION_FLOOR,
-    cv,
-    dataclasses,
-):
-    def prefixed(prefix, parameters):
-        """The same parameters under ``<prefix>__<name>``, the set_params path to a component."""
-        return [dataclasses.replace(p, name=f"{prefix}__{p.name}") for p in parameters]
-
-    # Model 1, one evaluator per family: a template with one CountModel per
-    # cohort and the component's parameters repeated under each cohort's prefix.
-    # Every trial sets each cohort's exposure and variant, so the template's
-    # defaults never fit. The evaluator also rebuilds the best model (build_model).
-    MODEL1_EVALUATORS = {
-        family: CVHyperparameterEvaluator(
-            IndependentCohortModels(
-                {
-                    cohort: CountModel(estimator=estimator, y_min=PREDICTION_FLOOR)
-                    for cohort in COHORTS
-                }
-            ),
-            [
-                parameter
-                for cohort in COHORTS
-                for parameter in prefixed(f"cohort_models__{cohort}", parameters)
-            ],
-            cv=cv,
-            metric=COHORT_POISSON_DEVIANCE,
-        )
-        for family, (estimator, parameters) in COUNT_FAMILIES.items()
-    }
-    return MODEL1_EVALUATORS, prefixed
-
-
-@app.cell
-def _(HyperparameterStudy, optuna, time):
-    def tune_model(evaluator, X, y, *, exposure, cv_groups, study_seed, n_trials):
-        """One study of ``evaluator``'s model on the rows of ``X``; the result and its seconds.
-
-        An empty search space scores the model as it is, in one trial: more
-        trials would repeat the same fit. Runs in a joblib worker, a fresh
-        process at Optuna's default INFO verbosity, so it is set here too.
-        """
-        optuna.logging.set_verbosity(optuna.logging.WARNING)
-        study = HyperparameterStudy(
-            seed=study_seed, n_trials=n_trials if evaluator.parameters else 1
-        )
-        start = time.perf_counter()
-        result = study.optimize(
-            lambda trial: evaluator.evaluate(trial, X, y, cv_groups, exposure=exposure)
-        )
-        return result, time.perf_counter() - start
-
-    return (tune_model,)
-
-
-@app.cell
-def _(mo):
-    run_model1 = mo.ui.run_button(label="Tune Model 1")
-    mo.md(
-        f"{run_model1} three studies × `n_trials` trials, in parallel; ≈ 5 min at 200."
-    )
-    return (run_model1,)
-
-
-@app.cell
-def _(
-    MODEL1_EVALUATORS,
-    Parallel,
-    cv_groups,
-    delayed,
-    mo,
-    n_trials,
-    run_model1,
-    seed,
-    train_age_group,
-    tune_model,
-):
-    mo.stop(not run_model1.value, mo.md("Click the button to tune Model 1."))
-    # One process per family; study i gets seed + i.
-    model1_runs = Parallel(n_jobs=len(MODEL1_EVALUATORS))(
-        delayed(tune_model)(
-            evaluator,
-            train_age_group.X,
-            train_age_group.Y,
-            exposure=train_age_group.exposure,
-            cv_groups=cv_groups,
-            study_seed=seed + i,
-            n_trials=n_trials,
-        )
-        for i, evaluator in enumerate(MODEL1_EVALUATORS.values())
-    )
-    MODEL1_RESULTS = dict(zip(MODEL1_EVALUATORS, model1_runs, strict=True))
-    return (MODEL1_RESULTS,)
-
-
-@app.cell
-def _(
-    COHORT_POISSON_DEVIANCE,
-    CategoricalParameter,
-    Counter,
-    KeyedParameter,
-    POISSON_DEVIANCE,
-    pd,
-):
-    def score_best(
-        evaluators,
-        results,
-        components,
-        train_age_group,
-        val_age_group,
-    ):
-        """Refit each family's best combination on the training part; the models and three tables.
-
-        ``results`` maps a family to ``(TuningResult, seconds)``; ``components``
-        are the set_params prefixes of the parts a trial chooses for
-        (``cohort_models__<cohort>`` or ``total_model`` / ``probability_model``).
-        The tables: the Poisson deviance per cohort and of the composite on
-        training and validation; the best categorical choices per component;
-        the trials per arm of every categorical, so a starved arm is visible
-        before a family is declared worse.
-        """
-        X_train, Y_train, exposure_train = (
-            train_age_group.X,
-            train_age_group.Y,
-            train_age_group.exposure,
-        )
-        X_val, Y_val, exposure_val = (
-            val_age_group.X,
-            val_age_group.Y,
-            val_age_group.exposure,
-        )
-        models = {}
-        score_rows, choice_rows, arm_rows = [], [], []
-        for family, (result, seconds) in results.items():
-            evaluator = evaluators[family]
-            model = evaluator.build_model(result.best_params).fit(
-                X_train, Y_train, exposure=exposure_train
-            )
-            models[family] = model
-            pred_train = model.predict(X_train, exposure=exposure_train)
-            pred_val = model.predict(X_val, exposure=exposure_val)
-            for cohort in Y_train.columns:
-                score_rows.append(
-                    {
-                        "family": family,
-                        "cohort": cohort,
-                        "train": model.evaluate(
-                            Y_train[cohort], pred_train[cohort], POISSON_DEVIANCE
-                        ),
-                        "val": model.evaluate(
-                            Y_val[cohort], pred_val[cohort], POISSON_DEVIANCE
-                        ),
-                    }
-                )
-            score_rows.append(
-                {
-                    "family": family,
-                    "cohort": "composite",
-                    "cv_best": result.best_value,
-                    "train": model.evaluate(
-                        Y_train, pred_train, COHORT_POISSON_DEVIANCE
-                    ),
-                    "val": model.evaluate(Y_val, pred_val, COHORT_POISSON_DEVIANCE),
-                    "seconds": seconds,
-                }
-            )
-            categoricals = [
-                p
-                for p in evaluator.parameters
-                if isinstance(p, (CategoricalParameter, KeyedParameter))
-            ]
-            for component in components:
-                prefix = f"{component}__"
-                choice_rows.append(
-                    {
-                        "family": family,
-                        "component": component,
-                        **{
-                            p.name.removeprefix(prefix): result.best_params[p.name]
-                            for p in categoricals
-                            if p.name.startswith(prefix)
-                        },
-                    }
-                )
-            for p in categoricals:
-                counts = Counter(trial.params[p.name] for trial in result.trials)
-                arm_rows.extend(
-                    {
-                        "family": family,
-                        "parameter": p.name,
-                        "value": value,
-                        "n_trials": count,
-                    }
-                    for value, count in counts.items()
-                )
-        return (
-            models,
-            pd.DataFrame(score_rows),
-            pd.DataFrame(choice_rows),
-            pd.DataFrame(arm_rows),
-        )
-
-    return (score_best,)
-
-
-@app.cell
-def _(
-    COHORTS,
-    MODEL1_EVALUATORS,
-    MODEL1_RESULTS,
-    score_best,
-    train_age_group,
-    val_age_group,
-):
-    MODEL1_MODELS, model1_df, model1_choices_df, model1_arms_df = score_best(
-        MODEL1_EVALUATORS,
-        MODEL1_RESULTS,
-        [f"cohort_models__{cohort}" for cohort in COHORTS],
-        train_age_group,
-        val_age_group,
-    )
-    return MODEL1_MODELS, model1_arms_df, model1_choices_df, model1_df
-
-
-@app.cell
-def _(mo, model1_arms_df, model1_choices_df, model1_df):
-    mo.vstack(
-        [
-            mo.md("**Model 1: cohort Poisson deviance** (cv_best: the study's value)"),
-            mo.md(f"```text\n{model1_df.round(4).to_string(index=False)}\n```"),
-            mo.md("**Best combination per component** (one per cohort)"),
-            mo.md(f"```text\n{model1_choices_df.to_string(index=False)}\n```"),
-            mo.md("**Trials per arm**"),
-            mo.md(f"```text\n{model1_arms_df.to_string(index=False)}\n```"),
-        ]
-    )
-
-
-@app.cell
-def _():
-    # Model 2's total families, a list to edit after Model 1's table above. The
-    # pairs tuned are this list × the probability families.
-    MODEL2_TOTALS = ["lgbm", "poisson_glm", "nb2"]
-    return (MODEL2_TOTALS,)
-
-
-@app.cell
-def _(
-    COHORT_POISSON_DEVIANCE,
-    COUNT_FAMILIES,
-    CVHyperparameterEvaluator,
-    CohortProbabilityModel,
-    CountModel,
-    MODEL2_TOTALS,
-    PREDICTION_FLOOR,
-    PROBABILITY_FAMILIES,
-    TotalTimesProbabilityModel,
-    cv,
-    prefixed,
-):
-    # Model 2, one evaluator per (total, probability) pair: the total's
-    # parameters under total_model__, the classifier's under probability_model__.
-    MODEL2_EVALUATORS = {
-        f"{total}__{probability}": CVHyperparameterEvaluator(
-            TotalTimesProbabilityModel(
-                total_model=CountModel(
-                    estimator=COUNT_FAMILIES[total][0], y_min=PREDICTION_FLOOR
-                ),
-                probability_model=CohortProbabilityModel(estimator=estimator),
-            ),
-            [
-                *prefixed("total_model", COUNT_FAMILIES[total][1]),
-                *prefixed("probability_model", parameters),
-            ],
-            cv=cv,
-            metric=COHORT_POISSON_DEVIANCE,
-        )
-        for total in MODEL2_TOTALS
-        for probability, (estimator, parameters) in PROBABILITY_FAMILIES.items()
-    }
-    return (MODEL2_EVALUATORS,)
-
-
-@app.cell
-def _(MODEL2_EVALUATORS, mo):
-    run_model2 = mo.ui.run_button(label="Tune Model 2")
-    mo.md(
-        f"{run_model2} {len(MODEL2_EVALUATORS)} studies × `n_trials` trials, in "
-        "parallel; ≈ 12 min at 200 for six."
-    )
-    return (run_model2,)
-
-
-@app.cell
-def _(
-    MODEL2_EVALUATORS,
-    Parallel,
-    cv_groups,
-    delayed,
-    mo,
-    n_trials,
-    run_model2,
-    seed,
-    train_age_group,
-    tune_model,
-):
-    mo.stop(not run_model2.value, mo.md("Click the button to tune Model 2."))
-    # One process per pair; study i gets seed + i.
-    model2_runs = Parallel(n_jobs=len(MODEL2_EVALUATORS))(
-        delayed(tune_model)(
-            evaluator,
-            train_age_group.X,
-            train_age_group.Y,
-            exposure=train_age_group.exposure,
-            cv_groups=cv_groups,
-            study_seed=seed + i,
-            n_trials=n_trials,
-        )
-        for i, evaluator in enumerate(MODEL2_EVALUATORS.values())
-    )
-    MODEL2_RESULTS = dict(zip(MODEL2_EVALUATORS, model2_runs, strict=True))
-    return (MODEL2_RESULTS,)
-
-
-@app.cell
-def _(
-    MODEL2_EVALUATORS,
-    MODEL2_RESULTS,
-    score_best,
-    train_age_group,
-    val_age_group,
-):
-    MODEL2_MODELS, model2_df, model2_choices_df, model2_arms_df = score_best(
-        MODEL2_EVALUATORS,
-        MODEL2_RESULTS,
-        ["total_model", "probability_model"],
-        train_age_group,
-        val_age_group,
-    )
-    return MODEL2_MODELS, model2_arms_df, model2_choices_df, model2_df
-
-
-@app.cell
-def _(mo, model2_arms_df, model2_choices_df, model2_df):
-    mo.vstack(
-        [
-            mo.md("**Model 2: cohort Poisson deviance** (cv_best: the study's value)"),
-            mo.md(f"```text\n{model2_df.round(4).to_string(index=False)}\n```"),
-            mo.md("**Best combination per component**"),
-            mo.md(f"```text\n{model2_choices_df.to_string(index=False)}\n```"),
-            mo.md("**Trials per arm**"),
-            mo.md(f"```text\n{model2_arms_df.to_string(index=False)}\n```"),
-        ]
-    )
-
-
-@app.cell
-def _(mo, model1_df, model2_df, pd):
-    # Each model's best family on validation, from the composite rows. A fresh
-    # index: the two frames' labels overlap, and idxmin + loc would return both.
-    _composites = pd.concat(
-        [
-            model1_df[model1_df["cohort"] == "composite"].assign(model="model1"),
-            model2_df[model2_df["cohort"] == "composite"].assign(model="model2"),
-        ],
-        ignore_index=True,
-    )
-    best_df = _composites.loc[
-        _composites.groupby("model")["val"].idxmin(),
-        ["model", "family", "cv_best", "train", "val"],
-    ]
-    mo.vstack(
-        [
-            mo.md("**Best family per model** (validation cohort Poisson deviance)"),
-            mo.md(f"```text\n{best_df.round(4).to_string(index=False)}\n```"),
-        ]
-    )
-    return (best_df,)
 
 
 if __name__ == "__main__":
