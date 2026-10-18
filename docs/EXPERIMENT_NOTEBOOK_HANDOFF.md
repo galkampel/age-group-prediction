@@ -19,10 +19,12 @@ plan the same day:
 
 - **Plain Optuna and a hand-written cross-validation loop in the notebook.** Nothing of the
   package is imported; the package, its five test files and its four docs are deleted (T4).
-- **A trial's choices are frozen dataclasses** (one per estimator family, a component
-  dataclass with the feature-variant key, the exposure flag and the LightGBM loss or the
-  calibration, and a composite `Model1Run` / `Model2Run`), each with `suggest(trial, prefix, …)`
-  calling `trial.suggest_*` inline and `build(…)` calling the model constructors.
+- **A trial's choices are frozen dataclasses** (one per estimator holding only its searched
+  hyperparameters, no `build`; a component dataclass with the feature-variant key, the
+  exposure flag or the calibration; and a composite `Model1Run` / `Model2Run`), each with
+  `suggest(trial, prefix, …)` calling `trial.suggest_*` inline; the component and run
+  dataclasses have `build(…)` calling the constructors. LightGBM's loss is a family
+  (`lgbm_poisson`, `lgbm_gaussian`), not a sampled choice (2026-10-18; plan D6).
   `dataclasses.asdict(run)` is the JSON record.
 - **The metric is built in the notebook:** `Metric("cohort_poisson_deviance",
   cohort_poisson_deviance, direction="minimize")`, and `optuna.create_study(direction=metric.direction)`;
@@ -31,7 +33,7 @@ plan the same day:
 - **Pruning and parallelization beyond today's parallel studies are not decided.** Once the
   implementation satisfies the user, a performance pass considers them (plan §7).
 - Still in force from 2026-10-15: one joint study per family on the composite; a trial chooses
-  per component its exposure, variant and LightGBM loss; `n_trials = 200`; the studies of one
+  per component its exposure and variant (LightGBM's loss as a family, plan D6); `n_trials = 200`; the studies of one
   model in parallel with joblib, study i seeded `seed + i`; only the best run is refit and
   scored on training and validation; Model 2's totals come from the edited list
   `MODEL2_TOTALS`; `split_method = "random"`.

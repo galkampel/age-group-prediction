@@ -1,6 +1,6 @@
 # Re-implement the hyperparameter tuning inside the notebook
 
-**Status (2026-10-18):** approved; T1.1 done (uncommitted, notebook md5 `a2fd2ac858c935ce5a9c7511af996703`); next T1.2. The implementing session updates this line and ticks the sub-tasks.
+**Status (2026-10-18):** approved; T1.1 committed (`0416267`); T1.2 done and reworked after the user's review (estimator dataclasses hold hyperparameters only; LightGBM's loss is a family, D6), uncommitted, notebook md5 `99239ad902971970403cc290aa62f266`; next T1.3. The implementing session updates this line and ticks the sub-tasks.
 
 Written for the model that implements it, one sub-task per approval. Every sub-task has the
 code to write, a "done when" list and the commands that verify it. The user reads the diff in
@@ -24,7 +24,9 @@ assembled by `set_params` strings instead of being built explicitly.
   JSON-serializable through `dataclasses.asdict`: every field is a JSON scalar; a feature
   variant is stored as its key in `FEATURE_VARIANTS`. (The comparison with TypedDict: §6.)
 - D3. Each dataclass has a classmethod `suggest(trial, prefix, …)` calling `trial.suggest_*`
-  inline, and a `build(…)` that calls the model constructors explicitly (no `set_params`).
+  inline. The component and run dataclasses have a `build(…)` that calls the constructors
+  explicitly (no `set_params`). An estimator dataclass holds only that estimator's searched
+  hyperparameters, and has no `build` (the user, 2026-10-18, at T1.2's review).
 - D4. The metric is built **in the notebook**: `Metric("cohort_poisson_deviance",
   cohort_poisson_deviance, direction="minimize")`; `optuna.create_study(direction=metric.direction)`;
   the objective returns the metric's value unchanged. The module-level constants leave
@@ -32,9 +34,16 @@ assembled by `set_params` strings instead of being built explicitly.
 - D5. Pruning and parallelization beyond today's parallel studies are **not decided now**; a
   later performance pass (§7 holds the facts for it).
 - D6. Still in force from 2026-10-15: one joint study per family on the composite; a trial
-  chooses per component its exposure, variant and LightGBM loss; `n_trials = 200`; studies of
+  chooses per component its exposure and variant; `n_trials = 200`; studies of
   one model in parallel with joblib, study i seeded `seed + i`; only the best run is refit;
   Model 2's totals come from the edited list `MODEL2_TOTALS`; `split_method = "random"`.
+  **Changed 2026-10-18 (the user, at T1.2's review):** LightGBM's loss is no longer a sampled
+  categorical. `lgbm_poisson` and `lgbm_gaussian` are separate families, and
+  `LGBMRegressorParams.objective` is fixed by the family. Why: TPE here is univariate (D7),
+  so it cannot learn that good hyperparameters differ per loss; a 30-trial study that sampled
+  the loss split 10/20 and did worse than either loss alone; and the family table compares
+  the losses directly. The cost: one run cannot mix the losses across cohorts, and there is
+  one more study (4 for Model 1, up to 8 pairs for Model 2).
 - D7. Settled by probe in this session (Optuna 4.9.0, joblib 1.5.3): the trial value is the
   plain mean of the fold scores (KFold on 917 rows: folds of 184/183 rows); the sampler is
   `TPESampler(seed=study_seed)` (the `multivariate=True` option raises `ExperimentalWarning`
@@ -144,13 +153,14 @@ One Optuna study per model family, on the composite: the model that is
 scored is the model that is tuned, by the cohort Poisson deviance of its
 cross-validation folds on the training part, the plain mean over folds. A
 trial's choices are a frozen dataclass: per cohort (per component for
-Model 2) the exposure on or off, the feature variant by name, the LightGBM
-loss (Poisson or Gaussian) and the estimator's hyperparameters, under the
-names `<component>__<parameter>`. The dataclass builds its model with
-constructor calls, and `dataclasses.asdict` is its JSON record.
-`n_trials = 200`: at 30 a categorical arm starves (a Poisson/Gaussian study
-split 10/20 and did worse than either loss alone); the table of trials per
-arm shows it. The i-th study gets `seed + i`; the studies of one model run
+Model 2) the exposure on or off, the feature variant by name and the
+estimator's hyperparameters, under the names `<component>__<parameter>`.
+The dataclass builds its model with constructor calls, and
+`dataclasses.asdict` is its JSON record. LightGBM's two losses, Poisson
+and Gaussian, are separate families: a study that sampled the loss split
+30 trials 10/20 and did worse than either loss alone. `n_trials = 200`, so
+that no categorical arm starves; the table of trials per arm shows it.
+The i-th study gets `seed + i`; the studies of one model run
 in parallel with joblib. A trial whose fit raises (an NB2 fit that does not
 converge) is marked failed and the study goes on; the tables count them.
 Only each family's best run is rebuilt, refit on the training part and
@@ -234,7 +244,7 @@ PROBABILITY_GLM_VARIANTS = (
     "probability__room_share_x_daycare",
     "probability__room_share_x_median_age_and_daycare",
 )
-COUNT_FAMILIES = ("lgbm", "poisson_glm", "nb2")
+COUNT_FAMILIES = ("lgbm_poisson", "lgbm_gaussian", "poisson_glm", "nb2")
 PROBABILITY_FAMILIES = ("logistic", "lgbm")
 ```
 
@@ -243,14 +253,22 @@ ruff 8 findings, marimo check clean; the `tune_model` test fails as noted at T1.
 "POISSON_DEVIANCE", "COHORTS", "PREDICTION_FLOOR", "TREE_VARIANTS", "COUNT_FAMILIES",
 "PROBABILITY_FAMILIES"]` prints `missing: []`; md5 recorded.
 
-### [ ] T1.2 The estimator dataclasses
+### [x] T1.2 The estimator dataclasses
 
-One cell. Fields are exactly the estimators' keyword names, so `**dataclasses.asdict(self)`
-is the constructor call; the bounds are the current search spaces.
+One cell. An estimator dataclass holds only its estimator's searched hyperparameters, and its
+fields are exactly the estimator's keyword names, so T1.3 builds an estimator as
+`Estimator(<fixed settings>, **dataclasses.asdict(params))`. The bounds are the old section 5's
+(`8ee091a`, lines 703–725). The regressor and the classifier share `LGBMParams`'s ten boosting
+fields. `LGBMRegressorParams` adds `objective`, which the family fixes (D6), passed through
+`suggest`'s `**fixed`: `LGBMRegressorParams.suggest(trial, prefix, objective="poisson")`. The
+classifier's `multiclass` is not searched. (Reworked at the user's review: the first version
+had one `LGBMParams` with `build_regressor`/`build_classifier`, and a `build` on each class.
+The subclass does not override `suggest`: an override narrowing `**fixed` to `objective` is a
+Liskov violation the IDE flagged.)
 ```python
 @dataclasses.dataclass(frozen=True)
 class LGBMParams:
-    """LightGBM's searched hyperparameters, the regressor's and the classifier's."""
+    """LightGBM's searched hyperparameters, shared by the regressor and the classifier."""
 
     max_depth: int
     num_leaves: int
@@ -264,42 +282,41 @@ class LGBMParams:
     colsample_bytree: float
 
     @classmethod
-    def suggest(cls, trial, prefix):
+    def suggest(cls, trial, prefix, **fixed):
         return cls(
             max_depth=trial.suggest_int(f"{prefix}max_depth", 3, 8),
             num_leaves=trial.suggest_int(f"{prefix}num_leaves", 7, 63),
-            min_child_samples=trial.suggest_int(f"{prefix}min_child_samples", 5, 40),
-            learning_rate=trial.suggest_float(f"{prefix}learning_rate", 0.01, 0.2, log=True),
+            min_child_samples=trial.suggest_int(
+                f"{prefix}min_child_samples", 5, 40
+            ),
+            learning_rate=trial.suggest_float(
+                f"{prefix}learning_rate", 0.01, 0.2, log=True
+            ),
             n_estimators=trial.suggest_int(f"{prefix}n_estimators", 50, 400),
-            reg_alpha=trial.suggest_float(f"{prefix}reg_alpha", 1e-8, 10.0, log=True),
-            reg_lambda=trial.suggest_float(f"{prefix}reg_lambda", 1e-8, 10.0, log=True),
+            reg_alpha=trial.suggest_float(
+                f"{prefix}reg_alpha", 1e-8, 10.0, log=True
+            ),
+            reg_lambda=trial.suggest_float(
+                f"{prefix}reg_lambda", 1e-8, 10.0, log=True
+            ),
             min_split_gain=trial.suggest_float(f"{prefix}min_split_gain", 0.0, 1.0),
             subsample=trial.suggest_float(f"{prefix}subsample", 0.7, 1.0),
-            colsample_bytree=trial.suggest_float(f"{prefix}colsample_bytree", 0.7, 1.0),
+            colsample_bytree=trial.suggest_float(
+                f"{prefix}colsample_bytree", 0.7, 1.0
+            ),
+            **fixed,
         )
 
-    # subsample_freq=1: LightGBM ignores subsample without it; n_jobs=1: one
-    # thread per fit, so the parallel studies do not oversubscribe the cores.
-    def build_regressor(self, *, objective, seed):
-        return LGBMRegressor(
-            objective=objective,
-            subsample_freq=1,
-            n_jobs=1,
-            verbosity=-1,
-            random_state=seed,
-            **dataclasses.asdict(self),
-        )
+@dataclasses.dataclass(frozen=True)
+class LGBMRegressorParams(LGBMParams):
+    # LightGBM's name for the loss, "poisson" or "regression" (Gaussian):
+    # fixed by the family and recorded, not sampled; `suggest` takes it as
+    # a keyword, `suggest(trial, prefix, objective="poisson")`.
+    objective: str
 
-    def build_classifier(self, *, seed):
-        return LGBMClassifier(
-            objective="multiclass",
-            subsample_freq=1,
-            n_jobs=1,
-            verbosity=-1,
-            random_state=seed,
-            **dataclasses.asdict(self),
-        )
-
+@dataclasses.dataclass(frozen=True)
+class LGBMClassifierParams(LGBMParams):
+    """The classifier's; its objective, multiclass, is not searched."""
 
 @dataclasses.dataclass(frozen=True)
 class PoissonGLMParams:
@@ -307,11 +324,9 @@ class PoissonGLMParams:
 
     @classmethod
     def suggest(cls, trial, prefix):
-        return cls(alpha=trial.suggest_float(f"{prefix}alpha", 1e-4, 10.0, log=True))
-
-    def build(self):
-        return PoissonRegressor(alpha=self.alpha, max_iter=1000)
-
+        return cls(
+            alpha=trial.suggest_float(f"{prefix}alpha", 1e-4, 10.0, log=True)
+        )
 
 @dataclasses.dataclass(frozen=True)
 class NB2Params:
@@ -323,13 +338,11 @@ class NB2Params:
     @classmethod
     def suggest(cls, trial, prefix):
         return cls(
-            dispersion=trial.suggest_float(f"{prefix}dispersion", 0.01, 1.0, log=True),
+            dispersion=trial.suggest_float(
+                f"{prefix}dispersion", 0.01, 1.0, log=True
+            ),
             alpha=trial.suggest_float(f"{prefix}alpha", 1e-3, 1.0, log=True),
         )
-
-    def build(self):
-        return NegativeBinomialRegressor(dispersion=self.dispersion, alpha=self.alpha)
-
 
 @dataclasses.dataclass(frozen=True)
 class LogisticParams:
@@ -338,48 +351,50 @@ class LogisticParams:
     @classmethod
     def suggest(cls, trial, prefix):
         return cls(C=trial.suggest_float(f"{prefix}C", 1e-3, 100.0, log=True))
-
-    def build(self):
-        return LogisticRegression(C=self.C, max_iter=1000)
 ```
-**Done when:** Check A; Check B with the four class names; a probe builds each estimator from
-`suggest(FixedTrial({...}), "x__")` with hand-written params and calls `get_params()` on it
-(e.g. `LGBMParams.suggest(FixedTrial({"x__max_depth": 3, ...}), "x__").build_regressor(objective="poisson", seed=0)`).
+The IDE's checker reports `object.__init__` errors on these classes. That is an artifact: in a
+marimo cell `dataclasses` is a parameter, so the checker cannot see the decorator.
+
+**Done when:** Check A; Check B with the six class names and `COUNT_FAMILIES`; a probe builds
+each class from `suggest(FixedTrial({...}), "x__")`, prints `json.dumps(dataclasses.asdict(p))`
+(hyperparameters only), checks that `LGBMRegressor(**asdict(r))` takes `objective`, that a
+rebuild is equal, that the classifier's params are not `LGBMRegressorParams`, and that a
+missing `objective` raises `TypeError`.
 
 ### [ ] T1.3 The component dataclasses
 
-One cell. `family` is fixed per study (not sampled) and recorded so `asdict` says which
-estimator the nested dict is. `objective` is on the component: the classifier shares
-`LGBMParams` and has its fixed `multiclass`. The variant tuples are passed in, not closed over.
+One cell. (Rewritten 2026-10-18 after T1.2's rework, a sketch to re-verify at T1.3's plan.)
+`family` is fixed per study (not sampled) and recorded, so `asdict` says which estimator the
+nested dict is. The estimators are built here, from the fixed settings plus
+`**dataclasses.asdict(self.params)`; the estimator dataclasses have no `build`. The variant
+tuples are passed in, not closed over.
 ```python
 @dataclasses.dataclass(frozen=True)
 class CountComponent:
     """One CountModel's choices: a cohort's in Model 1, the total's in Model 2."""
 
-    family: str  # "lgbm", "poisson_glm" or "nb2"
-    params: LGBMParams | PoissonGLMParams | NB2Params
-    objective: str | None  # LightGBM only: "poisson" or "regression"
+    family: str  # one of COUNT_FAMILIES
+    params: LGBMRegressorParams | PoissonGLMParams | NB2Params
     feature_variant: str  # a key of FEATURE_VARIANTS
     use_exposure: bool
 
     @classmethod
     def suggest(cls, trial, prefix, *, family, tree_variants, glm_variants):
-        if family == "lgbm":
-            params = LGBMParams.suggest(trial, prefix)
-            objective = trial.suggest_categorical(
-                f"{prefix}objective", ["poisson", "regression"]
-            )
+        if family == "lgbm_poisson":
+            params = LGBMRegressorParams.suggest(trial, prefix, objective="poisson")
+            variants = tree_variants
+        elif family == "lgbm_gaussian":
+            params = LGBMRegressorParams.suggest(trial, prefix, objective="regression")
             variants = tree_variants
         elif family == "poisson_glm":
-            params, objective, variants = PoissonGLMParams.suggest(trial, prefix), None, glm_variants
+            params, variants = PoissonGLMParams.suggest(trial, prefix), glm_variants
         elif family == "nb2":
-            params, objective, variants = NB2Params.suggest(trial, prefix), None, glm_variants
+            params, variants = NB2Params.suggest(trial, prefix), glm_variants
         else:
             raise ValueError(f"unknown count family {family!r}")
         return cls(
             family=family,
             params=params,
-            objective=objective,
             feature_variant=trial.suggest_categorical(
                 f"{prefix}feature_variant", list(variants)
             ),
@@ -387,10 +402,17 @@ class CountComponent:
         )
 
     def build(self, *, feature_variants, y_min, seed):
-        if isinstance(self.params, LGBMParams):
-            estimator = self.params.build_regressor(objective=self.objective, seed=seed)
+        params = dataclasses.asdict(self.params)
+        if isinstance(self.params, LGBMRegressorParams):
+            # subsample_freq=1: LightGBM ignores subsample without it; n_jobs=1: one
+            # thread per fit, so the parallel studies do not oversubscribe the cores.
+            estimator = LGBMRegressor(
+                subsample_freq=1, n_jobs=1, verbosity=-1, random_state=seed, **params
+            )
+        elif isinstance(self.params, PoissonGLMParams):
+            estimator = PoissonRegressor(max_iter=1000, **params)
         else:
-            estimator = self.params.build()
+            estimator = NegativeBinomialRegressor(**params)
         # CountModel clones the transformer at fit, so the shared declaration is safe.
         return CountModel(
             estimator=estimator,
@@ -404,8 +426,8 @@ class CountComponent:
 class ProbabilityComponent:
     """Model 2's CohortProbabilityModel choices; the exposure does not apply."""
 
-    family: str  # "logistic" or "lgbm"
-    params: LogisticParams | LGBMParams
+    family: str  # one of PROBABILITY_FAMILIES
+    params: LogisticParams | LGBMClassifierParams
     calibration_method: str | None
     feature_variant: str
 
@@ -414,7 +436,7 @@ class ProbabilityComponent:
         if family == "logistic":
             params, variants = LogisticParams.suggest(trial, prefix), glm_variants
         elif family == "lgbm":
-            params, variants = LGBMParams.suggest(trial, prefix), tree_variants
+            params, variants = LGBMClassifierParams.suggest(trial, prefix), tree_variants
         else:
             raise ValueError(f"unknown probability family {family!r}")
         # No isotonic: its lowest score block can hold no child of a cohort and
@@ -432,22 +454,28 @@ class ProbabilityComponent:
         )
 
     def build(self, *, feature_variants, seed):
-        if isinstance(self.params, LGBMParams):
-            estimator = self.params.build_classifier(seed=seed)
+        params = dataclasses.asdict(self.params)
+        if isinstance(self.params, LGBMClassifierParams):
+            estimator = LGBMClassifier(
+                objective="multiclass",
+                subsample_freq=1,
+                n_jobs=1,
+                verbosity=-1,
+                random_state=seed,
+                **params,
+            )
         else:
-            estimator = self.params.build()
+            estimator = LogisticRegression(max_iter=1000, **params)
         return CohortProbabilityModel(
             estimator=estimator,
             calibration_method=self.calibration_method,
             feature_transformer=feature_variants[self.feature_variant],
         )
 ```
-Why the `objective` check of the Plan review is not added: `suggest` always sets it for
-`lgbm`, and a hand-built component is not a notebook path.
 
 **Done when:** Check A; Check B with both class names; a probe runs
 `CountComponent.suggest(trial, "a__", family=f, tree_variants=..., glm_variants=...)` for the
-three families inside a 2-trial `optuna` study with a dummy objective and prints
+four families inside a 2-trial `optuna` study with a dummy objective and prints
 `json.dumps(dataclasses.asdict(component))` for each, then `build(...)` fits one on
 `train_age_group` rows (import the notebook with `app.run()` to get the data, or use
 `defs`); the ProbabilityComponent likewise for both families.
@@ -576,7 +604,7 @@ the file must pass; say so in the report); Check B; a probe calls `tune_model` d
 Two cells, the button unchanged:
 ```python
 run_model1 = mo.ui.run_button(label="Tune Model 1")
-mo.md(f"{run_model1} three studies × `n_trials` trials, in parallel.")
+mo.md(f"{run_model1} {len(COUNT_FAMILIES)} studies × `n_trials` trials, in parallel.")
 ```
 ```python
 mo.stop(not run_model1.value, mo.md("Click the button to tune Model 1."))
@@ -725,8 +753,8 @@ Display cell: the current one (`mo.vstack` of three `mo.md` code blocks), titles
 cohort Poisson deviance (cv_best: the study's value; n_failed: trials whose fit raised)",
 "Best combination per component", "Trials per arm".
 
-**Done when:** Check A; Check C prints `model1_df` with 12 rows (3 families × 4), the choices
-frame with 9 rows (3 families × 3 cohorts) holding `objective` only for `lgbm`, the arms frame
+**Done when:** Check A; Check C prints `model1_df` with 16 rows (4 families × 4), the choices
+frame with 12 rows (4 families × 3 cohorts), no `objective` column, the arms frame
 with the counts summing to the COMPLETE trials per parameter, and
 `json.dumps(defs["MODEL1_BEST_RUNS"])` works; the user clicks the button in `marimo edit` at
 `n_trials = 200` and reports the wall time (today's package version: ≈ 5 min).
@@ -743,7 +771,7 @@ summary and the suggested commit command for the user.
 ```python
 # Model 2's total families, a list to edit after Model 1's table above. The
 # pairs tuned are this list × the probability families.
-MODEL2_TOTALS = ["lgbm", "poisson_glm", "nb2"]
+MODEL2_TOTALS = ["lgbm_poisson", "lgbm_gaussian", "poisson_glm", "nb2"]
 MODEL2_PAIRS = [
     (total, probability) for total in MODEL2_TOTALS for probability in PROBABILITY_FAMILIES
 ]
@@ -755,15 +783,15 @@ Run cell: as T1.6 with `Parallel(n_jobs=len(MODEL2_PAIRS))`,
 tree_variants=TREE_VARIANTS, count_glm_variants=COUNT_GLM_VARIANTS,
 probability_glm_variants=PROBABILITY_GLM_VARIANTS)`, `partial(Model2Run.build, ...)`,
 `study_seed=seed + i`, keys `f"{total}__{probability}"` → `MODEL2_STUDIES`.
-**Done when:** Check A; Check C prints `MODEL2_STUDIES True` with 6 studies of 3 trials.
+**Done when:** Check A; Check C prints `MODEL2_STUDIES True` with 8 studies of 3 trials.
 
 ### [ ] T2.2 Model 2's score and display cells, the best-per-model cell
 The score cell mirrors T1.7 with the `Model2Run` partials → `MODEL2_MODELS`,
 `MODEL2_BEST_RUNS`, `model2_df`, `model2_choices_df`, `model2_arms_df` (choices: components
 `total` and `probability`). Display cell as Model 1's. The best-per-model cell is today's
 (lines 1197–1218) unchanged.
-**Done when:** Check A; Check C prints `model2_df` with 24 rows (6 × 4), the choices frame with
-12 rows, `best_df` with 2 rows; the user clicks both buttons at 200 and reports the times.
+**Done when:** Check A; Check C prints `model2_df` with 32 rows (8 × 4), the choices frame with
+16 rows, `best_df` with 2 rows; the user clicks both buttons at 200 and reports the times.
 
 ### [ ] T2.3 Independent review of T2, summary, commit suggestion.
 
@@ -849,7 +877,7 @@ the notebook test green.
   parallel). Keeps the seeded search reproducible: folds of one trial in parallel (trials stay
   sequential), or the three cohort fits of Model 1 inside the composite (a src change). Loses
   it: `study.optimize(n_jobs>1)` (threads; order not reproducible) and multi-process trials on
-  a shared storage. The machine has 8 cores (6 performance); Model 2 already runs 6 studies at
+  a shared storage. The machine has 8 cores (6 performance); Model 2 already runs up to 8 studies at
   once, so per-fold parallelism competes with it.
 
 ## 8. End-to-end verification (after T2, again after T4)

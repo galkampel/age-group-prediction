@@ -602,13 +602,14 @@ def _(mo):
     scored is the model that is tuned, by the cohort Poisson deviance of its
     cross-validation folds on the training part, the plain mean over folds. A
     trial's choices are a frozen dataclass: per cohort (per component for
-    Model 2) the exposure on or off, the feature variant by name, the LightGBM
-    loss (Poisson or Gaussian) and the estimator's hyperparameters, under the
-    names `<component>__<parameter>`. The dataclass builds its model with
-    constructor calls, and `dataclasses.asdict` is its JSON record.
-    `n_trials = 200`: at 30 a categorical arm starves (a Poisson/Gaussian study
-    split 10/20 and did worse than either loss alone); the table of trials per
-    arm shows it. The i-th study gets `seed + i`; the studies of one model run
+    Model 2) the exposure on or off, the feature variant by name and the
+    estimator's hyperparameters, under the names `<component>__<parameter>`.
+    The dataclass builds its model with constructor calls, and
+    `dataclasses.asdict` is its JSON record. LightGBM's two losses, Poisson
+    and Gaussian, are separate families: a study that sampled the loss split
+    30 trials 10/20 and did worse than either loss alone. `n_trials = 200`, so
+    that no categorical arm starves; the table of trials per arm shows it.
+    The i-th study gets `seed + i`; the studies of one model run
     in parallel with joblib. A trial whose fit raises (an NB2 fit that does not
     converge) is marked failed and the study goes on; the tables count them.
     Only each family's best run is rebuilt, refit on the training part and
@@ -719,7 +720,7 @@ def _(Y, np):
         "probability__room_share_x_daycare",
         "probability__room_share_x_median_age_and_daycare",
     )
-    COUNT_FAMILIES = ("lgbm", "poisson_glm", "nb2")
+    COUNT_FAMILIES = ("lgbm_poisson", "lgbm_gaussian", "poisson_glm", "nb2")
     PROBABILITY_FAMILIES = ("logistic", "lgbm")
     return (
         COHORTS,
@@ -729,6 +730,104 @@ def _(Y, np):
         PROBABILITY_FAMILIES,
         PROBABILITY_GLM_VARIANTS,
         TREE_VARIANTS,
+    )
+
+
+@app.cell
+def _(dataclasses):
+    @dataclasses.dataclass(frozen=True)
+    class LGBMParams:
+        """LightGBM's searched hyperparameters, shared by the regressor and the classifier."""
+
+        max_depth: int
+        num_leaves: int
+        min_child_samples: int
+        learning_rate: float
+        n_estimators: int
+        reg_alpha: float
+        reg_lambda: float
+        min_split_gain: float
+        subsample: float
+        colsample_bytree: float
+
+        @classmethod
+        def suggest(cls, trial, prefix, **fixed):
+            return cls(
+                max_depth=trial.suggest_int(f"{prefix}max_depth", 3, 8),
+                num_leaves=trial.suggest_int(f"{prefix}num_leaves", 7, 63),
+                min_child_samples=trial.suggest_int(
+                    f"{prefix}min_child_samples", 5, 40
+                ),
+                learning_rate=trial.suggest_float(
+                    f"{prefix}learning_rate", 0.01, 0.2, log=True
+                ),
+                n_estimators=trial.suggest_int(f"{prefix}n_estimators", 50, 400),
+                reg_alpha=trial.suggest_float(
+                    f"{prefix}reg_alpha", 1e-8, 10.0, log=True
+                ),
+                reg_lambda=trial.suggest_float(
+                    f"{prefix}reg_lambda", 1e-8, 10.0, log=True
+                ),
+                min_split_gain=trial.suggest_float(f"{prefix}min_split_gain", 0.0, 1.0),
+                subsample=trial.suggest_float(f"{prefix}subsample", 0.7, 1.0),
+                colsample_bytree=trial.suggest_float(
+                    f"{prefix}colsample_bytree", 0.7, 1.0
+                ),
+                **fixed,
+            )
+
+    @dataclasses.dataclass(frozen=True)
+    class LGBMRegressorParams(LGBMParams):
+        # LightGBM's name for the loss, "poisson" or "regression" (Gaussian):
+        # fixed by the family and recorded, not sampled; `suggest` takes it as
+        # a keyword, `suggest(trial, prefix, objective="poisson")`.
+        objective: str
+
+    @dataclasses.dataclass(frozen=True)
+    class LGBMClassifierParams(LGBMParams):
+        """The classifier's; its objective, multiclass, is not searched."""
+
+    @dataclasses.dataclass(frozen=True)
+    class PoissonGLMParams:
+        alpha: float
+
+        @classmethod
+        def suggest(cls, trial, prefix):
+            return cls(
+                alpha=trial.suggest_float(f"{prefix}alpha", 1e-4, 10.0, log=True)
+            )
+
+    @dataclasses.dataclass(frozen=True)
+    class NB2Params:
+        # The estimated dispersions are 0.12 to 0.18; the penalty's path runs
+        # from the unpenalized fit at 1e-3 to all-zero coefficients at 1.
+        dispersion: float
+        alpha: float
+
+        @classmethod
+        def suggest(cls, trial, prefix):
+            return cls(
+                dispersion=trial.suggest_float(
+                    f"{prefix}dispersion", 0.01, 1.0, log=True
+                ),
+                alpha=trial.suggest_float(f"{prefix}alpha", 1e-3, 1.0, log=True),
+            )
+
+    @dataclasses.dataclass(frozen=True)
+    class LogisticParams:
+        C: float
+
+        @classmethod
+        def suggest(cls, trial, prefix):
+            return cls(C=trial.suggest_float(f"{prefix}C", 1e-3, 100.0, log=True))
+
+    return (
+        LGBMClassifierParams,
+        LGBMParams,
+        LGBMRegressorParams,
+        LogisticParams,
+        NB2Params,
+        PoissonGLMParams,
     )
 
 
