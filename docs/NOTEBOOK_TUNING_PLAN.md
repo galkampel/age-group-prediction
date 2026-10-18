@@ -1,6 +1,6 @@
 # Re-implement the hyperparameter tuning inside the notebook
 
-**Status (2026-10-18):** approved; T1.1 committed (`0416267`); T1.2 done and reworked after the user's review (estimator dataclasses hold hyperparameters only; LightGBM's loss is a family, D6), uncommitted, notebook md5 `99239ad902971970403cc290aa62f266`; next T1.3. The implementing session updates this line and ticks the sub-tasks.
+**Status (2026-10-18):** approved; T1.1 committed (`0416267`); T1.2 committed (`bee781a`) after the user's review (estimator dataclasses hold hyperparameters only; LightGBM's loss is a family); T1.3 redesigned at three user reviews (components are a study's fixed settings, a `Literal` family and `use_exposure`; the family → transformer-names mapping is an argument of `suggest_feature_transformer`; no dataclass builds a model; the exposure a study setting, both arms; feature variants renamed feature transformers; D2, D3, D6, T1.4–T2.2 rewritten), uncommitted, notebook md5 `389df50917ba2b32c4f949f252888ae2`; next T1.4. The implementing session updates this line and ticks the sub-tasks.
 
 Written for the model that implements it, one sub-task per approval. Every sub-task has the
 code to write, a "done when" list and the commands that verify it. The user reads the diff in
@@ -20,13 +20,38 @@ assembled by `set_params` strings instead of being built explicitly.
 
 - D1. Section 5 is rewritten with plain Optuna and a hand-written cross-validation loop. None of
   the package's classes or functions is imported. The package is deleted afterwards (T4).
-- D2. A trial's sampled values are **frozen dataclasses** (`dataclasses.dataclass(frozen=True)`),
-  JSON-serializable through `dataclasses.asdict`: every field is a JSON scalar; a feature
-  variant is stored as its key in `FEATURE_VARIANTS`. (The comparison with TypedDict: §6.)
-- D3. Each dataclass has a classmethod `suggest(trial, prefix, …)` calling `trial.suggest_*`
-  inline. The component and run dataclasses have a `build(…)` that calls the constructors
-  explicitly (no `set_params`). An estimator dataclass holds only that estimator's searched
-  hyperparameters, and has no `build` (the user, 2026-10-18, at T1.2's review).
+- D2. **Frozen dataclasses** (`dataclasses.dataclass(frozen=True)`), JSON-serializable through
+  `dataclasses.asdict`, for two things: an estimator's searched hyperparameters
+  (`LGBMRegressorParams`, …), and a component's settings fixed for one study
+  (`CountComponent(family, use_exposure)`, `ProbabilityComponent(family)`). Every field is a
+  JSON scalar; a feature transformer is stored as its key in `FEATURE_TRANSFORMERS`, and the
+  family is a `Literal` (`CountFamily`, `ProbabilityFamily`). A study's record is
+  `{"settings": asdict(component), "params": study.best_params}`; `best_params` holds the
+  chosen transformer's name. (The comparison with
+  TypedDict: §6.)
+- D3. An estimator dataclass has a classmethod `suggest(trial, prefix, …)` calling
+  `trial.suggest_*` inline. A component looks up its params class from its family, and
+  samples with `suggest_params` / `suggest_feature_transformer(trial, prefix,
+  family_transformers)` (and
+  `suggest_calibration_method`). **No dataclass builds a model** (the user, 2026-10-18, at
+  the reviews of T1.2 and T1.3). The objective builds it: `suggest_model1` / `suggest_model2`
+  sample from the trial and call the constructors explicitly (estimator, then
+  `CountModel` / `CohortProbabilityModel`, then the composite; no `set_params`). The best run's
+  refit calls the same function on `FixedTrial(study.best_params)`.
+  **Package-ready (the user, 2026-10-18, at T1.3's second and third reviews):** a dataclass
+  reads no notebook global. A setting fixed for the study (the family, the exposure) is a
+  field. The family's candidate feature transformers come in as an argument of
+  `suggest_feature_transformer`: a mapping from each family to the names that suit it
+  (`COUNT_FAMILY_TRANSFORMERS`, `PROBABILITY_FAMILY_TRANSFORMERS`), and the component reads
+  its own entry. The reason is the user's: one place pairs a family with its transformers, so
+  a component cannot be given another family's (a field of names, the second review's
+  version, could). Whether a transformer suits a family is the experiment's knowledge, which
+  no code can check; the mapping is where it is reviewed. The builder resolves a name to its
+  object (`feature_transformers[name]`). An unknown family raises at construction, a family
+  missing from the mapping when sampling, and `suggest_params`'s `else` raises. The families are
+plain `Literal` assignments, not the `type` statement: cloudpickle cannot pickle a class
+  annotated with a `type` alias defined in a cell (measured), and the joblib workers receive
+  the components by cloudpickle. In a package module either form pickles.
 - D4. The metric is built **in the notebook**: `Metric("cohort_poisson_deviance",
   cohort_poisson_deviance, direction="minimize")`; `optuna.create_study(direction=metric.direction)`;
   the objective returns the metric's value unchanged. The module-level constants leave
@@ -34,7 +59,7 @@ assembled by `set_params` strings instead of being built explicitly.
 - D5. Pruning and parallelization beyond today's parallel studies are **not decided now**; a
   later performance pass (§7 holds the facts for it).
 - D6. Still in force from 2026-10-15: one joint study per family on the composite; a trial
-  chooses per component its exposure and variant; `n_trials = 200`; studies of
+  chooses per component its feature transformer; `n_trials = 200`; studies of
   one model in parallel with joblib, study i seeded `seed + i`; only the best run is refit;
   Model 2's totals come from the edited list `MODEL2_TOTALS`; `split_method = "random"`.
   **Changed 2026-10-18 (the user, at T1.2's review):** LightGBM's loss is no longer a sampled
@@ -43,7 +68,15 @@ assembled by `set_params` strings instead of being built explicitly.
   so it cannot learn that good hyperparameters differ per loss; a 30-trial study that sampled
   the loss split 10/20 and did worse than either loss alone; and the family table compares
   the losses directly. The cost: one run cannot mix the losses across cohorts, and there is
-  one more study (4 for Model 1, up to 8 pairs for Model 2).
+  one more study per exposure setting.
+  **Changed 2026-10-18 (the user, at T1.3's review):** the exposure is no longer a sampled
+  categorical either. It is a study setting (`CountComponent.use_exposure`), and every count
+  family runs with it on and with it off, as the older plan's E5 argued (the exposure changes
+  the target, a count or a weighted rate, so one TPE budget would under-tune the losing arm).
+  Measured on validation (one fit per cohort, fixed hyperparameters): the GLMs lose 30–50%
+  with the exposure off, because their variants hold no `n_apartments`; LightGBM loses about
+  3%. The user kept both arms for every family. Model 1 runs 8 studies; Model 2 runs
+  `MODEL2_TOTALS` × exposure × `PROBABILITY_FAMILIES` (16 at four totals).
 - D7. Settled by probe in this session (Optuna 4.9.0, joblib 1.5.3): the trial value is the
   plain mean of the fold scores (KFold on 917 rows: folds of 184/183 rows); the sampler is
   `TPESampler(seed=study_seed)` (the `multivariate=True` option raises `ExperimentalWarning`
@@ -149,27 +182,29 @@ Delete the old section-5 cells (keep the user's empty cell at lines 593–595 an
 mo.md(r"""
 ## 5) Hyperparameter tuning
 
-One Optuna study per model family, on the composite: the model that is
-scored is the model that is tuned, by the cohort Poisson deviance of its
-cross-validation folds on the training part, the plain mean over folds. A
-trial's choices are a frozen dataclass: per cohort (per component for
-Model 2) the exposure on or off, the feature variant by name and the
-estimator's hyperparameters, under the names `<component>__<parameter>`.
-The dataclass builds its model with constructor calls, and
-`dataclasses.asdict` is its JSON record. LightGBM's two losses, Poisson
-and Gaussian, are separate families: a study that sampled the loss split
-30 trials 10/20 and did worse than either loss alone. `n_trials = 200`, so
+One Optuna study per model family and exposure (on or off, fixed for the
+study), on the composite: the model that is scored is the model that is
+tuned, by the cohort Poisson deviance of its cross-validation folds on the
+training part, the plain mean over folds. A study's fixed settings are a
+frozen dataclass, its component; a trial samples per cohort (per component
+for Model 2) the feature transformer by name and the estimator's
+hyperparameters, under the names `<component>__<parameter>`, and builds
+the estimator, its `CountModel` and the composite with constructor calls.
+LightGBM's two losses, Poisson and Gaussian, are separate families, and
+the exposure a study setting: a study that sampled the loss split 30
+trials 10/20 and did worse than either loss alone, and the exposure
+changes the target (a count or a weighted rate). `n_trials = 200`, so
 that no categorical arm starves; the table of trials per arm shows it.
 The i-th study gets `seed + i`; the studies of one model run
 in parallel with joblib. A trial whose fit raises (an NB2 fit that does not
 converge) is marked failed and the study goes on; the tables count them.
-Only each family's best run is rebuilt, refit on the training part and
+Only each study's best run is rebuilt, refit on the training part and
 scored on training and validation. A Gaussian loss can predict a negative
 count, which `CountModel` floors at `y_min` (eps). Model 2 is tuned the
-same way, one study per pair of a total family (the list `MODEL2_TOTALS`,
-edited after Model 1's table) and a classifier family, under `total__…`
-and `probability__…`; the probability model ignores the exposure, and its
-calibration is searched. The last table shows each model's best family on
+same way, one study per total family (the list `MODEL2_TOTALS`, edited
+after Model 1's table), the total's exposure and a classifier family,
+under `total__…` and `probability__…`; the probability model ignores the
+exposure, and its calibration is searched. The last table shows each model's best family on
 validation. The run cells sit behind buttons: opening the notebook fits
 nothing.
 """)
@@ -228,8 +263,8 @@ PREDICTION_FLOOR = float(np.finfo(float).eps)
 # The trees take n_apartments as a feature and the offset; the GLMs take it
 # as the exposure only (docs/FEATURE_TRANSFORMATIONS.md §3.3, §4.4), and the
 # logistic model needs the scaled plans (it does not converge on `tree`).
-TREE_VARIANTS = ("tree", "tree__ses_quadratic")
-COUNT_GLM_VARIANTS = (
+TREE_TRANSFORMERS = ("tree", "tree__ses_quadratic")
+COUNT_GLM_TRANSFORMERS = (
     "glm_base",
     "count__ses_quadratic",
     "count__daycare_log1p",
@@ -237,20 +272,36 @@ COUNT_GLM_VARIANTS = (
     "count__room_share_x_ses",
     "count__room_share_x_household_size_and_ses",
 )
-PROBABILITY_GLM_VARIANTS = (
+PROBABILITY_GLM_TRANSFORMERS = (
     "glm_base",
     "probability__daycare_log1p",
     "probability__room_share_x_median_age",
     "probability__room_share_x_daycare",
     "probability__room_share_x_median_age_and_daycare",
 )
-COUNT_FAMILIES = ("lgbm_poisson", "lgbm_gaussian", "poisson_glm", "nb2")
-PROBABILITY_FAMILIES = ("logistic", "lgbm")
+# Plain assignments, not the `type` statement: cloudpickle cannot pickle a
+# class annotated with a `type` alias defined in a cell, and joblib's
+# workers receive the components by cloudpickle.
+CountFamily = Literal["lgbm_poisson", "lgbm_gaussian", "poisson_glm", "nb2"]
+ProbabilityFamily = Literal["logistic", "lgbm"]
+COUNT_FAMILIES = get_args(CountFamily)
+PROBABILITY_FAMILIES = get_args(ProbabilityFamily)
+# The candidate feature transformers of each family, given to its components.
+COUNT_FAMILY_TRANSFORMERS = {
+    "lgbm_poisson": TREE_TRANSFORMERS,
+    "lgbm_gaussian": TREE_TRANSFORMERS,
+    "poisson_glm": COUNT_GLM_TRANSFORMERS,
+    "nb2": COUNT_GLM_TRANSFORMERS,
+}
+PROBABILITY_FAMILY_TRANSFORMERS = {
+    "logistic": PROBABILITY_GLM_TRANSFORMERS,
+    "lgbm": TREE_TRANSFORMERS,
+}
 ```
 
 **Done when:** no `hyperparameter_tuning` string in the notebook; Check A passes (test green,
 ruff 8 findings, marimo check clean; the `tune_model` test fails as noted at T1.5); Check B with `NAMES = ["COHORT_POISSON_DEVIANCE",
-"POISSON_DEVIANCE", "COHORTS", "PREDICTION_FLOOR", "TREE_VARIANTS", "COUNT_FAMILIES",
+"POISSON_DEVIANCE", "COHORTS", "PREDICTION_FLOOR", "TREE_TRANSFORMERS", "COUNT_FAMILIES",
 "PROBABILITY_FAMILIES"]` prints `missing: []`; md5 recorded.
 
 ### [x] T1.2 The estimator dataclasses
@@ -361,200 +412,218 @@ each class from `suggest(FixedTrial({...}), "x__")`, prints `json.dumps(dataclas
 rebuild is equal, that the classifier's params are not `LGBMRegressorParams`, and that a
 missing `objective` raises `TypeError`.
 
-### [ ] T1.3 The component dataclasses
+### [x] T1.3 The component dataclasses
 
-One cell. (Rewritten 2026-10-18 after T1.2's rework, a sketch to re-verify at T1.3's plan.)
-`family` is fixed per study (not sampled) and recorded, so `asdict` says which estimator the
-nested dict is. The estimators are built here, from the fixed settings plus
-`**dataclasses.asdict(self.params)`; the estimator dataclasses have no `build`. The variant
-tuples are passed in, not closed over.
+One cell. (Redesigned 2026-10-18 at the user's review. The first version held the sampled
+choices and built the model; see D3 and D6.) A component holds only what is fixed for one
+study: the family (a `Literal`) and, for a count component, the exposure. Given the family it
+samples its params class under a prefix, and its feature transformer from its own entry of
+the family → names mapping passed in (D3: the classes read no notebook global). An unknown
+family raises at construction, a family missing from the mapping when sampling. A frozen
+component is hashable, so it keys the studies; it pickles through cloudpickle to the joblib
+workers.
 ```python
+# The components read no notebook global: the family's candidate feature
+# transformers come in as an argument, so the classes can move to a package.
 @dataclasses.dataclass(frozen=True)
 class CountComponent:
-    """One CountModel's choices: a cohort's in Model 1, the total's in Model 2."""
+    """A CountModel's settings fixed for one study; a trial samples the rest under a prefix."""
 
-    family: str  # one of COUNT_FAMILIES
-    params: LGBMRegressorParams | PoissonGLMParams | NB2Params
-    feature_variant: str  # a key of FEATURE_VARIANTS
+    family: CountFamily
     use_exposure: bool
 
-    @classmethod
-    def suggest(cls, trial, prefix, *, family, tree_variants, glm_variants):
-        if family == "lgbm_poisson":
-            params = LGBMRegressorParams.suggest(trial, prefix, objective="poisson")
-            variants = tree_variants
-        elif family == "lgbm_gaussian":
-            params = LGBMRegressorParams.suggest(trial, prefix, objective="regression")
-            variants = tree_variants
-        elif family == "poisson_glm":
-            params, variants = PoissonGLMParams.suggest(trial, prefix), glm_variants
-        elif family == "nb2":
-            params, variants = NB2Params.suggest(trial, prefix), glm_variants
-        else:
-            raise ValueError(f"unknown count family {family!r}")
-        return cls(
-            family=family,
-            params=params,
-            feature_variant=trial.suggest_categorical(
-                f"{prefix}feature_variant", list(variants)
-            ),
-            use_exposure=trial.suggest_categorical(f"{prefix}use_exposure", [True, False]),
+    def __post_init__(self):
+        # At construction, before the parallel studies start.
+        if self.family not in get_args(CountFamily):
+            raise ValueError(f"unknown count family {self.family!r}")
+
+    def suggest_feature_transformer(self, trial, prefix, family_transformers):
+        """The name of a feature transformer, from ``family_transformers[self.family]``.
+
+        ``family_transformers`` maps each family to the names of the feature
+        transformers that suit it, so a family is never given another's.
+        """
+        if self.family not in family_transformers:
+            raise ValueError(f"no feature transformers for family {self.family!r}")
+        return trial.suggest_categorical(
+            f"{prefix}feature_transformer", list(family_transformers[self.family])
         )
 
-    def build(self, *, feature_variants, y_min, seed):
-        params = dataclasses.asdict(self.params)
-        if isinstance(self.params, LGBMRegressorParams):
-            # subsample_freq=1: LightGBM ignores subsample without it; n_jobs=1: one
-            # thread per fit, so the parallel studies do not oversubscribe the cores.
-            estimator = LGBMRegressor(
-                subsample_freq=1, n_jobs=1, verbosity=-1, random_state=seed, **params
+    def suggest_params(self, trial, prefix):
+        if self.family == "lgbm_poisson":
+            return LGBMRegressorParams.suggest(trial, prefix, objective="poisson")
+        elif self.family == "lgbm_gaussian":
+            return LGBMRegressorParams.suggest(
+                trial, prefix, objective="regression"
             )
-        elif isinstance(self.params, PoissonGLMParams):
-            estimator = PoissonRegressor(max_iter=1000, **params)
+        elif self.family == "poisson_glm":
+            return PoissonGLMParams.suggest(trial, prefix)
+        elif self.family == "nb2":
+            return NB2Params.suggest(trial, prefix)
         else:
-            estimator = NegativeBinomialRegressor(**params)
-        # CountModel clones the transformer at fit, so the shared declaration is safe.
-        return CountModel(
-            estimator=estimator,
-            use_exposure=self.use_exposure,
-            feature_transformer=feature_variants[self.feature_variant],
-            y_min=y_min,
-        )
-
+            raise ValueError(f"unknown count family {self.family!r}")
 
 @dataclasses.dataclass(frozen=True)
 class ProbabilityComponent:
-    """Model 2's CohortProbabilityModel choices; the exposure does not apply."""
+    """Model 2's CohortProbabilityModel settings fixed for one study; the exposure does not apply."""
 
-    family: str  # one of PROBABILITY_FAMILIES
-    params: LogisticParams | LGBMClassifierParams
-    calibration_method: str | None
-    feature_variant: str
+    family: ProbabilityFamily
 
-    @classmethod
-    def suggest(cls, trial, prefix, *, family, tree_variants, glm_variants):
-        if family == "logistic":
-            params, variants = LogisticParams.suggest(trial, prefix), glm_variants
-        elif family == "lgbm":
-            params, variants = LGBMClassifierParams.suggest(trial, prefix), tree_variants
+    def __post_init__(self):
+        if self.family not in get_args(ProbabilityFamily):
+            raise ValueError(f"unknown probability family {self.family!r}")
+
+    def suggest_feature_transformer(self, trial, prefix, family_transformers):
+        """As CountComponent's."""
+        if self.family not in family_transformers:
+            raise ValueError(f"no feature transformers for family {self.family!r}")
+        return trial.suggest_categorical(
+            f"{prefix}feature_transformer", list(family_transformers[self.family])
+        )
+
+    def suggest_params(self, trial, prefix):
+        if self.family == "lgbm":
+            return LGBMClassifierParams.suggest(trial, prefix)
+        elif self.family == "logistic":
+            return LogisticParams.suggest(trial, prefix)
         else:
-            raise ValueError(f"unknown probability family {family!r}")
+            raise ValueError(f"unknown probability family {self.family!r}")
+
+    def suggest_calibration_method(self, trial, prefix):
         # No isotonic: its lowest score block can hold no child of a cohort and
         # then maps a building there to probability 0, an infinite log loss
         # (measured 2026-10-15 with the LightGBM classifier).
-        return cls(
-            family=family,
-            params=params,
-            calibration_method=trial.suggest_categorical(
-                f"{prefix}calibration_method", [None, "temperature", "sigmoid"]
-            ),
-            feature_variant=trial.suggest_categorical(
-                f"{prefix}feature_variant", list(variants)
-            ),
-        )
-
-    def build(self, *, feature_variants, seed):
-        params = dataclasses.asdict(self.params)
-        if isinstance(self.params, LGBMClassifierParams):
-            estimator = LGBMClassifier(
-                objective="multiclass",
-                subsample_freq=1,
-                n_jobs=1,
-                verbosity=-1,
-                random_state=seed,
-                **params,
-            )
-        else:
-            estimator = LogisticRegression(max_iter=1000, **params)
-        return CohortProbabilityModel(
-            estimator=estimator,
-            calibration_method=self.calibration_method,
-            feature_transformer=feature_variants[self.feature_variant],
+        return trial.suggest_categorical(
+            f"{prefix}calibration_method", [None, "temperature", "sigmoid"]
         )
 ```
 
-**Done when:** Check A; Check B with both class names; a probe runs
-`CountComponent.suggest(trial, "a__", family=f, tree_variants=..., glm_variants=...)` for the
-four families inside a 2-trial `optuna` study with a dummy objective and prints
-`json.dumps(dataclasses.asdict(component))` for each, then `build(...)` fits one on
-`train_age_group` rows (import the notebook with `app.run()` to get the data, or use
-`defs`); the ProbabilityComponent likewise for both families.
+**Done when:** Check A; Check B with both class names, the two `Literal`s and the two mappings; a probe, for every
+count family × exposure and both probability families, runs a 2-trial study whose objective
+calls the `suggest_*` methods under `"a__"`. It checks four things: the sampled names are
+exactly the family's; the transformer is in `family_transformers[family]`; a `FixedTrial(trial.params)`
+rebuild is equal; and `json.dumps(asdict(component))` works. Unknown families, and a mapping
+without the family, raise `ValueError`; components are equal and hash by value; a cloudpickle round trip
+and a `Parallel(n_jobs=2)` pass work.
 
-### [ ] T1.4 The run dataclasses
+### [ ] T1.4 The models a trial builds
 
-One cell.
+One cell. The objective builds the model: per component it samples the feature transformer and
+the estimator's hyperparameters, and then calls the constructors explicitly: the estimator,
+its `CountModel` / `CohortProbabilityModel`, and the composite. This is a function rather than
+code inside `objective`, because the best run's refit (T1.7) calls the same function on
+`FixedTrial(study.best_params)`. One code path builds both the searched and the refit model,
+and a missing or foreign value raises (D7).
 ```python
-@dataclasses.dataclass(frozen=True)
-class Model1Run:
-    """IndependentCohortModels: one CountComponent per cohort, under `<cohort>__`."""
+def count_estimator(params, *, seed):
+    """The regressor of ``params``: its fixed settings and the searched hyperparameters."""
+    hyperparameters = dataclasses.asdict(params)
+    if isinstance(params, LGBMRegressorParams):
+        # subsample_freq=1: LightGBM ignores subsample without it; n_jobs=1: one
+        # thread per fit, so the parallel studies do not oversubscribe the cores.
+        return LGBMRegressor(
+            subsample_freq=1, n_jobs=1, verbosity=-1, random_state=seed, **hyperparameters
+        )
+    if isinstance(params, PoissonGLMParams):
+        return PoissonRegressor(max_iter=1000, **hyperparameters)
+    return NegativeBinomialRegressor(**hyperparameters)
 
-    cohort_components: dict[str, CountComponent]
 
-    @classmethod
-    def suggest(cls, trial, *, family, cohorts, tree_variants, glm_variants):
-        return cls(
-            {
-                cohort: CountComponent.suggest(
-                    trial,
-                    f"{cohort}__",
-                    family=family,
-                    tree_variants=tree_variants,
-                    glm_variants=glm_variants,
+def probability_estimator(params, *, seed):
+    """The classifier of ``params``: its fixed settings and the searched hyperparameters."""
+    hyperparameters = dataclasses.asdict(params)
+    if isinstance(params, LGBMClassifierParams):
+        return LGBMClassifier(
+            objective="multiclass",
+            subsample_freq=1,
+            n_jobs=1,
+            verbosity=-1,
+            random_state=seed,
+            **hyperparameters,
+        )
+    return LogisticRegression(max_iter=1000, **hyperparameters)
+
+
+def suggest_count_model(
+    trial, prefix, component, *, family_transformers, feature_transformers, y_min, seed
+):
+    """A CountModel whose feature transformer and hyperparameters ``trial`` samples under ``prefix``."""
+    # CountModel clones the transformer at fit, so the shared declaration is safe.
+    return CountModel(
+        estimator=count_estimator(component.suggest_params(trial, prefix), seed=seed),
+        use_exposure=component.use_exposure,
+        feature_transformer=feature_transformers[
+            component.suggest_feature_transformer(trial, prefix, family_transformers)
+        ],
+        y_min=y_min,
+    )
+
+
+def suggest_model1(
+    trial, component, *, cohorts, family_transformers, feature_transformers, y_min, seed
+):
+    """Model 1: one CountModel per cohort, sampled under ``<cohort>__``."""
+    return IndependentCohortModels(
+        {
+            cohort: suggest_count_model(
+                trial,
+                f"{cohort}__",
+                component,
+                family_transformers=family_transformers,
+                feature_transformers=feature_transformers,
+                y_min=y_min,
+                seed=seed,
+            )
+            for cohort in cohorts
+        }
+    )
+
+
+def suggest_model2(
+    trial,
+    total,
+    probability,
+    *,
+    count_family_transformers,
+    probability_family_transformers,
+    feature_transformers,
+    y_min,
+    seed,
+):
+    """Model 2: the total's CountModel under ``total__``, the classifier under ``probability__``."""
+    prefix = "probability__"
+    return TotalTimesProbabilityModel(
+        total_model=suggest_count_model(
+            trial,
+            "total__",
+            total,
+            family_transformers=count_family_transformers,
+            feature_transformers=feature_transformers,
+            y_min=y_min,
+            seed=seed,
+        ),
+        probability_model=CohortProbabilityModel(
+            estimator=probability_estimator(
+                probability.suggest_params(trial, prefix), seed=seed
+            ),
+            calibration_method=probability.suggest_calibration_method(trial, prefix),
+            feature_transformer=feature_transformers[
+                probability.suggest_feature_transformer(
+                    trial, prefix, probability_family_transformers
                 )
-                for cohort in cohorts
-            }
-        )
-
-    def build(self, *, feature_variants, y_min, seed):
-        return IndependentCohortModels(
-            {
-                cohort: component.build(
-                    feature_variants=feature_variants, y_min=y_min, seed=seed
-                )
-                for cohort, component in self.cohort_components.items()
-            }
-        )
-
-
-@dataclasses.dataclass(frozen=True)
-class Model2Run:
-    """TotalTimesProbabilityModel: the total under `total__`, the classifier under `probability__`."""
-
-    total: CountComponent
-    probability: ProbabilityComponent
-
-    @classmethod
-    def suggest(
-        cls, trial, *, total_family, probability_family, tree_variants,
-        count_glm_variants, probability_glm_variants,
-    ):
-        return cls(
-            total=CountComponent.suggest(
-                trial, "total__", family=total_family,
-                tree_variants=tree_variants, glm_variants=count_glm_variants,
-            ),
-            probability=ProbabilityComponent.suggest(
-                trial, "probability__", family=probability_family,
-                tree_variants=tree_variants, glm_variants=probability_glm_variants,
-            ),
-        )
-
-    def build(self, *, feature_variants, y_min, seed):
-        return TotalTimesProbabilityModel(
-            total_model=self.total.build(
-                feature_variants=feature_variants, y_min=y_min, seed=seed
-            ),
-            probability_model=self.probability.build(
-                feature_variants=feature_variants, seed=seed
-            ),
-        )
+            ],
+        ),
+    )
 ```
-(Format the long signatures as `ruff format` would.)
+(Format as `ruff format` would, inside the cell.)
 
-**Done when:** Check A; Check B with both names; a probe: for each count family, a 2-trial study
-whose objective calls `Model1Run.suggest(...)` and returns 0.0; then
-`run == Model1Run.suggest(FixedTrial(study.trials[0].params), ...)` is `True`, and
-`json.dumps(dataclasses.asdict(run))` works; the same for one `Model2Run` pair.
+**Done when:** Check A; Check B with the five names; a probe, for each of the 8 Model 1
+components and one Model 2 pair, runs a 2-trial study whose objective calls `suggest_model1`
+(or `suggest_model2`) and returns 0.0. Then:
+- `suggest_model1(FixedTrial(study.trials[0].params), …).get_params(deep=True)` equals the
+  model of trial 0, compared over its scalar parameters;
+- the model fits on `train_age_group`;
+- a foreign value in the `FixedTrial` raises `ValueError`.
 
 ### [ ] T1.5 `cv_score` and `tune_model`
 
@@ -573,8 +642,8 @@ def cv_score(model, X, Y, exposure, cv, cv_groups, metric):
     return float(np.mean(scores))
 
 
-def tune_model(suggest, build, X, Y, exposure, cv, cv_groups, metric, *, study_seed, n_trials):
-    """One study of ``build(suggest(trial))`` on the rows of ``X``; the study and its seconds.
+def tune_model(suggest_model, X, Y, exposure, cv, cv_groups, metric, *, study_seed, n_trials):
+    """One study of the model ``suggest_model(trial)`` builds, on the rows of ``X``; the study and its seconds.
 
     Runs in a joblib worker, a fresh process at Optuna's default INFO
     verbosity, so it is set here too. A trial whose fit raises RuntimeError
@@ -585,7 +654,7 @@ def tune_model(suggest, build, X, Y, exposure, cv, cv_groups, metric, *, study_s
 
     def objective(trial):
         # Optuna passes the trial alone; the data is bound here, not to a cell.
-        return cv_score(build(suggest(trial)), X, Y, exposure, cv, cv_groups, metric)
+        return cv_score(suggest_model(trial), X, Y, exposure, cv, cv_groups, metric)
 
     study = optuna.create_study(
         direction=metric.direction, sampler=TPESampler(seed=study_seed)
@@ -597,30 +666,32 @@ def tune_model(suggest, build, X, Y, exposure, cv, cv_groups, metric, *, study_s
 **Done when:** Check A (the test `test_a_tuning_cell_outside_a_run_button_is_caught` fails from
 T1.1 until T1.6, since no cell names `tune_model` behind a button yet; the other four tests of
 the file must pass; say so in the report); Check B; a probe calls `tune_model` directly with `n_trials=2` for
-`poisson_glm` on the notebook's training data and prints `study.best_value` and the seconds.
+`partial(suggest_model1, component=CountComponent("poisson_glm", True), …)` on the notebook's training data and prints `study.best_value` and the seconds.
 
 ### [ ] T1.6 Model 1's button and run cell
 
-Two cells, the button unchanged:
+Two cells. The button cell also holds the list of the studies it runs:
 ```python
+# One study per count family and exposure (D6).
+MODEL1_COMPONENTS = [
+    CountComponent(family, use_exposure)
+    for family in COUNT_FAMILIES
+    for use_exposure in (True, False)
+]
 run_model1 = mo.ui.run_button(label="Tune Model 1")
-mo.md(f"{run_model1} {len(COUNT_FAMILIES)} studies × `n_trials` trials, in parallel.")
+mo.md(f"{run_model1} {len(MODEL1_COMPONENTS)} studies × `n_trials` trials, in parallel.")
 ```
 ```python
 mo.stop(not run_model1.value, mo.md("Click the button to tune Model 1."))
-# One process per family; study i gets seed + i.
-model1_runs = Parallel(n_jobs=len(COUNT_FAMILIES))(
+# One process per study; study i gets seed + i.
+model1_runs = Parallel(n_jobs=len(MODEL1_COMPONENTS))(
     delayed(tune_model)(
         partial(
-            Model1Run.suggest,
-            family=family,
+            suggest_model1,
+            component=component,
             cohorts=COHORTS,
-            tree_variants=TREE_VARIANTS,
-            glm_variants=COUNT_GLM_VARIANTS,
-        ),
-        partial(
-            Model1Run.build,
-            feature_variants=FEATURE_VARIANTS,
+            family_transformers=COUNT_FAMILY_TRANSFORMERS,
+            feature_transformers=FEATURE_TRANSFORMERS,
             y_min=PREDICTION_FLOOR,
             seed=seed,
         ),
@@ -633,31 +704,30 @@ model1_runs = Parallel(n_jobs=len(COUNT_FAMILIES))(
         study_seed=seed + i,
         n_trials=n_trials,
     )
-    for i, family in enumerate(COUNT_FAMILIES)
+    for i, component in enumerate(MODEL1_COMPONENTS)
 )
-MODEL1_STUDIES = dict(zip(COUNT_FAMILIES, model1_runs, strict=True))
+MODEL1_STUDIES = dict(zip(MODEL1_COMPONENTS, model1_runs, strict=True))
 ```
-`MODEL1_STUDIES` maps a family to `(optuna.Study, seconds)`.
+`MODEL1_STUDIES` maps a `CountComponent` to `(optuna.Study, seconds)`. The machine has 8 cores
+(6 performance), so the 8 studies take one process each.
 
 **Done when:** Check A fully green (the `tune_model` rule holds again); Check C with
-`n_trials = 3` prints `MODEL1_STUDIES True` and, for each family, `len(study.trials) == 3`;
+`n_trials = 3` prints `MODEL1_STUDIES True` and, for each component, `len(study.trials) == 3`;
 record the wall time of Check C.
 
 ### [ ] T1.7 Refit, tables and the Model 1 views
 
 Three cells: the functions, the Model 1 score cell, the Model 1 display cell.
 ```python
-def refit_best(study, suggest, build, train_age_group, val_age_group, cohort_metric, metric):
-    """Rebuild the study's best run, refit it on the training part; the model, its record and its scores.
+def refit_best(study, suggest_model, train_age_group, val_age_group, cohort_metric, metric):
+    """Rebuild the study's best model, refit it on the training part; the model and its scores.
 
-    The run is rebuilt by re-running ``suggest`` on a FixedTrial of the best
+    The model is rebuilt by ``suggest_model`` on a FixedTrial of the best
     parameters: the same code path as the search, and a missing or foreign
-    value raises. The record is ``dataclasses.asdict`` of the run, JSON for a
-    later logging stop. The scores: the per-cohort metric on each cohort
-    column and the composite metric, on training and validation.
+    value raises. The scores: the per-cohort metric on each cohort column and
+    the composite metric, on training and validation.
     """
-    run = suggest(FixedTrial(study.best_trial.params))
-    model = build(run).fit(
+    model = suggest_model(FixedTrial(study.best_params)).fit(
         train_age_group.X, train_age_group.Y, exposure=train_age_group.exposure
     )
     pred_train = model.predict(train_age_group.X, exposure=train_age_group.exposure)
@@ -679,7 +749,7 @@ def refit_best(study, suggest, build, train_age_group, val_age_group, cohort_met
             "n_failed": sum(trial.state == TrialState.FAIL for trial in study.trials),
         }
     )
-    return model, dataclasses.asdict(run), rows
+    return model, rows
 
 
 def categorical_names(study):
@@ -713,21 +783,17 @@ def arm_counts(study):
 ```
 Model 1 score cell:
 ```python
-MODEL1_MODELS, MODEL1_BEST_RUNS = {}, {}
+MODEL1_MODELS, MODEL1_BEST_RUNS = {}, []
 _score_rows, _choice_rows, _arm_rows = [], [], []
-for _family, (_study, _seconds) in MODEL1_STUDIES.items():
-    _model, _record, _rows = refit_best(
+for _component, (_study, _seconds) in MODEL1_STUDIES.items():
+    _model, _rows = refit_best(
         _study,
         partial(
-            Model1Run.suggest,
-            family=_family,
+            suggest_model1,
+            component=_component,
             cohorts=COHORTS,
-            tree_variants=TREE_VARIANTS,
-            glm_variants=COUNT_GLM_VARIANTS,
-        ),
-        partial(
-            Model1Run.build,
-            feature_variants=FEATURE_VARIANTS,
+            family_transformers=COUNT_FAMILY_TRANSFORMERS,
+            feature_transformers=FEATURE_TRANSFORMERS,
             y_min=PREDICTION_FLOOR,
             seed=seed,
         ),
@@ -736,25 +802,29 @@ for _family, (_study, _seconds) in MODEL1_STUDIES.items():
         POISSON_DEVIANCE,
         COHORT_POISSON_DEVIANCE,
     )
-    MODEL1_MODELS[_family], MODEL1_BEST_RUNS[_family] = _model, _record
+    _settings = dataclasses.asdict(_component)
+    MODEL1_MODELS[_component] = _model
+    # The record, JSON for a later logging stop.
+    MODEL1_BEST_RUNS.append({"settings": _settings, "params": _study.best_params})
     _rows[-1]["seconds"] = _seconds
-    _score_rows.extend({"family": _family, **row} for row in _rows)
-    _choice_rows.extend({"family": _family, **row} for row in best_choices(_study))
-    _arm_rows.extend({"family": _family, **row} for row in arm_counts(_study))
+    _score_rows.extend({**_settings, **row} for row in _rows)
+    _choice_rows.extend({**_settings, **row} for row in best_choices(_study))
+    _arm_rows.extend({**_settings, **row} for row in arm_counts(_study))
 model1_df, model1_choices_df, model1_arms_df = (
     pd.DataFrame(_score_rows),
     pd.DataFrame(_choice_rows),
     pd.DataFrame(_arm_rows),
 )
 ```
-(If the implementer prefers a function `score_studies(studies, suggest_for, build, ...)` over
+(If the implementer prefers a function `score_studies(studies, suggest_model_for, ...)` over
 the loop, the same inputs go in the signature; the user's style accepts either. Say which.)
 Display cell: the current one (`mo.vstack` of three `mo.md` code blocks), titles "Model 1:
 cohort Poisson deviance (cv_best: the study's value; n_failed: trials whose fit raised)",
 "Best combination per component", "Trials per arm".
 
-**Done when:** Check A; Check C prints `model1_df` with 16 rows (4 families × 4), the choices
-frame with 12 rows (4 families × 3 cohorts), no `objective` column, the arms frame
+**Done when:** Check A; Check C prints `model1_df` with 32 rows (8 studies × 4), with the
+columns `family` and `use_exposure`; the choices frame with 24 rows (8 × 3 cohorts), whose only
+categorical is `feature_transformer`; the arms frame
 with the counts summing to the COMPLETE trials per parameter, and
 `json.dumps(defs["MODEL1_BEST_RUNS"])` works; the user clicks the button in `marimo edit` at
 `n_trials = 200` and reports the wall time (today's package version: ≈ 5 min).
@@ -770,28 +840,36 @@ summary and the suggested commit command for the user.
 ### [ ] T2.1 `MODEL2_TOTALS`, the button and the run cell
 ```python
 # Model 2's total families, a list to edit after Model 1's table above. The
-# pairs tuned are this list × the probability families.
+# studies are this list × the total's exposure × the probability families.
 MODEL2_TOTALS = ["lgbm_poisson", "lgbm_gaussian", "poisson_glm", "nb2"]
-MODEL2_PAIRS = [
-    (total, probability) for total in MODEL2_TOTALS for probability in PROBABILITY_FAMILIES
+MODEL2_COMPONENTS = [
+    (CountComponent(total, use_exposure), ProbabilityComponent(probability))
+    for total in MODEL2_TOTALS
+    for use_exposure in (True, False)
+    for probability in PROBABILITY_FAMILIES
 ]
 ```
 Button: `run_model2 = mo.ui.run_button(label="Tune Model 2")`, text
-`f"{run_model2} {len(MODEL2_PAIRS)} studies × `n_trials` trials, in parallel."`.
-Run cell: as T1.6 with `Parallel(n_jobs=len(MODEL2_PAIRS))`,
-`partial(Model2Run.suggest, total_family=total, probability_family=probability,
-tree_variants=TREE_VARIANTS, count_glm_variants=COUNT_GLM_VARIANTS,
-probability_glm_variants=PROBABILITY_GLM_VARIANTS)`, `partial(Model2Run.build, ...)`,
-`study_seed=seed + i`, keys `f"{total}__{probability}"` → `MODEL2_STUDIES`.
-**Done when:** Check A; Check C prints `MODEL2_STUDIES True` with 8 studies of 3 trials.
+`f"{run_model2} {len(MODEL2_COMPONENTS)} studies × `n_trials` trials, in parallel."`.
+Run cell: as T1.6 with `Parallel(n_jobs=min(len(MODEL2_COMPONENTS), 8))` (16 studies at four
+totals: two per process on 8 cores),
+`partial(suggest_model2, total=total, probability=probability,
+count_family_transformers=COUNT_FAMILY_TRANSFORMERS,
+probability_family_transformers=PROBABILITY_FAMILY_TRANSFORMERS, feature_transformers=FEATURE_TRANSFORMERS,
+y_min=PREDICTION_FLOOR, seed=seed)` and `study_seed=seed + i`. The keys are the
+`(total, probability)` pairs, giving `MODEL2_STUDIES`.
+**Done when:** Check A; Check C prints `MODEL2_STUDIES True` with 16 studies of 3 trials.
 
 ### [ ] T2.2 Model 2's score and display cells, the best-per-model cell
-The score cell mirrors T1.7 with the `Model2Run` partials → `MODEL2_MODELS`,
-`MODEL2_BEST_RUNS`, `model2_df`, `model2_choices_df`, `model2_arms_df` (choices: components
-`total` and `probability`). Display cell as Model 1's. The best-per-model cell is today's
-(lines 1197–1218) unchanged.
-**Done when:** Check A; Check C prints `model2_df` with 32 rows (8 × 4), the choices frame with
-16 rows, `best_df` with 2 rows; the user clicks both buttons at 200 and reports the times.
+The score cell mirrors T1.7 with the `suggest_model2` partials, giving `MODEL2_MODELS`,
+`MODEL2_BEST_RUNS` (`{"settings": {"total": asdict(total), "probability":
+asdict(probability)}, "params": …}`), `model2_df`, `model2_choices_df` and `model2_arms_df`.
+The settings columns are `total_family`, `use_exposure` and `probability_family`; the choices
+cover the components `total` and `probability`. The display cell is as Model 1's. The
+best-per-model cell is today's (lines 1197–1218 at `8ee091a`), adapted to the settings
+columns.
+**Done when:** Check A; Check C prints `model2_df` with 64 rows (16 × 4), the choices frame with
+32 rows, `best_df` with 2 rows; the user clicks both buttons at 200 and reports the times.
 
 ### [ ] T2.3 Independent review of T2, summary, commit suggestion.
 
@@ -847,19 +925,19 @@ the notebook test green.
   paragraph of history; the new design and its dataclasses described), §2 state, §3 the
   decisions D1–D7 of this plan, §6 the prompt for the performance pass.
 - `docs/EXPERIMENT_NOTEBOOK_PLAN.md`: E4, E5, E11 (`evaluator.build_model(best_params)` →
-  `run.build(...)`), E12, D2/D3 and the status line.
+  `suggest_model1(FixedTrial(best_params), …)`), E12, D2/D3 and the status line.
 - The dataclass-vs-TypedDict comparison (below) into the handoff's decisions.
 
 **Dataclass vs TypedDict, for the record:**
 
 | | frozen dataclass (chosen) | TypedDict |
 |---|---|---|
-| JSON out | `json.dumps(asdict(run))`, recursive through the dict of components (probed) | the dict itself |
+| JSON out | `json.dumps(asdict(component))`; an estimator's params likewise (probed) | the dict itself |
 | JSON in | a constructor per class, or re-running `suggest` on a `FixedTrial` (what the notebook does) | `json.loads`; nothing checks the keys |
-| Immutability | frozen; a scored run cannot be edited | a plain dict |
-| Equality | by value (`run == rebuilt` is the T1.4 check) | by value |
-| The union field `params` | a typed attribute; `isinstance` dispatch in `build` | a union of TypedDicts; `isinstance` does not work on them, dispatch needs the `family` key |
-| Behaviour | `suggest`/`build` on the class | functions only |
+| Immutability | frozen and hashable; a component keys its study | a plain dict, not hashable |
+| Equality | by value (a `FixedTrial` rebuild of the params is equal: the T1.3 check) | by value |
+| Dispatch on the params | `isinstance` in `count_estimator` / `probability_estimator` | `isinstance` does not work on TypedDicts; dispatch needs a `family` key |
+| Behaviour | `suggest` (params) and `suggest_*` (components) on the class; no `build` (D3) | functions only |
 
 ## 7. Later: the performance pass (facts, no decision)
 
@@ -877,7 +955,7 @@ the notebook test green.
   parallel). Keeps the seeded search reproducible: folds of one trial in parallel (trials stay
   sequential), or the three cohort fits of Model 1 inside the composite (a src change). Loses
   it: `study.optimize(n_jobs>1)` (threads; order not reproducible) and multi-process trials on
-  a shared storage. The machine has 8 cores (6 performance); Model 2 already runs up to 8 studies at
+  a shared storage. The machine has 8 cores (6 performance); Model 2 already runs up to 16 studies at
   once, so per-fold parallelism competes with it.
 
 ## 8. End-to-end verification (after T2, again after T4)

@@ -19,13 +19,18 @@ plan the same day:
 
 - **Plain Optuna and a hand-written cross-validation loop in the notebook.** Nothing of the
   package is imported; the package, its five test files and its four docs are deleted (T4).
-- **A trial's choices are frozen dataclasses** (one per estimator holding only its searched
-  hyperparameters, no `build`; a component dataclass with the feature-variant key, the
-  exposure flag or the calibration; and a composite `Model1Run` / `Model2Run`), each with
-  `suggest(trial, prefix, …)` calling `trial.suggest_*` inline; the component and run
-  dataclasses have `build(…)` calling the constructors. LightGBM's loss is a family
-  (`lgbm_poisson`, `lgbm_gaussian`), not a sampled choice (2026-10-18; plan D6).
-  `dataclasses.asdict(run)` is the JSON record.
+- **Frozen dataclasses, no `build` on any** (plan D2, D3): one per estimator holding only its
+  searched hyperparameters, with `suggest(trial, prefix, …)`; and a component holding a
+  study's fixed settings, `CountComponent(family, use_exposure)` /
+  `ProbabilityComponent(family)` (a `Literal` family), whose `suggest_*` methods sample the
+  family's params and the feature transformer. The family → transformer-names mapping
+  (`COUNT_FAMILY_TRANSFORMERS`, the one place a family is paired with its transformers) is an
+  argument of `suggest_feature_transformer`, so the classes read no notebook global. The objective builds the model explicitly, in `suggest_model1` /
+  `suggest_model2` (estimator, then `CountModel` / `CohortProbabilityModel`, then the
+  composite). The best run's refit calls the same function on `FixedTrial(best_params)`.
+  LightGBM's loss is a family (`lgbm_poisson`, `lgbm_gaussian`), and the exposure is a study
+  setting with both arms (2026-10-18; plan D6). The record is
+  `{"settings": asdict(component), "params": study.best_params}`.
 - **The metric is built in the notebook:** `Metric("cohort_poisson_deviance",
   cohort_poisson_deviance, direction="minimize")`, and `optuna.create_study(direction=metric.direction)`;
   the objective returns the metric's value unchanged. The five module-level constants leave
@@ -33,7 +38,7 @@ plan the same day:
 - **Pruning and parallelization beyond today's parallel studies are not decided.** Once the
   implementation satisfies the user, a performance pass considers them (plan §7).
 - Still in force from 2026-10-15: one joint study per family on the composite; a trial chooses
-  per component its exposure and variant (LightGBM's loss as a family, plan D6); `n_trials = 200`; the studies of one
+  per component its feature transformer (LightGBM's loss a family, the exposure a study setting; plan D6); `n_trials = 200`; the studies of one
   model in parallel with joblib, study i seeded `seed + i`; only the best run is refit and
   scored on training and validation; Model 2's totals come from the edited list
   `MODEL2_TOTALS`; `split_method = "random"`.
@@ -85,8 +90,8 @@ MLflow runs).
   sibling studies; returning `inf` would hide the traceback. The tables show `n_failed`.
 - An in-memory `optuna.Study` pickles back whole from a loky worker (`trials`,
   `best_trial.distributions`, `best_params`), so the worker returns `(study, seconds)`.
-- `CountModel` clones its `feature_transformer` at `fit`, so `build` passes the shared
-  `FEATURE_VARIANTS[key]` as is.
+- `CountModel` clones its `feature_transformer` at `fit`, so the builder passes the shared
+  `FEATURE_TRANSFORMERS[name]` as is (`FEATURE_VARIANTS` before 2026-10-18).
 - "Remove the metrics from scoring" is read as the five constants only. Confirm with the user
   at T3's plan summary.
 

@@ -567,7 +567,7 @@ def _(
         ),
     )
 
-    FEATURE_VARIANTS = {
+    FEATURE_TRANSFORMERS = {
         "tree": tree,
         "tree__ses_quadratic": tree__ses_quadratic,
         "glm_base": glm_base,
@@ -585,7 +585,7 @@ def _(
             probability__room_share_x_median_age_and_daycare
         ),
     }
-    return (FEATURE_VARIANTS,)
+    return (FEATURE_TRANSFORMERS,)
 
 
 @app.cell
@@ -598,27 +598,29 @@ def _(mo):
     mo.md(r"""
     ## 5) Hyperparameter tuning
 
-    One Optuna study per model family, on the composite: the model that is
-    scored is the model that is tuned, by the cohort Poisson deviance of its
-    cross-validation folds on the training part, the plain mean over folds. A
-    trial's choices are a frozen dataclass: per cohort (per component for
-    Model 2) the exposure on or off, the feature variant by name and the
-    estimator's hyperparameters, under the names `<component>__<parameter>`.
-    The dataclass builds its model with constructor calls, and
-    `dataclasses.asdict` is its JSON record. LightGBM's two losses, Poisson
-    and Gaussian, are separate families: a study that sampled the loss split
-    30 trials 10/20 and did worse than either loss alone. `n_trials = 200`, so
+    One Optuna study per model family and exposure (on or off, fixed for the
+    study), on the composite: the model that is scored is the model that is
+    tuned, by the cohort Poisson deviance of its cross-validation folds on the
+    training part, the plain mean over folds. A study's fixed settings are a
+    frozen dataclass, its component; a trial samples per cohort (per component
+    for Model 2) the feature transformer by name and the estimator's
+    hyperparameters, under the names `<component>__<parameter>`, and builds
+    the estimator, its `CountModel` and the composite with constructor calls.
+    LightGBM's two losses, Poisson and Gaussian, are separate families, and
+    the exposure a study setting: a study that sampled the loss split 30
+    trials 10/20 and did worse than either loss alone, and the exposure
+    changes the target (a count or a weighted rate). `n_trials = 200`, so
     that no categorical arm starves; the table of trials per arm shows it.
     The i-th study gets `seed + i`; the studies of one model run
     in parallel with joblib. A trial whose fit raises (an NB2 fit that does not
     converge) is marked failed and the study goes on; the tables count them.
-    Only each family's best run is rebuilt, refit on the training part and
+    Only each study's best run is rebuilt, refit on the training part and
     scored on training and validation. A Gaussian loss can predict a negative
     count, which `CountModel` floors at `y_min` (eps). Model 2 is tuned the
-    same way, one study per pair of a total family (the list `MODEL2_TOTALS`,
-    edited after Model 1's table) and a classifier family, under `total__…`
-    and `probability__…`; the probability model ignores the exposure, and its
-    calibration is searched. The last table shows each model's best family on
+    same way, one study per total family (the list `MODEL2_TOTALS`, edited
+    after Model 1's table), the total's exposure and a classifier family,
+    under `total__…` and `probability__…`; the probability model ignores the
+    exposure, and its calibration is searched. The last table shows each model's best family on
     validation. The run cells sit behind buttons: opening the notebook fits
     nothing.
     """)
@@ -631,6 +633,7 @@ def _():
     import time
     from collections import Counter
     from functools import partial
+    from typing import Literal, get_args
 
     import numpy as np
     import optuna
@@ -663,6 +666,7 @@ def _():
         IndependentCohortModels,
         LGBMClassifier,
         LGBMRegressor,
+        Literal,
         LogisticRegression,
         Metric,
         NegativeBinomialRegressor,
@@ -674,6 +678,7 @@ def _():
         cohort_poisson_deviance,
         dataclasses,
         delayed,
+        get_args,
         mean_poisson_deviance,
         np,
         optuna,
@@ -696,7 +701,7 @@ def _(Metric, cohort_poisson_deviance, mean_poisson_deviance):
 
 
 @app.cell
-def _(Y, np):
+def _(Literal, Y, get_args, np):
     COHORTS = list(Y.columns)
     # The smallest mean a CountModel predicts: a Gaussian loss can predict a
     # negative count, the Poisson deviance raises at 0 and stays finite at eps.
@@ -704,8 +709,8 @@ def _(Y, np):
     # The trees take n_apartments as a feature and the offset; the GLMs take it
     # as the exposure only (docs/FEATURE_TRANSFORMATIONS.md §3.3, §4.4), and the
     # logistic model needs the scaled plans (it does not converge on `tree`).
-    TREE_VARIANTS = ("tree", "tree__ses_quadratic")
-    COUNT_GLM_VARIANTS = (
+    TREE_TRANSFORMERS = ("tree", "tree__ses_quadratic")
+    COUNT_GLM_TRANSFORMERS = (
         "glm_base",
         "count__ses_quadratic",
         "count__daycare_log1p",
@@ -713,23 +718,44 @@ def _(Y, np):
         "count__room_share_x_ses",
         "count__room_share_x_household_size_and_ses",
     )
-    PROBABILITY_GLM_VARIANTS = (
+    PROBABILITY_GLM_TRANSFORMERS = (
         "glm_base",
         "probability__daycare_log1p",
         "probability__room_share_x_median_age",
         "probability__room_share_x_daycare",
         "probability__room_share_x_median_age_and_daycare",
     )
-    COUNT_FAMILIES = ("lgbm_poisson", "lgbm_gaussian", "poisson_glm", "nb2")
-    PROBABILITY_FAMILIES = ("logistic", "lgbm")
+    # Plain assignments, not the `type` statement: cloudpickle cannot pickle a
+    # class annotated with a `type` alias defined in a cell, and joblib's
+    # workers receive the components by cloudpickle.
+    CountFamily = Literal["lgbm_poisson", "lgbm_gaussian", "poisson_glm", "nb2"]
+    ProbabilityFamily = Literal["logistic", "lgbm"]
+    COUNT_FAMILIES = get_args(CountFamily)
+    PROBABILITY_FAMILIES = get_args(ProbabilityFamily)
+    # Each family's candidate feature transformers: the one place a family is
+    # paired with them; the components read their own entry.
+    COUNT_FAMILY_TRANSFORMERS = {
+        "lgbm_poisson": TREE_TRANSFORMERS,
+        "lgbm_gaussian": TREE_TRANSFORMERS,
+        "poisson_glm": COUNT_GLM_TRANSFORMERS,
+        "nb2": COUNT_GLM_TRANSFORMERS,
+    }
+    PROBABILITY_FAMILY_TRANSFORMERS = {
+        "logistic": PROBABILITY_GLM_TRANSFORMERS,
+        "lgbm": TREE_TRANSFORMERS,
+    }
     return (
         COHORTS,
         COUNT_FAMILIES,
-        COUNT_GLM_VARIANTS,
+        COUNT_FAMILY_TRANSFORMERS,
+        COUNT_GLM_TRANSFORMERS,
+        CountFamily,
         PREDICTION_FLOOR,
         PROBABILITY_FAMILIES,
-        PROBABILITY_GLM_VARIANTS,
-        TREE_VARIANTS,
+        PROBABILITY_FAMILY_TRANSFORMERS,
+        PROBABILITY_GLM_TRANSFORMERS,
+        ProbabilityFamily,
+        TREE_TRANSFORMERS,
     )
 
 
@@ -829,6 +855,95 @@ def _(dataclasses):
         NB2Params,
         PoissonGLMParams,
     )
+
+
+@app.cell
+def _(
+    CountFamily,
+    LGBMClassifierParams,
+    LGBMRegressorParams,
+    LogisticParams,
+    NB2Params,
+    PoissonGLMParams,
+    ProbabilityFamily,
+    dataclasses,
+    get_args,
+):
+    # The components read no notebook global: the family's candidate feature
+    # transformers come in as an argument, so the classes can move to a package.
+    @dataclasses.dataclass(frozen=True)
+    class CountComponent:
+        """A CountModel's settings fixed for one study; a trial samples the rest under a prefix."""
+
+        family: CountFamily
+        use_exposure: bool
+
+        def __post_init__(self):
+            # At construction, before the parallel studies start.
+            if self.family not in get_args(CountFamily):
+                raise ValueError(f"unknown count family {self.family!r}")
+
+        def suggest_feature_transformer(self, trial, prefix, family_transformers):
+            """The name of a feature transformer, from ``family_transformers[self.family]``.
+
+            ``family_transformers`` maps each family to the names of the feature
+            transformers that suit it, so a family is never given another's.
+            """
+            if self.family not in family_transformers:
+                raise ValueError(f"no feature transformers for family {self.family!r}")
+            return trial.suggest_categorical(
+                f"{prefix}feature_transformer", list(family_transformers[self.family])
+            )
+
+        def suggest_params(self, trial, prefix):
+            if self.family == "lgbm_poisson":
+                return LGBMRegressorParams.suggest(trial, prefix, objective="poisson")
+            elif self.family == "lgbm_gaussian":
+                return LGBMRegressorParams.suggest(
+                    trial, prefix, objective="regression"
+                )
+            elif self.family == "poisson_glm":
+                return PoissonGLMParams.suggest(trial, prefix)
+            elif self.family == "nb2":
+                return NB2Params.suggest(trial, prefix)
+            else:
+                raise ValueError(f"unknown count family {self.family!r}")
+
+    @dataclasses.dataclass(frozen=True)
+    class ProbabilityComponent:
+        """Model 2's CohortProbabilityModel settings fixed for one study; the exposure does not apply."""
+
+        family: ProbabilityFamily
+
+        def __post_init__(self):
+            if self.family not in get_args(ProbabilityFamily):
+                raise ValueError(f"unknown probability family {self.family!r}")
+
+        def suggest_feature_transformer(self, trial, prefix, family_transformers):
+            """As CountComponent's."""
+            if self.family not in family_transformers:
+                raise ValueError(f"no feature transformers for family {self.family!r}")
+            return trial.suggest_categorical(
+                f"{prefix}feature_transformer", list(family_transformers[self.family])
+            )
+
+        def suggest_params(self, trial, prefix):
+            if self.family == "lgbm":
+                return LGBMClassifierParams.suggest(trial, prefix)
+            elif self.family == "logistic":
+                return LogisticParams.suggest(trial, prefix)
+            else:
+                raise ValueError(f"unknown probability family {self.family!r}")
+
+        def suggest_calibration_method(self, trial, prefix):
+            # No isotonic: its lowest score block can hold no child of a cohort and
+            # then maps a building there to probability 0, an infinite log loss
+            # (measured 2026-10-15 with the LightGBM classifier).
+            return trial.suggest_categorical(
+                f"{prefix}calibration_method", [None, "temperature", "sigmoid"]
+            )
+
+    return CountComponent, ProbabilityComponent
 
 
 if __name__ == "__main__":
