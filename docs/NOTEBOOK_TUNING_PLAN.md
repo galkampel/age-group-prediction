@@ -1,6 +1,6 @@
 # Re-implement the hyperparameter tuning inside the notebook
 
-**Status (2026-10-20):** approved; T1.1 committed (`0416267`); T1.2 committed (`bee781a`) after the user's review (estimator dataclasses hold hyperparameters only; LightGBM's loss is a family); T1.3 committed (`7ae6314`) after three user reviews (components are a study's fixed settings, a `Literal` family and `use_exposure`; the family → transformer-names mapping is an argument of `suggest_feature_transformer`; no dataclass builds a model; the exposure a study setting, both arms; feature variants renamed feature transformers; D2, D3, D6, T1.4–T2.2 rewritten); T1.4 done 2026-10-19, then reworked at two rounds of the user's review on 2026-10-20 (D8: a named component per part of the composite under an abstract `Component`; the family checked from its `Literal`; each subclass holds its families' transformer names; `make_estimator(hyperparameters, *, seed)`; the T1.3 cells changed too; T1.4–T2.2 rewritten), uncommitted; notebook md5 `d348141ae38b17f53912ce7ecffd081a`; next T1.5. The implementing session updates this line and ticks the sub-tasks.
+**Status (2026-10-21):** approved; T1.1 committed (`0416267`); T1.2 committed (`bee781a`) after the user's review (estimator dataclasses hold hyperparameters only; LightGBM's loss is a family); T1.3 committed (`7ae6314`) after three user reviews (components are a study's fixed settings, a `Literal` family and `use_exposure`; the family → transformer-names mapping is an argument of `suggest_feature_transformer`; no dataclass builds a model; the exposure a study setting, both arms; feature variants renamed feature transformers; D2, D3, D6, T1.4–T2.2 rewritten); T1.4 done 2026-10-19, then reworked at two rounds of the user's review on 2026-10-20 (D8: a named component per part of the composite under an abstract `Component`; the family checked from its `Literal`; each subclass holds its families' transformer names; `make_estimator(hyperparameters, *, seed)`; the T1.3 cells changed too; T1.4–T2.2 rewritten), committed (`8cc231d`); T1.5 done 2026-10-21 (`cv_score`, `tune_model`; at the user's review the fold variables named and an aggregator added, D9: `src/age_group_prediction/aggregation.py` and its tests, default `Mean`), uncommitted; notebook md5 `2ad0cf10155751d9f7b861ce517c2b25`; next T1.6. The implementing session updates this line and ticks the sub-tasks.
 
 Written for the model that implements it, one sub-task per approval. Every sub-task has the
 code to write, a "done when" list and the commands that verify it. The user reads the diff in
@@ -82,7 +82,8 @@ plain `Literal` assignments, not the `type` statement: cloudpickle cannot pickle
   3%. The user kept both arms for every family. Model 1 runs 8 studies; Model 2 runs
   `MODEL2_TOTALS` × exposure × `PROBABILITY_FAMILIES` (16 at four totals).
 - D7. Settled by probe in this session (Optuna 4.9.0, joblib 1.5.3): the trial value is the
-  plain mean of the fold scores (KFold on 917 rows: folds of 184/183 rows); the sampler is
+  plain mean of the fold scores (KFold on 917 rows: folds of 184/183 rows; since D9, the
+  default of an aggregator); the sampler is
   `TPESampler(seed=study_seed)` (the `multivariate=True` option raises `ExperimentalWarning`
   under `-W error`); the best run is rebuilt with `suggest(optuna.trial.FixedTrial(best_params))`
   (exact for `None`/`bool`/`str`, raises `ValueError` on a missing name or a foreign value);
@@ -134,6 +135,31 @@ plain `Literal` assignments, not the `type` statement: cloudpickle cannot pickle
     - D3's "no dataclass builds a model" becomes: a component builds its estimator; the
       `CountModel` / `CohortProbabilityModel` and the composite are built in
       `suggest_model1` / `suggest_model2`.
+
+- D9. **Added 2026-10-21 (the user, at T1.5's review):** the fold scores are combined by an
+  aggregator, the user's `Aggregator` classes (`Mean`, `WeightedMean`, `UpperBound`).
+  - **Where the classes live:** they moved out of the package that D1 keeps out of the
+    notebook into `src/age_group_prediction/aggregation.py`, a copy unchanged but for the
+    `_config` import and one docstring word. Their tests went to
+    `tests/unit/test_aggregation.py`, and mypy's strict list gained the module. T4 deletes
+    the package's copies.
+  - **The default:** `cv_score(..., aggregator=None)` and `tune_model(..., aggregator=None)`,
+    where None means `Mean()`, resolved inside `cv_score`. This is scikit-learn's pattern
+    (`cv=None`, `scoring=None`). A `Mean()` default in the signature trips ruff's B008, and
+    a missing required argument needs no hand-written raise: Python raises `TypeError`.
+  - **Why the aggregator is an argument:** it decides the selection. Measured on two Model 1
+    models, the weighted mean differs from the plain mean by 0.0006, while the median flips
+    which family wins (by mean 2.262 vs 2.328, by median 2.313 vs 2.228).
+  - **Measured at seed 42 (2-trial `poisson_glm` study):**
+
+    | Aggregator | Best value |
+    |---|---|
+    | default | 2.48456 |
+    | `Mean()` | 2.48456 |
+    | `WeightedMean()` | 2.48390 |
+    | `UpperBound()` | 2.70768 |
+  - `cv_score` names the fold variables (`X_train`, `Y_train`, `exposure_train`, `X_val`, …,
+    `Y_val_pred`); the user's edit.
 
 **What does not change:** notebook sections 1–4 and the `cv`/`cv_groups` cell; the models in
 `src/age_group_prediction/modeling/` (the S1 `get_params`/`set_params` forwarding in
@@ -840,36 +866,64 @@ def suggest_model2(trial, total, probability, *, feature_transformers, y_min, se
   - a foreign value raises `ValueError`.
 - T1.5's sketch runs on the new builders.
 
-### [ ] T1.5 `cv_score` and `tune_model`
+### [x] T1.5 `cv_score` and `tune_model`
 
-One cell.
+One cell (the user's fold variables and the aggregator of D9, 2026-10-21):
 ```python
-def cv_score(model, X, Y, exposure, cv, cv_groups, metric):
-    """The mean fold score of ``model`` refit on each fold's training rows (``fit`` replaces all state)."""
-    scores = []
+def cv_score(model, X, Y, exposure, cv, cv_groups, metric, aggregator=None):
+    """The aggregated fold score of ``model`` refit on each fold's training rows (``fit`` replaces all state).
+
+    ``aggregator`` combines the fold scores; None means the plain mean.
+    """
+    # The aggregator decides the selection (D9); the plain mean by default,
+    # since the folds differ by one row at most.
+    aggregator = Mean() if aggregator is None else aggregator
+    scores, fold_sizes = [], []
     for train_index, val_index in cv.split(X, Y, cv_groups):
-        model.fit(
-            X.iloc[train_index], Y.iloc[train_index], exposure=exposure.iloc[train_index]
+        X_train, Y_train, exposure_train = (
+            X.iloc[train_index],
+            Y.iloc[train_index],
+            exposure.iloc[train_index],
         )
-        pred = model.predict(X.iloc[val_index], exposure=exposure.iloc[val_index])
-        scores.append(model.evaluate(Y.iloc[val_index], pred, metric))
-    # The folds differ by one row at most, so the plain mean.
-    return float(np.mean(scores))
+        X_val, Y_val, exposure_val = (
+            X.iloc[val_index],
+            Y.iloc[val_index],
+            exposure.iloc[val_index],
+        )
+        model.fit(X_train, Y_train, exposure=exposure_train)
+        Y_val_pred = model.predict(X_val, exposure=exposure_val)
+        scores.append(model.evaluate(Y_val, Y_val_pred, metric))
+        fold_sizes.append(len(val_index))
+    return aggregator.aggregate(scores, fold_sizes)
 
-
-def tune_model(suggest_model, X, Y, exposure, cv, cv_groups, metric, *, study_seed, n_trials):
+def tune_model(
+    suggest_model,
+    X,
+    Y,
+    exposure,
+    cv,
+    cv_groups,
+    metric,
+    *,
+    study_seed,
+    n_trials,
+    aggregator=None,
+):
     """One study of the model ``suggest_model(trial)`` builds, on the rows of ``X``; the study and its seconds.
 
     Runs in a joblib worker, a fresh process at Optuna's default INFO
     verbosity, so it is set here too. A trial whose fit raises RuntimeError
     (an NB2 fit that does not converge) is marked FAIL and the study goes on;
-    without ``catch`` one such trial would end the study.
+    without ``catch`` one such trial would end the study. ``aggregator`` goes
+    to ``cv_score``; None means the plain mean.
     """
     optuna.logging.set_verbosity(optuna.logging.WARNING)
 
     def objective(trial):
         # Optuna passes the trial alone; the data is bound here, not to a cell.
-        return cv_score(suggest_model(trial), X, Y, exposure, cv, cv_groups, metric)
+        return cv_score(
+            suggest_model(trial), X, Y, exposure, cv, cv_groups, metric, aggregator
+        )
 
     study = optuna.create_study(
         direction=metric.direction, sampler=TPESampler(seed=study_seed)
@@ -881,7 +935,7 @@ def tune_model(suggest_model, X, Y, exposure, cv, cv_groups, metric, *, study_se
 **Done when:** Check A (the test `test_a_tuning_cell_outside_a_run_button_is_caught` fails from
 T1.1 until T1.6, since no cell names `tune_model` behind a button yet; the other four tests of
 the file must pass; say so in the report); Check B; a probe calls `tune_model` directly with `n_trials=2` for
-`partial(suggest_model1, components=tuple(CountComponent(cohort, "poisson_glm", True) for cohort in COHORTS), …)` on the notebook's training data and prints `study.best_value` and the seconds.
+`partial(suggest_model1, components=tuple(CountComponent(cohort, "poisson_glm", True) for cohort in COHORTS), …)` on the notebook's training data and prints `study.best_value` and the seconds (2.48456 by default and with `Mean()`; met 2026-10-21, with the other aggregators of D9).
 
 ### [ ] T1.6 Model 1's button and run cell
 
@@ -1131,7 +1185,8 @@ the changed tests under `-W error`; the non-slow suite; the three doc blocks exe
   `tests/unit/test_hyperparameter_tuning_{aggregation,evaluator,integration,parameters,study}.py`,
   `docs/HYPERPARAMETER_TUNING.md`, `docs/HYPERPARAMETER_TUNING_PLAN.md`,
   `docs/HYPERPARAMETER_TUNING_REVIEW.md`, `docs/HYPERPARAMETER_TUNING_VALIDATION.md` (plain
-  `rm`; the user commits the deletions).
+  `rm`; the user commits the deletions). Keep `src/age_group_prediction/aggregation.py` and
+  `tests/unit/test_aggregation.py`, the aggregator's new home (D9).
 - Edit: `pyproject.toml` (the package's entries in `[tool.mypy] files` and overrides, then
   `uv run --frozen`), `src/age_group_prediction/_config.py` docstring, `README.md`,
   `docs/README.md`, `docs/MODULE_REFERENCE.md`, `docs/INDEPENDENT_COHORT_MODELS.md` §3/§4/§6

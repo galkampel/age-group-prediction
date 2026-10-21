@@ -647,6 +647,7 @@ def _():
     from sklearn.linear_model import LogisticRegression, PoissonRegressor
     from sklearn.metrics import mean_poisson_deviance
 
+    from age_group_prediction.aggregation import Mean
     from age_group_prediction.modeling import (
         CohortProbabilityModel,
         CountModel,
@@ -672,6 +673,7 @@ def _():
         Literal,
         LogisticRegression,
         MappingProxyType,
+        Mean,
         Metric,
         NegativeBinomialRegressor,
         Parallel,
@@ -1083,6 +1085,73 @@ def _(
         )
 
     return suggest_count_model, suggest_model1, suggest_model2
+
+
+@app.cell
+def _(Mean, TPESampler, optuna, time):
+    def cv_score(model, X, Y, exposure, cv, cv_groups, metric, aggregator=None):
+        """The aggregated fold score of ``model`` refit on each fold's training rows (``fit`` replaces all state).
+
+        ``aggregator`` combines the fold scores; None means the plain mean.
+        """
+        # The aggregator decides the selection (D9); the plain mean by default,
+        # since the folds differ by one row at most.
+        aggregator = Mean() if aggregator is None else aggregator
+        scores, fold_sizes = [], []
+        for train_index, val_index in cv.split(X, Y, cv_groups):
+            X_train, Y_train, exposure_train = (
+                X.iloc[train_index],
+                Y.iloc[train_index],
+                exposure.iloc[train_index],
+            )
+            X_val, Y_val, exposure_val = (
+                X.iloc[val_index],
+                Y.iloc[val_index],
+                exposure.iloc[val_index],
+            )
+            model.fit(X_train, Y_train, exposure=exposure_train)
+            Y_val_pred = model.predict(X_val, exposure=exposure_val)
+            scores.append(model.evaluate(Y_val, Y_val_pred, metric))
+            fold_sizes.append(len(val_index))
+        return aggregator.aggregate(scores, fold_sizes)
+
+    def tune_model(
+        suggest_model,
+        X,
+        Y,
+        exposure,
+        cv,
+        cv_groups,
+        metric,
+        *,
+        study_seed,
+        n_trials,
+        aggregator=None,
+    ):
+        """One study of the model ``suggest_model(trial)`` builds, on the rows of ``X``; the study and its seconds.
+
+        Runs in a joblib worker, a fresh process at Optuna's default INFO
+        verbosity, so it is set here too. A trial whose fit raises RuntimeError
+        (an NB2 fit that does not converge) is marked FAIL and the study goes on;
+        without ``catch`` one such trial would end the study. ``aggregator`` goes
+        to ``cv_score``; None means the plain mean.
+        """
+        optuna.logging.set_verbosity(optuna.logging.WARNING)
+
+        def objective(trial):
+            # Optuna passes the trial alone; the data is bound here, not to a cell.
+            return cv_score(
+                suggest_model(trial), X, Y, exposure, cv, cv_groups, metric, aggregator
+            )
+
+        study = optuna.create_study(
+            direction=metric.direction, sampler=TPESampler(seed=study_seed)
+        )
+        start = time.perf_counter()
+        study.optimize(objective, n_trials=n_trials, catch=(RuntimeError,))
+        return study, time.perf_counter() - start
+
+    return cv_score, tune_model
 
 
 if __name__ == "__main__":
