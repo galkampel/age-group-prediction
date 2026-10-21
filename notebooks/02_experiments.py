@@ -618,11 +618,11 @@ def _(mo):
     every trial and its best components, which alone are rebuilt, refit on
     the training part and scored on training and validation. A Gaussian loss
     can predict a negative count, which `CountModel` floors at `y_min` (eps).
-    Model 2 is tuned the same way, one run per total family (the list
-    `MODEL2_TOTALS`, edited after Model 1's table), the total's exposure and
-    a classifier family, under `total__…` and `probability__…`; the
-    probability model ignores the exposure, and its calibration is searched.
-    The last table shows each model's best family on validation. The run
+    Model 2 is tuned the same way, one run per total family, the total's
+    exposure and a classifier family, 16 runs, under `total__…` and
+    `probability__…`; the probability model ignores the exposure, and its
+    calibration is searched.
+    The last table shows each model's best run on validation. The run
     cells sit behind buttons: opening the notebook fits nothing.
     """)
     return
@@ -704,7 +704,7 @@ def _(Metric, cohort_poisson_deviance, mean_poisson_deviance):
 
 
 @app.cell
-def _(Literal, Y, get_args, np):
+def _(Literal, Y, np):
     COHORTS = list(Y.columns)
     # The smallest mean a CountModel predicts: a Gaussian loss can predict a
     # negative count, the Poisson deviance raises at 0 and stays finite at eps.
@@ -714,14 +714,7 @@ def _(Literal, Y, get_args, np):
     # workers receive the components by cloudpickle.
     CountFamily = Literal["lgbm_poisson", "lgbm_gaussian", "poisson_glm", "nb2"]
     ProbabilityFamily = Literal["logistic", "lgbm"]
-    PROBABILITY_FAMILIES = get_args(ProbabilityFamily)
-    return (
-        COHORTS,
-        CountFamily,
-        PREDICTION_FLOOR,
-        PROBABILITY_FAMILIES,
-        ProbabilityFamily,
-    )
+    return COHORTS, CountFamily, PREDICTION_FLOOR, ProbabilityFamily
 
 
 @app.cell
@@ -1009,6 +1002,14 @@ def _(
                 }
             )
         )
+        # No isotonic: its lowest score block can hold no child of a cohort and
+        # then maps a building there to probability 0, an infinite log loss
+        # (measured 2026-10-15 with the LightGBM classifier).
+        CALIBRATION_METHODS: ClassVar[tuple[str | None, ...]] = (
+            None,
+            "temperature",
+            "sigmoid",
+        )
 
         def suggest_hyperparameters(self, trial):
             if self.family == "lgbm":
@@ -1021,11 +1022,8 @@ def _(
                 raise ValueError(f"unknown probability family {self.family!r}")
 
         def suggest_calibration_method(self, trial):
-            # No isotonic: its lowest score block can hold no child of a cohort and
-            # then maps a building there to probability 0, an infinite log loss
-            # (measured 2026-10-15 with the LightGBM classifier).
             return trial.suggest_categorical(
-                f"{self.prefix}calibration_method", [None, "temperature", "sigmoid"]
+                f"{self.prefix}calibration_method", list(self.CALIBRATION_METHODS)
             )
 
     return CountSearchSpace, ProbabilitySearchSpace, SearchSpace
@@ -2066,6 +2064,1512 @@ def _(mo, model1_arms_df, model1_df):
             mo.md(f"```text\n{model1_arms_df.to_string(index=False)}\n```"),
         ]
     )
+
+
+@app.cell
+def _(mo):
+    run_model2 = mo.ui.run_button(label="Tune Model 2")
+    mo.md(
+        f"{run_model2} 16 runs, one cell each (a total family × exposure on or off "
+        "× a probability family); each trial fits its folds in parallel."
+    )
+    return (run_model2,)
+
+
+@app.cell
+def _(
+    COHORT_POISSON_DEVIANCE,
+    FEATURE_TRANSFORMERS,
+    FixedTrial,
+    POISSON_DEVIANCE,
+    PREDICTION_FLOOR,
+    build_model2,
+    cv,
+    cv_groups,
+    dataclasses,
+    fit_and_score,
+    mo,
+    n_splits,
+    n_trials,
+    partial,
+    run_model2,
+    seed,
+    suggest_model2,
+    suggest_model2_components,
+    train_age_group,
+    tune_model,
+    val_age_group,
+):
+    mo.stop(not run_model2.value, mo.md("Click the button to tune Model 2."))
+    # Model 2, run 1 of 16: the LightGBM total with the Poisson loss, exposure on;
+    # logistic probabilities.
+    _total_family, _probability_family, _use_exposure = "lgbm_poisson", "logistic", True
+    _study, _seconds = tune_model(
+        partial(
+            suggest_model2,
+            total_family=_total_family,
+            probability_family=_probability_family,
+            use_exposure=_use_exposure,
+            feature_transformer_dict=FEATURE_TRANSFORMERS,
+            y_min=PREDICTION_FLOOR,
+            seed=seed,
+        ),
+        train_age_group.X,
+        train_age_group.Y,
+        train_age_group.exposure,
+        cv,
+        cv_groups,
+        COHORT_POISSON_DEVIANCE,
+        study_seed=seed + 0,
+        n_trials=n_trials,
+        n_jobs=n_splits,
+    )
+    # The best components, rebuilt from the best trial's parameters, are the
+    # model scored and the record kept (D10-D12, D14).
+    _best = suggest_model2_components(
+        FixedTrial(_study.best_params),
+        total_family=_total_family,
+        probability_family=_probability_family,
+        use_exposure=_use_exposure,
+    )
+    _, _score_table = fit_and_score(
+        build_model2(
+            *_best,
+            feature_transformer_dict=FEATURE_TRANSFORMERS,
+            y_min=PREDICTION_FLOOR,
+            seed=seed,
+        ),
+        train_age_group,
+        val_age_group,
+        cohort_metric=POISSON_DEVIANCE,
+        metric=COHORT_POISSON_DEVIANCE,
+    )
+    # Every trial and the best (D14); the study object is not kept.
+    model2_lgbm_poisson_logistic_exposure = {
+        "total_family": _total_family,
+        "probability_family": _probability_family,
+        "use_exposure": _use_exposure,
+        "trials": _study.trials_dataframe(),
+        "components": [dataclasses.asdict(c) for c in _best],
+        "cv_best": _study.best_value,
+        "score_table": _score_table,
+        "seconds": _seconds,
+        "seed": seed,
+        "y_min": PREDICTION_FLOOR,
+    }
+    return (model2_lgbm_poisson_logistic_exposure,)
+
+
+@app.cell
+def _(
+    COHORT_POISSON_DEVIANCE,
+    FEATURE_TRANSFORMERS,
+    FixedTrial,
+    POISSON_DEVIANCE,
+    PREDICTION_FLOOR,
+    build_model2,
+    cv,
+    cv_groups,
+    dataclasses,
+    fit_and_score,
+    mo,
+    n_splits,
+    n_trials,
+    partial,
+    run_model2,
+    seed,
+    suggest_model2,
+    suggest_model2_components,
+    train_age_group,
+    tune_model,
+    val_age_group,
+):
+    mo.stop(not run_model2.value, mo.md("Click the button to tune Model 2."))
+    # Model 2, run 2 of 16: the LightGBM total with the Poisson loss, exposure on;
+    # LightGBM probabilities.
+    _total_family, _probability_family, _use_exposure = "lgbm_poisson", "lgbm", True
+    _study, _seconds = tune_model(
+        partial(
+            suggest_model2,
+            total_family=_total_family,
+            probability_family=_probability_family,
+            use_exposure=_use_exposure,
+            feature_transformer_dict=FEATURE_TRANSFORMERS,
+            y_min=PREDICTION_FLOOR,
+            seed=seed,
+        ),
+        train_age_group.X,
+        train_age_group.Y,
+        train_age_group.exposure,
+        cv,
+        cv_groups,
+        COHORT_POISSON_DEVIANCE,
+        study_seed=seed + 1,
+        n_trials=n_trials,
+        n_jobs=n_splits,
+    )
+    # The best components, rebuilt from the best trial's parameters, are the
+    # model scored and the record kept (D10-D12, D14).
+    _best = suggest_model2_components(
+        FixedTrial(_study.best_params),
+        total_family=_total_family,
+        probability_family=_probability_family,
+        use_exposure=_use_exposure,
+    )
+    _, _score_table = fit_and_score(
+        build_model2(
+            *_best,
+            feature_transformer_dict=FEATURE_TRANSFORMERS,
+            y_min=PREDICTION_FLOOR,
+            seed=seed,
+        ),
+        train_age_group,
+        val_age_group,
+        cohort_metric=POISSON_DEVIANCE,
+        metric=COHORT_POISSON_DEVIANCE,
+    )
+    # Every trial and the best (D14); the study object is not kept.
+    model2_lgbm_poisson_lgbm_exposure = {
+        "total_family": _total_family,
+        "probability_family": _probability_family,
+        "use_exposure": _use_exposure,
+        "trials": _study.trials_dataframe(),
+        "components": [dataclasses.asdict(c) for c in _best],
+        "cv_best": _study.best_value,
+        "score_table": _score_table,
+        "seconds": _seconds,
+        "seed": seed,
+        "y_min": PREDICTION_FLOOR,
+    }
+    return (model2_lgbm_poisson_lgbm_exposure,)
+
+
+@app.cell
+def _(
+    COHORT_POISSON_DEVIANCE,
+    FEATURE_TRANSFORMERS,
+    FixedTrial,
+    POISSON_DEVIANCE,
+    PREDICTION_FLOOR,
+    build_model2,
+    cv,
+    cv_groups,
+    dataclasses,
+    fit_and_score,
+    mo,
+    n_splits,
+    n_trials,
+    partial,
+    run_model2,
+    seed,
+    suggest_model2,
+    suggest_model2_components,
+    train_age_group,
+    tune_model,
+    val_age_group,
+):
+    mo.stop(not run_model2.value, mo.md("Click the button to tune Model 2."))
+    # Model 2, run 3 of 16: the LightGBM total with the Poisson loss, exposure off;
+    # logistic probabilities.
+    _total_family, _probability_family, _use_exposure = (
+        "lgbm_poisson",
+        "logistic",
+        False,
+    )
+    _study, _seconds = tune_model(
+        partial(
+            suggest_model2,
+            total_family=_total_family,
+            probability_family=_probability_family,
+            use_exposure=_use_exposure,
+            feature_transformer_dict=FEATURE_TRANSFORMERS,
+            y_min=PREDICTION_FLOOR,
+            seed=seed,
+        ),
+        train_age_group.X,
+        train_age_group.Y,
+        train_age_group.exposure,
+        cv,
+        cv_groups,
+        COHORT_POISSON_DEVIANCE,
+        study_seed=seed + 2,
+        n_trials=n_trials,
+        n_jobs=n_splits,
+    )
+    # The best components, rebuilt from the best trial's parameters, are the
+    # model scored and the record kept (D10-D12, D14).
+    _best = suggest_model2_components(
+        FixedTrial(_study.best_params),
+        total_family=_total_family,
+        probability_family=_probability_family,
+        use_exposure=_use_exposure,
+    )
+    _, _score_table = fit_and_score(
+        build_model2(
+            *_best,
+            feature_transformer_dict=FEATURE_TRANSFORMERS,
+            y_min=PREDICTION_FLOOR,
+            seed=seed,
+        ),
+        train_age_group,
+        val_age_group,
+        cohort_metric=POISSON_DEVIANCE,
+        metric=COHORT_POISSON_DEVIANCE,
+    )
+    # Every trial and the best (D14); the study object is not kept.
+    model2_lgbm_poisson_logistic_no_exposure = {
+        "total_family": _total_family,
+        "probability_family": _probability_family,
+        "use_exposure": _use_exposure,
+        "trials": _study.trials_dataframe(),
+        "components": [dataclasses.asdict(c) for c in _best],
+        "cv_best": _study.best_value,
+        "score_table": _score_table,
+        "seconds": _seconds,
+        "seed": seed,
+        "y_min": PREDICTION_FLOOR,
+    }
+    return (model2_lgbm_poisson_logistic_no_exposure,)
+
+
+@app.cell
+def _(
+    COHORT_POISSON_DEVIANCE,
+    FEATURE_TRANSFORMERS,
+    FixedTrial,
+    POISSON_DEVIANCE,
+    PREDICTION_FLOOR,
+    build_model2,
+    cv,
+    cv_groups,
+    dataclasses,
+    fit_and_score,
+    mo,
+    n_splits,
+    n_trials,
+    partial,
+    run_model2,
+    seed,
+    suggest_model2,
+    suggest_model2_components,
+    train_age_group,
+    tune_model,
+    val_age_group,
+):
+    mo.stop(not run_model2.value, mo.md("Click the button to tune Model 2."))
+    # Model 2, run 4 of 16: the LightGBM total with the Poisson loss, exposure off;
+    # LightGBM probabilities.
+    _total_family, _probability_family, _use_exposure = "lgbm_poisson", "lgbm", False
+    _study, _seconds = tune_model(
+        partial(
+            suggest_model2,
+            total_family=_total_family,
+            probability_family=_probability_family,
+            use_exposure=_use_exposure,
+            feature_transformer_dict=FEATURE_TRANSFORMERS,
+            y_min=PREDICTION_FLOOR,
+            seed=seed,
+        ),
+        train_age_group.X,
+        train_age_group.Y,
+        train_age_group.exposure,
+        cv,
+        cv_groups,
+        COHORT_POISSON_DEVIANCE,
+        study_seed=seed + 3,
+        n_trials=n_trials,
+        n_jobs=n_splits,
+    )
+    # The best components, rebuilt from the best trial's parameters, are the
+    # model scored and the record kept (D10-D12, D14).
+    _best = suggest_model2_components(
+        FixedTrial(_study.best_params),
+        total_family=_total_family,
+        probability_family=_probability_family,
+        use_exposure=_use_exposure,
+    )
+    _, _score_table = fit_and_score(
+        build_model2(
+            *_best,
+            feature_transformer_dict=FEATURE_TRANSFORMERS,
+            y_min=PREDICTION_FLOOR,
+            seed=seed,
+        ),
+        train_age_group,
+        val_age_group,
+        cohort_metric=POISSON_DEVIANCE,
+        metric=COHORT_POISSON_DEVIANCE,
+    )
+    # Every trial and the best (D14); the study object is not kept.
+    model2_lgbm_poisson_lgbm_no_exposure = {
+        "total_family": _total_family,
+        "probability_family": _probability_family,
+        "use_exposure": _use_exposure,
+        "trials": _study.trials_dataframe(),
+        "components": [dataclasses.asdict(c) for c in _best],
+        "cv_best": _study.best_value,
+        "score_table": _score_table,
+        "seconds": _seconds,
+        "seed": seed,
+        "y_min": PREDICTION_FLOOR,
+    }
+    return (model2_lgbm_poisson_lgbm_no_exposure,)
+
+
+@app.cell
+def _(
+    COHORT_POISSON_DEVIANCE,
+    FEATURE_TRANSFORMERS,
+    FixedTrial,
+    POISSON_DEVIANCE,
+    PREDICTION_FLOOR,
+    build_model2,
+    cv,
+    cv_groups,
+    dataclasses,
+    fit_and_score,
+    mo,
+    n_splits,
+    n_trials,
+    partial,
+    run_model2,
+    seed,
+    suggest_model2,
+    suggest_model2_components,
+    train_age_group,
+    tune_model,
+    val_age_group,
+):
+    mo.stop(not run_model2.value, mo.md("Click the button to tune Model 2."))
+    # Model 2, run 5 of 16: the LightGBM total with the Gaussian loss, exposure on;
+    # logistic probabilities.
+    _total_family, _probability_family, _use_exposure = (
+        "lgbm_gaussian",
+        "logistic",
+        True,
+    )
+    _study, _seconds = tune_model(
+        partial(
+            suggest_model2,
+            total_family=_total_family,
+            probability_family=_probability_family,
+            use_exposure=_use_exposure,
+            feature_transformer_dict=FEATURE_TRANSFORMERS,
+            y_min=PREDICTION_FLOOR,
+            seed=seed,
+        ),
+        train_age_group.X,
+        train_age_group.Y,
+        train_age_group.exposure,
+        cv,
+        cv_groups,
+        COHORT_POISSON_DEVIANCE,
+        study_seed=seed + 4,
+        n_trials=n_trials,
+        n_jobs=n_splits,
+    )
+    # The best components, rebuilt from the best trial's parameters, are the
+    # model scored and the record kept (D10-D12, D14).
+    _best = suggest_model2_components(
+        FixedTrial(_study.best_params),
+        total_family=_total_family,
+        probability_family=_probability_family,
+        use_exposure=_use_exposure,
+    )
+    _, _score_table = fit_and_score(
+        build_model2(
+            *_best,
+            feature_transformer_dict=FEATURE_TRANSFORMERS,
+            y_min=PREDICTION_FLOOR,
+            seed=seed,
+        ),
+        train_age_group,
+        val_age_group,
+        cohort_metric=POISSON_DEVIANCE,
+        metric=COHORT_POISSON_DEVIANCE,
+    )
+    # Every trial and the best (D14); the study object is not kept.
+    model2_lgbm_gaussian_logistic_exposure = {
+        "total_family": _total_family,
+        "probability_family": _probability_family,
+        "use_exposure": _use_exposure,
+        "trials": _study.trials_dataframe(),
+        "components": [dataclasses.asdict(c) for c in _best],
+        "cv_best": _study.best_value,
+        "score_table": _score_table,
+        "seconds": _seconds,
+        "seed": seed,
+        "y_min": PREDICTION_FLOOR,
+    }
+    return (model2_lgbm_gaussian_logistic_exposure,)
+
+
+@app.cell
+def _(
+    COHORT_POISSON_DEVIANCE,
+    FEATURE_TRANSFORMERS,
+    FixedTrial,
+    POISSON_DEVIANCE,
+    PREDICTION_FLOOR,
+    build_model2,
+    cv,
+    cv_groups,
+    dataclasses,
+    fit_and_score,
+    mo,
+    n_splits,
+    n_trials,
+    partial,
+    run_model2,
+    seed,
+    suggest_model2,
+    suggest_model2_components,
+    train_age_group,
+    tune_model,
+    val_age_group,
+):
+    mo.stop(not run_model2.value, mo.md("Click the button to tune Model 2."))
+    # Model 2, run 6 of 16: the LightGBM total with the Gaussian loss, exposure on;
+    # LightGBM probabilities.
+    _total_family, _probability_family, _use_exposure = "lgbm_gaussian", "lgbm", True
+    _study, _seconds = tune_model(
+        partial(
+            suggest_model2,
+            total_family=_total_family,
+            probability_family=_probability_family,
+            use_exposure=_use_exposure,
+            feature_transformer_dict=FEATURE_TRANSFORMERS,
+            y_min=PREDICTION_FLOOR,
+            seed=seed,
+        ),
+        train_age_group.X,
+        train_age_group.Y,
+        train_age_group.exposure,
+        cv,
+        cv_groups,
+        COHORT_POISSON_DEVIANCE,
+        study_seed=seed + 5,
+        n_trials=n_trials,
+        n_jobs=n_splits,
+    )
+    # The best components, rebuilt from the best trial's parameters, are the
+    # model scored and the record kept (D10-D12, D14).
+    _best = suggest_model2_components(
+        FixedTrial(_study.best_params),
+        total_family=_total_family,
+        probability_family=_probability_family,
+        use_exposure=_use_exposure,
+    )
+    _, _score_table = fit_and_score(
+        build_model2(
+            *_best,
+            feature_transformer_dict=FEATURE_TRANSFORMERS,
+            y_min=PREDICTION_FLOOR,
+            seed=seed,
+        ),
+        train_age_group,
+        val_age_group,
+        cohort_metric=POISSON_DEVIANCE,
+        metric=COHORT_POISSON_DEVIANCE,
+    )
+    # Every trial and the best (D14); the study object is not kept.
+    model2_lgbm_gaussian_lgbm_exposure = {
+        "total_family": _total_family,
+        "probability_family": _probability_family,
+        "use_exposure": _use_exposure,
+        "trials": _study.trials_dataframe(),
+        "components": [dataclasses.asdict(c) for c in _best],
+        "cv_best": _study.best_value,
+        "score_table": _score_table,
+        "seconds": _seconds,
+        "seed": seed,
+        "y_min": PREDICTION_FLOOR,
+    }
+    return (model2_lgbm_gaussian_lgbm_exposure,)
+
+
+@app.cell
+def _(
+    COHORT_POISSON_DEVIANCE,
+    FEATURE_TRANSFORMERS,
+    FixedTrial,
+    POISSON_DEVIANCE,
+    PREDICTION_FLOOR,
+    build_model2,
+    cv,
+    cv_groups,
+    dataclasses,
+    fit_and_score,
+    mo,
+    n_splits,
+    n_trials,
+    partial,
+    run_model2,
+    seed,
+    suggest_model2,
+    suggest_model2_components,
+    train_age_group,
+    tune_model,
+    val_age_group,
+):
+    mo.stop(not run_model2.value, mo.md("Click the button to tune Model 2."))
+    # Model 2, run 7 of 16: the LightGBM total with the Gaussian loss, exposure off;
+    # logistic probabilities.
+    _total_family, _probability_family, _use_exposure = (
+        "lgbm_gaussian",
+        "logistic",
+        False,
+    )
+    _study, _seconds = tune_model(
+        partial(
+            suggest_model2,
+            total_family=_total_family,
+            probability_family=_probability_family,
+            use_exposure=_use_exposure,
+            feature_transformer_dict=FEATURE_TRANSFORMERS,
+            y_min=PREDICTION_FLOOR,
+            seed=seed,
+        ),
+        train_age_group.X,
+        train_age_group.Y,
+        train_age_group.exposure,
+        cv,
+        cv_groups,
+        COHORT_POISSON_DEVIANCE,
+        study_seed=seed + 6,
+        n_trials=n_trials,
+        n_jobs=n_splits,
+    )
+    # The best components, rebuilt from the best trial's parameters, are the
+    # model scored and the record kept (D10-D12, D14).
+    _best = suggest_model2_components(
+        FixedTrial(_study.best_params),
+        total_family=_total_family,
+        probability_family=_probability_family,
+        use_exposure=_use_exposure,
+    )
+    _, _score_table = fit_and_score(
+        build_model2(
+            *_best,
+            feature_transformer_dict=FEATURE_TRANSFORMERS,
+            y_min=PREDICTION_FLOOR,
+            seed=seed,
+        ),
+        train_age_group,
+        val_age_group,
+        cohort_metric=POISSON_DEVIANCE,
+        metric=COHORT_POISSON_DEVIANCE,
+    )
+    # Every trial and the best (D14); the study object is not kept.
+    model2_lgbm_gaussian_logistic_no_exposure = {
+        "total_family": _total_family,
+        "probability_family": _probability_family,
+        "use_exposure": _use_exposure,
+        "trials": _study.trials_dataframe(),
+        "components": [dataclasses.asdict(c) for c in _best],
+        "cv_best": _study.best_value,
+        "score_table": _score_table,
+        "seconds": _seconds,
+        "seed": seed,
+        "y_min": PREDICTION_FLOOR,
+    }
+    return (model2_lgbm_gaussian_logistic_no_exposure,)
+
+
+@app.cell
+def _(
+    COHORT_POISSON_DEVIANCE,
+    FEATURE_TRANSFORMERS,
+    FixedTrial,
+    POISSON_DEVIANCE,
+    PREDICTION_FLOOR,
+    build_model2,
+    cv,
+    cv_groups,
+    dataclasses,
+    fit_and_score,
+    mo,
+    n_splits,
+    n_trials,
+    partial,
+    run_model2,
+    seed,
+    suggest_model2,
+    suggest_model2_components,
+    train_age_group,
+    tune_model,
+    val_age_group,
+):
+    mo.stop(not run_model2.value, mo.md("Click the button to tune Model 2."))
+    # Model 2, run 8 of 16: the LightGBM total with the Gaussian loss, exposure off;
+    # LightGBM probabilities.
+    _total_family, _probability_family, _use_exposure = "lgbm_gaussian", "lgbm", False
+    _study, _seconds = tune_model(
+        partial(
+            suggest_model2,
+            total_family=_total_family,
+            probability_family=_probability_family,
+            use_exposure=_use_exposure,
+            feature_transformer_dict=FEATURE_TRANSFORMERS,
+            y_min=PREDICTION_FLOOR,
+            seed=seed,
+        ),
+        train_age_group.X,
+        train_age_group.Y,
+        train_age_group.exposure,
+        cv,
+        cv_groups,
+        COHORT_POISSON_DEVIANCE,
+        study_seed=seed + 7,
+        n_trials=n_trials,
+        n_jobs=n_splits,
+    )
+    # The best components, rebuilt from the best trial's parameters, are the
+    # model scored and the record kept (D10-D12, D14).
+    _best = suggest_model2_components(
+        FixedTrial(_study.best_params),
+        total_family=_total_family,
+        probability_family=_probability_family,
+        use_exposure=_use_exposure,
+    )
+    _, _score_table = fit_and_score(
+        build_model2(
+            *_best,
+            feature_transformer_dict=FEATURE_TRANSFORMERS,
+            y_min=PREDICTION_FLOOR,
+            seed=seed,
+        ),
+        train_age_group,
+        val_age_group,
+        cohort_metric=POISSON_DEVIANCE,
+        metric=COHORT_POISSON_DEVIANCE,
+    )
+    # Every trial and the best (D14); the study object is not kept.
+    model2_lgbm_gaussian_lgbm_no_exposure = {
+        "total_family": _total_family,
+        "probability_family": _probability_family,
+        "use_exposure": _use_exposure,
+        "trials": _study.trials_dataframe(),
+        "components": [dataclasses.asdict(c) for c in _best],
+        "cv_best": _study.best_value,
+        "score_table": _score_table,
+        "seconds": _seconds,
+        "seed": seed,
+        "y_min": PREDICTION_FLOOR,
+    }
+    return (model2_lgbm_gaussian_lgbm_no_exposure,)
+
+
+@app.cell
+def _(
+    COHORT_POISSON_DEVIANCE,
+    FEATURE_TRANSFORMERS,
+    FixedTrial,
+    POISSON_DEVIANCE,
+    PREDICTION_FLOOR,
+    build_model2,
+    cv,
+    cv_groups,
+    dataclasses,
+    fit_and_score,
+    mo,
+    n_splits,
+    n_trials,
+    partial,
+    run_model2,
+    seed,
+    suggest_model2,
+    suggest_model2_components,
+    train_age_group,
+    tune_model,
+    val_age_group,
+):
+    mo.stop(not run_model2.value, mo.md("Click the button to tune Model 2."))
+    # Model 2, run 9 of 16: the Poisson GLM total, exposure on;
+    # logistic probabilities.
+    _total_family, _probability_family, _use_exposure = "poisson_glm", "logistic", True
+    _study, _seconds = tune_model(
+        partial(
+            suggest_model2,
+            total_family=_total_family,
+            probability_family=_probability_family,
+            use_exposure=_use_exposure,
+            feature_transformer_dict=FEATURE_TRANSFORMERS,
+            y_min=PREDICTION_FLOOR,
+            seed=seed,
+        ),
+        train_age_group.X,
+        train_age_group.Y,
+        train_age_group.exposure,
+        cv,
+        cv_groups,
+        COHORT_POISSON_DEVIANCE,
+        study_seed=seed + 8,
+        n_trials=n_trials,
+        n_jobs=n_splits,
+    )
+    # The best components, rebuilt from the best trial's parameters, are the
+    # model scored and the record kept (D10-D12, D14).
+    _best = suggest_model2_components(
+        FixedTrial(_study.best_params),
+        total_family=_total_family,
+        probability_family=_probability_family,
+        use_exposure=_use_exposure,
+    )
+    _, _score_table = fit_and_score(
+        build_model2(
+            *_best,
+            feature_transformer_dict=FEATURE_TRANSFORMERS,
+            y_min=PREDICTION_FLOOR,
+            seed=seed,
+        ),
+        train_age_group,
+        val_age_group,
+        cohort_metric=POISSON_DEVIANCE,
+        metric=COHORT_POISSON_DEVIANCE,
+    )
+    # Every trial and the best (D14); the study object is not kept.
+    model2_poisson_glm_logistic_exposure = {
+        "total_family": _total_family,
+        "probability_family": _probability_family,
+        "use_exposure": _use_exposure,
+        "trials": _study.trials_dataframe(),
+        "components": [dataclasses.asdict(c) for c in _best],
+        "cv_best": _study.best_value,
+        "score_table": _score_table,
+        "seconds": _seconds,
+        "seed": seed,
+        "y_min": PREDICTION_FLOOR,
+    }
+    return (model2_poisson_glm_logistic_exposure,)
+
+
+@app.cell
+def _(
+    COHORT_POISSON_DEVIANCE,
+    FEATURE_TRANSFORMERS,
+    FixedTrial,
+    POISSON_DEVIANCE,
+    PREDICTION_FLOOR,
+    build_model2,
+    cv,
+    cv_groups,
+    dataclasses,
+    fit_and_score,
+    mo,
+    n_splits,
+    n_trials,
+    partial,
+    run_model2,
+    seed,
+    suggest_model2,
+    suggest_model2_components,
+    train_age_group,
+    tune_model,
+    val_age_group,
+):
+    mo.stop(not run_model2.value, mo.md("Click the button to tune Model 2."))
+    # Model 2, run 10 of 16: the Poisson GLM total, exposure on;
+    # LightGBM probabilities.
+    _total_family, _probability_family, _use_exposure = "poisson_glm", "lgbm", True
+    _study, _seconds = tune_model(
+        partial(
+            suggest_model2,
+            total_family=_total_family,
+            probability_family=_probability_family,
+            use_exposure=_use_exposure,
+            feature_transformer_dict=FEATURE_TRANSFORMERS,
+            y_min=PREDICTION_FLOOR,
+            seed=seed,
+        ),
+        train_age_group.X,
+        train_age_group.Y,
+        train_age_group.exposure,
+        cv,
+        cv_groups,
+        COHORT_POISSON_DEVIANCE,
+        study_seed=seed + 9,
+        n_trials=n_trials,
+        n_jobs=n_splits,
+    )
+    # The best components, rebuilt from the best trial's parameters, are the
+    # model scored and the record kept (D10-D12, D14).
+    _best = suggest_model2_components(
+        FixedTrial(_study.best_params),
+        total_family=_total_family,
+        probability_family=_probability_family,
+        use_exposure=_use_exposure,
+    )
+    _, _score_table = fit_and_score(
+        build_model2(
+            *_best,
+            feature_transformer_dict=FEATURE_TRANSFORMERS,
+            y_min=PREDICTION_FLOOR,
+            seed=seed,
+        ),
+        train_age_group,
+        val_age_group,
+        cohort_metric=POISSON_DEVIANCE,
+        metric=COHORT_POISSON_DEVIANCE,
+    )
+    # Every trial and the best (D14); the study object is not kept.
+    model2_poisson_glm_lgbm_exposure = {
+        "total_family": _total_family,
+        "probability_family": _probability_family,
+        "use_exposure": _use_exposure,
+        "trials": _study.trials_dataframe(),
+        "components": [dataclasses.asdict(c) for c in _best],
+        "cv_best": _study.best_value,
+        "score_table": _score_table,
+        "seconds": _seconds,
+        "seed": seed,
+        "y_min": PREDICTION_FLOOR,
+    }
+    return (model2_poisson_glm_lgbm_exposure,)
+
+
+@app.cell
+def _(
+    COHORT_POISSON_DEVIANCE,
+    FEATURE_TRANSFORMERS,
+    FixedTrial,
+    POISSON_DEVIANCE,
+    PREDICTION_FLOOR,
+    build_model2,
+    cv,
+    cv_groups,
+    dataclasses,
+    fit_and_score,
+    mo,
+    n_splits,
+    n_trials,
+    partial,
+    run_model2,
+    seed,
+    suggest_model2,
+    suggest_model2_components,
+    train_age_group,
+    tune_model,
+    val_age_group,
+):
+    mo.stop(not run_model2.value, mo.md("Click the button to tune Model 2."))
+    # Model 2, run 11 of 16: the Poisson GLM total, exposure off;
+    # logistic probabilities.
+    _total_family, _probability_family, _use_exposure = "poisson_glm", "logistic", False
+    _study, _seconds = tune_model(
+        partial(
+            suggest_model2,
+            total_family=_total_family,
+            probability_family=_probability_family,
+            use_exposure=_use_exposure,
+            feature_transformer_dict=FEATURE_TRANSFORMERS,
+            y_min=PREDICTION_FLOOR,
+            seed=seed,
+        ),
+        train_age_group.X,
+        train_age_group.Y,
+        train_age_group.exposure,
+        cv,
+        cv_groups,
+        COHORT_POISSON_DEVIANCE,
+        study_seed=seed + 10,
+        n_trials=n_trials,
+        n_jobs=n_splits,
+    )
+    # The best components, rebuilt from the best trial's parameters, are the
+    # model scored and the record kept (D10-D12, D14).
+    _best = suggest_model2_components(
+        FixedTrial(_study.best_params),
+        total_family=_total_family,
+        probability_family=_probability_family,
+        use_exposure=_use_exposure,
+    )
+    _, _score_table = fit_and_score(
+        build_model2(
+            *_best,
+            feature_transformer_dict=FEATURE_TRANSFORMERS,
+            y_min=PREDICTION_FLOOR,
+            seed=seed,
+        ),
+        train_age_group,
+        val_age_group,
+        cohort_metric=POISSON_DEVIANCE,
+        metric=COHORT_POISSON_DEVIANCE,
+    )
+    # Every trial and the best (D14); the study object is not kept.
+    model2_poisson_glm_logistic_no_exposure = {
+        "total_family": _total_family,
+        "probability_family": _probability_family,
+        "use_exposure": _use_exposure,
+        "trials": _study.trials_dataframe(),
+        "components": [dataclasses.asdict(c) for c in _best],
+        "cv_best": _study.best_value,
+        "score_table": _score_table,
+        "seconds": _seconds,
+        "seed": seed,
+        "y_min": PREDICTION_FLOOR,
+    }
+    return (model2_poisson_glm_logistic_no_exposure,)
+
+
+@app.cell
+def _(
+    COHORT_POISSON_DEVIANCE,
+    FEATURE_TRANSFORMERS,
+    FixedTrial,
+    POISSON_DEVIANCE,
+    PREDICTION_FLOOR,
+    build_model2,
+    cv,
+    cv_groups,
+    dataclasses,
+    fit_and_score,
+    mo,
+    n_splits,
+    n_trials,
+    partial,
+    run_model2,
+    seed,
+    suggest_model2,
+    suggest_model2_components,
+    train_age_group,
+    tune_model,
+    val_age_group,
+):
+    mo.stop(not run_model2.value, mo.md("Click the button to tune Model 2."))
+    # Model 2, run 12 of 16: the Poisson GLM total, exposure off;
+    # LightGBM probabilities.
+    _total_family, _probability_family, _use_exposure = "poisson_glm", "lgbm", False
+    _study, _seconds = tune_model(
+        partial(
+            suggest_model2,
+            total_family=_total_family,
+            probability_family=_probability_family,
+            use_exposure=_use_exposure,
+            feature_transformer_dict=FEATURE_TRANSFORMERS,
+            y_min=PREDICTION_FLOOR,
+            seed=seed,
+        ),
+        train_age_group.X,
+        train_age_group.Y,
+        train_age_group.exposure,
+        cv,
+        cv_groups,
+        COHORT_POISSON_DEVIANCE,
+        study_seed=seed + 11,
+        n_trials=n_trials,
+        n_jobs=n_splits,
+    )
+    # The best components, rebuilt from the best trial's parameters, are the
+    # model scored and the record kept (D10-D12, D14).
+    _best = suggest_model2_components(
+        FixedTrial(_study.best_params),
+        total_family=_total_family,
+        probability_family=_probability_family,
+        use_exposure=_use_exposure,
+    )
+    _, _score_table = fit_and_score(
+        build_model2(
+            *_best,
+            feature_transformer_dict=FEATURE_TRANSFORMERS,
+            y_min=PREDICTION_FLOOR,
+            seed=seed,
+        ),
+        train_age_group,
+        val_age_group,
+        cohort_metric=POISSON_DEVIANCE,
+        metric=COHORT_POISSON_DEVIANCE,
+    )
+    # Every trial and the best (D14); the study object is not kept.
+    model2_poisson_glm_lgbm_no_exposure = {
+        "total_family": _total_family,
+        "probability_family": _probability_family,
+        "use_exposure": _use_exposure,
+        "trials": _study.trials_dataframe(),
+        "components": [dataclasses.asdict(c) for c in _best],
+        "cv_best": _study.best_value,
+        "score_table": _score_table,
+        "seconds": _seconds,
+        "seed": seed,
+        "y_min": PREDICTION_FLOOR,
+    }
+    return (model2_poisson_glm_lgbm_no_exposure,)
+
+
+@app.cell
+def _(
+    COHORT_POISSON_DEVIANCE,
+    FEATURE_TRANSFORMERS,
+    FixedTrial,
+    POISSON_DEVIANCE,
+    PREDICTION_FLOOR,
+    build_model2,
+    cv,
+    cv_groups,
+    dataclasses,
+    fit_and_score,
+    mo,
+    n_splits,
+    n_trials,
+    partial,
+    run_model2,
+    seed,
+    suggest_model2,
+    suggest_model2_components,
+    train_age_group,
+    tune_model,
+    val_age_group,
+):
+    mo.stop(not run_model2.value, mo.md("Click the button to tune Model 2."))
+    # Model 2, run 13 of 16: the negative binomial GLM (NB2) total, exposure on;
+    # logistic probabilities.
+    _total_family, _probability_family, _use_exposure = "nb2", "logistic", True
+    _study, _seconds = tune_model(
+        partial(
+            suggest_model2,
+            total_family=_total_family,
+            probability_family=_probability_family,
+            use_exposure=_use_exposure,
+            feature_transformer_dict=FEATURE_TRANSFORMERS,
+            y_min=PREDICTION_FLOOR,
+            seed=seed,
+        ),
+        train_age_group.X,
+        train_age_group.Y,
+        train_age_group.exposure,
+        cv,
+        cv_groups,
+        COHORT_POISSON_DEVIANCE,
+        study_seed=seed + 12,
+        n_trials=n_trials,
+        n_jobs=n_splits,
+    )
+    # The best components, rebuilt from the best trial's parameters, are the
+    # model scored and the record kept (D10-D12, D14).
+    _best = suggest_model2_components(
+        FixedTrial(_study.best_params),
+        total_family=_total_family,
+        probability_family=_probability_family,
+        use_exposure=_use_exposure,
+    )
+    _, _score_table = fit_and_score(
+        build_model2(
+            *_best,
+            feature_transformer_dict=FEATURE_TRANSFORMERS,
+            y_min=PREDICTION_FLOOR,
+            seed=seed,
+        ),
+        train_age_group,
+        val_age_group,
+        cohort_metric=POISSON_DEVIANCE,
+        metric=COHORT_POISSON_DEVIANCE,
+    )
+    # Every trial and the best (D14); the study object is not kept.
+    model2_nb2_logistic_exposure = {
+        "total_family": _total_family,
+        "probability_family": _probability_family,
+        "use_exposure": _use_exposure,
+        "trials": _study.trials_dataframe(),
+        "components": [dataclasses.asdict(c) for c in _best],
+        "cv_best": _study.best_value,
+        "score_table": _score_table,
+        "seconds": _seconds,
+        "seed": seed,
+        "y_min": PREDICTION_FLOOR,
+    }
+    return (model2_nb2_logistic_exposure,)
+
+
+@app.cell
+def _(
+    COHORT_POISSON_DEVIANCE,
+    FEATURE_TRANSFORMERS,
+    FixedTrial,
+    POISSON_DEVIANCE,
+    PREDICTION_FLOOR,
+    build_model2,
+    cv,
+    cv_groups,
+    dataclasses,
+    fit_and_score,
+    mo,
+    n_splits,
+    n_trials,
+    partial,
+    run_model2,
+    seed,
+    suggest_model2,
+    suggest_model2_components,
+    train_age_group,
+    tune_model,
+    val_age_group,
+):
+    mo.stop(not run_model2.value, mo.md("Click the button to tune Model 2."))
+    # Model 2, run 14 of 16: the negative binomial GLM (NB2) total, exposure on;
+    # LightGBM probabilities.
+    _total_family, _probability_family, _use_exposure = "nb2", "lgbm", True
+    _study, _seconds = tune_model(
+        partial(
+            suggest_model2,
+            total_family=_total_family,
+            probability_family=_probability_family,
+            use_exposure=_use_exposure,
+            feature_transformer_dict=FEATURE_TRANSFORMERS,
+            y_min=PREDICTION_FLOOR,
+            seed=seed,
+        ),
+        train_age_group.X,
+        train_age_group.Y,
+        train_age_group.exposure,
+        cv,
+        cv_groups,
+        COHORT_POISSON_DEVIANCE,
+        study_seed=seed + 13,
+        n_trials=n_trials,
+        n_jobs=n_splits,
+    )
+    # The best components, rebuilt from the best trial's parameters, are the
+    # model scored and the record kept (D10-D12, D14).
+    _best = suggest_model2_components(
+        FixedTrial(_study.best_params),
+        total_family=_total_family,
+        probability_family=_probability_family,
+        use_exposure=_use_exposure,
+    )
+    _, _score_table = fit_and_score(
+        build_model2(
+            *_best,
+            feature_transformer_dict=FEATURE_TRANSFORMERS,
+            y_min=PREDICTION_FLOOR,
+            seed=seed,
+        ),
+        train_age_group,
+        val_age_group,
+        cohort_metric=POISSON_DEVIANCE,
+        metric=COHORT_POISSON_DEVIANCE,
+    )
+    # Every trial and the best (D14); the study object is not kept.
+    model2_nb2_lgbm_exposure = {
+        "total_family": _total_family,
+        "probability_family": _probability_family,
+        "use_exposure": _use_exposure,
+        "trials": _study.trials_dataframe(),
+        "components": [dataclasses.asdict(c) for c in _best],
+        "cv_best": _study.best_value,
+        "score_table": _score_table,
+        "seconds": _seconds,
+        "seed": seed,
+        "y_min": PREDICTION_FLOOR,
+    }
+    return (model2_nb2_lgbm_exposure,)
+
+
+@app.cell
+def _(
+    COHORT_POISSON_DEVIANCE,
+    FEATURE_TRANSFORMERS,
+    FixedTrial,
+    POISSON_DEVIANCE,
+    PREDICTION_FLOOR,
+    build_model2,
+    cv,
+    cv_groups,
+    dataclasses,
+    fit_and_score,
+    mo,
+    n_splits,
+    n_trials,
+    partial,
+    run_model2,
+    seed,
+    suggest_model2,
+    suggest_model2_components,
+    train_age_group,
+    tune_model,
+    val_age_group,
+):
+    mo.stop(not run_model2.value, mo.md("Click the button to tune Model 2."))
+    # Model 2, run 15 of 16: the negative binomial GLM (NB2) total, exposure off;
+    # logistic probabilities.
+    _total_family, _probability_family, _use_exposure = "nb2", "logistic", False
+    _study, _seconds = tune_model(
+        partial(
+            suggest_model2,
+            total_family=_total_family,
+            probability_family=_probability_family,
+            use_exposure=_use_exposure,
+            feature_transformer_dict=FEATURE_TRANSFORMERS,
+            y_min=PREDICTION_FLOOR,
+            seed=seed,
+        ),
+        train_age_group.X,
+        train_age_group.Y,
+        train_age_group.exposure,
+        cv,
+        cv_groups,
+        COHORT_POISSON_DEVIANCE,
+        study_seed=seed + 14,
+        n_trials=n_trials,
+        n_jobs=n_splits,
+    )
+    # The best components, rebuilt from the best trial's parameters, are the
+    # model scored and the record kept (D10-D12, D14).
+    _best = suggest_model2_components(
+        FixedTrial(_study.best_params),
+        total_family=_total_family,
+        probability_family=_probability_family,
+        use_exposure=_use_exposure,
+    )
+    _, _score_table = fit_and_score(
+        build_model2(
+            *_best,
+            feature_transformer_dict=FEATURE_TRANSFORMERS,
+            y_min=PREDICTION_FLOOR,
+            seed=seed,
+        ),
+        train_age_group,
+        val_age_group,
+        cohort_metric=POISSON_DEVIANCE,
+        metric=COHORT_POISSON_DEVIANCE,
+    )
+    # Every trial and the best (D14); the study object is not kept.
+    model2_nb2_logistic_no_exposure = {
+        "total_family": _total_family,
+        "probability_family": _probability_family,
+        "use_exposure": _use_exposure,
+        "trials": _study.trials_dataframe(),
+        "components": [dataclasses.asdict(c) for c in _best],
+        "cv_best": _study.best_value,
+        "score_table": _score_table,
+        "seconds": _seconds,
+        "seed": seed,
+        "y_min": PREDICTION_FLOOR,
+    }
+    return (model2_nb2_logistic_no_exposure,)
+
+
+@app.cell
+def _(
+    COHORT_POISSON_DEVIANCE,
+    FEATURE_TRANSFORMERS,
+    FixedTrial,
+    POISSON_DEVIANCE,
+    PREDICTION_FLOOR,
+    build_model2,
+    cv,
+    cv_groups,
+    dataclasses,
+    fit_and_score,
+    mo,
+    n_splits,
+    n_trials,
+    partial,
+    run_model2,
+    seed,
+    suggest_model2,
+    suggest_model2_components,
+    train_age_group,
+    tune_model,
+    val_age_group,
+):
+    mo.stop(not run_model2.value, mo.md("Click the button to tune Model 2."))
+    # Model 2, run 16 of 16: the negative binomial GLM (NB2) total, exposure off;
+    # LightGBM probabilities.
+    _total_family, _probability_family, _use_exposure = "nb2", "lgbm", False
+    _study, _seconds = tune_model(
+        partial(
+            suggest_model2,
+            total_family=_total_family,
+            probability_family=_probability_family,
+            use_exposure=_use_exposure,
+            feature_transformer_dict=FEATURE_TRANSFORMERS,
+            y_min=PREDICTION_FLOOR,
+            seed=seed,
+        ),
+        train_age_group.X,
+        train_age_group.Y,
+        train_age_group.exposure,
+        cv,
+        cv_groups,
+        COHORT_POISSON_DEVIANCE,
+        study_seed=seed + 15,
+        n_trials=n_trials,
+        n_jobs=n_splits,
+    )
+    # The best components, rebuilt from the best trial's parameters, are the
+    # model scored and the record kept (D10-D12, D14).
+    _best = suggest_model2_components(
+        FixedTrial(_study.best_params),
+        total_family=_total_family,
+        probability_family=_probability_family,
+        use_exposure=_use_exposure,
+    )
+    _, _score_table = fit_and_score(
+        build_model2(
+            *_best,
+            feature_transformer_dict=FEATURE_TRANSFORMERS,
+            y_min=PREDICTION_FLOOR,
+            seed=seed,
+        ),
+        train_age_group,
+        val_age_group,
+        cohort_metric=POISSON_DEVIANCE,
+        metric=COHORT_POISSON_DEVIANCE,
+    )
+    # Every trial and the best (D14); the study object is not kept.
+    model2_nb2_lgbm_no_exposure = {
+        "total_family": _total_family,
+        "probability_family": _probability_family,
+        "use_exposure": _use_exposure,
+        "trials": _study.trials_dataframe(),
+        "components": [dataclasses.asdict(c) for c in _best],
+        "cv_best": _study.best_value,
+        "score_table": _score_table,
+        "seconds": _seconds,
+        "seed": seed,
+        "y_min": PREDICTION_FLOOR,
+    }
+    return (model2_nb2_lgbm_no_exposure,)
+
+
+@app.cell
+def _(
+    CountSearchSpace,
+    ProbabilitySearchSpace,
+    model2_lgbm_gaussian_lgbm_exposure,
+    model2_lgbm_gaussian_lgbm_no_exposure,
+    model2_lgbm_gaussian_logistic_exposure,
+    model2_lgbm_gaussian_logistic_no_exposure,
+    model2_lgbm_poisson_lgbm_exposure,
+    model2_lgbm_poisson_lgbm_no_exposure,
+    model2_lgbm_poisson_logistic_exposure,
+    model2_lgbm_poisson_logistic_no_exposure,
+    model2_nb2_lgbm_exposure,
+    model2_nb2_lgbm_no_exposure,
+    model2_nb2_logistic_exposure,
+    model2_nb2_logistic_no_exposure,
+    model2_poisson_glm_lgbm_exposure,
+    model2_poisson_glm_lgbm_no_exposure,
+    model2_poisson_glm_logistic_exposure,
+    model2_poisson_glm_logistic_no_exposure,
+    pd,
+):
+    MODEL2_RUNS = [
+        model2_lgbm_poisson_logistic_exposure,
+        model2_lgbm_poisson_lgbm_exposure,
+        model2_lgbm_poisson_logistic_no_exposure,
+        model2_lgbm_poisson_lgbm_no_exposure,
+        model2_lgbm_gaussian_logistic_exposure,
+        model2_lgbm_gaussian_lgbm_exposure,
+        model2_lgbm_gaussian_logistic_no_exposure,
+        model2_lgbm_gaussian_lgbm_no_exposure,
+        model2_poisson_glm_logistic_exposure,
+        model2_poisson_glm_lgbm_exposure,
+        model2_poisson_glm_logistic_no_exposure,
+        model2_poisson_glm_lgbm_no_exposure,
+        model2_nb2_logistic_exposure,
+        model2_nb2_lgbm_exposure,
+        model2_nb2_logistic_no_exposure,
+        model2_nb2_lgbm_no_exposure,
+    ]
+    _score_rows, _arm_rows = [], []
+    for _run in MODEL2_RUNS:
+        # A family pair reads as one family, so both models' tables have the same
+        # settings columns; the record keeps the two families (D16).
+        _settings = {
+            "family": f"{_run['total_family']}+{_run['probability_family']}",
+            "use_exposure": _run["use_exposure"],
+        }
+        _trials = _run["trials"]
+        _complete = _trials[_trials["state"] == "COMPLETE"]
+        _score_rows.extend({**_settings, **row} for row in _run["score_table"][:-1])
+        _score_rows.append(
+            {
+                **_settings,
+                **_run["score_table"][-1],
+                "cv_best": _run["cv_best"],
+                "n_complete": len(_complete),
+                "n_failed": int((_trials["state"] == "FAIL").sum()),
+                "seconds": _run["seconds"],
+            }
+        )
+        # The completed trials per categorical choice, every candidate listed, so
+        # one never tried shows 0 (D15).
+        _candidates = {
+            "params_total__feature_transformer": (
+                CountSearchSpace.FEATURE_TRANSFORMER_NAMES[_run["total_family"]]
+            ),
+            "params_probability__feature_transformer": (
+                ProbabilitySearchSpace.FEATURE_TRANSFORMER_NAMES[
+                    _run["probability_family"]
+                ]
+            ),
+            "params_probability__calibration_method": (
+                ProbabilitySearchSpace.CALIBRATION_METHODS
+            ),
+        }
+        for _column, _values in _candidates.items():
+            # Counted by label: the trials table holds the None calibration as NaN
+            # in a str column, or as None in an object column when every trial
+            # drew it, and reindex matches None in neither reliably (D16).
+            _labels = [str(_value) for _value in _values]
+            _counts = (
+                _complete[_column]
+                .fillna("None")
+                .value_counts()
+                .reindex(_labels, fill_value=0)
+            )
+            for _value, _n in _counts.items():
+                _arm_rows.append(
+                    {
+                        **_settings,
+                        "parameter": _column.removeprefix("params_"),
+                        "value": _value,
+                        "n_trials": int(_n),
+                    }
+                )
+    model2_df, model2_arms_df = pd.DataFrame(_score_rows), pd.DataFrame(_arm_rows)
+    return MODEL2_RUNS, model2_arms_df, model2_df
+
+
+@app.cell
+def _(mo, model2_arms_df, model2_df):
+    mo.vstack(
+        [
+            mo.md(
+                "**Model 2: cohort Poisson deviance** (family: the total's + the "
+                "probabilities'; cv_best: the run's value; n_complete / n_failed: "
+                "its trials)"
+            ),
+            mo.md(f"```text\n{model2_df.round(4).to_string(index=False)}\n```"),
+            mo.md("**Trials per choice**"),
+            mo.md(f"```text\n{model2_arms_df.to_string(index=False)}\n```"),
+        ]
+    )
+
+
+@app.cell
+def _(mo, model1_df, model2_df, pd):
+    # Each model's best run on validation, from the composite rows. A fresh
+    # index: the two frames' labels overlap, and idxmin + loc would return both.
+    _composites = pd.concat(
+        [
+            model1_df[model1_df["cohort"] == "composite"].assign(model="model1"),
+            model2_df[model2_df["cohort"] == "composite"].assign(model="model2"),
+        ],
+        ignore_index=True,
+    )
+    best_df = _composites.loc[
+        _composites.groupby("model")["val"].idxmin(),
+        ["model", "family", "use_exposure", "cv_best", "train", "val"],
+    ]
+    mo.vstack(
+        [
+            mo.md("**Best run per model** (validation cohort Poisson deviance)"),
+            mo.md(f"```text\n{best_df.round(4).to_string(index=False)}\n```"),
+        ]
+    )
+    return (best_df,)
 
 
 if __name__ == "__main__":

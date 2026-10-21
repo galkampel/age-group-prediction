@@ -1,6 +1,6 @@
 # Re-implement the hyperparameter tuning inside the notebook
 
-**Status (2026-10-21):** approved; T1.1 committed (`0416267`); T1.2 committed (`bee781a`) after the user's review (estimator dataclasses hold hyperparameters only; LightGBM's loss is a family); T1.3 committed (`7ae6314`) after three user reviews (components are a study's fixed settings, a `Literal` family and `use_exposure`; the family → transformer-names mapping is an argument of `suggest_feature_transformer`; no dataclass builds a model; the exposure a study setting, both arms; feature variants renamed feature transformers; D2, D3, D6, T1.4–T2.2 rewritten); T1.4 done 2026-10-19, then reworked at two rounds of the user's review on 2026-10-20 (D8: a named component per part of the composite under an abstract `Component`; the family checked from its `Literal`; each subclass holds its families' transformer names; `make_estimator(hyperparameters, *, seed)`; the T1.3 cells changed too; T1.4–T2.2 rewritten), committed (`8cc231d`); T1.5 done 2026-10-21 (`cv_score`, `tune_model`; at the user's review the fold variables named and an aggregator added, D9: `src/age_group_prediction/aggregation.py` and its tests, default `Mean`), committed (`a5ae06b`); T1.6 done 2026-10-21 (Model 1's button and run cell; Check C 14.7 s at 3 trials), then the redesign of D10 at its review, revised by D11 and D12 at the next reviews (search spaces with explicit suggest methods, the builder assembles components, the transformer by name; a study is a family combination and exposure; `feature_transformer_dict`; Check C reproduces T1.6's best values), committed (`6316d91`); T1.7 committed (`59acae6`); its 200-trial run took 380 s with no failed trial (D15); T1.8 done 2026-10-21 (independent review: no correctness bug, nine findings reproduced and settled, D15), committed (`9eca96e`); notebook md5 `9d49fe78f99d7ff4d96e17742ea7d277`; handoff rewritten 2026-10-21 for a new session; next T2.1, then after T2.2 the pending decision on TPE's random start (`n_startup_trials` 40 or 10, handoff §3). The implementing session updates this line and ticks the sub-tasks.
+**Status (2026-10-21):** approved; T1.1 committed (`0416267`); T1.2 committed (`bee781a`) after the user's review (estimator dataclasses hold hyperparameters only; LightGBM's loss is a family); T1.3 committed (`7ae6314`) after three user reviews (components are a study's fixed settings, a `Literal` family and `use_exposure`; the family → transformer-names mapping is an argument of `suggest_feature_transformer`; no dataclass builds a model; the exposure a study setting, both arms; feature variants renamed feature transformers; D2, D3, D6, T1.4–T2.2 rewritten); T1.4 done 2026-10-19, then reworked at two rounds of the user's review on 2026-10-20 (D8: a named component per part of the composite under an abstract `Component`; the family checked from its `Literal`; each subclass holds its families' transformer names; `make_estimator(hyperparameters, *, seed)`; the T1.3 cells changed too; T1.4–T2.2 rewritten), committed (`8cc231d`); T1.5 done 2026-10-21 (`cv_score`, `tune_model`; at the user's review the fold variables named and an aggregator added, D9: `src/age_group_prediction/aggregation.py` and its tests, default `Mean`), committed (`a5ae06b`); T1.6 done 2026-10-21 (Model 1's button and run cell; Check C 14.7 s at 3 trials), then the redesign of D10 at its review, revised by D11 and D12 at the next reviews (search spaces with explicit suggest methods, the builder assembles components, the transformer by name; a study is a family combination and exposure; `feature_transformer_dict`; Check C reproduces T1.6's best values), committed (`6316d91`); T1.7 committed (`59acae6`); its 200-trial run took 380 s with no failed trial (D15); T1.8 done 2026-10-21 (independent review: no correctness bug, nine findings reproduced and settled, D15), committed (`9eca96e`); notebook md5 `9d49fe78f99d7ff4d96e17742ea7d277`; handoff rewritten 2026-10-21 for a new session; T2.1 done 2026-10-21 (Model 2's button and 16 run cells; no `MODEL2_TOTALS`, the run cells present are the runs tuned; Check C 53.3 s, Model 2's baseline recorded), awaiting the user's commit; notebook md5 `1405425ae7bf3da901cf0eba8860bf71`; T2.2 done 2026-10-21 (Model 2's tables, display and best-per-model cells; D16), 200-trial run 1827 s (Model 1 366 s, Model 2 1447 s, no failed trial), awaiting the user's commit; notebook md5 `d9ca23572484fbe60a02e945eda1505d`; T2.4 (pruning and parallelization check) added at the user's request; D17: T4 replaces the package (T4a delete, T4b rebuild from the notebook). D18: T2.5 (the bootstrap interval and feature importance of the best runs) added. The `n_startup_trials` decision postponed by the user until after T2.4, with `n_trials`; all 24 runs kept (D6 stands). Next: T2.3 → T2.4 → the `n_trials` / `n_startup_trials` decision → T2.5 → T3 → T4a → T4b → T5. The implementing session updates this line and ticks the sub-tasks.
 
 Written for the model that implements it, one sub-task per approval. Every sub-task has the
 code to write, a "done when" list and the commands that verify it. The user reads the diff in
@@ -73,6 +73,9 @@ plain `Literal` assignments, not the `type` statement: cloudpickle cannot pickle
   the loss split 10/20 and did worse than either loss alone; and the family table compares
   the losses directly. The cost: one run cannot mix the losses across cohorts, and there is
   one more study per exposure setting.
+  **Changed 2026-10-21 (the user, at T2.1's plan):** no `MODEL2_TOTALS` list. With one cell
+  per run (D14), the run cells present are the runs tuned: all four totals, 16 cells. To drop
+  a total, delete its four cells and its four names in `MODEL2_RUNS`.
   **Changed 2026-10-18 (the user, at T1.3's review):** the exposure is no longer a sampled
   categorical either. It is a study setting (`CountComponent.use_exposure`), and every count
   family runs with it on and with it off, as the older plan's E5 argued (the exposure changes
@@ -339,6 +342,70 @@ plain `Literal` assignments, not the `type` statement: cloudpickle cannot pickle
 
       400 trials gave no gain.
     - A change re-runs both models and resets the Check C baseline (handoff §3).
+    - **Postponed (the user, 2026-10-21, after T2.2):** decided after T2.4, together with
+      `n_trials`, since pruning and parallelization change what a trial costs. The evidence
+      at 10, from T2.2's 200-trial run: every choice was tried at least 7 times (the GLM
+      totals' transformer 7–9, logistic's 8–12, every LightGBM choice 16 or more, the
+      calibration 12–34).
+    - **All 24 runs kept (the user, 2026-10-21):** D6 stands. The GLM totals with the
+      exposure off are about 0.6 worse on CV in both models (Model 2 2.844–2.869 against
+      2.235–2.258), but no run is dropped.
+
+- D16. **Added 2026-10-21 (the user, at T2.2's plan and implementation):**
+  - **The calibration candidates are a ClassVar of the search space**,
+    `ProbabilitySearchSpace.CALIBRATION_METHODS = (None, "temperature", "sigmoid")`. It is read
+    by `suggest_calibration_method` and by Model 2's tables cell, so there is one source of
+    truth, as with `FEATURE_TRANSFORMER_NAMES`.
+    - Best practice: the search space declares its choices, and the analysis reads them from
+      there. Optuna's own analysis reads the choices from each trial's recorded distribution,
+      which the trials table does not keep.
+    - Measured: `list(CALIBRATION_METHODS)` gives identical seeded draws (30 TPE trials), and
+      Check C reproduced all 24 baselines.
+  - **The trials per choice are counted by label.** Measured with pandas 3.0.5:
+    - `value_counts()` drops the `None` calibration.
+    - With `dropna=False`, `reindex([None, …])` counts a mixed column (str dtype, NaN) right,
+      but gives 0 for a column where every trial drew `None` (object dtype). Check C at 3
+      trials hit this: the counts did not add up to `n_complete`.
+    - A DataFrame also turns `None` into NaN.
+    - So the column is counted after `fillna("None")` and reindexed on `str(candidate)`.
+      Every column shape counts right, and the table prints `None`.
+  - **A family pair reads as one family**, `"<total>+<probability>"` (e.g.
+    `"lgbm_gaussian+logistic"`). Model 2's tables then have Model 1's settings columns
+    (`family`, `use_exposure`), and the best-per-model cell treats both models alike.
+    - The run records keep `total_family` and `probability_family`.
+    - The separator is `+` because the family names contain `_`.
+  - **`use_exposure` is its own column** in every table, not part of the family name:
+    - D6 made the exposure a run setting, and in Model 2 it applies to the total only.
+    - The best-per-model table gains it; the old cell, written before the exposure was a run
+      setting, dropped it.
+
+- D17. **Added 2026-10-21 (the user):** the old package is replaced, not only deleted.
+  - Once the notebook's tuning code is final (after T2.4), it moves into a new
+    `hyperparameter_tuning/` under the same name, and the notebook imports it.
+  - The code was written package-ready for this (D3): it reads no notebook global.
+  - Why: unit tests, mypy strict, and reuse outside the notebook.
+  - D1's "none of the package's classes or functions is imported" applies to the old package
+    only.
+  - T4 becomes two stops: T4a deletes the old package, and T4b builds the new one.
+
+- D18. **Added 2026-10-21 (the user):** each model's best run is evaluated with the
+  inspection package (T2.5). This brings the older plan's E3, E7 and E8
+  (`EXPERIMENT_NOTEBOOK_PLAN.md`) into the new notebook.
+  - **No wrapper for the two importance methods.** `PermutationImportance` and
+    `ShapExplainer` are each called as they are, and one cell puts their rankings side by
+    side. Why:
+    - They answer different questions with different inputs.
+    - Permutation importance is global and performance-based: it needs `y` and a metric,
+      and gives one mean and std per column in the metric's units.
+    - SHAP attributes the prediction: it needs a background, takes no `y`, and gives a
+      value per row, column and cohort.
+    - A wrapper would need a union signature (`y` for one, the background for the other)
+      and would collapse SHAP to mean |SHAP|.
+    - scikit-learn's `permutation_importance` and the shap library are separate APIs; the
+      practice is to compare the rankings, which also shows where they disagree.
+  - **Placement: T2.5**, after T2.4 and before T3, so the notebook is complete before T4b
+    moves code into the package. It replaces the handoff's older item, "the bootstrap and
+    importance check".
 
 **What does not change:** notebook sections 1–4 and the `cv`/`cv_groups` cell; the models in
 `src/age_group_prediction/modeling/` (the S1 `get_params`/`set_params` forwarding in
@@ -1522,38 +1589,229 @@ Its nine findings were all reproduced and settled:
 
 ## 3. T2: Model 2 and the best-per-model table (notebook only)
 
-### [ ] T2.1 `MODEL2_TOTALS`, the button and the run cell
+### [x] T2.1 Model 2's button and run cells
+No `MODEL2_TOTALS` list (D6, changed 2026-10-21): the run cells present are the runs tuned.
+`PROBABILITY_FAMILIES` went with it, since nothing read it.
+Button:
 ```python
-# Model 2's total families, a list to edit after Model 1's table above. The
-# studies are this list × the total's exposure × the probability families.
-MODEL2_TOTALS = ["lgbm_poisson", "lgbm_gaussian", "poisson_glm", "nb2"]
+run_model2 = mo.ui.run_button(label="Tune Model 2")
+mo.md(
+    f"{run_model2} 16 runs, one cell each (a total family × exposure on or off "
+    "× a probability family); each trial fits its folds in parallel."
+)
 ```
-(D14: one cell per run, so a settings list does not survive, and the run cells present are
-the runs tuned. How the totals are chosen after Model 1's table, by the run cells or by the
-list above, is settled at T2.1's plan.)
-Button: `run_model2 = mo.ui.run_button(label="Tune Model 2")`, text
-`f"{run_model2} {len(MODEL2_STUDY_SETTINGS)} runs × `n_trials` trials, one after another…"`.
-Run cells: as T1.6 (D14), one cell per run (16 at four totals), `n_jobs=n_splits`, each keeping its trials and its best,
-`partial(suggest_model2, total_family=total_family, probability_family=probability_family,
-use_exposure=use_exposure, feature_transformer_dict=FEATURE_TRANSFORMERS,
-y_min=PREDICTION_FLOOR, seed=seed)` and `study_seed=seed + i`. The keys are the
-`(total_family, probability_family, use_exposure)` settings, giving the run records `model2_<total>_<probability>_[no_]exposure` (D12, D14).
+Run cells: as T1.6 (D14), 16 of them, in the order total (`lgbm_poisson`, `lgbm_gaussian`,
+`poisson_glm`, `nb2`) → exposure (on, off) → probability (`logistic`, `lgbm`), seeded
+`seed + 0` … `seed + 15`. Each tunes `partial(suggest_model2, total_family=…,
+probability_family=…, use_exposure=…, feature_transformer_dict=FEATURE_TRANSFORMERS,
+y_min=PREDICTION_FLOOR, seed=seed)` with `n_jobs=n_splits`, rebuilds the best components with
+`suggest_model2_components(FixedTrial(best_params), …)`, refits and scores them with
+`build_model2(*_best, …)` and `fit_and_score`, and keeps the record
+`model2_<total>_<probability>_[no_]exposure`: `total_family`, `probability_family`,
+`use_exposure`, `trials`, `components` (`total`, `probability`), `cv_best`, `score_table`,
+`seconds`, `seed`, `y_min`.
 **Done when:** Check A; Check C gives 16 run records with 3 trials each.
 
-### [ ] T2.2 Model 2's score and display cells, the best-per-model cell
-Each run cell refits with `suggest_model2_components(FixedTrial(best_params), …)`, `build_model2`
-and `fit_and_score` (D14). The tables cell mirrors T1.7's and gives `MODEL2_RUNS` (the 16
-run records, with the components `total` and `probability`), `model2_df` and
-`model2_arms_df` (per transformer and calibration method).
-The settings columns are `total_family`, `probability_family` and `use_exposure`. The display cell is as Model 1's. The
-best-per-model cell is today's (lines 1197–1218 at `8ee091a`), adapted to the settings
-columns.
+Met 2026-10-21:
+- Check A green (notebook test 5/5, ruff 8, the two known format hunks, `marimo check` the
+  two known issues). Check B: `run_model2` defined, no `model2_*` record (the button).
+- Planning probe (3 trials, exposure on, folds one after another): logistic pairs
+  0.30–0.56 s a trial, LightGBM-classifier pairs 4.1–6.5 s.
+- Check C under `PYTHONWARNINGS=error`, both buttons, 3 trials: 53.3 s for the whole
+  notebook, no warning, no failed trial. Model 1's 8 `cv_best` equal the baseline. 16 Model 2
+  records, each with 3 trials, a 4-row score table and the two components, each
+  JSON-serializable. Model 2's Check C baseline (`cv_best`):
+
+  | Total | Probability | Exposure on | Exposure off |
+  |---|---|---|---|
+  | `lgbm_poisson` | `logistic` | 2.1543 | 2.1929 |
+  | `lgbm_poisson` | `lgbm` | 2.2212 | 2.2505 |
+  | `lgbm_gaussian` | `logistic` | 2.1318 | 2.1685 |
+  | `lgbm_gaussian` | `lgbm` | 2.1706 | 2.2239 |
+  | `poisson_glm` | `logistic` | 2.2646 | 2.8660 |
+  | `poisson_glm` | `lgbm` | 2.2794 | 2.8828 |
+  | `nb2` | `logistic` | 2.2487 | 2.8540 |
+  | `nb2` | `lgbm` | 2.3039 | 2.9222 |
+
+- Run times at 3 trials with parallel folds: logistic runs 0.3–1.0 s, LightGBM-classifier
+  runs 1.1–5.4 s (0.4–1.8 s a trial), so the 200-trial click should take roughly 20–30 min
+  (the user's click at T2.2 measures it).
+
+### [x] T2.2 Model 2's tables and display cells, the best-per-model cell
+The refit lives in each run cell (T2.1, D14). The cells:
+- **The search space:** `ProbabilitySearchSpace` gains the ClassVar `CALIBRATION_METHODS`,
+  read by `suggest_calibration_method` (D16).
+- **The tables cell** mirrors T1.7's. It gives:
+  - `MODEL2_RUNS`, the 16 run records in run order;
+  - `model2_df`, with the settings columns `family` (`"<total>+<probability>"`) and
+    `use_exposure` (D16);
+  - `model2_arms_df`, the completed trials per choice, every candidate listed and counted by
+    label, for `total__feature_transformer`, `probability__feature_transformer` and
+    `probability__calibration_method` (D15, D16).
+- **The display cell** is as Model 1's: "Model 2: cohort Poisson deviance", then "Trials per
+  choice".
+- **The best-per-model cell** is the old one (lines 1197–1218 at `8ee091a`) with
+  `use_exposure` added. `best_df` is each model's composite row with the lowest validation
+  score, with the columns `model`, `family`, `use_exposure`, `cv_best`, `train` and `val`.
+- **The header** now says "best run".
+```python
+for _column, _values in _candidates.items():
+    # Counted by label: the trials table holds the None calibration as NaN
+    # in a str column, or as None in an object column when every trial
+    # drew it, and reindex matches None in neither reliably (D16).
+    _labels = [str(_value) for _value in _values]
+    _counts = (
+        _complete[_column]
+        .fillna("None")
+        .value_counts()
+        .reindex(_labels, fill_value=0)
+    )
+    for _value, _n in _counts.items():
+        _arm_rows.append({**_settings, "parameter": …, "value": _value, "n_trials": int(_n)})
+```
 **Done when:** Check A; Check C prints `model2_df` with 64 rows (16 × 4), `MODEL2_RUNS` with
 16 records, `best_df` with 2 rows; the user clicks both buttons at 200 and reports the times.
 Then decide TPE's random start, `n_startup_trials` 40 or 10, with the evidence of D15 and the
 handoff's §3 plus Model 2's coverage.
 
+Met 2026-10-21:
+- **Check A** green. **Check B:** `CALIBRATION_METHODS` is defined; `MODEL2_RUNS` and
+  `best_df` are not, since the buttons stop the script run.
+- **Check C** under `PYTHONWARNINGS=error`, 3 trials, both buttons: 47.0 s.
+  - All 24 `cv_best` values equal T2.1's baselines, so the ClassVar changed no draw.
+  - `MODEL2_RUNS` holds 16 records, and both models' runs serialize to JSON.
+  - `model2_df` has 64 rows.
+  - The counts per parameter add up to each run's `n_complete`, and the calibration shows
+    `None`, `temperature` and `sigmoid`.
+  - `best_df` has 2 rows: Model 1 `lgbm_gaussian`, exposure on, val 2.0842; Model 2
+    `lgbm_gaussian+logistic`, exposure on, val 2.0872.
+- **The first Check C** ran the approved `value_counts(dropna=False)` version, and its sums
+  did not add up. The fix was put to the user and approved (D16).
+- **The 200-trial run** (both buttons patched, `PYTHONWARNINGS=error`, run 2026-10-21):
+  1827 s for the whole notebook.
+  - Model 1 took 366 s and Model 2 1447 s, with no failed trial and no warning.
+  - Model 1 reproduced D15's 200-trial values exactly.
+  - In Model 2, the eight LightGBM-classifier runs took 81–220 s each and the logistic runs
+    23–45 s.
+
+  | Model 2 run | Exposure on: cv_best / val | Exposure off: cv_best / val |
+  |---|---|---|
+  | `lgbm_poisson+logistic` | 2.0617 / 2.1283 | 2.0802 / 2.1713 |
+  | `lgbm_poisson+lgbm` | 2.0820 / 2.1307 | 2.1033 / 2.1480 |
+  | `lgbm_gaussian+logistic` | 2.0728 / 2.0950 | 2.1253 / 2.1390 |
+  | `lgbm_gaussian+lgbm` | 2.1066 / 2.1273 | 2.1526 / 2.1804 |
+  | `poisson_glm+logistic` | 2.2418 / 2.1749 | 2.8511 / 3.0383 |
+  | `poisson_glm+lgbm` | 2.2582 / 2.2093 | 2.8667 / 3.0603 |
+  | `nb2+logistic` | 2.2348 / 2.1811 | 2.8441 / 3.0418 |
+  | `nb2+lgbm` | 2.2533 / 2.2193 | 2.8686 / 3.1080 |
+
+  - `best_df`, by validation:
+    - Model 1: `lgbm_poisson`, exposure on, cv 2.1459, val 2.1604;
+    - Model 2: `lgbm_gaussian+logistic`, exposure on, cv 2.0728, val 2.0950.
+  - **Coverage, the least-tried choice per run** (the `n_startup_trials` evidence):
+    - Model 1's transformers: 6–9 for the GLMs, 17–49 for LightGBM.
+    - Model 2's total transformer: 7–9 for the GLM totals, 16–75 for LightGBM.
+    - Model 2's probability transformer: 8–12 for logistic (5 candidates), 16–57 for the
+      LightGBM classifier (2 candidates).
+    - The calibration: 12–34.
+
 ### [ ] T2.3 Independent review of T2, summary, commit suggestion.
+
+### [ ] T2.4 Check whether pruning and parallelization help, and where (asked by the user, 2026-10-21)
+After T2.3, before T3. The order of the rest: T2.3 →
+T2.4 → the `n_trials` / `n_startup_trials` decision → T2.5 → T3 → T4a → T4b → T5. It revisits D13 (folds in parallel,
+no pruning), which was measured on Model 1 alone, now with Model 2's timings:
+- The LightGBM-classifier pairs take 4.1–6.5 s a trial with the folds one after another,
+  against 0.3–0.6 s for the logistic pairs.
+- With the folds in parallel, they take 0.4–1.8 s a trial at 3 trials.
+
+This sub-task measures and recommends. Nothing is added to the notebook unless the user
+approves it, and the implementation is a separate sub-task.
+
+**Where the time goes first.** Profile one trial of the slowest pairs (for example
+`nb2+lgbm`, `poisson_glm+lgbm`) and one Model 1 NB2 trial, split into:
+- the total's fit;
+- the probability model's fit, including the one-row-per-child expansion and the
+  calibration;
+- prediction and scoring;
+- joblib's overhead.
+
+**Candidate places for parallelization, each measured against today's (the folds of a trial
+in parallel, `n_jobs=n_splits`, LightGBM `n_jobs=1`):**
+1. **The folds of a trial** (today): the speed-up per family at 200 trials.
+2. **LightGBM's own threads** (`n_jobs` > 1 in `make_estimator`), alone or with fewer fold
+   processes. This is the oversubscription trade-off on 8 cores (6 performance).
+3. **The parts inside a composite**, in parallel: Model 1's three cohort fits, and Model 2's
+   total and probability fits. This changes `src`; say so.
+4. **Several runs at once**, i.e. studies in parallel as before D13. It conflicts with D14's
+   one cell per run, unless marimo can run independent cells concurrently; check that.
+5. **Trials in parallel within one study** (`study.optimize(n_jobs>1)`, or processes sharing
+   an Optuna storage with `constant_liar`). This loses the seeded reproducibility; measure how
+   much, and whether the best values change.
+
+**Candidate places for pruning, each measured on wall time and best value at 200 trials:**
+1. **`WilcoxonPruner` across the folds.** It needs the folds one at a time, so it trades away
+   the parallel folds. Measure the share of trials pruned and the net time at
+   `p_threshold` 0.1 and 0.2 (the facts in §7).
+2. **A hybrid:** the folds in two parallel batches (e.g. 3 then 2), with a prune check
+   between them.
+3. **Pruning only the slow pairs** (the LightGBM classifier), where a pruned trial saves
+   the most.
+4. **Inside a LightGBM fit** (early stopping or a pruning callback). It needs a validation
+   set inside each fold's fit; check whether that fits the composite models at all.
+
+**After T2.4's approved changes:** re-decide `n_trials` (200 today) and `n_startup_trials`
+(10 today), from the cost of a trial and the coverage (D15).
+
+**For each candidate, report:**
+- the measured wall time at 200 trials, against today's;
+- the best values against today's, and whether the seeded study stays reproducible (Check C
+  unchanged or not);
+- the code it adds, in the notebook or in `src`;
+- a recommendation: add it or not, and where.
+
+The user decides; an approved change gets its own sub-task, with Check A, Check B and
+Check C, and with new baselines if the results change.
+
+### [ ] T2.5 The best runs: bootstrap interval and feature importance (D18)
+
+After T2.4. For each model's best run in `best_df`:
+- **The fitted model:** run records keep no fitted model (D13), so the best run is refit from
+  its record's components.
+- **Bootstrap (E3):** `BootstrapEvaluator(COHORT_POISSON_DEVIANCE, n_resamples,
+  random_state=seed)` on validation, with `groups=val_age_group.groups` (`neighborhood_id`)
+  and the exposure. The table shows `mean`, `lower` and `upper` beside each best run's
+  point score.
+- **Permutation importance (E7):** `PermutationImportance(COHORT_POISSON_DEVIANCE,
+  n_repeats, random_state=seed)` on validation, and on training as the overfit check (a
+  column important on training and not on validation).
+- **SHAP (E8):** `ShapExplainer(method="exact")` explains a seeded validation subsample
+  against a seeded training background. Global importance is mean |SHAP| per column, and the
+  per-cohort values are available from the `Explanation`.
+- **The comparison cell (D18):** per model and raw column, `perm_mean`, `perm_std` and
+  `perm_rank` beside `mean_abs_shap` and `shap_rank`.
+
+The API, read 2026-10-21:
+- `BootstrapEvaluator(...).evaluate(model, X, y, groups, *, exposure)` returns
+  `BootstrapResult(mean, lower, upper)`.
+- `PermutationImportance(...).compute_importances(model, X, y, *, exposure)` returns
+  `importance_mean` and `importance_std` per column.
+- `ShapExplainer(...).explain(model, X, background, *, exposure)` returns a
+  `shap.Explanation`.
+- `n_resamples = 1000` is already in the notebook's settings.
+
+**Open points, settled at T2.5's own plan:**
+- How the fitted best model is obtained: rebuild the components from the record's dicts, or
+  keep `best_params` in the record and use `FixedTrial`.
+- Whether the bootstrap covers only the primary metric or E3's full list.
+- `n_repeats`, the SHAP sample sizes and `n_jobs`, from measured cost.
+- A button, since this costs minutes.
+
+**Done when:**
+- Check A and Check B.
+- Check C (3 trials, with the bootstrap and the importances at reduced sizes) prints the
+  interval table and the comparison table for both models.
+- The baselines are unchanged.
 
 ## 4. T3: the metric constants leave `scoring.py` (src, tests, docs)
 
@@ -1581,14 +1839,19 @@ returns only prose in the old stack (`models/`, `experiment/`, `bundle_spy.py`,
 `test_final_selection.py`, `test_direct_cohort.py`, `test_final_evaluation.py`); `uv run mypy`;
 the changed tests under `-W error`; the non-slow suite; the three doc blocks executed by probe.
 
-## 5. T4: delete the `hyperparameter_tuning` package
+## 5. T4: replace the `hyperparameter_tuning` package (D17)
+
+After T2.4 and T3. Two stops, each with its own approval.
+
+### [ ] T4a Delete the old package
 
 - Delete `src/age_group_prediction/hyperparameter_tuning/` (4 modules + `__init__`),
   `tests/unit/test_hyperparameter_tuning_{aggregation,evaluator,integration,parameters,study}.py`,
   `docs/HYPERPARAMETER_TUNING.md`, `docs/HYPERPARAMETER_TUNING_PLAN.md`,
   `docs/HYPERPARAMETER_TUNING_REVIEW.md`, `docs/HYPERPARAMETER_TUNING_VALIDATION.md` (plain
   `rm`; the user commits the deletions). Keep `src/age_group_prediction/aggregation.py` and
-  `tests/unit/test_aggregation.py`, the aggregator's new home (D9).
+  `tests/unit/test_aggregation.py`, the aggregator's interim home (D9); T4b moves them into
+  the new package.
 - Edit: `pyproject.toml` (the package's entries in `[tool.mypy] files` and overrides, then
   `uv run --frozen`), `src/age_group_prediction/_config.py` docstring, `README.md`,
   `docs/README.md`, `docs/MODULE_REFERENCE.md`, `docs/INDEPENDENT_COHORT_MODELS.md` §3/§4/§6
@@ -1601,9 +1864,51 @@ the changed tests under `-W error`; the non-slow suite; the three doc blocks exe
 **Done when:** the grep above returns nothing in `src`, `tests`, `README.md` and the current
 guides; `uv run mypy`; the non-slow suite (expect the count to drop by the five files' tests);
 the notebook test green.
+(The directory is re-created under the same name in T4b.)
+
+### [ ] T4b The new package, from the notebook's code
+
+Under `src/age_group_prediction/hyperparameter_tuning/`:
+
+| Module | From notebook section 5 |
+|---|---|
+| `params.py` | `LGBMParams`, `PoissonGLMParams`, `NB2Params`, `LogisticParams` |
+| `components.py` | `CountFamily`, `ProbabilityFamily` (as `type` statements, which pickle from a module, D3), `Component`, `CountComponent`, `ProbabilityComponent` |
+| `search_spaces.py` | `SearchSpace`, `CountSearchSpace`, `ProbabilitySearchSpace` (with `FEATURE_TRANSFORMER_NAMES` and `CALIBRATION_METHODS`) |
+| `builders.py` | `suggest_count_component`, `suggest_probability_component`, `suggest_model1_components`, `suggest_model2_components`, `make_count_model`, `build_model1`, `build_model2`, `suggest_model1`, `suggest_model2` |
+| `cross_validation.py` | `fold_score`, `cv_score`, `tune_model`, `fit_and_score` (with T2.4's approved changes) |
+| `aggregation.py` | `Aggregator`, `Mean`, `WeightedMean`, `UpperBound`, moved back from `age_group_prediction/aggregation.py` (D9's interim home), with `tests/unit/test_aggregation.py` |
+
+- **Code:** typed for mypy strict (the notebook code is untyped), docstrings kept to what
+  matters, and an `__all__` per module. `pyproject.toml`'s mypy `files` and overrides list
+  the package.
+- **Unit tests per module**, in new files `tests/unit/test_hyperparameter_tuning_*.py`:
+  - the records' validation: an unknown family raises, `kw_only`, a typo in the params
+    raises;
+  - the search spaces' trial names, and a `FixedTrial` rebuild equal to the drawn component;
+  - the builders' models;
+  - `cv_score` with the folds in parallel equal to one after another;
+  - `tune_model`'s `catch`.
+- **T2.5's cells** (the bootstrap and importance) stay in the notebook unless T4b's plan
+  says otherwise.
+- **The notebook:** section 5 keeps the header, the imports from the package, the metric and
+  the constants (`COHORTS`, `PREDICTION_FLOOR`), the buttons, the run cells and the tables.
+  The class and function cells go.
+- **`tests/characterization/test_experiments_notebook.py`:** its rule (every cell containing
+  `tune_model` holds `mo.stop(not `, except the `def tune_model(` cell) now exempts the import
+  cell instead.
+
+**Done when:**
+- Check A, with ruff's baseline re-counted and reported, since cells are removed;
+- Check B;
+- Check C reproduces every baseline: Model 1's 8 and Model 2's 16, or T2.4's new ones;
+- `uv run mypy`;
+- the new tests and the non-slow suite pass under `-W error`.
 
 ## 6. T5: docs for the new design
 
+- A new `docs/HYPERPARAMETER_TUNING.md`, the guide to the new package (T4b); the old one is
+  deleted in T4a.
 - `docs/EXPERIMENT_NOTEBOOK_HANDOFF.md`: §1 item 3 rewritten (the S1–S5 block becomes one
   paragraph of history; the new design and its dataclasses described), §2 state, §3 the
   decisions D1–D7 of this plan, §6 the prompt for the performance pass.
@@ -1623,6 +1928,9 @@ the notebook test green.
 | Behaviour | `suggest` (params) and `suggest_*` (components) on the class; no `build` (D3) | functions only |
 
 ## 7. The performance pass (decided 2026-10-21 by D13: folds in parallel, no pruning; the facts weighed)
+
+Revisited by T2.4 (the user's request, 2026-10-21) with Model 2's timings; the facts below are
+its starting point.
 
 - **Pruning mid-CV.** Optuna's `WilcoxonPruner` (4.9: `p_threshold=0.1`, `n_startup_steps=2`)
   is the pruner designed for a mean over fixed instances such as CV folds: it pairs fold k of
