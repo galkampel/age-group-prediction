@@ -1,82 +1,88 @@
 # Handoff: the experiment notebook, tuning re-implemented in the notebook
 
-**For:** the session that continues `notebooks/02_experiments.py` with Model 2 (T2.1 onward).
+**For:** the session that continues `notebooks/02_experiments.py` with T2.4 (the pruning and
+parallelization check) and the sub-tasks after it.
 
-**Written:** 2026-10-21, after T1 (Model 1) was completed and committed (T1.1–T1.8).
+**Written:** 2026-10-21, after T2 (Model 2) was completed, reviewed and committed (T2.1–T2.3).
 
-**The plan:** [NOTEBOOK_TUNING_PLAN.md](NOTEBOOK_TUNING_PLAN.md), with the sub-tasks, the code
+**The plan:** [NOTEBOOK_TUNING_PLAN.md](NOTEBOOK_TUNING_PLAN.md) holds the sub-tasks, the code
 and the checks. Read it in full before the first edit:
-- §0 holds the decisions D1–D15; a later decision supersedes an earlier one where it says
-  so.
+- §0 holds the decisions D1–D18. A later decision supersedes an earlier one where it says so.
 - §1 holds the rules and the checks A, B and C.
-- §2 holds T1, done; its code blocks are the notebook's current code.
-- §3–§6 hold T2–T5.
+- §2 holds T1 and §3 holds T2.1–T2.3, all done; their code blocks and results are the
+  notebook's current state.
+- §3 also holds T2.4 and T2.5, which are next.
+- §4–§6 hold T3, T4a, T4b and T5; §7 holds the performance facts.
 
-The older plan [EXPERIMENT_NOTEBOOK_PLAN.md](EXPERIMENT_NOTEBOOK_PLAN.md) §3 still holds the
-general working rules; its §4 decisions E4, E5, E11 and §9 D2/D3 are superseded and are
-rewritten in T5. Re-verify every fact here against the code of the day.
+The older plan [EXPERIMENT_NOTEBOOK_PLAN.md](EXPERIMENT_NOTEBOOK_PLAN.md) still holds the
+general working rules in its §3, and E3, E7, E8 and E11, which T2.5 brings into the notebook.
+Its E4, E5, E11 and D2/D3 are rewritten in T5. Re-verify every fact here against the code of
+the day.
 
 ## 1. What the task is
 
 On 2026-10-18 the user rejected the `hyperparameter_tuning` package and the notebook section
-built on it. In its place, section 5 of the notebook tunes with plain Optuna and a
-hand-written cross-validation loop; the package is deleted at T4. As built for Model 1, after
-the user's reviews (D1–D15):
+built on it. Section 5 of the notebook now tunes with plain Optuna and a hand-written
+cross-validation loop. Once that code is final, T4 replaces the package with it (D17).
+
+As built for both models, after the user's reviews (D1–D18):
 
 - **Params records** (`LGBMParams`, `PoissonGLMParams`, `NB2Params`, `LogisticParams`):
-  frozen, `kw_only`, fields only. The field names are the estimator's keywords. They catch a
-  LightGBM typo, which LightGBM itself accepts silently.
-- **Components** are complete, saveable records of one part of a run, built by hand or from a
-  trial:
-  - `CountComponent(name, family, use_exposure, feature_transformer_name, hyperparameters)`;
+  frozen, `kw_only`, fields only. The field names are the estimator's keywords.
+- **Components:**
+  - `CountComponent(name, family, use_exposure, feature_transformer_name,
+    hyperparameters)`;
   - `ProbabilityComponent(name, family, calibration_method, feature_transformer_name,
     hyperparameters)`;
   - an abstract `Component` base. `make_estimator(*, seed)` is an if/elif on the family with
     a raising `else`.
-  - The family is a `Literal`, checked through `get_type_hints`. The transformer is a name in
-    `FEATURE_TRANSFORMERS`, resolved by the builder.
-- **Search spaces** (`CountSearchSpace(name, family)`, `ProbabilitySearchSpace(name,
-  family)`) hold every Optuna call and build nothing:
-  - `suggest_hyperparameters`, `suggest_feature_transformer_name`, and
+  - The family is a `Literal`, checked through `get_type_hints`.
+- **Search spaces** (`CountSearchSpace`, `ProbabilitySearchSpace`) hold every Optuna call and
+  build nothing.
+  - Their methods: `suggest_hyperparameters`, `suggest_feature_transformer_name`, and
     `suggest_calibration_method` (probability only).
-  - The candidate transformer names per family are a read-only ClassVar,
-    `FEATURE_TRANSFORMER_NAMES`.
-  - Trial names are `<name>__<parameter>`.
-- **Builders** assemble components from a trial's draws and turn them into models; they are
-  the objective and the refit alike:
-  - `suggest_count_component`, `suggest_probability_component`;
-  - `suggest_model1_components`, `suggest_model2_components`;
-  - `make_count_model`, `build_model1`, `build_model2`;
-  - `suggest_model1`, `suggest_model2`.
-- **A run** is one family combination and exposure:
-  - Model 1: `(family, use_exposure)`, 8 runs.
-  - Model 2: `(total_family, probability_family, use_exposure)`.
-  - **Each run is its own cell,** behind the shared run button. The runs go one after
-    another, run i seeded `seed + i`.
-  - **Each trial fits its 5 folds in parallel:** `fold_score`, then `cv_score(…, n_jobs)`.
-    No pruning.
-  - **The fold scores are combined by an aggregator:** `src/age_group_prediction/aggregation.py`,
-    `Mean` by default (D9).
-  - **A run cell keeps** `{family, use_exposure, trials (study.trials_dataframe()),
-    components, cv_best, score_table, seconds, seed, y_min}`. Only the best components are
-    refit (`fit_and_score`) and scored on training and validation.
-  - **A tables cell** collects the runs into `model1_df`, and `model1_arms_df`: the completed
-    trials per feature transformer, every candidate listed, so 0 shows.
-- **Metrics** are built in the notebook (D4): `COHORT_POISSON_DEVIANCE` for the objective and
-  the composite, `POISSON_DEVIANCE` per cohort. `evaluate` stays `metric(y_true, y_pred)`.
+  - Their candidate lists are read-only ClassVars: `FEATURE_TRANSFORMER_NAMES` per family,
+    and `CALIBRATION_METHODS = (None, "temperature", "sigmoid")` (D16).
+- **Builders** assemble components from a trial's draws and turn them into models:
+  - `suggest_count_component` and `suggest_probability_component`;
+  - `suggest_model1_components` and `suggest_model2_components`;
+  - `make_count_model`, `build_model1` and `build_model2`;
+  - `suggest_model1` and `suggest_model2`.
+- **Runs:** one cell per run, each behind its model's button. The runs go one after another,
+  seeded `seed + 0`, `seed + 1`, … in each model's order, and each trial fits its 5 folds in
+  parallel. There is no pruning.
+  - **Model 1:** 8 runs, `(family, use_exposure)`.
+  - **Model 2:** 16 runs, `(total_family, probability_family, use_exposure)`. The order is
+    total (`lgbm_poisson`, `lgbm_gaussian`, `poisson_glm`, `nb2`) → exposure (on, off) →
+    probability (`logistic`, `lgbm`). There is no `MODEL2_TOTALS` list: the run cells
+    present are the runs tuned.
+  - **A run cell keeps** a record with the settings, `trials`
+    (`study.trials_dataframe()`), `components`, `cv_best`, `score_table`, `seconds`, `seed`
+    and `y_min`. Only the best components are refit (`fit_and_score`) and scored on training
+    and validation.
+- **Tables:**
+  - `model1_df` / `model1_arms_df`, and `model2_df` / `model2_arms_df`. Model 2's `family`
+    is `"<total>+<probability>"`, and `use_exposure` is its own column (D16).
+  - The trials-per-choice tables list every candidate, so an untried one shows 0. Model 2
+    counts by label, so a `None` calibration is counted.
+  - `best_df` gives each model's best run on validation, with `use_exposure`.
+- **Metrics** are built in the notebook (D4). The fold scores are combined by an aggregator
+  (`src/age_group_prediction/aggregation.py`, `Mean` by default, D9).
 
-**The order of work** (one sub-task per approval, plan mode before each, the user reviews the
+**The order of work** (one sub-task per approval, plan mode before each; the user reviews the
 design and commits):
-1. T2.1 → T2.3 (Model 2);
-2. then the `n_startup_trials` decision (§3);
-3. T3, T4, T5;
-4. then the older items: the bootstrap and importance check, then MLflow runs from the run
-   records.
+1. T2.4: does pruning or parallelization help, and where (§5 below).
+2. The `n_trials` / `n_startup_trials` decision, after T2.4 (§3 below).
+3. T2.5: the best runs' bootstrap interval and feature importance (D18).
+4. T3: the metric constants leave `scoring.py`.
+5. T4a deletes the old package; T4b builds the new one from the notebook's code (D17).
+6. T5: the docs.
+7. Then the older item: MLflow runs from the run records.
 
 ## 2. State of the branch (2026-10-21)
 
-- **Branch:** `feat/experiment-notebook`, HEAD `9eca96e` (T1.8), tree clean.
-- **Notebook md5:** `9d49fe78f99d7ff4d96e17742ea7d277`.
+- **Branch:** `feat/experiment-notebook`, HEAD `7580304` (T2.3), tree clean.
+- **Notebook md5:** `eec46ac5cbec902ffdd98cce6f4c9cbd`.
 - **The commits of the task:**
 
   | Sub-task | Commit |
@@ -89,156 +95,196 @@ design and commits):
   | T1.6 and D10–D12 | `6316d91` |
   | T1.7 and D13–D14 | `59acae6` |
   | T1.8 and D15 | `9eca96e` |
+  | Handoff after T1 | `58c3bcb` |
+  | T2.1–T2.2, D16–D18 | `a2b8693` |
+  | T2.3 (review, F1–F8) | `7580304` |
 
   Check `git status` and `git log -3` first; the user may have edited since.
 - **Checks at HEAD:**
-  - notebook test 5/5;
-  - `ruff check notebooks/02_experiments.py`: 8 findings, all pre-existing (7 marimo
-    `return`s PLR1711, B018 at line 129, RUF059 `test_age_group` at line 320);
-  - `ruff format --diff`: only the two known hunks at lines 158 and 213;
-  - `marimo check`: the two known empty-cell issues;
-  - mypy clean;
-  - non-slow suite at T1.5: 1357 passed, 1 skipped, 1 xfailed.
-- **New in `src`:**
-  - `src/age_group_prediction/aggregation.py` (D9: the user's `Aggregator`, `Mean`,
-    `WeightedMean`, `UpperBound`, moved out of the package) and
-    `tests/unit/test_aggregation.py`;
-  - mypy's `files` and strict overrides list the module.
-  - T4 keeps these and deletes the package's copies.
-- **Model 1 at 200 trials** (the clicked path, measured 2026-10-21): 380 s, no failed trial.
-  Every transformer was tried in every run and cohort: the least-tried got 6–9 trials in the
-  GLM families and 17 or more in LightGBM.
+  - the notebook test passes 5/5;
+  - `ruff check notebooks/02_experiments.py` gives 8 findings, all pre-existing: 7 marimo
+    `return`s (PLR1711), B018 at line 129, RUF059 `test_age_group` at line 320;
+  - `ruff format --diff` shows only the two known hunks, at lines 158 and 213;
+  - `marimo check` shows the two known empty-cell issues;
+  - mypy is clean.
+- **The 200-trial run** (both buttons patched, `PYTHONWARNINGS=error`, 2026-10-21):
+  - 1827 s in all: Model 1 366 s, Model 2 1447 s.
+  - No failed trial and no warning.
+  - Model 1 reproduced its earlier 200-trial values exactly.
+  - Model 2's LightGBM-classifier runs took 81–220 s each and its logistic runs 23–45 s.
 
-  | Run, exposure on | cv_best | val (composite) |
-  |---|---|---|
-  | `lgbm_poisson` | 2.1459 | 2.1604 |
-  | `lgbm_gaussian` | 2.1323 | 2.1646 |
-  | `poisson_glm` | 2.2490 | 2.1882 |
-  | `nb2` | 2.2428 | 2.1962 |
+  | Best run on validation | `family`, exposure | cv_best | val |
+  |---|---|---|---|
+  | Model 1 | `lgbm_poisson`, on | 2.1459 | 2.1604 |
+  | Model 2 | `lgbm_gaussian+logistic`, on | 2.0728 | 2.0950 |
 
-  Every family is worse with the exposure off, the GLMs by about 0.85 on validation.
-- **Check C baseline at `n_trials = 3`** (the regression check): every redesign since T1.6
-  reproduced these 8 best values exactly.
+  Model 2's full table is in the plan's T2.2. Every family is worse with the exposure off: the
+  GLMs by about 0.6 on CV in both models, and LightGBM by 0.02–0.09.
+- **Check C baselines at `n_trials = 3`** (the regression check). Every change since T1.6 has
+  reproduced them exactly.
 
-  | Family | Exposure on | Exposure off |
+  | Model 1 `cv_best` | Exposure on | Exposure off |
   |---|---|---|
   | `lgbm_poisson` | 2.1902 | 2.2814 |
   | `lgbm_gaussian` | 2.1906 | 2.3151 |
   | `poisson_glm` | 2.5703 | 2.8776 |
   | `nb2` | 2.2826 | 2.8904 |
 
-- **Model 2's builders exist and were probed** (T1.8's reviewer):
-  - (`poisson_glm` total, `logistic`) and (`poisson_glm`, `lgbm`) build, rebuild from
-    `FixedTrial` and fit, with composite validation 2.195 and 2.358 at one trial.
-  - There are no Model 2 run cells yet.
+  | Model 2 `cv_best` | Exposure on | Exposure off |
+  |---|---|---|
+  | `lgbm_poisson+logistic` | 2.1543 | 2.1929 |
+  | `lgbm_poisson+lgbm` | 2.2212 | 2.2505 |
+  | `lgbm_gaussian+logistic` | 2.1318 | 2.1685 |
+  | `lgbm_gaussian+lgbm` | 2.1706 | 2.2239 |
+  | `poisson_glm+logistic` | 2.2646 | 2.8660 |
+  | `poisson_glm+lgbm` | 2.2794 | 2.8828 |
+  | `nb2+logistic` | 2.2487 | 2.8540 |
+  | `nb2+lgbm` | 2.3039 | 2.9222 |
+
+  Check C of the whole notebook at 3 trials takes about 47–53 s.
 
 ## 3. Decisions (do not re-ask)
 
 All are in the plan's §0 with their evidence:
-- D1: plain Optuna.
-- D2–D3: the records, as revised by D8, D10 and D11.
-- D4: the metric is built in the notebook.
-- D6: one study per family and exposure, both arms; LightGBM's loss as a family.
-- D7: the facts settled by probe.
-- D9: the aggregator.
-- D10–D12: complete components, explicit search spaces, a study per family combination,
-  `feature_transformer_dict`.
-- D13: runs one after another with parallel folds, no pruning.
-- D14: one cell per run; every trial and the best kept.
-- D15: strict checks; untried transformers shown as 0.
+- D1: plain Optuna. D2–D3: the records, as revised by D8, D10 and D11. D4: the metric is
+  built in the notebook.
+- D6: one study per family and exposure, both arms. LightGBM's loss is a family.
+- D7: the facts settled by probe. D9: the aggregator.
+- D10–D12: complete components, explicit search spaces, a study per family combination.
+- D13–D14: runs one after another with parallel folds, no pruning; one cell per run, every
+  trial and the best kept.
+- D15: strict checks; untried choices shown as 0.
+- D16: the calibration candidates as a ClassVar; counting by label; a family pair as one
+  family; `use_exposure` its own column.
+- D17: T4 replaces the package, as T4a and T4b.
+- D18: the bootstrap and importance in T2.5; no wrapper for the two importance methods.
 
 **Decided by the user, 2026-10-21:**
-- `y_min` stays a builder argument, recorded once per run with the seed.
-- The seed is an argument of `make_estimator`, not a field.
-- `evaluate` is not changed. `cohort_log_loss` needs the matrix, and the models predict the
-  target's column order.
-- `Aggregator.aggregate` stays a named method, not `__call__`.
-- `num_leaves` above `2**max_depth` (finding F7) is left as a known inefficiency.
+- `y_min` stays a builder argument, recorded once per run with the seed. The seed is an
+  argument of `make_estimator`.
+- `evaluate` is not changed. `Aggregator.aggregate` stays a named method.
+- `num_leaves` above `2**max_depth` (T1's F7) is left as a known inefficiency.
+- Model 2 has all 16 run cells and no `MODEL2_TOTALS` list.
+- **All 24 runs are kept,** so D6 stands. The GLM totals with the exposure off are about 0.6
+  worse on CV in both models, and no run is dropped.
+- `scoring.Metric` keeps `direction` and `__call__` (HEAD's form, from `8ee091a`).
+- **TPE's random start, `n_startup_trials` (40 or 10; today the default, 10), is postponed**
+  until after T2.4, together with `n_trials` (200 today). Pruning and parallelization change
+  what a trial costs. The evidence so far, at 200 trials with the exposure on:
 
-**Pending, to decide after Model 2 (after T2.2): TPE's random start, `n_startup_trials`, 40
-or 10 (today the default, 10).**
+  | Run | Random start | Best | Found at trial | Least-tried transformer per cohort | Time |
+  |---|---|---|---|---|---|
+  | Poisson GLM | 10 | 2.2490 | 199 | 6, 9, 9 | 25 s |
+  | Poisson GLM | 40 | 2.2490 | 184 | 9, 10, 11 | 29 s |
+  | NB2 | 10 | 2.2428 | 23 | 9, 9, 9 | 112 s |
+  | NB2 | 40 | 2.2426 | 123 | 7, 9, 11 | 100 s |
 
-Put the choice to the user with this evidence, measured 2026-10-21 at 200 trials, exposure
-on:
-
-| Run | Random start | Best | Found at trial | Least-tried transformer per cohort | Time |
-|---|---|---|---|---|---|
-| Poisson GLM | 10 | 2.2490 | 199 | 6, 9, 9 | 25 s |
-| Poisson GLM | 40 | 2.2490 | 184 | 9, 10, 11 | 29 s |
-| NB2 | 10 | 2.2428 | 23 | 9, 9, 9 | 112 s |
-| NB2 | 40 | 2.2426 | 123 | 7, 9, 11 | 100 s |
-
-- **More trials are not needed:** 400 trials left the Poisson GLM's best at 2.2490 (found at
-  trial 296).
-- **40 makes almost no difference to the best** (at most 0.0002). It evens the Poisson GLM's
-  coverage but not NB2's, and costs no time.
-- **The cost of changing it:** every seeded result changes, so Model 1 and Model 2 must be
-  re-run at 200 and a new Check C baseline recorded.
-- **Where:** `TPESampler(seed=study_seed, n_startup_trials=…)` in `tune_model` (T1.5's cell).
-
-Add the Model 2 runs' coverage to the evidence before asking.
+  - 400 trials left the Poisson GLM's best at 2.2490.
+  - Model 2's coverage at 10: the GLM totals' transformer 7–9, logistic's transformer 8–12,
+    every LightGBM choice 16 or more, the calibration 12–34.
+  - A change re-runs both models at 200 trials (about 30 min) and resets the Check C
+    baselines.
+  - It is set in `TPESampler(seed=study_seed, n_startup_trials=…)` in `tune_model`.
 
 ## 4. How to work
 
 The standing rules are in [NOTEBOOK_TUNING_PLAN.md](NOTEBOOK_TUNING_PLAN.md) §1 and
-[EXPERIMENT_NOTEBOOK_PLAN.md](EXPERIMENT_NOTEBOOK_PLAN.md) §3. In short:
+[EXPERIMENT_NOTEBOOK_PLAN.md](EXPERIMENT_NOTEBOOK_PLAN.md) §3.
 
 **Each sub-task**
 - Plan mode first. Re-verify the plan's facts with read-only probes, summarize the sub-task in
   the chat, and ask for approval.
-- Then implement, run the checks, and report file by file with the check results and the
-  suggested commit command. Tick the sub-task and update the plan's status line. Stop.
+- Then implement, run the checks, and report file by file. Give the check results and the
+  suggested commit message in the chat. Tick the sub-task and update the plan's status line.
+  Stop.
 
 **Git and the editor**
 - The user commits and pushes. No `Co-Authored-By` line. Never `git checkout`, `stash`,
   `reset` or `mv`. Restore a file from HEAD with `git show HEAD:<path> > <path>` and `cmp`.
-- The user edits the notebook between turns. Record its md5 after every edit of yours and
-  check it before the next; if it changed, show the diff and ask.
+- **The user edits between turns, the notebook and `src` alike.** This session found
+  `scoring.py` reverted to an older `Metric` (with `greater_is_better`) in the working tree;
+  the user wanted HEAD's form restored. Check `git status` and the notebook's md5 before
+  each sub-task and before each edit. Show any diff the handoff does not name, and ask.
 - **marimo's editor trims each cell's `return`** to the names other cells read whenever the
   user saves. Ruff then jumps to about 31 findings and Check B loses names. The user chose
-  (2026-10-21) to have the returns as at HEAD restored each time, after the diff is shown.
-- Format new cells to `ruff format`'s output by formatting a scratch copy; never format the
-  whole file. No new ruff finding (baseline 8). A display cell without a value needs no
-  bare `return`, which PLR1711 would flag.
+  to have the returns as at HEAD restored each time, after the diff is shown.
+- **Format new cells to `ruff format`'s output; never format the whole file.** For many
+  similar cells (T2.1's 16):
+  1. generate them with a script into the scratchpad;
+  2. run `ruff format` there;
+  3. insert them before `if __name__`;
+  4. check that the insertion leaves no extra blank line, which would add a third hunk to
+     the format diff.
+- No new ruff finding (baseline 8). A display cell without a value needs no bare `return`,
+  which PLR1711 would flag.
 
 **Probes and checks**
 - Probes are read-only: `PYTHONPATH=src .venv/bin/python -W error -c "..."`.
 - Scratch files go to the session scratchpad, **never into `notebooks/`**. Review subagents
   write nothing into the repository.
-- `timeout` does not exist on macOS: run long commands in the background.
+- `timeout` does not exist on macOS: run long commands in the background. The 200-trial run
+  of both models takes about 30 min.
 - **Check C runs with `PYTHONWARNINGS=error`** (D15). The fold processes do not inherit
   `-W`; the environment variable reaches them.
 - **In a probe, a function sent to joblib must not capture the notebook's `defs`**: it fails
-  to pickle (`_thread.lock`). Pass the data in as arguments, or use the notebook's own
-  functions (`partial(suggest_model1, …)` pickles).
+  to pickle (`_thread.lock`). Use the notebook's own functions (`partial(suggest_model1,
+  …)` pickles).
+- **pandas 3.0.5 and `None`:**
+  - `None` in a str column becomes NaN, and `value_counts()` drops it.
+  - `reindex([None, …])` misses a column where every trial drew `None` (object dtype).
+  - Count by label: `fillna("None")`, then reindex on `str(candidate)` (D16).
+- `json.dumps(record, default=str)` writes a `NaN` token, which strict JSON readers reject.
+  Use `trials.to_json(orient="records")` when records are first saved (T2.3's F3).
 
-**Design reviews.** Expect one at each sub-task; most of T1 was reworked after the user read
-it.
+**Design reviews.** Expect one at each sub-task; most of T1 and T2 was reshaped by the user.
 - Answer a design question with a recommendation, the measured evidence and the trade-off
-  (AskUserQuestion with code previews works well), and do not implement before the answer.
+  (AskUserQuestion with code previews works well). Do not implement before the answer.
 - When the user asks "what is the best practice", give the practice, why, and the
   measurement here.
+- When the user suggests a change, check it against the measurements first. Example: the
+  user expected LightGBM's Gaussian loss to be inferior, but it ties the Poisson loss.
 - The user is not familiar with marimo's UI terms (e.g. "button"): explain them.
 
-**The user's style, as asked during T1:**
-- explicit cells, one per run, not loops over runs;
+**The user's style, as asked during T1 and T2:**
+- explicit cells, one per run, not loops over runs or lists of settings;
 - no function unless it is reused;
 - names that say what a thing holds (`score_table`, `y_pred_*`, `feature_transformer_dict`);
 - records that refer to registered objects by name;
+- one source of truth for a list of candidates (a ClassVar of the search space);
 - no field or check that nothing reads;
 - scikit-learn's terms (`make_estimator`);
 - if/elif with a raising `else`;
 - code that may move to a package reads no notebook global.
 
-## 5. Open items outside this flow
+## 5. Open items
 
-- **T2.1's first question:** with one cell per run, how the Model 2 totals are chosen after
-  Model 1's table: by which run cells exist, or by an edited list. Settle it in T2.1's plan.
-- **F7:** `num_leaves` above `2**max_depth` changes nothing in LightGBM (D15). Revisit in a
+- **T2.4 (next): does pruning or parallelization help, and where.** The plan's T2.4 lists
+  the steps:
+  1. Profile one trial of the slowest pairs (`nb2+lgbm`, `poisson_glm+lgbm`) and one Model 1
+     NB2 trial.
+  2. Measure each parallelization place: folds (today), LightGBM threads, inside the
+     composite (a `src` change), runs at once (D14 conflict), trials in parallel (loses the
+     seeded reproducibility).
+  3. Measure each pruning place: Wilcoxon across folds, two batches of folds, slow pairs
+     only, inside LightGBM.
+  4. Decide `catch`'s scope (T2.3's F7). Model 2's `ValueError` checks, and a
+     `ConvergenceWarning` under `PYTHONWARNINGS=error`, would end a whole run.
+  5. Report wall time, best values, reproducibility and the code each adds, with a
+     recommendation per place.
+  6. Then re-decide `n_trials` and `n_startup_trials`.
+- **T2.5's open points** (in the plan):
+  - how the fitted best model is obtained (the records keep none);
+  - which split gets the interval: `best_df` selects on validation, so the interval there is
+    optimistic, and E11 points at test (T2.3's F6);
+  - the bootstrap's metrics;
+  - `n_repeats` and the SHAP sizes;
+  - a button.
+- **T2.3's F5:** the two tables cells count with different idioms; left as is.
+- **T1's F7:** `num_leaves` above `2**max_depth` changes nothing in LightGBM. Revisit in a
   search-space pass.
 - **The user's:** two empty cells and the bare `return`s marimo writes; ask before changing.
 - **Stale text in section 4:** its header still says "the check below prints it" and "fitted
-  once … as a check", but the check cell is gone (the user's text; ask).
+  once … as a check", but the check cell is gone. This is the user's text; ask.
 - **SPLITTING.md §3** and the simulator plan's Stop 4 doc examples (`.run()` → `simulate()`).
 - **The simulator plan's cleanup stop** (dead code) and the format-only commit.
 - **A `log(n_apartments)` plan for the GLMs** (FEATURE_TRANSFORMATIONS.md §4.4). Not asked
@@ -247,36 +293,36 @@ it.
 ## 6. The prompt for the next session
 
 ```text
-Read docs/EXPERIMENT_NOTEBOOK_HANDOFF.md in full, then docs/NOTEBOOK_TUNING_PLAN.md: §0 (the
-decisions D1–D15), §1 (the rules and the checks A/B/C), §3 (T2), §4 (T3), §5 (T4) and §6 (T5);
-§2 holds T1 and the notebook's current code. Then read notebooks/02_experiments.py section 5
-(from the "## 5) Hyperparameter tuning" cell to the end), src/age_group_prediction/scoring.py,
-src/age_group_prediction/aggregation.py, and the Model 2 classes in
-src/age_group_prediction/modeling/ (CohortProbabilityModel, TotalTimesProbabilityModel).
+Read docs/EXPERIMENT_NOTEBOOK_HANDOFF.md in full, then docs/NOTEBOOK_TUNING_PLAN.md: §0
+(decisions D1–D18), §1 (the rules and the checks A/B/C), §3 (T2.4 and T2.5), §4–§6 (T3, T4a,
+T4b, T5) and §7 (the performance facts); §2 and T2.1–T2.3 hold the notebook's current code and
+results. Then read notebooks/02_experiments.py section 5 (from the "## 5) Hyperparameter
+tuning" cell to the end), src/age_group_prediction/aggregation.py, scoring.py, and
+src/age_group_prediction/inspection/ (for T2.5).
 
-Expected state: branch feat/experiment-notebook, HEAD 9eca96e (T1.8) or a later commit of
-mine, a clean tree, notebook md5 9d49fe78f99d7ff4d96e17742ea7d277. Verify HEAD, git status and
+Expected state: branch feat/experiment-notebook, HEAD 7580304 (T2.3) or a later commit of
+mine, a clean tree, notebook md5 eec46ac5cbec902ffdd98cce6f4c9cbd. Verify HEAD, git status and
 the md5 first; if anything has changes the handoff does not name, stop and show me the diff.
 I commit, push and merge myself: never commit, never add a Co-Authored-By line, never git
 checkout/stash/reset/mv.
 
-Task: sub-task T2.1 of docs/NOTEBOOK_TUNING_PLAN.md (Model 2's run cells); its first
-question is how the total families are chosen now that each run has its own cell (handoff
-§5). Then one sub-task per approval in the plan's order (T2.2, T2.3, then the n_startup_trials
-decision of handoff §3, then T3, T4, T5). Work in plan mode for each: re-verify the plan's
-facts with read-only probes (PYTHONPATH=src .venv/bin/python -W error -c "..."), summarize the
-sub-task in the chat, and ask for approval before editing. Do not re-ask the decisions of the
-plan's §0 or the handoff's §3. Write the code as the plan gives it; if you must deviate, say
-why with measured evidence before doing so. I review the design of each sub-task: when I ask
-a design question, answer with a recommendation, the evidence and the trade-off, and wait for
-my answer before editing.
+Task: sub-task T2.4 of docs/NOTEBOOK_TUNING_PLAN.md: check whether pruning and
+parallelization help, and where. First profile where a trial's time goes, then measure each
+candidate place against today's (folds in parallel, no pruning) on wall time, best values and
+reproducibility, plus the scope of tune_model's catch (T2.3's F7). Recommend, and change
+nothing in the notebook without my approval. Then, in the plan's order: the n_trials /
+n_startup_trials decision, T2.5, T3, T4a, T4b, T5, one sub-task per approval. Work in plan
+mode for each: re-verify the plan's facts with read-only probes (PYTHONPATH=src
+.venv/bin/python -W error -c "..."), summarize the sub-task in the chat, and ask for approval
+before editing. Do not re-ask the decisions of the plan's §0 or the handoff's §3. Write the
+code as the plan gives it; if you must deviate, say why with measured evidence before doing
+so. I review the design of each sub-task: when I ask a design question, answer with a
+recommendation, the evidence and the trade-off, and wait for my answer before editing.
 
 At each sub-task's stop give me: a file-by-file summary; the results of the plan's checks for
-that sub-task (Check A, Check B, and Check C run under PYTHONWARNINGS=error); ruff on the
-notebook (8 pre-existing findings, no new one); ruff format --diff (only the two known hunks
-at lines 158 and 213); at T2.3 an independent review subagent's findings reproduced (tell it
-to write nothing into the repository); the notebook's new md5; and the suggested commit
-command. Tick the sub-task and update the status line in docs/NOTEBOOK_TUNING_PLAN.md. After
-T2.2, put the n_startup_trials decision (40 or 10) to me with the evidence of handoff §3 and
-Model 2's coverage.
+that sub-task (Check A, Check B, and Check C run under PYTHONWARNINGS=error, reproducing the
+baselines); ruff on the notebook (8 pre-existing findings, no new one); ruff format --diff
+(only the two known hunks at lines 158 and 213); the notebook's new md5; and the suggested
+commit message in the chat. Tick the sub-task and update the status line in
+docs/NOTEBOOK_TUNING_PLAN.md.
 ```
