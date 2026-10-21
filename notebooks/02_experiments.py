@@ -598,31 +598,32 @@ def _(mo):
     mo.md(r"""
     ## 5) Hyperparameter tuning
 
-    One Optuna study per model family and exposure (on or off, fixed for the
-    study), on the composite: the model that is scored is the model that is
-    tuned, by the cohort Poisson deviance of its cross-validation folds on the
-    training part, the plain mean over folds. A study's fixed settings are a
-    frozen dataclass, its component; a trial samples per cohort (per component
-    for Model 2) the feature transformer by name and the estimator's
-    hyperparameters, under the names `<component>__<parameter>`, and builds
-    the estimator, its `CountModel` and the composite with constructor calls.
-    LightGBM's two losses, Poisson and Gaussian, are separate families, and
-    the exposure a study setting: a study that sampled the loss split 30
-    trials 10/20 and did worse than either loss alone, and the exposure
-    changes the target (a count or a weighted rate). `n_trials = 200`, so
-    that no categorical arm starves; the table of trials per arm shows it.
-    The i-th study gets `seed + i`; the studies of one model run
-    in parallel with joblib. A trial whose fit raises (an NB2 fit that does not
-    converge) is marked failed and the study goes on; the tables count them.
-    Only each study's best run is rebuilt, refit on the training part and
-    scored on training and validation. A Gaussian loss can predict a negative
-    count, which `CountModel` floors at `y_min` (eps). Model 2 is tuned the
-    same way, one study per total family (the list `MODEL2_TOTALS`, edited
-    after Model 1's table), the total's exposure and a classifier family,
-    under `total__…` and `probability__…`; the probability model ignores the
-    exposure, and its calibration is searched. The last table shows each model's best family on
-    validation. The run cells sit behind buttons: opening the notebook fits
-    nothing.
+    One run per model family and exposure (on or off, fixed for the run), each
+    in its own cell: one Optuna study on the composite, so the model that is
+    scored is the model that is tuned, by the cohort Poisson deviance of its
+    cross-validation folds on the training part, the plain mean over folds.
+    A trial draws, per cohort (per part for Model 2), the estimator's
+    hyperparameters and the feature transformer by name, under the names
+    `<component>__<parameter>`; they make a component, a complete record of
+    that part, and the composite is built from the components with
+    constructor calls. LightGBM's two losses, Poisson and Gaussian, are
+    separate families, and the exposure a run setting: a study that sampled
+    the loss split 30 trials 10/20 and did worse than either loss alone, and
+    the exposure changes the target (a count or a weighted rate).
+    `n_trials = 200`; the table of trials per feature transformer shows
+    whether any was tried too rarely to be judged. The runs go one after
+    another, run i seeded `seed + i`, and each trial fits its 5 folds in
+    parallel. A trial whose fit raises (an NB2 fit that does not converge) is
+    marked failed and the run goes on; the tables count them. Each run keeps
+    every trial and its best components, which alone are rebuilt, refit on
+    the training part and scored on training and validation. A Gaussian loss
+    can predict a negative count, which `CountModel` floors at `y_min` (eps).
+    Model 2 is tuned the same way, one run per total family (the list
+    `MODEL2_TOTALS`, edited after Model 1's table), the total's exposure and
+    a classifier family, under `total__…` and `probability__…`; the
+    probability model ignores the exposure, and its calibration is searched.
+    The last table shows each model's best family on validation. The run
+    cells sit behind buttons: opening the notebook fits nothing.
     """)
     return
 
@@ -655,8 +656,7 @@ def _():
     )
     from age_group_prediction.scoring import Metric, cohort_poisson_deviance
 
-    # Optuna logs every trial at INFO; the tuning function repeats this in
-    # each joblib worker.
+    # Optuna logs every trial at INFO; the studies run in this process.
     optuna.logging.set_verbosity(optuna.logging.WARNING)
     return (
         ClassVar,
@@ -714,11 +714,9 @@ def _(Literal, Y, get_args, np):
     # workers receive the components by cloudpickle.
     CountFamily = Literal["lgbm_poisson", "lgbm_gaussian", "poisson_glm", "nb2"]
     ProbabilityFamily = Literal["logistic", "lgbm"]
-    COUNT_FAMILIES = get_args(CountFamily)
     PROBABILITY_FAMILIES = get_args(ProbabilityFamily)
     return (
         COHORTS,
-        COUNT_FAMILIES,
         CountFamily,
         PREDICTION_FLOOR,
         PROBABILITY_FAMILIES,
@@ -820,7 +818,7 @@ def _(
                 # LightGBM's name for the loss, which the family fixes (D6).
                 objective = "poisson" if self.family == "lgbm_poisson" else "regression"
                 # subsample_freq=1: LightGBM ignores subsample without it; n_jobs=1: one
-                # thread per fit, so the parallel studies do not oversubscribe the cores.
+                # thread per fit, so the parallel folds do not oversubscribe the cores.
                 return LGBMRegressor(
                     objective=objective,
                     subsample_freq=1,
@@ -892,7 +890,7 @@ def _(
         FEATURE_TRANSFORMER_NAMES: ClassVar[MappingProxyType[str, tuple[str, ...]]]
 
         def __post_init__(self):
-            # At construction, before the parallel studies start.
+            # At construction, before a run starts.
             families = get_args(get_type_hints(type(self))["family"])
             if self.family not in families:
                 raise ValueError(
@@ -1219,7 +1217,9 @@ def _(Mean, Parallel, TPESampler, delayed, optuna, time):
 
         ``aggregator`` combines the fold scores; None means the plain mean.
         ``n_jobs`` processes fit the folds in parallel; the scores are the
-        same as one after another, so a seeded study is unchanged.
+        same as one after another, so a seeded study is unchanged. The
+        processes do not inherit a script's ``-W`` filters: a warning in a fold
+        raises there only under the environment's ``PYTHONWARNINGS`` (D15).
         """
         # The aggregator decides the selection (D9); the plain mean by default,
         # since the folds differ by one row at most.
@@ -1253,7 +1253,6 @@ def _(Mean, Parallel, TPESampler, delayed, optuna, time):
         the study goes on; without ``catch`` one such trial would end the
         study. ``aggregator`` and ``n_jobs`` go to ``cv_score``.
         """
-        optuna.logging.set_verbosity(optuna.logging.WARNING)
 
         def objective(trial):
             # Optuna passes the trial alone; the data is bound here, not to a cell.
@@ -1994,6 +1993,7 @@ def _(
 
 @app.cell
 def _(
+    CountSearchSpace,
     model1_lgbm_gaussian_exposure,
     model1_lgbm_gaussian_no_exposure,
     model1_lgbm_poisson_exposure,
@@ -2032,10 +2032,15 @@ def _(
         )
         # The completed trials per feature transformer, Model 1's only categorical
         # choice: TPE concentrates on what looked good early, so a transformer
-        # tried a few times has not been judged (D14).
+        # tried a few times has not been judged (D14). Every candidate of the
+        # family is listed, so one never tried shows 0 rather than nothing.
+        _candidates = CountSearchSpace.FEATURE_TRANSFORMER_NAMES[_run["family"]]
         for _column in _trials.columns:
             if _column.endswith("__feature_transformer"):
-                for _value, _n in _complete[_column].value_counts().items():
+                _counts = (
+                    _complete[_column].value_counts().reindex(_candidates, fill_value=0)
+                )
+                for _value, _n in _counts.items():
                     _arm_rows.append(
                         {
                             **_settings,

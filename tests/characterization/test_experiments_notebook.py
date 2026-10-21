@@ -174,11 +174,11 @@ def test_a_seed_override_not_reaching_the_simulator_is_caught(tmp_path: Path) ->
 
 
 def test_a_tuning_cell_outside_a_run_button_is_caught() -> None:
-    # A cell that tunes without `mo.stop(not <button>.value)` would fit three
-    # studies on every script run, the notebook test included. A string check
-    # on the cells that name `tune_model` (the run cell calls it through
-    # joblib's `delayed`): the stop's presence, not its position; the script
-    # run's wall time above is the behavioural guard.
+    # A cell that tunes without `mo.stop(not <button>.value)` would fit its
+    # run's study on every script run, the notebook test included. A string
+    # check on the cells that name `tune_model` (each run cell calls it): the
+    # stop's presence, not its position; the script run's wall time above is
+    # the behavioural guard.
     source = NOTEBOOK_PATH.read_text(encoding="utf-8")
     cells = source.split("@app.cell")
     tuning_cells = [

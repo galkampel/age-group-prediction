@@ -1,6 +1,6 @@
 # Re-implement the hyperparameter tuning inside the notebook
 
-**Status (2026-10-21):** approved; T1.1 committed (`0416267`); T1.2 committed (`bee781a`) after the user's review (estimator dataclasses hold hyperparameters only; LightGBM's loss is a family); T1.3 committed (`7ae6314`) after three user reviews (components are a study's fixed settings, a `Literal` family and `use_exposure`; the family → transformer-names mapping is an argument of `suggest_feature_transformer`; no dataclass builds a model; the exposure a study setting, both arms; feature variants renamed feature transformers; D2, D3, D6, T1.4–T2.2 rewritten); T1.4 done 2026-10-19, then reworked at two rounds of the user's review on 2026-10-20 (D8: a named component per part of the composite under an abstract `Component`; the family checked from its `Literal`; each subclass holds its families' transformer names; `make_estimator(hyperparameters, *, seed)`; the T1.3 cells changed too; T1.4–T2.2 rewritten), committed (`8cc231d`); T1.5 done 2026-10-21 (`cv_score`, `tune_model`; at the user's review the fold variables named and an aggregator added, D9: `src/age_group_prediction/aggregation.py` and its tests, default `Mean`), committed (`a5ae06b`); T1.6 done 2026-10-21 (Model 1's button and run cell; Check C 14.7 s at 3 trials), then the redesign of D10 at its review, revised by D11 and D12 at the next reviews (search spaces with explicit suggest methods, the builder assembles components, the transformer by name; a study is a family combination and exposure; `feature_transformer_dict`; Check C reproduces T1.6's best values), committed (`6316d91`); T1.7 implemented 2026-10-21, then D13 and D14 at its reviews (the runs in their own cells, one after another, each trial's folds in parallel; every trial and the best kept per run; `score_table`, `y_pred_*`; Check C reproduces T1.6's best values in 13.6 s), uncommitted, awaiting the user's 200-trial click; notebook md5 `14f401f28878b029cd54e73ceee5d2a4`; then T1.8. The implementing session updates this line and ticks the sub-tasks.
+**Status (2026-10-21):** approved; T1.1 committed (`0416267`); T1.2 committed (`bee781a`) after the user's review (estimator dataclasses hold hyperparameters only; LightGBM's loss is a family); T1.3 committed (`7ae6314`) after three user reviews (components are a study's fixed settings, a `Literal` family and `use_exposure`; the family → transformer-names mapping is an argument of `suggest_feature_transformer`; no dataclass builds a model; the exposure a study setting, both arms; feature variants renamed feature transformers; D2, D3, D6, T1.4–T2.2 rewritten); T1.4 done 2026-10-19, then reworked at two rounds of the user's review on 2026-10-20 (D8: a named component per part of the composite under an abstract `Component`; the family checked from its `Literal`; each subclass holds its families' transformer names; `make_estimator(hyperparameters, *, seed)`; the T1.3 cells changed too; T1.4–T2.2 rewritten), committed (`8cc231d`); T1.5 done 2026-10-21 (`cv_score`, `tune_model`; at the user's review the fold variables named and an aggregator added, D9: `src/age_group_prediction/aggregation.py` and its tests, default `Mean`), committed (`a5ae06b`); T1.6 done 2026-10-21 (Model 1's button and run cell; Check C 14.7 s at 3 trials), then the redesign of D10 at its review, revised by D11 and D12 at the next reviews (search spaces with explicit suggest methods, the builder assembles components, the transformer by name; a study is a family combination and exposure; `feature_transformer_dict`; Check C reproduces T1.6's best values), committed (`6316d91`); T1.7 committed (`59acae6`); its 200-trial run took 380 s with no failed trial (D15); T1.8 done 2026-10-21 (independent review: no correctness bug, nine findings reproduced and settled, D15), uncommitted; notebook md5 `9d49fe78f99d7ff4d96e17742ea7d277`; then T2.1. The implementing session updates this line and ticks the sub-tasks.
 
 Written for the model that implements it, one sub-task per approval. Every sub-task has the
 code to write, a "done when" list and the commands that verify it. The user reads the diff in
@@ -298,6 +298,34 @@ plain `Literal` assignments, not the `type` statement: cloudpickle cannot pickle
   - **A run whose trials all fail** raises in its own cell ("No trials are completed yet").
     The other runs are untouched, and the tables wait for it.
   - **Measured:** Check C at 3 trials reproduced T1.6's 8 best values in 13.6 s.
+
+- D15. **Added 2026-10-21 (T1.8's review, the user's choices):**
+  - **Strict checks.** Fold processes do not inherit a script's `-W` filters. Measured: a
+    warning in a worker under `python -W error` is printed and the call returns; run
+    sequentially, it raises. Check C therefore runs with `PYTHONWARNINGS=error`, which the
+    processes inherit, so a warning in any fold fails the check as it would in a single
+    process. `cv_score`'s docstring says so. The notebook's behaviour in marimo is
+    unchanged. Check C under it at 3 trials: no warning, T1.6's 8 best values.
+  - **Untried transformers show 0.** The trials-per-transformer table is reindexed on the
+    family's candidates (`CountSearchSpace.FEATURE_TRANSFORMER_NAMES`), so a transformer
+    with no completed trial shows 0 instead of vanishing (finding F1).
+  - **`num_leaves` above `2**max_depth` changes nothing in LightGBM** (measured: at
+    `max_depth` 3, 96% of the 7–63 range; at 5, 54%). It is left as a known inefficiency:
+    the search spaces stay fixed, and TPE only spends some trials on equivalent settings.
+    Revisit in a search-space pass.
+  - **The 200-trial run of Model 1** (the clicked path, button patched): 380 s, no failed
+    trial. Every feature transformer was tried in every run and cohort, the least-tried 6–9
+    times in the GLM families (6 candidates) and 17 or more in LightGBM (2 candidates).
+    Best validation composite:
+
+    | Family | Validation composite |
+    |---|---|
+    | `lgbm_poisson`, exposure on | 2.1604 |
+    | `lgbm_gaussian`, exposure on | 2.1646 |
+    | `poisson_glm`, exposure on | 2.1882 |
+    | `nb2`, exposure on | 2.1962 |
+
+    Every family is worse with the exposure off, the GLMs by about 0.85.
 
 **What does not change:** notebook sections 1–4 and the `cv`/`cv_groups` cell; the models in
 `src/age_group_prediction/modeling/` (the S1 `get_params`/`set_params` forwarding in
@@ -1320,7 +1348,6 @@ model1_lgbm_poisson_exposure = {
     "y_min": PREDICTION_FLOOR,
 }
 ```
-(6 performance), so the 8 studies take one process each.
 
 **Done when:** Check A fully green (the `tune_model` rule holds again); Check C with
 `n_trials = 3` prints `MODEL1_STUDIES True` (since D13 `MODEL1_TUNING`) and, for each component, `len(study.trials) == 3`;
@@ -1344,7 +1371,7 @@ Met 2026-10-21:
 - At NB2's pace of about 2 s a trial, a 200-trial run should take roughly 7 minutes; the
   user's click (T1.7) measures it.
 
-### [ ] T1.7 Refit, tables and the Model 1 views
+### [x] T1.7 Refit, tables and the Model 1 views
 
 The refit lives in each run cell (D14). This sub-task's cells are the function, the tables
 cell and the display cell.
@@ -1454,14 +1481,31 @@ mo.vstack(
 - The records serialize with `trials` as `to_dict("records")` and `json.dumps(…,
   default=str)` (the trial timestamps).
 
-Then the user clicks the button in `marimo edit` at
+The 200-trial run: 380 s, no failed trial (D15). Then the user clicks the button in `marimo edit` at
 `n_trials = 200` and reports the wall time (today's package version: ≈ 5 min).
 
-### [ ] T1.8 Independent review of T1
+### [x] T1.8 Independent review of T1
 
 A review subagent (writes nothing into the repository) reads the new section against this
 plan and the decisions; each finding is reproduced before it is acted on. Then the file-by-file
 summary and the suggested commit command for the user.
+
+Done 2026-10-21. The reviewer found no correctness bugs. It checked:
+- the `FixedTrial` rebuild equals the scored value;
+- parallel folds equal sequential ones;
+- no leakage;
+- the metric pairing, the exposure handling and Model 2's builders.
+
+Its nine findings were all reproduced and settled:
+- **F1:** an untried transformer now shows 0 (D15).
+- **F2:** strict checks with `PYTHONWARNINGS=error`, and a note in the docstring (D15).
+- **F3:** the section-5 header rewritten for D10–D14.
+- **F4:** three stale "parallel studies" comments reworded.
+- **F5:** the redundant `set_verbosity` removed from `tune_model`.
+- **F6:** the unused `COUNT_FAMILIES` removed.
+- **F7:** `num_leaves`, left as a known inefficiency (D15).
+- **F8:** this document's status, ticks, a stray line, and T2.1's settings list.
+- **F9:** the stale comment in the notebook test (the comment only).
 
 ## 3. T2: Model 2 and the best-per-model table (notebook only)
 
@@ -1470,13 +1514,10 @@ summary and the suggested commit command for the user.
 # Model 2's total families, a list to edit after Model 1's table above. The
 # studies are this list × the total's exposure × the probability families.
 MODEL2_TOTALS = ["lgbm_poisson", "lgbm_gaussian", "poisson_glm", "nb2"]
-MODEL2_STUDY_SETTINGS = [
-    (total_family, probability_family, use_exposure)
-    for total_family in MODEL2_TOTALS
-    for probability_family in PROBABILITY_FAMILIES
-    for use_exposure in (True, False)
-]
 ```
+(D14: one cell per run, so a settings list does not survive, and the run cells present are
+the runs tuned. How the totals are chosen after Model 1's table, by the run cells or by the
+list above, is settled at T2.1's plan.)
 Button: `run_model2 = mo.ui.run_button(label="Tune Model 2")`, text
 `f"{run_model2} {len(MODEL2_STUDY_SETTINGS)} runs × `n_trials` trials, one after another…"`.
 Run cells: as T1.6 (D14), one cell per run (16 at four totals), `n_jobs=n_splits`, each keeping its trials and its best,
