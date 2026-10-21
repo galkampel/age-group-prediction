@@ -1,6 +1,6 @@
 # Re-implement the hyperparameter tuning inside the notebook
 
-**Status (2026-10-21):** approved; T1.1 committed (`0416267`); T1.2 committed (`bee781a`) after the user's review (estimator dataclasses hold hyperparameters only; LightGBM's loss is a family); T1.3 committed (`7ae6314`) after three user reviews (components are a study's fixed settings, a `Literal` family and `use_exposure`; the family → transformer-names mapping is an argument of `suggest_feature_transformer`; no dataclass builds a model; the exposure a study setting, both arms; feature variants renamed feature transformers; D2, D3, D6, T1.4–T2.2 rewritten); T1.4 done 2026-10-19, then reworked at two rounds of the user's review on 2026-10-20 (D8: a named component per part of the composite under an abstract `Component`; the family checked from its `Literal`; each subclass holds its families' transformer names; `make_estimator(hyperparameters, *, seed)`; the T1.3 cells changed too; T1.4–T2.2 rewritten), committed (`8cc231d`); T1.5 done 2026-10-21 (`cv_score`, `tune_model`; at the user's review the fold variables named and an aggregator added, D9: `src/age_group_prediction/aggregation.py` and its tests, default `Mean`), committed (`a5ae06b`); T1.6 done 2026-10-21 (Model 1's button and run cell; Check C 14.7 s at 3 trials), then the redesign of D10 at its review, revised by D11 and D12 at the next reviews (search spaces with explicit suggest methods, the builder assembles components, the transformer by name; a study is a family combination and exposure; `feature_transformer_dict`; Check C reproduces T1.6's best values), committed (`6316d91`); T1.7 committed (`59acae6`); its 200-trial run took 380 s with no failed trial (D15); T1.8 done 2026-10-21 (independent review: no correctness bug, nine findings reproduced and settled, D15), committed (`9eca96e`); notebook md5 `9d49fe78f99d7ff4d96e17742ea7d277`; handoff rewritten 2026-10-21 for a new session; T2.1 done 2026-10-21 (Model 2's button and 16 run cells; no `MODEL2_TOTALS`, the run cells present are the runs tuned; Check C 53.3 s, Model 2's baseline recorded), awaiting the user's commit; notebook md5 `1405425ae7bf3da901cf0eba8860bf71`; T2.2 done 2026-10-21 (Model 2's tables, display and best-per-model cells; D16), 200-trial run 1827 s (Model 1 366 s, Model 2 1447 s, no failed trial), awaiting the user's commit; notebook md5 `d9ca23572484fbe60a02e945eda1505d`; T2.4 (pruning and parallelization check) added at the user's request; D17: T4 replaces the package (T4a delete, T4b rebuild from the notebook). D18: T2.5 (the bootstrap interval and feature importance of the best runs) added. The `n_startup_trials` decision postponed by the user until after T2.4, with `n_trials`; all 24 runs kept (D6 stands). Next: T2.3 → T2.4 → the `n_trials` / `n_startup_trials` decision → T2.5 → T3 → T4a → T4b → T5. The implementing session updates this line and ticks the sub-tasks.
+**Status (2026-10-21):** approved; T1.1 committed (`0416267`); T1.2 committed (`bee781a`) after the user's review (estimator dataclasses hold hyperparameters only; LightGBM's loss is a family); T1.3 committed (`7ae6314`) after three user reviews (components are a study's fixed settings, a `Literal` family and `use_exposure`; the family → transformer-names mapping is an argument of `suggest_feature_transformer`; no dataclass builds a model; the exposure a study setting, both arms; feature variants renamed feature transformers; D2, D3, D6, T1.4–T2.2 rewritten); T1.4 done 2026-10-19, then reworked at two rounds of the user's review on 2026-10-20 (D8: a named component per part of the composite under an abstract `Component`; the family checked from its `Literal`; each subclass holds its families' transformer names; `make_estimator(hyperparameters, *, seed)`; the T1.3 cells changed too; T1.4–T2.2 rewritten), committed (`8cc231d`); T1.5 done 2026-10-21 (`cv_score`, `tune_model`; at the user's review the fold variables named and an aggregator added, D9: `src/age_group_prediction/aggregation.py` and its tests, default `Mean`), committed (`a5ae06b`); T1.6 done 2026-10-21 (Model 1's button and run cell; Check C 14.7 s at 3 trials), then the redesign of D10 at its review, revised by D11 and D12 at the next reviews (search spaces with explicit suggest methods, the builder assembles components, the transformer by name; a study is a family combination and exposure; `feature_transformer_dict`; Check C reproduces T1.6's best values), committed (`6316d91`); T1.7 committed (`59acae6`); its 200-trial run took 380 s with no failed trial (D15); T1.8 done 2026-10-21 (independent review: no correctness bug, nine findings reproduced and settled, D15), committed (`9eca96e`); notebook md5 `9d49fe78f99d7ff4d96e17742ea7d277`; handoff rewritten 2026-10-21 for a new session; T2.1 done 2026-10-21 (Model 2's button and 16 run cells; no `MODEL2_TOTALS`, the run cells present are the runs tuned; Check C 53.3 s, Model 2's baseline recorded), awaiting the user's commit; notebook md5 `1405425ae7bf3da901cf0eba8860bf71`; T2.2 done 2026-10-21 (Model 2's tables, display and best-per-model cells; D16), 200-trial run 1827 s (Model 1 366 s, Model 2 1447 s, no failed trial); T2.1–T2.2 committed (`a2b8693`); T2.3 done 2026-10-21 (independent review: no correctness bug; findings F1–F8 settled), awaiting the user's commit; notebook md5 `eec46ac5cbec902ffdd98cce6f4c9cbd`; T2.4 (pruning and parallelization check) added at the user's request; D17: T4 replaces the package (T4a delete, T4b rebuild from the notebook). D18: T2.5 (the bootstrap interval and feature importance of the best runs) added. The `n_startup_trials` decision postponed by the user until after T2.4, with `n_trials`; all 24 runs kept (D6 stands). Next: T2.3 → T2.4 → the `n_trials` / `n_startup_trials` decision → T2.5 → T3 → T4a → T4b → T5. The implementing session updates this line and ticks the sub-tasks.
 
 Written for the model that implements it, one sub-task per approval. Every sub-task has the
 code to write, a "done when" list and the commands that verify it. The user reads the diff in
@@ -65,7 +65,9 @@ plain `Literal` assignments, not the `type` statement: cloudpickle cannot pickle
 - D6. Still in force from 2026-10-15: one joint study per family on the composite; a trial
   chooses per component its feature transformer; `n_trials = 200`; studies of
   one model in parallel with joblib, study i seeded `seed + i`; only the best run is refit;
-  Model 2's totals come from the edited list `MODEL2_TOTALS`; `split_method = "random"`.
+  Model 2's totals come from the edited list `MODEL2_TOTALS` (superseded 2026-10-21, below:
+  16 run cells, no list); `split_method = "random"`. (The parallel studies: superseded by
+  D13.)
   **Changed 2026-10-18 (the user, at T1.2's review):** LightGBM's loss is no longer a sampled
   categorical. `lgbm_poisson` and `lgbm_gaussian` are separate families, and
   `LGBMRegressorParams.objective` is fixed by the family. Why: TPE here is univariate (D7),
@@ -82,8 +84,8 @@ plain `Literal` assignments, not the `type` statement: cloudpickle cannot pickle
   the target, a count or a weighted rate, so one TPE budget would under-tune the losing arm).
   Measured on validation (one fit per cohort, fixed hyperparameters): the GLMs lose 30–50%
   with the exposure off, because their variants hold no `n_apartments`; LightGBM loses about
-  3%. The user kept both arms for every family. Model 1 runs 8 studies; Model 2 runs
-  `MODEL2_TOTALS` × exposure × `PROBABILITY_FAMILIES` (16 at four totals).
+  3%. The user kept both arms for every family. Model 1 runs 8 studies; Model 2 runs the four
+  totals × exposure × the two probability families, 16 run cells (since 2026-10-21, D14).
 - D7. Settled by probe in this session (Optuna 4.9.0, joblib 1.5.3): the trial value is the
   plain mean of the fold scores (KFold on 917 rows: folds of 184/183 rows; since D9, the
   default of an aggregator); the sampler is
@@ -232,7 +234,8 @@ plain `Literal` assignments, not the `type` statement: cloudpickle cannot pickle
   - **Model 1:** a study is `(family, use_exposure)`, with one family for every cohort.
   - **Model 2:** a study is `(total_family, probability_family, use_exposure)`.
   - **Keys:** `MODEL1_STUDY_SETTINGS` and `MODEL2_STUDY_SETTINGS` list these plain tuples,
-    and the studies are keyed by them.
+    and the studies are keyed by them. (Superseded by D14: one cell per run, so neither list
+    exists; a run's record holds its settings.)
   - **Search spaces are built inside.** `suggest_model1_components(trial, *, family,
     use_exposure, cohorts)` and `suggest_model2_components(trial, *, total_family,
     probability_family, use_exposure)` build them from the family. `suggest_model1/2` call
@@ -348,8 +351,9 @@ plain `Literal` assignments, not the `type` statement: cloudpickle cannot pickle
       totals' transformer 7–9, logistic's 8–12, every LightGBM choice 16 or more, the
       calibration 12–34).
     - **All 24 runs kept (the user, 2026-10-21):** D6 stands. The GLM totals with the
-      exposure off are about 0.6 worse on CV in both models (Model 2 2.844–2.869 against
-      2.235–2.258), but no run is dropped.
+      exposure off are about 0.6 worse on CV in both models (Model 1: Poisson GLM 2.8652
+      against 2.2490, NB2 2.8572 against 2.2428; Model 2: 2.844–2.869 against 2.235–2.258),
+      but no run is dropped.
 
 - D16. **Added 2026-10-21 (the user, at T2.2's plan and implementation):**
   - **The calibration candidates are a ClassVar of the search space**,
@@ -1715,7 +1719,30 @@ Met 2026-10-21:
       LightGBM classifier (2 candidates).
     - The calibration: 12–34.
 
-### [ ] T2.3 Independent review of T2, summary, commit suggestion.
+### [x] T2.3 Independent review of T2, summary, commit suggestion.
+
+Done 2026-10-21. A review subagent read the diff `58c3bcb..a2b8693` (writing nothing into the
+repository) and found no correctness bug. It checked:
+- the 16 run cells, parsed with `ast`: comment, settings, seed offset and record name agree;
+  the order is right; `MODEL2_RUNS` is complete;
+- the `FixedTrial` rebuild against `best_value`, on three pairs;
+- no leakage; the exposure reaches the total only; the metric pairing;
+- the counts by label in every column shape;
+- `best_df`, JSON, and the draws unchanged;
+- Check C (all 16 Model 2 baselines) and Check A.
+
+Its eight findings were reproduced and settled:
+- **F1:** stale `MODEL2_TOTALS` / `PROBABILITY_FAMILIES` / `*_STUDY_SETTINGS` text in D6 and
+  D12, now marked superseded.
+- **F2:** the counting comment said reindex fails "in neither" case; it fails only on the
+  all-None column. Corrected.
+- **F3:** strict JSON and the `NaN` token, noted in T2.5 (`to_json` when records are saved).
+- **F4:** the header's seed wording and "trials per choice", corrected.
+- **F5:** the two tables cells count with different idioms. Left as is: Model 1 has no None
+  choice.
+- **F6:** the interval would be measured on the selection rows. Noted in T2.5's open points.
+- **F7:** `catch` covers `RuntimeError` only. Noted in T2.4.
+- **F8:** the status line and Model 1's CV gap (0.616 and 0.614), corrected.
 
 ### [ ] T2.4 Check whether pruning and parallelization help, and where (asked by the user, 2026-10-21)
 After T2.3, before T3. The order of the rest: T2.3 →
@@ -1759,6 +1786,12 @@ in parallel, `n_jobs=n_splits`, LightGBM `n_jobs=1`):**
    the most.
 4. **Inside a LightGBM fit** (early stopping or a pruning callback). It needs a validation
    set inside each fold's fit; check whether that fits the composite models at all.
+
+**Which errors fail one trial (T2.3's F7).** Today `catch=(RuntimeError,)`, NB2's
+non-convergence. Model 2 adds failures that raise `ValueError`: a fold without a cohort
+(`_check_every_cohort_observed`) and the row-sum check. Under `PYTHONWARNINGS=error`, a
+`ConvergenceWarning` also raises. Any of these would end a whole run. None happened at 200
+trials. Decide whether `catch` widens; a probe can force each case.
 
 **After T2.4's approved changes:** re-decide `n_trials` (200 today) and `n_startup_trials`
 (10 today), from the cost of a trial and the coverage (D15).
@@ -1806,6 +1839,13 @@ The API, read 2026-10-21:
 - Whether the bootstrap covers only the primary metric or E3's full list.
 - `n_repeats`, the SHAP sample sizes and `n_jobs`, from measured cost.
 - A button, since this costs minutes.
+- Which split gets the interval (T2.3's F6). `best_df` selects on validation, so an
+  interval on the same rows is optimistic; the test part (`test_age_group`) is unused, and
+  E11 refits on training + validation and scores test once.
+- How a run record is saved (T2.3's F3). `json.dumps(…, default=str)` writes a `NaN` token
+  (the None calibration in a str column, a failed trial's value), which strict JSON readers
+  reject. `trials.to_json(orient="records")` writes `null`. Use it when records are first
+  saved (here or in T4b).
 
 **Done when:**
 - Check A and Check B.

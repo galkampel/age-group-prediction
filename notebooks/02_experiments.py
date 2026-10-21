@@ -610,9 +610,9 @@ def _(mo):
     separate families, and the exposure a run setting: a study that sampled
     the loss split 30 trials 10/20 and did worse than either loss alone, and
     the exposure changes the target (a count or a weighted rate).
-    `n_trials = 200`; the table of trials per feature transformer shows
-    whether any was tried too rarely to be judged. The runs go one after
-    another, run i seeded `seed + i`, and each trial fits its 5 folds in
+    `n_trials = 200`; the tables of trials per choice show whether any was
+    tried too rarely to be judged. The runs go one after another, seeded
+    `seed + 0`, `seed + 1`, … in order, and each trial fits its 5 folds in
     parallel. A trial whose fit raises (an NB2 fit that does not converge) is
     marked failed and the run goes on; the tables count them. Each run keeps
     every trial and its best components, which alone are rebuilt, refit on
@@ -3511,7 +3511,7 @@ def _(
         for _column, _values in _candidates.items():
             # Counted by label: the trials table holds the None calibration as NaN
             # in a str column, or as None in an object column when every trial
-            # drew it, and reindex matches None in neither reliably (D16).
+            # drew it, and reindex on None misses the latter (D16).
             _labels = [str(_value) for _value in _values]
             _counts = (
                 _complete[_column]
