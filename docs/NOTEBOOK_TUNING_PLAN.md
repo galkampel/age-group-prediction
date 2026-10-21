@@ -1,6 +1,6 @@
 # Re-implement the hyperparameter tuning inside the notebook
 
-**Status (2026-10-21):** approved; T1.1 committed (`0416267`); T1.2 committed (`bee781a`) after the user's review (estimator dataclasses hold hyperparameters only; LightGBM's loss is a family); T1.3 committed (`7ae6314`) after three user reviews (components are a study's fixed settings, a `Literal` family and `use_exposure`; the family → transformer-names mapping is an argument of `suggest_feature_transformer`; no dataclass builds a model; the exposure a study setting, both arms; feature variants renamed feature transformers; D2, D3, D6, T1.4–T2.2 rewritten); T1.4 done 2026-10-19, then reworked at two rounds of the user's review on 2026-10-20 (D8: a named component per part of the composite under an abstract `Component`; the family checked from its `Literal`; each subclass holds its families' transformer names; `make_estimator(hyperparameters, *, seed)`; the T1.3 cells changed too; T1.4–T2.2 rewritten), committed (`8cc231d`); T1.5 done 2026-10-21 (`cv_score`, `tune_model`; at the user's review the fold variables named and an aggregator added, D9: `src/age_group_prediction/aggregation.py` and its tests, default `Mean`), committed (`a5ae06b`); T1.6 done 2026-10-21 (Model 1's button and run cell; Check C 14.7 s at 3 trials), then the redesign of D10 at its review, revised by D11 and D12 at the next reviews (search spaces with explicit suggest methods, the builder assembles components, the transformer by name; a study is a family combination and exposure; `feature_transformer_dict`; Check C reproduces T1.6's best values), committed (`6316d91`); T1.7 committed (`59acae6`); its 200-trial run took 380 s with no failed trial (D15); T1.8 done 2026-10-21 (independent review: no correctness bug, nine findings reproduced and settled, D15), uncommitted; notebook md5 `9d49fe78f99d7ff4d96e17742ea7d277`; then T2.1. The implementing session updates this line and ticks the sub-tasks.
+**Status (2026-10-21):** approved; T1.1 committed (`0416267`); T1.2 committed (`bee781a`) after the user's review (estimator dataclasses hold hyperparameters only; LightGBM's loss is a family); T1.3 committed (`7ae6314`) after three user reviews (components are a study's fixed settings, a `Literal` family and `use_exposure`; the family → transformer-names mapping is an argument of `suggest_feature_transformer`; no dataclass builds a model; the exposure a study setting, both arms; feature variants renamed feature transformers; D2, D3, D6, T1.4–T2.2 rewritten); T1.4 done 2026-10-19, then reworked at two rounds of the user's review on 2026-10-20 (D8: a named component per part of the composite under an abstract `Component`; the family checked from its `Literal`; each subclass holds its families' transformer names; `make_estimator(hyperparameters, *, seed)`; the T1.3 cells changed too; T1.4–T2.2 rewritten), committed (`8cc231d`); T1.5 done 2026-10-21 (`cv_score`, `tune_model`; at the user's review the fold variables named and an aggregator added, D9: `src/age_group_prediction/aggregation.py` and its tests, default `Mean`), committed (`a5ae06b`); T1.6 done 2026-10-21 (Model 1's button and run cell; Check C 14.7 s at 3 trials), then the redesign of D10 at its review, revised by D11 and D12 at the next reviews (search spaces with explicit suggest methods, the builder assembles components, the transformer by name; a study is a family combination and exposure; `feature_transformer_dict`; Check C reproduces T1.6's best values), committed (`6316d91`); T1.7 committed (`59acae6`); its 200-trial run took 380 s with no failed trial (D15); T1.8 done 2026-10-21 (independent review: no correctness bug, nine findings reproduced and settled, D15), committed (`9eca96e`); notebook md5 `9d49fe78f99d7ff4d96e17742ea7d277`; handoff rewritten 2026-10-21 for a new session; next T2.1, then after T2.2 the pending decision on TPE's random start (`n_startup_trials` 40 or 10, handoff §3). The implementing session updates this line and ticks the sub-tasks.
 
 Written for the model that implements it, one sub-task per approval. Every sub-task has the
 code to write, a "done when" list and the commands that verify it. The user reads the diff in
@@ -326,6 +326,19 @@ plain `Literal` assignments, not the `type` statement: cloudpickle cannot pickle
     | `nb2`, exposure on | 2.1962 |
 
     Every family is worse with the exposure off, the GLMs by about 0.85.
+  - **Pending, to decide after T2.2:** TPE's random start, `n_startup_trials` 40 or 10 (the
+    default).
+    - Measured at 200 trials, exposure on:
+
+      | Run | Random start | Best | Least-tried transformer per cohort |
+      |---|---|---|---|
+      | Poisson GLM | 10 | 2.2490 | 6–9 |
+      | Poisson GLM | 40 | 2.2490 | 9–11 |
+      | NB2 | 10 | 2.2428 | 9 each |
+      | NB2 | 40 | 2.2426 | 7–11 |
+
+      400 trials gave no gain.
+    - A change re-runs both models and resets the Check C baseline (handoff §3).
 
 **What does not change:** notebook sections 1–4 and the `cv`/`cv_groups` cell; the models in
 `src/age_group_prediction/modeling/` (the S1 `get_params`/`set_params` forwarding in
@@ -1537,6 +1550,8 @@ best-per-model cell is today's (lines 1197–1218 at `8ee091a`), adapted to the 
 columns.
 **Done when:** Check A; Check C prints `model2_df` with 64 rows (16 × 4), `MODEL2_RUNS` with
 16 records, `best_df` with 2 rows; the user clicks both buttons at 200 and reports the times.
+Then decide TPE's random start, `n_startup_trials` 40 or 10, with the evidence of D15 and the
+handoff's §3 plus Model 2's coverage.
 
 ### [ ] T2.3 Independent review of T2, summary, commit suggestion.
 
