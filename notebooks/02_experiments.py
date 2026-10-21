@@ -629,11 +629,13 @@ def _(mo):
 
 @app.cell
 def _():
+    import abc
     import dataclasses
     import time
     from collections import Counter
     from functools import partial
-    from typing import Literal, get_args
+    from types import MappingProxyType
+    from typing import ClassVar, Literal, get_args, get_type_hints
 
     import numpy as np
     import optuna
@@ -659,6 +661,7 @@ def _():
     optuna.logging.set_verbosity(optuna.logging.WARNING)
     return (
         CategoricalDistribution,
+        ClassVar,
         CohortProbabilityModel,
         CountModel,
         Counter,
@@ -668,6 +671,7 @@ def _():
         LGBMRegressor,
         Literal,
         LogisticRegression,
+        MappingProxyType,
         Metric,
         NegativeBinomialRegressor,
         Parallel,
@@ -675,10 +679,12 @@ def _():
         TPESampler,
         TotalTimesProbabilityModel,
         TrialState,
+        abc,
         cohort_poisson_deviance,
         dataclasses,
         delayed,
         get_args,
+        get_type_hints,
         mean_poisson_deviance,
         np,
         optuna,
@@ -706,25 +712,6 @@ def _(Literal, Y, get_args, np):
     # The smallest mean a CountModel predicts: a Gaussian loss can predict a
     # negative count, the Poisson deviance raises at 0 and stays finite at eps.
     PREDICTION_FLOOR = float(np.finfo(float).eps)
-    # The trees take n_apartments as a feature and the offset; the GLMs take it
-    # as the exposure only (docs/FEATURE_TRANSFORMATIONS.md §3.3, §4.4), and the
-    # logistic model needs the scaled plans (it does not converge on `tree`).
-    TREE_TRANSFORMERS = ("tree", "tree__ses_quadratic")
-    COUNT_GLM_TRANSFORMERS = (
-        "glm_base",
-        "count__ses_quadratic",
-        "count__daycare_log1p",
-        "count__room_share_x_household_size",
-        "count__room_share_x_ses",
-        "count__room_share_x_household_size_and_ses",
-    )
-    PROBABILITY_GLM_TRANSFORMERS = (
-        "glm_base",
-        "probability__daycare_log1p",
-        "probability__room_share_x_median_age",
-        "probability__room_share_x_daycare",
-        "probability__room_share_x_median_age_and_daycare",
-    )
     # Plain assignments, not the `type` statement: cloudpickle cannot pickle a
     # class annotated with a `type` alias defined in a cell, and joblib's
     # workers receive the components by cloudpickle.
@@ -732,30 +719,13 @@ def _(Literal, Y, get_args, np):
     ProbabilityFamily = Literal["logistic", "lgbm"]
     COUNT_FAMILIES = get_args(CountFamily)
     PROBABILITY_FAMILIES = get_args(ProbabilityFamily)
-    # Each family's candidate feature transformers: the one place a family is
-    # paired with them; the components read their own entry.
-    COUNT_FAMILY_TRANSFORMERS = {
-        "lgbm_poisson": TREE_TRANSFORMERS,
-        "lgbm_gaussian": TREE_TRANSFORMERS,
-        "poisson_glm": COUNT_GLM_TRANSFORMERS,
-        "nb2": COUNT_GLM_TRANSFORMERS,
-    }
-    PROBABILITY_FAMILY_TRANSFORMERS = {
-        "logistic": PROBABILITY_GLM_TRANSFORMERS,
-        "lgbm": TREE_TRANSFORMERS,
-    }
     return (
         COHORTS,
         COUNT_FAMILIES,
-        COUNT_FAMILY_TRANSFORMERS,
-        COUNT_GLM_TRANSFORMERS,
         CountFamily,
         PREDICTION_FLOOR,
         PROBABILITY_FAMILIES,
-        PROBABILITY_FAMILY_TRANSFORMERS,
-        PROBABILITY_GLM_TRANSFORMERS,
         ProbabilityFamily,
-        TREE_TRANSFORMERS,
     )
 
 
@@ -859,91 +829,260 @@ def _(dataclasses):
 
 @app.cell
 def _(
+    ClassVar,
     CountFamily,
+    LGBMClassifier,
     LGBMClassifierParams,
+    LGBMRegressor,
     LGBMRegressorParams,
     LogisticParams,
+    LogisticRegression,
+    MappingProxyType,
     NB2Params,
+    NegativeBinomialRegressor,
     PoissonGLMParams,
+    PoissonRegressor,
     ProbabilityFamily,
+    abc,
     dataclasses,
     get_args,
+    get_type_hints,
 ):
-    # The components read no notebook global: the family's candidate feature
-    # transformers come in as an argument, so the classes can move to a package.
+    # The components read no notebook global: the feature transformers come in
+    # as an argument, so the classes can move to a package.
     @dataclasses.dataclass(frozen=True)
-    class CountComponent:
-        """A CountModel's settings fixed for one study; a trial samples the rest under a prefix."""
+    class Component(abc.ABC):
+        """A named part of a composite and its settings fixed for one study.
+
+        A trial samples the rest under ``<name>__``: the feature transformer and
+        the estimator's hyperparameters. Sampling (``suggest_params``) and
+        construction (``make_estimator``) are separate steps, so the sampled
+        params are a record of their own; the model and the composite are built
+        outside.
+        """
+
+        name: str
+        family: str
+        # Set by each subclass: each family's candidate feature transformers, by
+        # name. Fixed on the class, so no component carries another family's.
+        FEATURE_TRANSFORMER_NAMES: ClassVar[MappingProxyType[str, tuple[str, ...]]]
+
+        def __post_init__(self):
+            # At construction, before the parallel studies start. The subclass
+            # annotates `family` with its Literal, which holds the valid names.
+            families = get_args(get_type_hints(type(self))["family"])
+            if self.family not in families:
+                raise ValueError(
+                    f"unknown {type(self).__name__} family {self.family!r}"
+                )
+            if self.family not in self.FEATURE_TRANSFORMER_NAMES:
+                raise ValueError(f"no feature transformers for family {self.family!r}")
+
+        @property
+        def prefix(self):
+            """The trial's parameter names are ``<name>__<parameter>``."""
+            return f"{self.name}__"
+
+        def suggest_feature_transformer(self, trial, feature_transformers):
+            """The feature transformer whose name ``trial`` samples from the family's.
+
+            The trial samples a name, since Optuna's categorical choices must be
+            primitives; ``feature_transformers`` maps a name to its transformer.
+            """
+            name = trial.suggest_categorical(
+                f"{self.prefix}feature_transformer",
+                list(self.FEATURE_TRANSFORMER_NAMES[self.family]),
+            )
+            return feature_transformers[name]
+
+        @abc.abstractmethod
+        def suggest_params(self, trial):
+            """The estimator's hyperparameters, sampled under ``prefix``."""
+
+        @abc.abstractmethod
+        def make_estimator(self, hyperparameters, *, seed):
+            """The unfitted estimator: the family's fixed settings and ``hyperparameters``.
+
+            ``hyperparameters`` maps the estimator's keywords to their values.
+            """
+
+    @dataclasses.dataclass(frozen=True)
+    class CountComponent(Component):
+        """A CountModel's settings fixed for one study: the family and the exposure."""
 
         family: CountFamily
         use_exposure: bool
-
-        def __post_init__(self):
-            # At construction, before the parallel studies start.
-            if self.family not in get_args(CountFamily):
-                raise ValueError(f"unknown count family {self.family!r}")
-
-        def suggest_feature_transformer(self, trial, prefix, family_transformers):
-            """The name of a feature transformer, from ``family_transformers[self.family]``.
-
-            ``family_transformers`` maps each family to the names of the feature
-            transformers that suit it, so a family is never given another's.
-            """
-            if self.family not in family_transformers:
-                raise ValueError(f"no feature transformers for family {self.family!r}")
-            return trial.suggest_categorical(
-                f"{prefix}feature_transformer", list(family_transformers[self.family])
+        # The trees take n_apartments as a feature and the offset; the GLMs take
+        # it as the exposure only (docs/FEATURE_TRANSFORMATIONS.md §3.3, §4.4).
+        FEATURE_TRANSFORMER_NAMES: ClassVar[MappingProxyType[str, tuple[str, ...]]] = (
+            MappingProxyType(
+                {
+                    **dict.fromkeys(
+                        ("lgbm_poisson", "lgbm_gaussian"),
+                        ("tree", "tree__ses_quadratic"),
+                    ),
+                    **dict.fromkeys(
+                        ("poisson_glm", "nb2"),
+                        (
+                            "glm_base",
+                            "count__ses_quadratic",
+                            "count__daycare_log1p",
+                            "count__room_share_x_household_size",
+                            "count__room_share_x_ses",
+                            "count__room_share_x_household_size_and_ses",
+                        ),
+                    ),
+                }
             )
+        )
 
-        def suggest_params(self, trial, prefix):
+        def suggest_params(self, trial):
             if self.family == "lgbm_poisson":
-                return LGBMRegressorParams.suggest(trial, prefix, objective="poisson")
+                return LGBMRegressorParams.suggest(
+                    trial, self.prefix, objective="poisson"
+                )
             elif self.family == "lgbm_gaussian":
                 return LGBMRegressorParams.suggest(
-                    trial, prefix, objective="regression"
+                    trial, self.prefix, objective="regression"
                 )
             elif self.family == "poisson_glm":
-                return PoissonGLMParams.suggest(trial, prefix)
+                return PoissonGLMParams.suggest(trial, self.prefix)
             elif self.family == "nb2":
-                return NB2Params.suggest(trial, prefix)
+                return NB2Params.suggest(trial, self.prefix)
+            else:
+                raise ValueError(f"unknown count family {self.family!r}")
+
+        def make_estimator(self, hyperparameters, *, seed):
+            if self.family in ("lgbm_poisson", "lgbm_gaussian"):
+                # subsample_freq=1: LightGBM ignores subsample without it; n_jobs=1: one
+                # thread per fit, so the parallel studies do not oversubscribe the cores.
+                return LGBMRegressor(
+                    subsample_freq=1,
+                    n_jobs=1,
+                    verbosity=-1,
+                    random_state=seed,
+                    **hyperparameters,
+                )
+            elif self.family == "poisson_glm":
+                return PoissonRegressor(max_iter=1000, **hyperparameters)
+            elif self.family == "nb2":
+                return NegativeBinomialRegressor(**hyperparameters)
             else:
                 raise ValueError(f"unknown count family {self.family!r}")
 
     @dataclasses.dataclass(frozen=True)
-    class ProbabilityComponent:
+    class ProbabilityComponent(Component):
         """Model 2's CohortProbabilityModel settings fixed for one study; the exposure does not apply."""
 
         family: ProbabilityFamily
-
-        def __post_init__(self):
-            if self.family not in get_args(ProbabilityFamily):
-                raise ValueError(f"unknown probability family {self.family!r}")
-
-        def suggest_feature_transformer(self, trial, prefix, family_transformers):
-            """As CountComponent's."""
-            if self.family not in family_transformers:
-                raise ValueError(f"no feature transformers for family {self.family!r}")
-            return trial.suggest_categorical(
-                f"{prefix}feature_transformer", list(family_transformers[self.family])
+        # The logistic model needs the scaled plans (it does not converge on `tree`).
+        FEATURE_TRANSFORMER_NAMES: ClassVar[MappingProxyType[str, tuple[str, ...]]] = (
+            MappingProxyType(
+                {
+                    "logistic": (
+                        "glm_base",
+                        "probability__daycare_log1p",
+                        "probability__room_share_x_median_age",
+                        "probability__room_share_x_daycare",
+                        "probability__room_share_x_median_age_and_daycare",
+                    ),
+                    "lgbm": ("tree", "tree__ses_quadratic"),
+                }
             )
+        )
 
-        def suggest_params(self, trial, prefix):
+        def suggest_params(self, trial):
             if self.family == "lgbm":
-                return LGBMClassifierParams.suggest(trial, prefix)
+                return LGBMClassifierParams.suggest(trial, self.prefix)
             elif self.family == "logistic":
-                return LogisticParams.suggest(trial, prefix)
+                return LogisticParams.suggest(trial, self.prefix)
             else:
                 raise ValueError(f"unknown probability family {self.family!r}")
 
-        def suggest_calibration_method(self, trial, prefix):
+        def make_estimator(self, hyperparameters, *, seed):
+            if self.family == "lgbm":
+                return LGBMClassifier(
+                    objective="multiclass",
+                    subsample_freq=1,
+                    n_jobs=1,
+                    verbosity=-1,
+                    random_state=seed,
+                    **hyperparameters,
+                )
+            elif self.family == "logistic":
+                return LogisticRegression(max_iter=1000, **hyperparameters)
+            else:
+                raise ValueError(f"unknown probability family {self.family!r}")
+
+        def suggest_calibration_method(self, trial):
             # No isotonic: its lowest score block can hold no child of a cohort and
             # then maps a building there to probability 0, an infinite log loss
             # (measured 2026-10-15 with the LightGBM classifier).
             return trial.suggest_categorical(
-                f"{prefix}calibration_method", [None, "temperature", "sigmoid"]
+                f"{self.prefix}calibration_method", [None, "temperature", "sigmoid"]
             )
 
-    return CountComponent, ProbabilityComponent
+    return Component, CountComponent, ProbabilityComponent
+
+
+@app.cell
+def _(
+    CohortProbabilityModel,
+    CountModel,
+    IndependentCohortModels,
+    TotalTimesProbabilityModel,
+    dataclasses,
+):
+    def suggest_count_model(trial, component, *, feature_transformers, y_min, seed):
+        """A CountModel whose feature transformer and hyperparameters ``trial`` samples under the component's name."""
+        hyperparameters = dataclasses.asdict(component.suggest_params(trial))
+        # CountModel clones the transformer at fit, so the shared declaration is safe.
+        return CountModel(
+            estimator=component.make_estimator(hyperparameters, seed=seed),
+            use_exposure=component.use_exposure,
+            feature_transformer=component.suggest_feature_transformer(
+                trial, feature_transformers
+            ),
+            y_min=y_min,
+        )
+
+    def suggest_model1(trial, components, *, feature_transformers, y_min, seed):
+        """Model 1: one CountModel per component, keyed by the component's name, a cohort."""
+        return IndependentCohortModels(
+            {
+                component.name: suggest_count_model(
+                    trial,
+                    component,
+                    feature_transformers=feature_transformers,
+                    y_min=y_min,
+                    seed=seed,
+                )
+                for component in components
+            }
+        )
+
+    def suggest_model2(trial, total, probability, *, feature_transformers, y_min, seed):
+        """Model 2: the total's CountModel and the classifier, each under its component's name."""
+        total_model = suggest_count_model(
+            trial,
+            total,
+            feature_transformers=feature_transformers,
+            y_min=y_min,
+            seed=seed,
+        )
+        hyperparameters = dataclasses.asdict(probability.suggest_params(trial))
+        return TotalTimesProbabilityModel(
+            total_model=total_model,
+            probability_model=CohortProbabilityModel(
+                estimator=probability.make_estimator(hyperparameters, seed=seed),
+                calibration_method=probability.suggest_calibration_method(trial),
+                feature_transformer=probability.suggest_feature_transformer(
+                    trial, feature_transformers
+                ),
+            ),
+        )
+
+    return suggest_count_model, suggest_model1, suggest_model2
 
 
 if __name__ == "__main__":

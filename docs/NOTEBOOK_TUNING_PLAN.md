@@ -1,6 +1,6 @@
 # Re-implement the hyperparameter tuning inside the notebook
 
-**Status (2026-10-18, end of day):** approved; T1.1 committed (`0416267`); T1.2 committed (`bee781a`) after the user's review (estimator dataclasses hold hyperparameters only; LightGBM's loss is a family); T1.3 committed (`7ae6314`) after three user reviews (components are a study's fixed settings, a `Literal` family and `use_exposure`; the family → transformer-names mapping is an argument of `suggest_feature_transformer`; no dataclass builds a model; the exposure a study setting, both arms; feature variants renamed feature transformers; D2, D3, D6, T1.4–T2.2 rewritten); notebook md5 `389df50917ba2b32c4f949f252888ae2`; next T1.4. The implementing session updates this line and ticks the sub-tasks.
+**Status (2026-10-20):** approved; T1.1 committed (`0416267`); T1.2 committed (`bee781a`) after the user's review (estimator dataclasses hold hyperparameters only; LightGBM's loss is a family); T1.3 committed (`7ae6314`) after three user reviews (components are a study's fixed settings, a `Literal` family and `use_exposure`; the family → transformer-names mapping is an argument of `suggest_feature_transformer`; no dataclass builds a model; the exposure a study setting, both arms; feature variants renamed feature transformers; D2, D3, D6, T1.4–T2.2 rewritten); T1.4 done 2026-10-19, then reworked at two rounds of the user's review on 2026-10-20 (D8: a named component per part of the composite under an abstract `Component`; the family checked from its `Literal`; each subclass holds its families' transformer names; `make_estimator(hyperparameters, *, seed)`; the T1.3 cells changed too; T1.4–T2.2 rewritten), uncommitted; notebook md5 `d348141ae38b17f53912ce7ecffd081a`; next T1.5. The implementing session updates this line and ticks the sub-tasks.
 
 Written for the model that implements it, one sub-task per approval. Every sub-task has the
 code to write, a "done when" list and the commands that verify it. The user reads the diff in
@@ -28,7 +28,8 @@ assembled by `set_params` strings instead of being built explicitly.
   family is a `Literal` (`CountFamily`, `ProbabilityFamily`). A study's record is
   `{"settings": asdict(component), "params": study.best_params}`; `best_params` holds the
   chosen transformer's name. (The comparison with
-  TypedDict: §6.)
+  TypedDict: §6.) Since D8 a component also holds its `name`, and Model 1's
+  record holds the list of its components' settings.
 - D3. An estimator dataclass has a classmethod `suggest(trial, prefix, …)` calling
   `trial.suggest_*` inline. A component looks up its params class from its family, and
   samples with `suggest_params` / `suggest_feature_transformer(trial, prefix,
@@ -37,7 +38,10 @@ assembled by `set_params` strings instead of being built explicitly.
   the reviews of T1.2 and T1.3). The objective builds it: `suggest_model1` / `suggest_model2`
   sample from the trial and call the constructors explicitly (estimator, then
   `CountModel` / `CohortProbabilityModel`, then the composite; no `set_params`). The best run's
-  refit calls the same function on `FixedTrial(study.best_params)`.
+  refit calls the same function on `FixedTrial(study.best_params)`. (Since D8: a component
+  builds its estimator, never the model; the methods take no prefix, the component's name
+  gives it; a subclass holds its families' transformer names, and the family → names
+  argument is gone.)
   **Package-ready (the user, 2026-10-18, at T1.3's second and third reviews):** a dataclass
   reads no notebook global. A setting fixed for the study (the family, the exposure) is a
   field. The family's candidate feature transformers come in as an argument of
@@ -86,6 +90,50 @@ plain `Literal` assignments, not the `type` statement: cloudpickle cannot pickle
   converge (without it the study stops and `Parallel` discards the sibling studies; returning
   `inf` would hide the traceback); an in-memory `optuna.Study` pickles back whole from a loky
   worker (`trials`, `best_trial.distributions`, `best_params` all present).
+- D8. **Changed 2026-10-20 (the user, at two rounds of T1.4's review; supersedes the parts of
+  D2, D3 it names):**
+  - **A component is a named part of the composite.** It holds `name`, so
+    `CountComponent(name, family, use_exposure)` and `ProbabilityComponent(name, family)`.
+    Model 1 has one component per cohort, named after it, because each cohort is a separate
+    prediction problem; a study is the tuple of its three components. Model 2 has `"total"`
+    and `"probability"`.
+  - **The name replaces the prefix argument.** A trial's names are `<name>__<parameter>`,
+    and the component adds the separator (`prefix` property). The separator stays `__`
+    because cohort names hold `_` and the tables split on the first `__`. The trial names
+    are as before.
+  - **An abstract `Component(abc.ABC)` base.** It holds `name`, `family`, the checks of
+    `__post_init__` and the shared `suggest_feature_transformer`; `suggest_params` and
+    `make_estimator` are abstract.
+    - The family is checked against the subclass's `Literal` annotation:
+      `get_args(get_type_hints(type(self))["family"])`. This needs no list of families
+      beside the `Literal`, and it also resolves string annotations
+      (`from __future__ import annotations`) in a package module (measured).
+    - No `type` field: the first round had one; the second removed it, since no code read
+      it and the subclass states the kind.
+  - **Each subclass holds its families' candidate feature transformers.** The ClassVar
+    `FEATURE_TRANSFORMER_NAMES` maps family → names, as a `MappingProxyType`.
+    - It is fixed on the class, so no component can carry another family's: the guarantee of
+      T1.3's third review, without the mapping argument.
+    - A family without an entry raises at construction.
+    - The trial samples a name, because Optuna's categorical choices must be primitives:
+      objects raise a `UserWarning`, an error under `-W error` (measured).
+    - `suggest_feature_transformer(trial, feature_transformers)` returns the object
+      `feature_transformers[name]`.
+    - Read-only, because ruff's RUF012 flags a mutable class attribute (in a cell it cannot
+      see the `ClassVar` parameter). It pickles through cloudpickle and runs under
+      `Parallel` (measured).
+  - **Sampling and construction are separate steps, both on the component.**
+    `suggest_params(trial)` returns the params record. `make_estimator(hyperparameters, *,
+    seed)` builds the unfitted estimator from a mapping of the estimator's keywords (a dict
+    works; the builder passes `asdict(params)`): an `if`/`elif` on the family with a raising
+    `else`.
+    - `make_`: scikit-learn's word for its factories (`make_pipeline`,
+      `BaseEnsemble._make_estimator`).
+    - Tracking does not depend on where the estimator is built: Optuna records every
+      sampled value by name.
+    - D3's "no dataclass builds a model" becomes: a component builds its estimator; the
+      `CountModel` / `CohortProbabilityModel` and the composite are built in
+      `suggest_model1` / `suggest_model2`.
 
 **What does not change:** notebook sections 1–4 and the `cv`/`cv_groups` cell; the models in
 `src/age_group_prediction/modeling/` (the S1 `get_params`/`set_params` forwarding in
@@ -414,6 +462,7 @@ missing `objective` raises `TypeError`.
 
 ### [x] T1.3 The component dataclasses
 
+(Reworked at T1.4's review, 2026-10-20, D8: the cell's current code is in T1.4.)
 One cell. (Redesigned 2026-10-18 at the user's review. The first version held the sampled
 choices and built the model; see D3 and D6.) A component holds only what is fixed for one
 study: the family (a `Literal`) and, for a count component, the exposure. Given the family it
@@ -506,124 +555,290 @@ rebuild is equal; and `json.dumps(asdict(component))` works. Unknown families, a
 without the family, raise `ValueError`; components are equal and hash by value; a cloudpickle round trip
 and a `Parallel(n_jobs=2)` pass work.
 
-### [ ] T1.4 The models a trial builds
+### [x] T1.4 The models a trial builds
 
-One cell. The objective builds the model: per component it samples the feature transformer and
-the estimator's hyperparameters, and then calls the constructors explicitly: the estimator,
-its `CountModel` / `CohortProbabilityModel`, and the composite. This is a function rather than
-code inside `objective`, because the best run's refit (T1.7) calls the same function on
-`FixedTrial(study.best_params)`. One code path builds both the searched and the refit model,
-and a missing or foreign value raises (D7).
+Done 2026-10-19 as first planned: functions `count_estimator` and `probability_estimator`, a
+`prefix` argument everywhere, one mapping per kind. Reworked at two rounds of the user's
+review on 2026-10-20 (D8), which rewrote the T1.3 cells as well.
+- **Imports:** `abc`, `MappingProxyType`, `ClassVar` and `get_type_hints`.
+- **Constants:** the cell keeps only these; the transformer-name tuples and the family →
+  names mappings moved into the classes:
 ```python
-def count_estimator(params, *, seed):
-    """The regressor of ``params``: its fixed settings and the searched hyperparameters."""
-    hyperparameters = dataclasses.asdict(params)
-    if isinstance(params, LGBMRegressorParams):
-        # subsample_freq=1: LightGBM ignores subsample without it; n_jobs=1: one
-        # thread per fit, so the parallel studies do not oversubscribe the cores.
-        return LGBMRegressor(
-            subsample_freq=1, n_jobs=1, verbosity=-1, random_state=seed, **hyperparameters
+COHORTS = list(Y.columns)
+# The smallest mean a CountModel predicts: a Gaussian loss can predict a
+# negative count, the Poisson deviance raises at 0 and stays finite at eps.
+PREDICTION_FLOOR = float(np.finfo(float).eps)
+# Plain assignments, not the `type` statement: cloudpickle cannot pickle a
+# class annotated with a `type` alias defined in a cell, and joblib's
+# workers receive the components by cloudpickle.
+CountFamily = Literal["lgbm_poisson", "lgbm_gaussian", "poisson_glm", "nb2"]
+ProbabilityFamily = Literal["logistic", "lgbm"]
+COUNT_FAMILIES = get_args(CountFamily)
+PROBABILITY_FAMILIES = get_args(ProbabilityFamily)
+    COHORTS,
+    COUNT_FAMILIES,
+    CountFamily,
+    PREDICTION_FLOOR,
+    PROBABILITY_FAMILIES,
+    ProbabilityFamily,
+)
+```
+- **Components** (the T1.3 cell, rewritten):
+```python
+# The components read no notebook global: the feature transformers come in
+# as an argument, so the classes can move to a package.
+@dataclasses.dataclass(frozen=True)
+class Component(abc.ABC):
+    """A named part of a composite and its settings fixed for one study.
+
+    A trial samples the rest under ``<name>__``: the feature transformer and
+    the estimator's hyperparameters. Sampling (``suggest_params``) and
+    construction (``make_estimator``) are separate steps, so the sampled
+    params are a record of their own; the model and the composite are built
+    outside.
+    """
+
+    name: str
+    family: str
+    # Set by each subclass: each family's candidate feature transformers, by
+    # name. Fixed on the class, so no component carries another family's.
+    FEATURE_TRANSFORMER_NAMES: ClassVar[MappingProxyType[str, tuple[str, ...]]]
+
+    def __post_init__(self):
+        # At construction, before the parallel studies start. The subclass
+        # annotates `family` with its Literal, which holds the valid names.
+        families = get_args(get_type_hints(type(self))["family"])
+        if self.family not in families:
+            raise ValueError(
+                f"unknown {type(self).__name__} family {self.family!r}"
+            )
+        if self.family not in self.FEATURE_TRANSFORMER_NAMES:
+            raise ValueError(f"no feature transformers for family {self.family!r}")
+
+    @property
+    def prefix(self):
+        """The trial's parameter names are ``<name>__<parameter>``."""
+        return f"{self.name}__"
+
+    def suggest_feature_transformer(self, trial, feature_transformers):
+        """The feature transformer whose name ``trial`` samples from the family's.
+
+        The trial samples a name, since Optuna's categorical choices must be
+        primitives; ``feature_transformers`` maps a name to its transformer.
+        """
+        name = trial.suggest_categorical(
+            f"{self.prefix}feature_transformer",
+            list(self.FEATURE_TRANSFORMER_NAMES[self.family]),
         )
-    if isinstance(params, PoissonGLMParams):
-        return PoissonRegressor(max_iter=1000, **hyperparameters)
-    return NegativeBinomialRegressor(**hyperparameters)
+        return feature_transformers[name]
 
+    @abc.abstractmethod
+    def suggest_params(self, trial):
+        """The estimator's hyperparameters, sampled under ``prefix``."""
 
-def probability_estimator(params, *, seed):
-    """The classifier of ``params``: its fixed settings and the searched hyperparameters."""
-    hyperparameters = dataclasses.asdict(params)
-    if isinstance(params, LGBMClassifierParams):
-        return LGBMClassifier(
-            objective="multiclass",
-            subsample_freq=1,
-            n_jobs=1,
-            verbosity=-1,
-            random_state=seed,
-            **hyperparameters,
+    @abc.abstractmethod
+    def make_estimator(self, hyperparameters, *, seed):
+        """The unfitted estimator: the family's fixed settings and ``hyperparameters``.
+
+        ``hyperparameters`` maps the estimator's keywords to their values.
+        """
+
+@dataclasses.dataclass(frozen=True)
+class CountComponent(Component):
+    """A CountModel's settings fixed for one study: the family and the exposure."""
+
+    family: CountFamily
+    use_exposure: bool
+    # The trees take n_apartments as a feature and the offset; the GLMs take
+    # it as the exposure only (docs/FEATURE_TRANSFORMATIONS.md §3.3, §4.4).
+    FEATURE_TRANSFORMER_NAMES: ClassVar[MappingProxyType[str, tuple[str, ...]]] = (
+        MappingProxyType(
+            {
+                **dict.fromkeys(
+                    ("lgbm_poisson", "lgbm_gaussian"),
+                    ("tree", "tree__ses_quadratic"),
+                ),
+                **dict.fromkeys(
+                    ("poisson_glm", "nb2"),
+                    (
+                        "glm_base",
+                        "count__ses_quadratic",
+                        "count__daycare_log1p",
+                        "count__room_share_x_household_size",
+                        "count__room_share_x_ses",
+                        "count__room_share_x_household_size_and_ses",
+                    ),
+                ),
+            }
         )
-    return LogisticRegression(max_iter=1000, **hyperparameters)
+    )
 
+    def suggest_params(self, trial):
+        if self.family == "lgbm_poisson":
+            return LGBMRegressorParams.suggest(
+                trial, self.prefix, objective="poisson"
+            )
+        elif self.family == "lgbm_gaussian":
+            return LGBMRegressorParams.suggest(
+                trial, self.prefix, objective="regression"
+            )
+        elif self.family == "poisson_glm":
+            return PoissonGLMParams.suggest(trial, self.prefix)
+        elif self.family == "nb2":
+            return NB2Params.suggest(trial, self.prefix)
+        else:
+            raise ValueError(f"unknown count family {self.family!r}")
 
-def suggest_count_model(
-    trial, prefix, component, *, family_transformers, feature_transformers, y_min, seed
-):
-    """A CountModel whose feature transformer and hyperparameters ``trial`` samples under ``prefix``."""
+    def make_estimator(self, hyperparameters, *, seed):
+        if self.family in ("lgbm_poisson", "lgbm_gaussian"):
+            # subsample_freq=1: LightGBM ignores subsample without it; n_jobs=1: one
+            # thread per fit, so the parallel studies do not oversubscribe the cores.
+            return LGBMRegressor(
+                subsample_freq=1,
+                n_jobs=1,
+                verbosity=-1,
+                random_state=seed,
+                **hyperparameters,
+            )
+        elif self.family == "poisson_glm":
+            return PoissonRegressor(max_iter=1000, **hyperparameters)
+        elif self.family == "nb2":
+            return NegativeBinomialRegressor(**hyperparameters)
+        else:
+            raise ValueError(f"unknown count family {self.family!r}")
+
+@dataclasses.dataclass(frozen=True)
+class ProbabilityComponent(Component):
+    """Model 2's CohortProbabilityModel settings fixed for one study; the exposure does not apply."""
+
+    family: ProbabilityFamily
+    # The logistic model needs the scaled plans (it does not converge on `tree`).
+    FEATURE_TRANSFORMER_NAMES: ClassVar[MappingProxyType[str, tuple[str, ...]]] = (
+        MappingProxyType(
+            {
+                "logistic": (
+                    "glm_base",
+                    "probability__daycare_log1p",
+                    "probability__room_share_x_median_age",
+                    "probability__room_share_x_daycare",
+                    "probability__room_share_x_median_age_and_daycare",
+                ),
+                "lgbm": ("tree", "tree__ses_quadratic"),
+            }
+        )
+    )
+
+    def suggest_params(self, trial):
+        if self.family == "lgbm":
+            return LGBMClassifierParams.suggest(trial, self.prefix)
+        elif self.family == "logistic":
+            return LogisticParams.suggest(trial, self.prefix)
+        else:
+            raise ValueError(f"unknown probability family {self.family!r}")
+
+    def make_estimator(self, hyperparameters, *, seed):
+        if self.family == "lgbm":
+            return LGBMClassifier(
+                objective="multiclass",
+                subsample_freq=1,
+                n_jobs=1,
+                verbosity=-1,
+                random_state=seed,
+                **hyperparameters,
+            )
+        elif self.family == "logistic":
+            return LogisticRegression(max_iter=1000, **hyperparameters)
+        else:
+            raise ValueError(f"unknown probability family {self.family!r}")
+
+    def suggest_calibration_method(self, trial):
+        # No isotonic: its lowest score block can hold no child of a cohort and
+        # then maps a building there to probability 0, an infinite log loss
+        # (measured 2026-10-15 with the LightGBM classifier).
+        return trial.suggest_categorical(
+            f"{self.prefix}calibration_method", [None, "temperature", "sigmoid"]
+        )
+```
+
+A new cell, the builders. The objective builds the model through them, and so does the best
+run's refit (T1.7), on `FixedTrial(study.best_params)`. So one code path builds both the
+searched and the refit model, and a missing or foreign value raises (D7).
+```python
+def suggest_count_model(trial, component, *, feature_transformers, y_min, seed):
+    """A CountModel whose feature transformer and hyperparameters ``trial`` samples under the component's name."""
+    hyperparameters = dataclasses.asdict(component.suggest_params(trial))
     # CountModel clones the transformer at fit, so the shared declaration is safe.
     return CountModel(
-        estimator=count_estimator(component.suggest_params(trial, prefix), seed=seed),
+        estimator=component.make_estimator(hyperparameters, seed=seed),
         use_exposure=component.use_exposure,
-        feature_transformer=feature_transformers[
-            component.suggest_feature_transformer(trial, prefix, family_transformers)
-        ],
+        feature_transformer=component.suggest_feature_transformer(
+            trial, feature_transformers
+        ),
         y_min=y_min,
     )
 
-
-def suggest_model1(
-    trial, component, *, cohorts, family_transformers, feature_transformers, y_min, seed
-):
-    """Model 1: one CountModel per cohort, sampled under ``<cohort>__``."""
+def suggest_model1(trial, components, *, feature_transformers, y_min, seed):
+    """Model 1: one CountModel per component, keyed by the component's name, a cohort."""
     return IndependentCohortModels(
         {
-            cohort: suggest_count_model(
+            component.name: suggest_count_model(
                 trial,
-                f"{cohort}__",
                 component,
-                family_transformers=family_transformers,
                 feature_transformers=feature_transformers,
                 y_min=y_min,
                 seed=seed,
             )
-            for cohort in cohorts
+            for component in components
         }
     )
 
-
-def suggest_model2(
-    trial,
-    total,
-    probability,
-    *,
-    count_family_transformers,
-    probability_family_transformers,
-    feature_transformers,
-    y_min,
-    seed,
-):
-    """Model 2: the total's CountModel under ``total__``, the classifier under ``probability__``."""
-    prefix = "probability__"
+def suggest_model2(trial, total, probability, *, feature_transformers, y_min, seed):
+    """Model 2: the total's CountModel and the classifier, each under its component's name."""
+    total_model = suggest_count_model(
+        trial,
+        total,
+        feature_transformers=feature_transformers,
+        y_min=y_min,
+        seed=seed,
+    )
+    hyperparameters = dataclasses.asdict(probability.suggest_params(trial))
     return TotalTimesProbabilityModel(
-        total_model=suggest_count_model(
-            trial,
-            "total__",
-            total,
-            family_transformers=count_family_transformers,
-            feature_transformers=feature_transformers,
-            y_min=y_min,
-            seed=seed,
-        ),
+        total_model=total_model,
         probability_model=CohortProbabilityModel(
-            estimator=probability_estimator(
-                probability.suggest_params(trial, prefix), seed=seed
+            estimator=probability.make_estimator(hyperparameters, seed=seed),
+            calibration_method=probability.suggest_calibration_method(trial),
+            feature_transformer=probability.suggest_feature_transformer(
+                trial, feature_transformers
             ),
-            calibration_method=probability.suggest_calibration_method(trial, prefix),
-            feature_transformer=feature_transformers[
-                probability.suggest_feature_transformer(
-                    trial, prefix, probability_family_transformers
-                )
-            ],
         ),
     )
 ```
-(Format as `ruff format` would, inside the cell.)
 
-**Done when:** Check A; Check B with the five names; a probe, for each of the 8 Model 1
-components and one Model 2 pair, runs a 2-trial study whose objective calls `suggest_model1`
-(or `suggest_model2`) and returns 0.0. Then:
-- `suggest_model1(FixedTrial(study.trials[0].params), …).get_params(deep=True)` equals the
-  model of trial 0, compared over its scalar parameters;
-- the model fits on `train_age_group`;
-- a foreign value in the `FixedTrial` raises `ValueError`.
+**Done when** (all met 2026-10-20):
+- Check A, with the notebook test at 4 of 5 by design.
+- Check B with `Component`, `CountComponent`, `ProbabilityComponent` and the three
+  `suggest_*`. Absent: `ComponentType`, `FAMILY_TRANSFORMERS`, the `*_TRANSFORMERS` tuples
+  and the two estimator functions.
+- The component probe, for every count family × exposure and both probability families:
+  - the sampled names are exactly the family's, under `a__`;
+  - the transformer is the object `FEATURE_TRANSFORMERS[name]`, for a name of the family's
+    ClassVar;
+  - a `FixedTrial` rebuild of the params is equal;
+  - `make_estimator` takes a plain dict;
+  - the record `json.dumps(asdict(c))` holds `name` and no `type`.
+- Its failure checks:
+  - an unknown family, a ClassVar without the family, and `make_estimator`'s `else` raise
+    `ValueError`;
+  - the ClassVar is read-only, and the abstract base cannot be instantiated;
+  - equality and hashing are by value, and a cloudpickle round trip and `Parallel(n_jobs=2)`
+    work.
+- The builder probe: the 8 Model 1 studies (a tuple of `CountComponent(cohort, family,
+  use_exposure)` per cohort) and two Model 2 pairs, each a 2-trial study:
+  - the trial names keep their prefixes;
+  - a `FixedTrial(trial0.params)` rebuild has equal scalar `get_params(deep=True)`;
+  - the rebuilt model fits;
+  - a foreign value raises `ValueError`.
+- T1.5's sketch runs on the new builders.
 
 ### [ ] T1.5 `cv_score` and `tune_model`
 
@@ -666,15 +881,16 @@ def tune_model(suggest_model, X, Y, exposure, cv, cv_groups, metric, *, study_se
 **Done when:** Check A (the test `test_a_tuning_cell_outside_a_run_button_is_caught` fails from
 T1.1 until T1.6, since no cell names `tune_model` behind a button yet; the other four tests of
 the file must pass; say so in the report); Check B; a probe calls `tune_model` directly with `n_trials=2` for
-`partial(suggest_model1, component=CountComponent("poisson_glm", True), …)` on the notebook's training data and prints `study.best_value` and the seconds.
+`partial(suggest_model1, components=tuple(CountComponent(cohort, "poisson_glm", True) for cohort in COHORTS), …)` on the notebook's training data and prints `study.best_value` and the seconds.
 
 ### [ ] T1.6 Model 1's button and run cell
 
 Two cells. The button cell also holds the list of the studies it runs:
 ```python
-# One study per count family and exposure (D6).
+# One study per count family and exposure (D6); a study is one component per
+# cohort, named after it (D8).
 MODEL1_COMPONENTS = [
-    CountComponent(family, use_exposure)
+    tuple(CountComponent(cohort, family, use_exposure) for cohort in COHORTS)
     for family in COUNT_FAMILIES
     for use_exposure in (True, False)
 ]
@@ -688,9 +904,7 @@ model1_runs = Parallel(n_jobs=len(MODEL1_COMPONENTS))(
     delayed(tune_model)(
         partial(
             suggest_model1,
-            component=component,
-            cohorts=COHORTS,
-            family_transformers=COUNT_FAMILY_TRANSFORMERS,
+            components=components,
             feature_transformers=FEATURE_TRANSFORMERS,
             y_min=PREDICTION_FLOOR,
             seed=seed,
@@ -704,11 +918,11 @@ model1_runs = Parallel(n_jobs=len(MODEL1_COMPONENTS))(
         study_seed=seed + i,
         n_trials=n_trials,
     )
-    for i, component in enumerate(MODEL1_COMPONENTS)
+    for i, components in enumerate(MODEL1_COMPONENTS)
 )
 MODEL1_STUDIES = dict(zip(MODEL1_COMPONENTS, model1_runs, strict=True))
 ```
-`MODEL1_STUDIES` maps a `CountComponent` to `(optuna.Study, seconds)`. The machine has 8 cores
+`MODEL1_STUDIES` maps a study's tuple of `CountComponent`s (hashable, D8) to `(optuna.Study, seconds)`. The machine has 8 cores
 (6 performance), so the 8 studies take one process each.
 
 **Done when:** Check A fully green (the `tune_model` rule holds again); Check C with
@@ -785,14 +999,12 @@ Model 1 score cell:
 ```python
 MODEL1_MODELS, MODEL1_BEST_RUNS = {}, []
 _score_rows, _choice_rows, _arm_rows = [], [], []
-for _component, (_study, _seconds) in MODEL1_STUDIES.items():
+for _components, (_study, _seconds) in MODEL1_STUDIES.items():
     _model, _rows = refit_best(
         _study,
         partial(
             suggest_model1,
-            component=_component,
-            cohorts=COHORTS,
-            family_transformers=COUNT_FAMILY_TRANSFORMERS,
+            components=_components,
             feature_transformers=FEATURE_TRANSFORMERS,
             y_min=PREDICTION_FLOOR,
             seed=seed,
@@ -802,10 +1014,20 @@ for _component, (_study, _seconds) in MODEL1_STUDIES.items():
         POISSON_DEVIANCE,
         COHORT_POISSON_DEVIANCE,
     )
-    _settings = dataclasses.asdict(_component)
-    MODEL1_MODELS[_component] = _model
-    # The record, JSON for a later logging stop.
-    MODEL1_BEST_RUNS.append({"settings": _settings, "params": _study.best_params})
+    # The study's settings columns (D8 left them to T1.7's plan): today every
+    # cohort of a study has the same family and exposure.
+    _settings = {
+        "family": _components[0].family,
+        "use_exposure": _components[0].use_exposure,
+    }
+    MODEL1_MODELS[_components] = _model
+    # The record, JSON for a later logging stop: every component's settings.
+    MODEL1_BEST_RUNS.append(
+        {
+            "settings": [dataclasses.asdict(c) for c in _components],
+            "params": _study.best_params,
+        }
+    )
     _rows[-1]["seconds"] = _seconds
     _score_rows.extend({**_settings, **row} for row in _rows)
     _choice_rows.extend({**_settings, **row} for row in best_choices(_study))
@@ -816,7 +1038,9 @@ model1_df, model1_choices_df, model1_arms_df = (
     pd.DataFrame(_arm_rows),
 )
 ```
-(If the implementer prefers a function `score_studies(studies, suggest_model_for, ...)` over
+(Since D8 a study is a tuple of components. If a later study mixed families across
+cohorts, the cohort rows would take their columns from their own component; settle at T1.7's
+plan. If the implementer prefers a function `score_studies(studies, suggest_model_for, ...)` over
 the loop, the same inputs go in the signature; the user's style accepts either. Say which.)
 Display cell: the current one (`mo.vstack` of three `mo.md` code blocks), titles "Model 1:
 cohort Poisson deviance (cv_best: the study's value; n_failed: trials whose fit raised)",
@@ -843,7 +1067,10 @@ summary and the suggested commit command for the user.
 # studies are this list × the total's exposure × the probability families.
 MODEL2_TOTALS = ["lgbm_poisson", "lgbm_gaussian", "poisson_glm", "nb2"]
 MODEL2_COMPONENTS = [
-    (CountComponent(total, use_exposure), ProbabilityComponent(probability))
+    (
+        CountComponent("total", total, use_exposure),
+        ProbabilityComponent("probability", probability),
+    )
     for total in MODEL2_TOTALS
     for use_exposure in (True, False)
     for probability in PROBABILITY_FAMILIES
@@ -854,16 +1081,15 @@ Button: `run_model2 = mo.ui.run_button(label="Tune Model 2")`, text
 Run cell: as T1.6 with `Parallel(n_jobs=min(len(MODEL2_COMPONENTS), 8))` (16 studies at four
 totals: two per process on 8 cores),
 `partial(suggest_model2, total=total, probability=probability,
-count_family_transformers=COUNT_FAMILY_TRANSFORMERS,
-probability_family_transformers=PROBABILITY_FAMILY_TRANSFORMERS, feature_transformers=FEATURE_TRANSFORMERS,
+feature_transformers=FEATURE_TRANSFORMERS,
 y_min=PREDICTION_FLOOR, seed=seed)` and `study_seed=seed + i`. The keys are the
 `(total, probability)` pairs, giving `MODEL2_STUDIES`.
 **Done when:** Check A; Check C prints `MODEL2_STUDIES True` with 16 studies of 3 trials.
 
 ### [ ] T2.2 Model 2's score and display cells, the best-per-model cell
 The score cell mirrors T1.7 with the `suggest_model2` partials, giving `MODEL2_MODELS`,
-`MODEL2_BEST_RUNS` (`{"settings": {"total": asdict(total), "probability":
-asdict(probability)}, "params": …}`), `model2_df`, `model2_choices_df` and `model2_arms_df`.
+`MODEL2_BEST_RUNS` (`{"settings": [asdict(total), asdict(probability)], "params": …}`,
+each with its `name`, D8), `model2_df`, `model2_choices_df` and `model2_arms_df`.
 The settings columns are `total_family`, `use_exposure` and `probability_family`; the choices
 cover the components `total` and `probability`. The display cell is as Model 1's. The
 best-per-model cell is today's (lines 1197–1218 at `8ee091a`), adapted to the settings
