@@ -1,6 +1,6 @@
 # Re-implement the hyperparameter tuning inside the notebook
 
-**Status (2026-10-21):** approved; T1.1 committed (`0416267`); T1.2 committed (`bee781a`) after the user's review (estimator dataclasses hold hyperparameters only; LightGBM's loss is a family); T1.3 committed (`7ae6314`) after three user reviews (components are a study's fixed settings, a `Literal` family and `use_exposure`; the family → transformer-names mapping is an argument of `suggest_feature_transformer`; no dataclass builds a model; the exposure a study setting, both arms; feature variants renamed feature transformers; D2, D3, D6, T1.4–T2.2 rewritten); T1.4 done 2026-10-19, then reworked at two rounds of the user's review on 2026-10-20 (D8: a named component per part of the composite under an abstract `Component`; the family checked from its `Literal`; each subclass holds its families' transformer names; `make_estimator(hyperparameters, *, seed)`; the T1.3 cells changed too; T1.4–T2.2 rewritten), committed (`8cc231d`); T1.5 done 2026-10-21 (`cv_score`, `tune_model`; at the user's review the fold variables named and an aggregator added, D9: `src/age_group_prediction/aggregation.py` and its tests, default `Mean`), committed (`a5ae06b`); T1.6 done 2026-10-21 (Model 1's button and run cell; Check C 14.7 s at 3 trials), then the redesign of D10 at its review, revised by D11 and D12 at the next reviews (search spaces with explicit suggest methods, the builder assembles components, the transformer by name; a study is a family combination and exposure; `feature_transformer_dict`; Check C reproduces T1.6's best values), uncommitted; notebook md5 `4d60d6d2dd3cdc07d1150b0c587420cf`; next T1.7. The implementing session updates this line and ticks the sub-tasks.
+**Status (2026-10-21):** approved; T1.1 committed (`0416267`); T1.2 committed (`bee781a`) after the user's review (estimator dataclasses hold hyperparameters only; LightGBM's loss is a family); T1.3 committed (`7ae6314`) after three user reviews (components are a study's fixed settings, a `Literal` family and `use_exposure`; the family → transformer-names mapping is an argument of `suggest_feature_transformer`; no dataclass builds a model; the exposure a study setting, both arms; feature variants renamed feature transformers; D2, D3, D6, T1.4–T2.2 rewritten); T1.4 done 2026-10-19, then reworked at two rounds of the user's review on 2026-10-20 (D8: a named component per part of the composite under an abstract `Component`; the family checked from its `Literal`; each subclass holds its families' transformer names; `make_estimator(hyperparameters, *, seed)`; the T1.3 cells changed too; T1.4–T2.2 rewritten), committed (`8cc231d`); T1.5 done 2026-10-21 (`cv_score`, `tune_model`; at the user's review the fold variables named and an aggregator added, D9: `src/age_group_prediction/aggregation.py` and its tests, default `Mean`), committed (`a5ae06b`); T1.6 done 2026-10-21 (Model 1's button and run cell; Check C 14.7 s at 3 trials), then the redesign of D10 at its review, revised by D11 and D12 at the next reviews (search spaces with explicit suggest methods, the builder assembles components, the transformer by name; a study is a family combination and exposure; `feature_transformer_dict`; Check C reproduces T1.6's best values), committed (`6316d91`); T1.7 implemented 2026-10-21, then D13 and D14 at its reviews (the runs in their own cells, one after another, each trial's folds in parallel; every trial and the best kept per run; `score_table`, `y_pred_*`; Check C reproduces T1.6's best values in 13.6 s), uncommitted, awaiting the user's 200-trial click; notebook md5 `14f401f28878b029cd54e73ceee5d2a4`; then T1.8. The implementing session updates this line and ticks the sub-tasks.
 
 Written for the model that implements it, one sub-task per approval. Every sub-task has the
 code to write, a "done when" list and the commands that verify it. The user reads the diff in
@@ -240,6 +240,65 @@ plain `Literal` assignments, not the `type` statement: cloudpickle cannot pickle
     and `y_min` once.
   - **Unchanged:** the search itself. Check C reproduced T1.6's 8 best values again.
 
+- D13. **Changed 2026-10-21 (the user, at T1.7's review; supersedes D6's "studies of one model
+  in parallel with joblib"):**
+  - **A run is one `(family, use_exposure)` combination, and the runs go one after
+    another.** Each trial fits its 5 folds in parallel (`fold_score`, `cv_score(…,
+    n_jobs)`, the run cell passing `n_jobs=n_splits`).
+  - **Measured, one trial,** one fold after another vs in parallel, identical scores:
+
+    | Family | One after another | In parallel | Speed-up |
+    |---|---|---|---|
+    | `lgbm_poisson` | 0.53 s | 0.21 s | ×2.5 |
+    | `lgbm_gaussian` | 0.40 s | 0.18 s | ×2.3 |
+    | `nb2` | 1.50 s | 0.45 s | ×3.3 |
+    | `poisson_glm` | 0.33 s | 0.13 s | ×2.6 |
+
+    - A new `Parallel` per trial costs about 12 ms, since joblib reuses the workers.
+    - A worker's `RuntimeError` comes back as one, so `catch` still marks the trial FAIL.
+    - Check C at 3 trials reproduced T1.6's 8 best values: 13.6 s against 22.6 s with the
+      studies in parallel.
+  - **No pruning.** `WilcoxonPruner` needs the folds one at a time and saves at most 20% of
+    a pruned trial at its default threshold. Parallel folds save 55–70% of every trial.
+  - **A run keeps only a summary** (`summarize_study`): the best parameters, `cv_best`,
+    `n_complete`, `n_failed`, the seconds, and the completed trials per feature
+    transformer. The Optuna study is dropped.
+  - **Only the best parameters are evaluated.** The score cell rebuilds the best components,
+    fits and scores them on training and validation, and keeps one JSON record per run in
+    `MODEL1_RUNS`. The fitted models and the best-choices table go: the components rebuild
+    the first and hold the second.
+  - **`evaluate` stays `metric(y_true, y_pred)`.** Each metric decides how to treat the
+    columns, as scikit-learn's `multioutput` does. `cohort_log_loss` needs the matrix and
+    raises `AxisError` when flattened, and both models predict the target's column order.
+
+- D14. **Changed 2026-10-21 (the user, at D13's review; supersedes D13's "a run keeps a
+  summary"):**
+  - **One cell per run.** Model 1 has eight explicit run cells, one per `(family,
+    use_exposure)`, seeded `seed + 0` … `seed + 7` in the old order, each behind the shared
+    "Tune Model 1" button. A run cell tunes, rebuilds the best components from
+    `FixedTrial(best_params)`, and scores them on training and validation with
+    `fit_and_score`.
+  - **The run is kept as a record** `model1_<family>_[no_]exposure`: `family`,
+    `use_exposure`, `trials` (`study.trials_dataframe()`, every trial), `components`,
+    `cv_best`, `score_table`, `seconds`, `seed` and `y_min`. The study object is not kept.
+  - **No function that is not needed.** `summarize_study`, `trial_counts`,
+    `categorical_names` and `arm_counts` went. The tables cell reads the counts from the
+    kept trials: completed trials per feature transformer by `value_counts`, and
+    `n_complete` / `n_failed` from `state`.
+  - **Names:** `score_table` (it was `rows`), and `y_pred_train` / `y_pred_val`.
+  - **Why the full history.** Best practice is to keep every trial and evaluate only the
+    best: the history is what is analyzed later (optimization history, importance, starved
+    choices), and it is small. Measured: about 1.7 KiB per trial, so roughly 335 KiB per
+    200-trial run.
+  - **Why the per-transformer counts.** TPE concentrates on what looked good early. In a
+    100-trial Poisson GLM run, `n_elementary`'s transformers got 48, 24, 9, 7, 7 and 5
+    trials, and `glm_base` took 22 of the last 30. A transformer tried 5 times has not been
+    judged. Only categorical choices are counted, since a float takes a new value in every
+    trial.
+  - **A run whose trials all fail** raises in its own cell ("No trials are completed yet").
+    The other runs are untouched, and the tables wait for it.
+  - **Measured:** Check C at 3 trials reproduced T1.6's 8 best values in 13.6 s.
+
 **What does not change:** notebook sections 1–4 and the `cv`/`cv_groups` cell; the models in
 `src/age_group_prediction/modeling/` (the S1 `get_params`/`set_params` forwarding in
 `IndependentCohortModels` stays: tested, `clone`-safe, simply unused by the notebook);
@@ -310,7 +369,7 @@ nb = importlib.util.module_from_spec(spec)
 with mock.patch("marimo.ui.run_button", return_value=types.SimpleNamespace(value=True)):
     spec.loader.exec_module(nb)
     _, defs = nb.app.run()
-for name in [...]:        # the sub-task's names, e.g. "MODEL1_STUDIES", "model1_df"
+for name in [...]:        # the sub-task's names, e.g. "MODEL1_RUNS", "model1_df"
     print(name, name in defs)
 print(defs["model1_df"].to_string(index=False))
 EOF
@@ -1102,32 +1161,43 @@ def suggest_model2(
 
 ### [x] T1.5 `cv_score` and `tune_model`
 
-One cell (the user's fold variables and the aggregator of D9, 2026-10-21):
+One cell: the user's fold variables, the aggregator of D9 and the parallel folds of D13
+(2026-10-21):
 ```python
-def cv_score(model, X, Y, exposure, cv, cv_groups, metric, aggregator=None):
+def fold_score(model, X, Y, exposure, train_index, val_index, metric):
+    """The score on one fold's validation rows of ``model`` fitted on its training rows."""
+    X_train, Y_train, exposure_train = (
+        X.iloc[train_index],
+        Y.iloc[train_index],
+        exposure.iloc[train_index],
+    )
+    X_val, Y_val, exposure_val = (
+        X.iloc[val_index],
+        Y.iloc[val_index],
+        exposure.iloc[val_index],
+    )
+    model.fit(X_train, Y_train, exposure=exposure_train)
+    Y_val_pred = model.predict(X_val, exposure=exposure_val)
+    return model.evaluate(Y_val, Y_val_pred, metric)
+
+def cv_score(
+    model, X, Y, exposure, cv, cv_groups, metric, aggregator=None, n_jobs=1
+):
     """The aggregated fold score of ``model`` refit on each fold's training rows (``fit`` replaces all state).
 
     ``aggregator`` combines the fold scores; None means the plain mean.
+    ``n_jobs`` processes fit the folds in parallel; the scores are the
+    same as one after another, so a seeded study is unchanged.
     """
     # The aggregator decides the selection (D9); the plain mean by default,
     # since the folds differ by one row at most.
     aggregator = Mean() if aggregator is None else aggregator
-    scores, fold_sizes = [], []
-    for train_index, val_index in cv.split(X, Y, cv_groups):
-        X_train, Y_train, exposure_train = (
-            X.iloc[train_index],
-            Y.iloc[train_index],
-            exposure.iloc[train_index],
-        )
-        X_val, Y_val, exposure_val = (
-            X.iloc[val_index],
-            Y.iloc[val_index],
-            exposure.iloc[val_index],
-        )
-        model.fit(X_train, Y_train, exposure=exposure_train)
-        Y_val_pred = model.predict(X_val, exposure=exposure_val)
-        scores.append(model.evaluate(Y_val, Y_val_pred, metric))
-        fold_sizes.append(len(val_index))
+    folds = list(cv.split(X, Y, cv_groups))
+    scores = Parallel(n_jobs=n_jobs)(
+        delayed(fold_score)(model, X, Y, exposure, train_index, val_index, metric)
+        for train_index, val_index in folds
+    )
+    fold_sizes = [len(val_index) for _, val_index in folds]
     return aggregator.aggregate(scores, fold_sizes)
 
 def tune_model(
@@ -1142,21 +1212,29 @@ def tune_model(
     study_seed,
     n_trials,
     aggregator=None,
+    n_jobs=1,
 ):
     """One study of the model ``suggest_model(trial)`` builds, on the rows of ``X``; the study and its seconds.
 
-    Runs in a joblib worker, a fresh process at Optuna's default INFO
-    verbosity, so it is set here too. A trial whose fit raises RuntimeError
-    (an NB2 fit that does not converge) is marked FAIL and the study goes on;
-    without ``catch`` one such trial would end the study. ``aggregator`` goes
-    to ``cv_score``; None means the plain mean.
+    A trial whose fit raises RuntimeError (an NB2 fit that does not
+    converge, re-raised as such from a fold's process) is marked FAIL and
+    the study goes on; without ``catch`` one such trial would end the
+    study. ``aggregator`` and ``n_jobs`` go to ``cv_score``.
     """
     optuna.logging.set_verbosity(optuna.logging.WARNING)
 
     def objective(trial):
         # Optuna passes the trial alone; the data is bound here, not to a cell.
         return cv_score(
-            suggest_model(trial), X, Y, exposure, cv, cv_groups, metric, aggregator
+            suggest_model(trial),
+            X,
+            Y,
+            exposure,
+            cv,
+            cv_groups,
+            metric,
+            aggregator,
+            n_jobs,
         )
 
     study = optuna.create_study(
@@ -1171,54 +1249,81 @@ T1.1 until T1.6, since no cell names `tune_model` behind a button yet; the other
 the file must pass; say so in the report); Check B; a probe calls `tune_model` directly with `n_trials=2` for
 `partial(suggest_model1, family="poisson_glm", use_exposure=True, cohorts=COHORTS, …)` (D12's names) on the notebook's training data and prints `study.best_value` and the seconds (2.48456 by default and with `Mean()`; met 2026-10-21, with the other aggregators of D9).
 
-### [x] T1.6 Model 1's button and run cell
+### [x] T1.6 Model 1's button and run cells
 
-Two cells (D12's names since 2026-10-21). The button cell also holds the list of the studies it runs:
+The button cell, then eight run cells (D14 since 2026-10-21), one per `(family,
+use_exposure)` in the order `lgbm_poisson`, `lgbm_gaussian`, `poisson_glm`, `nb2` × exposure
+on, off. They are seeded `seed + 0` … `seed + 7`, and each stops on the button. The button:
 ```python
-# One study per count family and exposure (D6, D12): each combination is
-# tuned, and then scored, with its own best parameters.
-MODEL1_STUDY_SETTINGS = [
-    (family, use_exposure)
-    for family in COUNT_FAMILIES
-    for use_exposure in (True, False)
-]
 run_model1 = mo.ui.run_button(label="Tune Model 1")
 mo.md(
-    f"{run_model1} {len(MODEL1_STUDY_SETTINGS)} studies × `n_trials` trials, in parallel."
+    f"{run_model1} 8 runs, one cell each (a count family × exposure on or off); "
+    "each trial fits its folds in parallel."
 )
 ```
+Run 1 of 8; the other seven differ only in the comment, `_family, _use_exposure`, the seed
+offset and the variable name:
 ```python
 mo.stop(not run_model1.value, mo.md("Click the button to tune Model 1."))
-# One process per study; study i gets seed + i.
-model1_runs = Parallel(n_jobs=len(MODEL1_STUDY_SETTINGS))(
-    delayed(tune_model)(
-        partial(
-            suggest_model1,
-            family=family,
-            use_exposure=use_exposure,
-            cohorts=COHORTS,
-            feature_transformer_dict=FEATURE_TRANSFORMERS,
-            y_min=PREDICTION_FLOOR,
-            seed=seed,
-        ),
-        train_age_group.X,
-        train_age_group.Y,
-        train_age_group.exposure,
-        cv,
-        cv_groups,
-        COHORT_POISSON_DEVIANCE,
-        study_seed=seed + i,
-        n_trials=n_trials,
-    )
-    for i, (family, use_exposure) in enumerate(MODEL1_STUDY_SETTINGS)
+# Model 1, run 1 of 8: LightGBM with the Poisson loss, exposure on.
+_family, _use_exposure = "lgbm_poisson", True
+_study, _seconds = tune_model(
+    partial(
+        suggest_model1,
+        family=_family,
+        use_exposure=_use_exposure,
+        cohorts=COHORTS,
+        feature_transformer_dict=FEATURE_TRANSFORMERS,
+        y_min=PREDICTION_FLOOR,
+        seed=seed,
+    ),
+    train_age_group.X,
+    train_age_group.Y,
+    train_age_group.exposure,
+    cv,
+    cv_groups,
+    COHORT_POISSON_DEVIANCE,
+    study_seed=seed + 0,
+    n_trials=n_trials,
+    n_jobs=n_splits,
 )
-MODEL1_STUDIES = dict(zip(MODEL1_STUDY_SETTINGS, model1_runs, strict=True))
+# The best components, rebuilt from the best trial's parameters, are the
+# model scored and the record kept (D10-D12, D14).
+_best = suggest_model1_components(
+    FixedTrial(_study.best_params),
+    family=_family,
+    use_exposure=_use_exposure,
+    cohorts=COHORTS,
+)
+_, _score_table = fit_and_score(
+    build_model1(
+        _best,
+        feature_transformer_dict=FEATURE_TRANSFORMERS,
+        y_min=PREDICTION_FLOOR,
+        seed=seed,
+    ),
+    train_age_group,
+    val_age_group,
+    cohort_metric=POISSON_DEVIANCE,
+    metric=COHORT_POISSON_DEVIANCE,
+)
+# Every trial and the best (D14); the study object is not kept.
+model1_lgbm_poisson_exposure = {
+    "family": _family,
+    "use_exposure": _use_exposure,
+    "trials": _study.trials_dataframe(),
+    "components": [dataclasses.asdict(c) for c in _best],
+    "cv_best": _study.best_value,
+    "score_table": _score_table,
+    "seconds": _seconds,
+    "seed": seed,
+    "y_min": PREDICTION_FLOOR,
+}
 ```
-`MODEL1_STUDIES` maps a study's settings `(family, use_exposure)` (D12) to `(optuna.Study, seconds)`. The machine has 8 cores
 (6 performance), so the 8 studies take one process each.
 
 **Done when:** Check A fully green (the `tune_model` rule holds again); Check C with
-`n_trials = 3` prints `MODEL1_STUDIES True` and, for each component, `len(study.trials) == 3`;
+`n_trials = 3` prints `MODEL1_STUDIES True` (since D13 `MODEL1_TUNING`) and, for each component, `len(study.trials) == 3`;
 record the wall time of Check C.
 
 Met 2026-10-21:
@@ -1241,134 +1346,115 @@ Met 2026-10-21:
 
 ### [ ] T1.7 Refit, tables and the Model 1 views
 
-Three cells: the functions, the Model 1 score cell, the Model 1 display cell.
+The refit lives in each run cell (D14). This sub-task's cells are the function, the tables
+cell and the display cell.
+- **History:** implemented 2026-10-21. The reviews that day gave D13 (the runs one after
+  another, the folds in parallel) and D14 (one cell per run, every trial kept).
+- **Kept from the first version:** the best components, rebuilt from
+  `FixedTrial(best_params)`, are both the model scored and the record.
 ```python
-def refit_best(study, suggest_model, train_age_group, val_age_group, cohort_metric, metric):
-    """Rebuild the study's best model, refit it on the training part; the model and its scores.
+def fit_and_score(model, train_age_group, val_age_group, *, cohort_metric, metric):
+    """Fit ``model`` on the training part; it and its score table on training and validation.
 
-    The model is rebuilt by ``suggest_model`` on a FixedTrial of the best
-    parameters: the same code path as the search, and a missing or foreign
-    value raises. The scores: the per-cohort metric on each cohort column and
-    the composite metric, on training and validation.
+    A row per cohort column, scored by ``cohort_metric``, then the
+    composite, scored by ``metric``.
     """
-    model = suggest_model(FixedTrial(study.best_params)).fit(
+    model.fit(
         train_age_group.X, train_age_group.Y, exposure=train_age_group.exposure
     )
-    pred_train = model.predict(train_age_group.X, exposure=train_age_group.exposure)
-    pred_val = model.predict(val_age_group.X, exposure=val_age_group.exposure)
-    rows = [
+    y_pred_train = model.predict(
+        train_age_group.X, exposure=train_age_group.exposure
+    )
+    y_pred_val = model.predict(val_age_group.X, exposure=val_age_group.exposure)
+    score_table = [
         {
             "cohort": cohort,
-            "train": model.evaluate(train_age_group.Y[cohort], pred_train[cohort], cohort_metric),
-            "val": model.evaluate(val_age_group.Y[cohort], pred_val[cohort], cohort_metric),
+            "train": model.evaluate(
+                train_age_group.Y[cohort], y_pred_train[cohort], cohort_metric
+            ),
+            "val": model.evaluate(
+                val_age_group.Y[cohort], y_pred_val[cohort], cohort_metric
+            ),
         }
         for cohort in train_age_group.Y.columns
     ]
-    rows.append(
+    score_table.append(
         {
             "cohort": "composite",
-            "cv_best": study.best_value,
-            "train": model.evaluate(train_age_group.Y, pred_train, metric),
-            "val": model.evaluate(val_age_group.Y, pred_val, metric),
-            "n_failed": sum(trial.state == TrialState.FAIL for trial in study.trials),
+            "train": model.evaluate(train_age_group.Y, y_pred_train, metric),
+            "val": model.evaluate(val_age_group.Y, y_pred_val, metric),
         }
     )
-    return model, rows
-
-
-def categorical_names(study):
-    """The names a trial draws from a categorical; every trial has the same names."""
-    return [
-        name
-        for name, distribution in study.best_trial.distributions.items()
-        if isinstance(distribution, CategoricalDistribution)
-    ]
-
-
-def best_choices(study):
-    """One row per component (the name before the first ``__``) with its best categorical values."""
-    rows = {}
-    for name in categorical_names(study):
-        component, parameter = name.split("__", 1)
-        rows.setdefault(component, {"component": component})[parameter] = (
-            study.best_trial.params[name]
-        )
-    return list(rows.values())
-
-
-def arm_counts(study):
-    """Trials per value of every categorical, so a starved arm is visible before a family is declared worse."""
-    complete = study.get_trials(deepcopy=False, states=(TrialState.COMPLETE,))
-    return [
-        {"parameter": name, "value": value, "n_trials": count}
-        for name in categorical_names(study)
-        for value, count in Counter(trial.params[name] for trial in complete).items()
-    ]
+    return model, score_table
 ```
-Model 1 score cell:
+Tables cell:
 ```python
-MODEL1_MODELS, MODEL1_BEST_RUNS = {}, []
-_score_rows, _choice_rows, _arm_rows = [], [], []
-for (_family, _use_exposure), (_study, _seconds) in MODEL1_STUDIES.items():
-    _model, _rows = refit_best(
-        _study,
-        partial(
-            suggest_model1,
-            family=_family,
-            use_exposure=_use_exposure,
-            cohorts=COHORTS,
-            feature_transformer_dict=FEATURE_TRANSFORMERS,
-            y_min=PREDICTION_FLOOR,
-            seed=seed,
-        ),
-        train_age_group,
-        val_age_group,
-        POISSON_DEVIANCE,
-        COHORT_POISSON_DEVIANCE,
-    )
-    # The study's settings columns: its family and exposure (D12).
-    _settings = {"family": _family, "use_exposure": _use_exposure}
-    MODEL1_MODELS[_family, _use_exposure] = _model
-    # The record, JSON for a later logging stop: the best components, complete
-    # (D10-D12), rebuilt from the best trial's parameters; seed and y_min once.
-    _best = suggest_model1_components(
-        FixedTrial(_study.best_params),
-        family=_family,
-        use_exposure=_use_exposure,
-        cohorts=COHORTS,
-    )
-    MODEL1_BEST_RUNS.append(
+MODEL1_RUNS = [
+    model1_lgbm_poisson_exposure,
+    model1_lgbm_poisson_no_exposure,
+    model1_lgbm_gaussian_exposure,
+    model1_lgbm_gaussian_no_exposure,
+    model1_poisson_glm_exposure,
+    model1_poisson_glm_no_exposure,
+    model1_nb2_exposure,
+    model1_nb2_no_exposure,
+]
+_score_rows, _arm_rows = [], []
+for _run in MODEL1_RUNS:
+    _settings = {"family": _run["family"], "use_exposure": _run["use_exposure"]}
+    _trials = _run["trials"]
+    _complete = _trials[_trials["state"] == "COMPLETE"]
+    _score_rows.extend({**_settings, **row} for row in _run["score_table"][:-1])
+    _score_rows.append(
         {
             **_settings,
-            "components": [dataclasses.asdict(c) for c in _best],
-            "cv_best": _study.best_value,
-            "seed": seed,
-            "y_min": PREDICTION_FLOOR,
+            **_run["score_table"][-1],
+            "cv_best": _run["cv_best"],
+            "n_complete": len(_complete),
+            "n_failed": int((_trials["state"] == "FAIL").sum()),
+            "seconds": _run["seconds"],
         }
     )
-    _rows[-1]["seconds"] = _seconds
-    _score_rows.extend({**_settings, **row} for row in _rows)
-    _choice_rows.extend({**_settings, **row} for row in best_choices(_study))
-    _arm_rows.extend({**_settings, **row} for row in arm_counts(_study))
-model1_df, model1_choices_df, model1_arms_df = (
-    pd.DataFrame(_score_rows),
-    pd.DataFrame(_choice_rows),
-    pd.DataFrame(_arm_rows),
+    # The completed trials per feature transformer, Model 1's only categorical
+    # choice: TPE concentrates on what looked good early, so a transformer
+    # tried a few times has not been judged (D14).
+    for _column in _trials.columns:
+        if _column.endswith("__feature_transformer"):
+            for _value, _n in _complete[_column].value_counts().items():
+                _arm_rows.append(
+                    {
+                        **_settings,
+                        "parameter": _column.removeprefix("params_"),
+                        "value": _value,
+                        "n_trials": int(_n),
+                    }
+                )
+model1_df, model1_arms_df = pd.DataFrame(_score_rows), pd.DataFrame(_arm_rows)
+```
+Display cell:
+```python
+mo.vstack(
+    [
+        mo.md(
+            "**Model 1: cohort Poisson deviance** (cv_best: the run's value; "
+            "n_complete / n_failed: its trials)"
+        ),
+        mo.md(f"```text\n{model1_df.round(4).to_string(index=False)}\n```"),
+        mo.md("**Trials per feature transformer**"),
+        mo.md(f"```text\n{model1_arms_df.to_string(index=False)}\n```"),
+    ]
 )
 ```
-(Since D8 a study is a tuple of components. If a later study mixed families across
-cohorts, the cohort rows would take their columns from their own component; settle at T1.7's
-plan. If the implementer prefers a function `score_studies(studies, suggest_model_for, ...)` over
-the loop, the same inputs go in the signature; the user's style accepts either. Say which.)
-Display cell: the current one (`mo.vstack` of three `mo.md` code blocks), titles "Model 1:
-cohort Poisson deviance (cv_best: the study's value; n_failed: trials whose fit raised)",
-"Best combination per component", "Trials per arm".
 
-**Done when:** Check A; Check C prints `model1_df` with 32 rows (8 studies × 4), with the
-columns `family` and `use_exposure`; the choices frame with 24 rows (8 × 3 cohorts), whose only
-categorical is `feature_transformer`; the arms frame
-with the counts summing to the COMPLETE trials per parameter, and
-`json.dumps(defs["MODEL1_BEST_RUNS"])` works; the user clicks the button in `marimo edit` at
+**Done when:** Check A; Check C (met 2026-10-21, 13.6 s, D14):
+- `MODEL1_RUNS` holds the 8 run records, each with a 3-row `trials` frame.
+- `model1_df` has 32 rows with `family` and `use_exposure`.
+- Every `cv_best` equals T1.6's.
+- The per-transformer counts add up to each run's completed trials.
+- The records serialize with `trials` as `to_dict("records")` and `json.dumps(…,
+  default=str)` (the trial timestamps).
+
+Then the user clicks the button in `marimo edit` at
 `n_trials = 200` and reports the wall time (today's package version: ≈ 5 min).
 
 ### [ ] T1.8 Independent review of T1
@@ -1392,25 +1478,24 @@ MODEL2_STUDY_SETTINGS = [
 ]
 ```
 Button: `run_model2 = mo.ui.run_button(label="Tune Model 2")`, text
-`f"{run_model2} {len(MODEL2_STUDY_SETTINGS)} studies × `n_trials` trials, in parallel."`.
-Run cell: as T1.6 with `Parallel(n_jobs=min(len(MODEL2_STUDY_SETTINGS), 8))` (16 studies at four
-totals: two per process on 8 cores),
+`f"{run_model2} {len(MODEL2_STUDY_SETTINGS)} runs × `n_trials` trials, one after another…"`.
+Run cells: as T1.6 (D14), one cell per run (16 at four totals), `n_jobs=n_splits`, each keeping its trials and its best,
 `partial(suggest_model2, total_family=total_family, probability_family=probability_family,
 use_exposure=use_exposure, feature_transformer_dict=FEATURE_TRANSFORMERS,
 y_min=PREDICTION_FLOOR, seed=seed)` and `study_seed=seed + i`. The keys are the
-`(total_family, probability_family, use_exposure)` settings, giving `MODEL2_STUDIES` (D12).
-**Done when:** Check A; Check C prints `MODEL2_STUDIES True` with 16 studies of 3 trials.
+`(total_family, probability_family, use_exposure)` settings, giving the run records `model2_<total>_<probability>_[no_]exposure` (D12, D14).
+**Done when:** Check A; Check C gives 16 run records with 3 trials each.
 
 ### [ ] T2.2 Model 2's score and display cells, the best-per-model cell
-The score cell mirrors T1.7 with the `suggest_model2` partials, giving `MODEL2_MODELS`,
-`MODEL2_BEST_RUNS` (`{"components": [asdict(best_total), asdict(best_probability)], "cv_best": …}`,
-the best components of D10), `model2_df`, `model2_choices_df` and `model2_arms_df`.
-The settings columns are `total_family`, `use_exposure` and `probability_family`; the choices
-cover the components `total` and `probability`. The display cell is as Model 1's. The
+Each run cell refits with `suggest_model2_components(FixedTrial(best_params), …)`, `build_model2`
+and `fit_and_score` (D14). The tables cell mirrors T1.7's and gives `MODEL2_RUNS` (the 16
+run records, with the components `total` and `probability`), `model2_df` and
+`model2_arms_df` (per transformer and calibration method).
+The settings columns are `total_family`, `probability_family` and `use_exposure`. The display cell is as Model 1's. The
 best-per-model cell is today's (lines 1197–1218 at `8ee091a`), adapted to the settings
 columns.
-**Done when:** Check A; Check C prints `model2_df` with 64 rows (16 × 4), the choices frame with
-32 rows, `best_df` with 2 rows; the user clicks both buttons at 200 and reports the times.
+**Done when:** Check A; Check C prints `model2_df` with 64 rows (16 × 4), `MODEL2_RUNS` with
+16 records, `best_df` with 2 rows; the user clicks both buttons at 200 and reports the times.
 
 ### [ ] T2.3 Independent review of T2, summary, commit suggestion.
 
@@ -1481,7 +1566,7 @@ the notebook test green.
 | Dispatch on the params | `isinstance` in `count_estimator` / `probability_estimator` | `isinstance` does not work on TypedDicts; dispatch needs a `family` key |
 | Behaviour | `suggest` (params) and `suggest_*` (components) on the class; no `build` (D3) | functions only |
 
-## 7. Later: the performance pass (facts, no decision)
+## 7. The performance pass (decided 2026-10-21 by D13: folds in parallel, no pruning; the facts weighed)
 
 - **Pruning mid-CV.** Optuna's `WilcoxonPruner` (4.9: `p_threshold=0.1`, `n_startup_steps=2`)
   is the pruner designed for a mean over fixed instances such as CV folds: it pairs fold k of
@@ -1504,5 +1589,5 @@ the notebook test green.
 
 1. `uv run pytest -m "not slow"` green; the notebook's script run fits nothing (≈ 5 s).
 2. Check C with both buttons patched at `n_trials = 3`: every table renders;
-   `json.dumps` of `MODEL1_BEST_RUNS` and `MODEL2_BEST_RUNS` works.
+   `json.dumps` of `MODEL1_RUNS` and `MODEL2_RUNS` works (D13).
 3. The user clicks both buttons at 200 in `marimo edit`; wall times recorded in the handoff.
