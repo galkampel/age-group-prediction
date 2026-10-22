@@ -249,6 +249,11 @@ def _(mo, pd):
     # TPE's random start: the trials drawn at random before its model guides the draws.
     n_startup_trials = 20
     n_resamples = 1000
+    # The inspection of the best runs: permutation repeats per column, and the
+    # validation rows SHAP explains against the training rows it averages over.
+    n_repeats = 10
+    n_shap_rows = 100
+    n_shap_background = 50
 
     # What every run logs.
     EXPERIMENT_SETTINGS = {
@@ -260,6 +265,9 @@ def _(mo, pd):
         "n_trials": n_trials,
         "n_startup_trials": n_startup_trials,
         "n_resamples": n_resamples,
+        "n_repeats": n_repeats,
+        "n_shap_rows": n_shap_rows,
+        "n_shap_background": n_shap_background,
     }
     print(
         "experiment_settings "
@@ -267,6 +275,10 @@ def _(mo, pd):
     )
     mo.md(f"```text\n{pd.DataFrame([EXPERIMENT_SETTINGS]).to_string(index=False)}\n```")
     return (
+        n_repeats,
+        n_resamples,
+        n_shap_background,
+        n_shap_rows,
         n_splits,
         n_startup_trials,
         n_trials,
@@ -636,6 +648,25 @@ def _(mo):
     calibration is searched.
     The last table shows each model's best run on validation. The run
     cells sit behind buttons: opening the notebook fits nothing.
+
+    Each model's best run is then inspected, behind its own button: its
+    model is rebuilt from the best trial's parameters, refit on the training
+    part and judged on the training rows and the validation rows (the test
+    part waits for the final refit on training + validation). A bootstrap
+    that resamples whole neighborhoods gives the interval of seven metrics,
+    all paired on the same replicates: the cohort Poisson deviance (the
+    primary metric, the tuning's objective); the cohort log loss (the
+    proportions between cohorts only, so it never selects); D² Poisson (the
+    share of the deviance explained, 1 is perfect); MAE and RMSE per
+    (building, cohort) cell; WMAPE (the absolute error as a share of the
+    children); and the bias (mean predicted minus true count, signed, so 0
+    is best). The permutation importance of the primary metric on validation
+    says what the shipped prediction depends on, and on training what the
+    model fitted (a column important there only is overfit). Exact SHAP of
+    `n_shap_rows` validation rows against `n_shap_background` training rows
+    attributes the predicted count per row, column and cohort; mean |SHAP|
+    per column is its global importance. The last table puts the two
+    importances' rankings side by side.
     """)
     return
 
@@ -656,9 +687,19 @@ def _():
     from optuna.samplers import TPESampler
     from optuna.trial import FixedTrial
     from sklearn.linear_model import LogisticRegression, PoissonRegressor
-    from sklearn.metrics import mean_poisson_deviance
+    from sklearn.metrics import (
+        d2_tweedie_score,
+        mean_absolute_error,
+        mean_poisson_deviance,
+        root_mean_squared_error,
+    )
 
     from age_group_prediction.aggregation import Mean
+    from age_group_prediction.inspection import (
+        BootstrapEvaluator,
+        PermutationImportance,
+        ShapExplainer,
+    )
     from age_group_prediction.modeling import (
         CohortProbabilityModel,
         CountModel,
@@ -666,11 +707,16 @@ def _():
         NegativeBinomialRegressor,
         TotalTimesProbabilityModel,
     )
-    from age_group_prediction.scoring import Metric, cohort_poisson_deviance
+    from age_group_prediction.scoring import (
+        Metric,
+        cohort_log_loss,
+        cohort_poisson_deviance,
+    )
 
     # Optuna logs every trial at INFO; the studies run in this process.
     optuna.logging.set_verbosity(optuna.logging.WARNING)
     return (
+        BootstrapEvaluator,
         ClassVar,
         CohortProbabilityModel,
         CountModel,
@@ -685,25 +731,41 @@ def _():
         Metric,
         NegativeBinomialRegressor,
         Parallel,
+        PermutationImportance,
         PoissonRegressor,
+        ShapExplainer,
         TPESampler,
         TotalTimesProbabilityModel,
         abc,
+        cohort_log_loss,
         cohort_poisson_deviance,
+        d2_tweedie_score,
         dataclasses,
         delayed,
         get_args,
         get_type_hints,
+        mean_absolute_error,
         mean_poisson_deviance,
         np,
         optuna,
         partial,
+        root_mean_squared_error,
         time,
     )
 
 
 @app.cell
-def _(Metric, cohort_poisson_deviance, mean_poisson_deviance):
+def _(
+    Metric,
+    cohort_log_loss,
+    cohort_poisson_deviance,
+    d2_tweedie_score,
+    mean_absolute_error,
+    mean_poisson_deviance,
+    np,
+    partial,
+    root_mean_squared_error,
+):
     # The study's objective and the tables' per-cohort score, with the direction
     # Optuna is given; a loss, so "minimize".
     COHORT_POISSON_DEVIANCE = Metric(
@@ -712,7 +774,37 @@ def _(Metric, cohort_poisson_deviance, mean_poisson_deviance):
     POISSON_DEVIANCE = Metric(
         "poisson_deviance", mean_poisson_deviance, direction="minimize"
     )
-    return COHORT_POISSON_DEVIANCE, POISSON_DEVIANCE
+    COHORT_LOG_LOSS = Metric("cohort_log_loss", cohort_log_loss, direction="minimize")
+
+    def on_cells(function):
+        """``function`` on the flattened (building, cohort) cells of both matrices."""
+        return lambda y_true, y_pred: function(
+            np.asarray(y_true, dtype=float).ravel(),
+            np.asarray(y_pred, dtype=float).ravel(),
+        )
+
+    def wmape(y_true, y_pred):
+        return float(np.abs(y_true - y_pred).sum() / np.abs(y_true).sum())
+
+    def bias(y_true, y_pred):
+        return float(np.mean(y_pred - y_true))
+
+    # The bootstrap of the best runs, the primary metric first. Bias is signed,
+    # so its direction is nominal: only the permutation importance reads one.
+    INSPECTION_METRICS = (
+        COHORT_POISSON_DEVIANCE,
+        COHORT_LOG_LOSS,
+        Metric(
+            "d2_poisson",
+            on_cells(partial(d2_tweedie_score, power=1)),
+            direction="maximize",
+        ),
+        Metric("mae", on_cells(mean_absolute_error), direction="minimize"),
+        Metric("rmse", on_cells(root_mean_squared_error), direction="minimize"),
+        Metric("wmape", on_cells(wmape), direction="minimize"),
+        Metric("bias", on_cells(bias), direction="minimize"),
+    )
+    return COHORT_POISSON_DEVIANCE, INSPECTION_METRICS, POISSON_DEVIANCE
 
 
 @app.cell
@@ -1417,6 +1509,7 @@ def _(
         "trials": _study.trials_dataframe(),
         "components": [dataclasses.asdict(c) for c in _best],
         "cv_best": _study.best_value,
+        "best_params": _study.best_params,
         "score_table": _score_table,
         "seconds": _seconds,
         "seed": seed,
@@ -1502,6 +1595,7 @@ def _(
         "trials": _study.trials_dataframe(),
         "components": [dataclasses.asdict(c) for c in _best],
         "cv_best": _study.best_value,
+        "best_params": _study.best_params,
         "score_table": _score_table,
         "seconds": _seconds,
         "seed": seed,
@@ -1587,6 +1681,7 @@ def _(
         "trials": _study.trials_dataframe(),
         "components": [dataclasses.asdict(c) for c in _best],
         "cv_best": _study.best_value,
+        "best_params": _study.best_params,
         "score_table": _score_table,
         "seconds": _seconds,
         "seed": seed,
@@ -1672,6 +1767,7 @@ def _(
         "trials": _study.trials_dataframe(),
         "components": [dataclasses.asdict(c) for c in _best],
         "cv_best": _study.best_value,
+        "best_params": _study.best_params,
         "score_table": _score_table,
         "seconds": _seconds,
         "seed": seed,
@@ -1757,6 +1853,7 @@ def _(
         "trials": _study.trials_dataframe(),
         "components": [dataclasses.asdict(c) for c in _best],
         "cv_best": _study.best_value,
+        "best_params": _study.best_params,
         "score_table": _score_table,
         "seconds": _seconds,
         "seed": seed,
@@ -1842,6 +1939,7 @@ def _(
         "trials": _study.trials_dataframe(),
         "components": [dataclasses.asdict(c) for c in _best],
         "cv_best": _study.best_value,
+        "best_params": _study.best_params,
         "score_table": _score_table,
         "seconds": _seconds,
         "seed": seed,
@@ -1927,6 +2025,7 @@ def _(
         "trials": _study.trials_dataframe(),
         "components": [dataclasses.asdict(c) for c in _best],
         "cv_best": _study.best_value,
+        "best_params": _study.best_params,
         "score_table": _score_table,
         "seconds": _seconds,
         "seed": seed,
@@ -2012,6 +2111,7 @@ def _(
         "trials": _study.trials_dataframe(),
         "components": [dataclasses.asdict(c) for c in _best],
         "cv_best": _study.best_value,
+        "best_params": _study.best_params,
         "score_table": _score_table,
         "seconds": _seconds,
         "seed": seed,
@@ -2185,6 +2285,7 @@ def _(
         "trials": _study.trials_dataframe(),
         "components": [dataclasses.asdict(c) for c in _best],
         "cv_best": _study.best_value,
+        "best_params": _study.best_params,
         "score_table": _score_table,
         "seconds": _seconds,
         "seed": seed,
@@ -2271,6 +2372,7 @@ def _(
         "trials": _study.trials_dataframe(),
         "components": [dataclasses.asdict(c) for c in _best],
         "cv_best": _study.best_value,
+        "best_params": _study.best_params,
         "score_table": _score_table,
         "seconds": _seconds,
         "seed": seed,
@@ -2361,6 +2463,7 @@ def _(
         "trials": _study.trials_dataframe(),
         "components": [dataclasses.asdict(c) for c in _best],
         "cv_best": _study.best_value,
+        "best_params": _study.best_params,
         "score_table": _score_table,
         "seconds": _seconds,
         "seed": seed,
@@ -2447,6 +2550,7 @@ def _(
         "trials": _study.trials_dataframe(),
         "components": [dataclasses.asdict(c) for c in _best],
         "cv_best": _study.best_value,
+        "best_params": _study.best_params,
         "score_table": _score_table,
         "seconds": _seconds,
         "seed": seed,
@@ -2537,6 +2641,7 @@ def _(
         "trials": _study.trials_dataframe(),
         "components": [dataclasses.asdict(c) for c in _best],
         "cv_best": _study.best_value,
+        "best_params": _study.best_params,
         "score_table": _score_table,
         "seconds": _seconds,
         "seed": seed,
@@ -2623,6 +2728,7 @@ def _(
         "trials": _study.trials_dataframe(),
         "components": [dataclasses.asdict(c) for c in _best],
         "cv_best": _study.best_value,
+        "best_params": _study.best_params,
         "score_table": _score_table,
         "seconds": _seconds,
         "seed": seed,
@@ -2713,6 +2819,7 @@ def _(
         "trials": _study.trials_dataframe(),
         "components": [dataclasses.asdict(c) for c in _best],
         "cv_best": _study.best_value,
+        "best_params": _study.best_params,
         "score_table": _score_table,
         "seconds": _seconds,
         "seed": seed,
@@ -2799,6 +2906,7 @@ def _(
         "trials": _study.trials_dataframe(),
         "components": [dataclasses.asdict(c) for c in _best],
         "cv_best": _study.best_value,
+        "best_params": _study.best_params,
         "score_table": _score_table,
         "seconds": _seconds,
         "seed": seed,
@@ -2885,6 +2993,7 @@ def _(
         "trials": _study.trials_dataframe(),
         "components": [dataclasses.asdict(c) for c in _best],
         "cv_best": _study.best_value,
+        "best_params": _study.best_params,
         "score_table": _score_table,
         "seconds": _seconds,
         "seed": seed,
@@ -2971,6 +3080,7 @@ def _(
         "trials": _study.trials_dataframe(),
         "components": [dataclasses.asdict(c) for c in _best],
         "cv_best": _study.best_value,
+        "best_params": _study.best_params,
         "score_table": _score_table,
         "seconds": _seconds,
         "seed": seed,
@@ -3057,6 +3167,7 @@ def _(
         "trials": _study.trials_dataframe(),
         "components": [dataclasses.asdict(c) for c in _best],
         "cv_best": _study.best_value,
+        "best_params": _study.best_params,
         "score_table": _score_table,
         "seconds": _seconds,
         "seed": seed,
@@ -3143,6 +3254,7 @@ def _(
         "trials": _study.trials_dataframe(),
         "components": [dataclasses.asdict(c) for c in _best],
         "cv_best": _study.best_value,
+        "best_params": _study.best_params,
         "score_table": _score_table,
         "seconds": _seconds,
         "seed": seed,
@@ -3229,6 +3341,7 @@ def _(
         "trials": _study.trials_dataframe(),
         "components": [dataclasses.asdict(c) for c in _best],
         "cv_best": _study.best_value,
+        "best_params": _study.best_params,
         "score_table": _score_table,
         "seconds": _seconds,
         "seed": seed,
@@ -3315,6 +3428,7 @@ def _(
         "trials": _study.trials_dataframe(),
         "components": [dataclasses.asdict(c) for c in _best],
         "cv_best": _study.best_value,
+        "best_params": _study.best_params,
         "score_table": _score_table,
         "seconds": _seconds,
         "seed": seed,
@@ -3401,6 +3515,7 @@ def _(
         "trials": _study.trials_dataframe(),
         "components": [dataclasses.asdict(c) for c in _best],
         "cv_best": _study.best_value,
+        "best_params": _study.best_params,
         "score_table": _score_table,
         "seconds": _seconds,
         "seed": seed,
@@ -3487,6 +3602,7 @@ def _(
         "trials": _study.trials_dataframe(),
         "components": [dataclasses.asdict(c) for c in _best],
         "cv_best": _study.best_value,
+        "best_params": _study.best_params,
         "score_table": _score_table,
         "seconds": _seconds,
         "seed": seed,
@@ -3633,6 +3749,349 @@ def _(mo, model1_df, model2_df, pd):
         ]
     )
     return (best_df,)
+
+
+@app.cell
+def _(mo):
+    run_inspection = mo.ui.run_button(label="Inspect the best runs")
+    mo.md(
+        f"{run_inspection} each model's best run: refit on the training part, the "
+        "bootstrap of seven metrics, the permutation importance and SHAP (about two "
+        "minutes)."
+    )
+    return (run_inspection,)
+
+
+@app.cell
+def _(
+    AgeGroupDataset,
+    n_shap_background,
+    n_shap_rows,
+    np,
+    seed,
+    train_age_group,
+    val_age_group,
+):
+    # The rows SHAP explains and its background, drawn once, so both models are
+    # explained on the same validation rows against the same training rows.
+    _rng = np.random.default_rng(seed)
+    _rows = _rng.choice(len(val_age_group.X), size=n_shap_rows, replace=False)
+    _background = _rng.choice(
+        len(train_age_group.X), size=n_shap_background, replace=False
+    )
+    shap_rows = AgeGroupDataset(*(part.iloc[_rows] for part in val_age_group))
+    shap_background = train_age_group.X.iloc[_background]
+    return shap_background, shap_rows
+
+
+@app.cell
+def _(
+    COHORTS,
+    FEATURE_TRANSFORMERS,
+    FixedTrial,
+    MODEL1_RUNS,
+    build_model1,
+    mo,
+    run_inspection,
+    suggest_model1_components,
+    train_age_group,
+):
+    mo.stop(
+        not run_inspection.value, mo.md("Click the button to inspect the best runs.")
+    )
+    # Model 1's best run on validation (best_df's rule), its model rebuilt from
+    # the best trial's parameters and refit on the training part.
+    best_run1 = min(MODEL1_RUNS, key=lambda run: run["score_table"][-1]["val"])
+    best_model1 = build_model1(
+        suggest_model1_components(
+            FixedTrial(best_run1["best_params"]),
+            family=best_run1["family"],
+            use_exposure=best_run1["use_exposure"],
+            cohorts=COHORTS,
+        ),
+        feature_transformer_dict=FEATURE_TRANSFORMERS,
+        y_min=best_run1["y_min"],
+        seed=best_run1["seed"],
+    ).fit(train_age_group.X, train_age_group.Y, exposure=train_age_group.exposure)
+    return best_model1, best_run1
+
+
+@app.cell
+def _(
+    FEATURE_TRANSFORMERS,
+    FixedTrial,
+    MODEL2_RUNS,
+    build_model2,
+    mo,
+    run_inspection,
+    suggest_model2_components,
+    train_age_group,
+):
+    mo.stop(
+        not run_inspection.value, mo.md("Click the button to inspect the best runs.")
+    )
+    # Model 2's best run on validation, rebuilt and refit the same way.
+    best_run2 = min(MODEL2_RUNS, key=lambda run: run["score_table"][-1]["val"])
+    best_model2 = build_model2(
+        *suggest_model2_components(
+            FixedTrial(best_run2["best_params"]),
+            total_family=best_run2["total_family"],
+            probability_family=best_run2["probability_family"],
+            use_exposure=best_run2["use_exposure"],
+        ),
+        feature_transformer_dict=FEATURE_TRANSFORMERS,
+        y_min=best_run2["y_min"],
+        seed=best_run2["seed"],
+    ).fit(train_age_group.X, train_age_group.Y, exposure=train_age_group.exposure)
+    return best_model2, best_run2
+
+
+@app.cell
+def _(
+    BootstrapEvaluator,
+    INSPECTION_METRICS,
+    best_model1,
+    mo,
+    n_resamples,
+    pd,
+    run_inspection,
+    seed,
+    train_age_group,
+    val_age_group,
+):
+    mo.stop(
+        not run_inspection.value, mo.md("Click the button to inspect the best runs.")
+    )
+    # The seven metrics' intervals on the training rows and on the validation
+    # rows, resampling whole neighborhoods; every metric scores the same replicates.
+    _evaluator = BootstrapEvaluator(n_resamples, random_state=seed)
+    model1_intervals = pd.concat(
+        {
+            "train": _evaluator.evaluate(
+                best_model1,
+                train_age_group.X,
+                train_age_group.Y,
+                train_age_group.groups,
+                exposure=train_age_group.exposure,
+                metrics=INSPECTION_METRICS,
+            ),
+            "val": _evaluator.evaluate(
+                best_model1,
+                val_age_group.X,
+                val_age_group.Y,
+                val_age_group.groups,
+                exposure=val_age_group.exposure,
+                metrics=INSPECTION_METRICS,
+            ),
+        },
+        names=["split", "metric"],
+    )
+    return (model1_intervals,)
+
+
+@app.cell
+def _(
+    BootstrapEvaluator,
+    INSPECTION_METRICS,
+    best_model2,
+    mo,
+    n_resamples,
+    pd,
+    run_inspection,
+    seed,
+    train_age_group,
+    val_age_group,
+):
+    mo.stop(
+        not run_inspection.value, mo.md("Click the button to inspect the best runs.")
+    )
+    _evaluator = BootstrapEvaluator(n_resamples, random_state=seed)
+    model2_intervals = pd.concat(
+        {
+            "train": _evaluator.evaluate(
+                best_model2,
+                train_age_group.X,
+                train_age_group.Y,
+                train_age_group.groups,
+                exposure=train_age_group.exposure,
+                metrics=INSPECTION_METRICS,
+            ),
+            "val": _evaluator.evaluate(
+                best_model2,
+                val_age_group.X,
+                val_age_group.Y,
+                val_age_group.groups,
+                exposure=val_age_group.exposure,
+                metrics=INSPECTION_METRICS,
+            ),
+        },
+        names=["split", "metric"],
+    )
+    return (model2_intervals,)
+
+
+@app.cell
+def _(
+    COHORT_POISSON_DEVIANCE,
+    PermutationImportance,
+    ShapExplainer,
+    best_model1,
+    mo,
+    n_repeats,
+    pd,
+    run_inspection,
+    seed,
+    shap_background,
+    shap_rows,
+    train_age_group,
+    val_age_group,
+):
+    mo.stop(
+        not run_inspection.value, mo.md("Click the button to inspect the best runs.")
+    )
+    # Permutation importance of the primary metric: on validation the decision
+    # table, on training the overfit check. SHAP, exact at nine columns, of the
+    # validation subsample against the training background; the values explain
+    # the count (the rows' exposure), per row, column and cohort.
+    _importance = PermutationImportance(
+        COHORT_POISSON_DEVIANCE, n_repeats, random_state=seed
+    )
+    model1_permutation = pd.concat(
+        {
+            "train": _importance.compute_importances(
+                best_model1,
+                train_age_group.X,
+                train_age_group.Y,
+                exposure=train_age_group.exposure,
+            ),
+            "val": _importance.compute_importances(
+                best_model1,
+                val_age_group.X,
+                val_age_group.Y,
+                exposure=val_age_group.exposure,
+            ),
+        },
+        names=["split", "column"],
+    )
+    model1_shap = ShapExplainer(method="exact", n_jobs=-1).explain(
+        best_model1, shap_rows.X, shap_background, exposure=shap_rows.exposure
+    )
+    return model1_permutation, model1_shap
+
+
+@app.cell
+def _(
+    COHORT_POISSON_DEVIANCE,
+    PermutationImportance,
+    ShapExplainer,
+    best_model2,
+    mo,
+    n_repeats,
+    pd,
+    run_inspection,
+    seed,
+    shap_background,
+    shap_rows,
+    train_age_group,
+    val_age_group,
+):
+    mo.stop(
+        not run_inspection.value, mo.md("Click the button to inspect the best runs.")
+    )
+    _importance = PermutationImportance(
+        COHORT_POISSON_DEVIANCE, n_repeats, random_state=seed
+    )
+    model2_permutation = pd.concat(
+        {
+            "train": _importance.compute_importances(
+                best_model2,
+                train_age_group.X,
+                train_age_group.Y,
+                exposure=train_age_group.exposure,
+            ),
+            "val": _importance.compute_importances(
+                best_model2,
+                val_age_group.X,
+                val_age_group.Y,
+                exposure=val_age_group.exposure,
+            ),
+        },
+        names=["split", "column"],
+    )
+    model2_shap = ShapExplainer(method="exact", n_jobs=-1).explain(
+        best_model2, shap_rows.X, shap_background, exposure=shap_rows.exposure
+    )
+    return model2_permutation, model2_shap
+
+
+@app.cell
+def _(best_run1, best_run2, mo, model1_intervals, model2_intervals, pd):
+    # Each metric's score and interval per model and split; the caption names
+    # the two best runs.
+    intervals_df = pd.concat(
+        {"model1": model1_intervals, "model2": model2_intervals}, names=["model"]
+    ).reset_index()
+    mo.vstack(
+        [
+            mo.md(
+                "**The best runs' metrics** (score: the split's rows; mean, lower, "
+                "upper: the bootstrap over neighborhoods). Model 1: "
+                f"`{best_run1['family']}`, exposure {best_run1['use_exposure']}; "
+                f"Model 2: `{best_run2['total_family']}+{best_run2['probability_family']}`, "
+                f"exposure {best_run2['use_exposure']}."
+            ),
+            mo.md(f"```text\n{intervals_df.round(4).to_string(index=False)}\n```"),
+        ]
+    )
+    return (intervals_df,)
+
+
+@app.cell
+def _(mo, model1_permutation, model1_shap, model2_permutation, model2_shap, np, pd):
+    # The two importances side by side, per model and raw column: the permutation
+    # importance on validation (its rank decides) and on training, and the mean
+    # |SHAP| over the explained rows and the cohorts (D18).
+    _rows = []
+    for _model, _permutation, _shap in [
+        ("model1", model1_permutation, model1_shap),
+        ("model2", model2_permutation, model2_shap),
+    ]:
+        _table = pd.DataFrame(
+            {
+                "perm_mean_train": _permutation.loc["train", "importance_mean"],
+                "perm_mean_val": _permutation.loc["val", "importance_mean"],
+                "perm_std_val": _permutation.loc["val", "importance_std"],
+                "mean_abs_shap": pd.Series(
+                    np.abs(_shap.values).mean(axis=(0, 2)), index=_shap.feature_names
+                ),
+            }
+        )
+        _table["perm_rank"] = _table["perm_mean_val"].rank(ascending=False).astype(int)
+        _table["shap_rank"] = _table["mean_abs_shap"].rank(ascending=False).astype(int)
+        _rows.append(_table.rename_axis("column").reset_index().assign(model=_model))
+    importance_df = pd.concat(_rows, ignore_index=True)[
+        [
+            "model",
+            "column",
+            "perm_mean_train",
+            "perm_mean_val",
+            "perm_std_val",
+            "perm_rank",
+            "mean_abs_shap",
+            "shap_rank",
+        ]
+    ]
+    mo.vstack(
+        [
+            mo.md(
+                "**Feature importance of the best runs** (perm: the drop of the cohort "
+                "Poisson deviance when the column is shuffled; mean_abs_shap: mean |SHAP| "
+                "of the predicted count over the explained rows and cohorts)"
+            ),
+            mo.md(f"```text\n{importance_df.round(4).to_string(index=False)}\n```"),
+        ]
+    )
+    return (importance_df,)
 
 
 if __name__ == "__main__":

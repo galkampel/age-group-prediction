@@ -1,6 +1,6 @@
 # Re-implement the hyperparameter tuning inside the notebook
 
-**Status (2026-10-21):** approved; T1.1 committed (`0416267`); T1.2 committed (`bee781a`) after the user's review (estimator dataclasses hold hyperparameters only; LightGBM's loss is a family); T1.3 committed (`7ae6314`) after three user reviews (components are a study's fixed settings, a `Literal` family and `use_exposure`; the family → transformer-names mapping is an argument of `suggest_feature_transformer`; no dataclass builds a model; the exposure a study setting, both arms; feature variants renamed feature transformers; D2, D3, D6, T1.4–T2.2 rewritten); T1.4 done 2026-10-19, then reworked at two rounds of the user's review on 2026-10-20 (D8: a named component per part of the composite under an abstract `Component`; the family checked from its `Literal`; each subclass holds its families' transformer names; `make_estimator(hyperparameters, *, seed)`; the T1.3 cells changed too; T1.4–T2.2 rewritten), committed (`8cc231d`); T1.5 done 2026-10-21 (`cv_score`, `tune_model`; at the user's review the fold variables named and an aggregator added, D9: `src/age_group_prediction/aggregation.py` and its tests, default `Mean`), committed (`a5ae06b`); T1.6 done 2026-10-21 (Model 1's button and run cell; Check C 14.7 s at 3 trials), then the redesign of D10 at its review, revised by D11 and D12 at the next reviews (search spaces with explicit suggest methods, the builder assembles components, the transformer by name; a study is a family combination and exposure; `feature_transformer_dict`; Check C reproduces T1.6's best values), committed (`6316d91`); T1.7 committed (`59acae6`); its 200-trial run took 380 s with no failed trial (D15); T1.8 done 2026-10-21 (independent review: no correctness bug, nine findings reproduced and settled, D15), committed (`9eca96e`); notebook md5 `9d49fe78f99d7ff4d96e17742ea7d277`; handoff rewritten 2026-10-21 for a new session; T2.1 done 2026-10-21 (Model 2's button and 16 run cells; no `MODEL2_TOTALS`, the run cells present are the runs tuned; Check C 53.3 s, Model 2's baseline recorded), awaiting the user's commit; notebook md5 `1405425ae7bf3da901cf0eba8860bf71`; T2.2 done 2026-10-21 (Model 2's tables, display and best-per-model cells; D16), 200-trial run 1827 s (Model 1 366 s, Model 2 1447 s, no failed trial); T2.1–T2.2 committed (`a2b8693`); T2.3 done 2026-10-21 (independent review: no correctness bug; findings F1–F8 settled), awaiting the user's commit; notebook md5 `eec46ac5cbec902ffdd98cce6f4c9cbd`; T2.4 (pruning and parallelization check) added at the user's request; D17: T4 replaces the package (T4a delete, T4b rebuild from the notebook). D18: T2.5 (the bootstrap interval and feature importance of the best runs) added. The `n_startup_trials` decision postponed by the user until after T2.4, with `n_trials`; all 24 runs kept (D6 stands). T2.3 committed (`7580304`), handoff committed (`1811551`). T2.4 done 2026-10-22 (measured: no pruning or parallelization place beats today's design, two are unsafe; D19: today's design kept, `catch` unchanged; docs only, notebook md5 unchanged `eec46ac5cbec902ffdd98cce6f4c9cbd`), committed (`9075dd7`). The budget sub-task done 2026-10-22 (D20: `n_trials = 400`, `n_startup_trials = 20`, a new setting; `tune_model` keyword; the 24 run cells; the notebook test; the 400-trial click 3708 s, no failed trial; Check C baselines unchanged; D21 the T4 design and the inspection recipe's home, planned ahead), notebook md5 `d919a7838019a1494d92768f0bafd483`, awaiting the user's commit; handoff rewritten for a new session. Next: T2.5 (the recipe `inspect_model` in the inspection package) → T3 → T4a → T4b.1 → T4b.2 → T4b.3 → T5. The implementing session updates this line and ticks the sub-tasks.
+**Status (2026-10-21):** approved; T1.1 committed (`0416267`); T1.2 committed (`bee781a`) after the user's review (estimator dataclasses hold hyperparameters only; LightGBM's loss is a family); T1.3 committed (`7ae6314`) after three user reviews (components are a study's fixed settings, a `Literal` family and `use_exposure`; the family → transformer-names mapping is an argument of `suggest_feature_transformer`; no dataclass builds a model; the exposure a study setting, both arms; feature variants renamed feature transformers; D2, D3, D6, T1.4–T2.2 rewritten); T1.4 done 2026-10-19, then reworked at two rounds of the user's review on 2026-10-20 (D8: a named component per part of the composite under an abstract `Component`; the family checked from its `Literal`; each subclass holds its families' transformer names; `make_estimator(hyperparameters, *, seed)`; the T1.3 cells changed too; T1.4–T2.2 rewritten), committed (`8cc231d`); T1.5 done 2026-10-21 (`cv_score`, `tune_model`; at the user's review the fold variables named and an aggregator added, D9: `src/age_group_prediction/aggregation.py` and its tests, default `Mean`), committed (`a5ae06b`); T1.6 done 2026-10-21 (Model 1's button and run cell; Check C 14.7 s at 3 trials), then the redesign of D10 at its review, revised by D11 and D12 at the next reviews (search spaces with explicit suggest methods, the builder assembles components, the transformer by name; a study is a family combination and exposure; `feature_transformer_dict`; Check C reproduces T1.6's best values), committed (`6316d91`); T1.7 committed (`59acae6`); its 200-trial run took 380 s with no failed trial (D15); T1.8 done 2026-10-21 (independent review: no correctness bug, nine findings reproduced and settled, D15), committed (`9eca96e`); notebook md5 `9d49fe78f99d7ff4d96e17742ea7d277`; handoff rewritten 2026-10-21 for a new session; T2.1 done 2026-10-21 (Model 2's button and 16 run cells; no `MODEL2_TOTALS`, the run cells present are the runs tuned; Check C 53.3 s, Model 2's baseline recorded), awaiting the user's commit; notebook md5 `1405425ae7bf3da901cf0eba8860bf71`; T2.2 done 2026-10-21 (Model 2's tables, display and best-per-model cells; D16), 200-trial run 1827 s (Model 1 366 s, Model 2 1447 s, no failed trial); T2.1–T2.2 committed (`a2b8693`); T2.3 done 2026-10-21 (independent review: no correctness bug; findings F1–F8 settled), awaiting the user's commit; notebook md5 `eec46ac5cbec902ffdd98cce6f4c9cbd`; T2.4 (pruning and parallelization check) added at the user's request; D17: T4 replaces the package (T4a delete, T4b rebuild from the notebook). D18: T2.5 (the bootstrap interval and feature importance of the best runs) added. The `n_startup_trials` decision postponed by the user until after T2.4, with `n_trials`; all 24 runs kept (D6 stands). T2.3 committed (`7580304`), handoff committed (`1811551`). T2.4 done 2026-10-22 (measured: no pruning or parallelization place beats today's design, two are unsafe; D19: today's design kept, `catch` unchanged; docs only, notebook md5 unchanged `eec46ac5cbec902ffdd98cce6f4c9cbd`), committed (`9075dd7`). The budget sub-task done 2026-10-22 (D20: `n_trials = 400`, `n_startup_trials = 20`, a new setting; `tune_model` keyword; the 24 run cells; the notebook test; the 400-trial click 3708 s, no failed trial; Check C baselines unchanged; D21 the T4 design and the inspection recipe's home, planned ahead), notebook md5 `d919a7838019a1494d92768f0bafd483`, committed (`10d6e83`); handoff rewritten for a new session. T2.5 done 2026-10-22 (D22: `BootstrapEvaluator` holds the resampling design and `evaluate(..., metrics=[...])` returns a frame; the evaluation and the importances are two separate components, no `inspect_model`; the seven metrics, the three settings, `best_params` in the 24 records, a button, three cells per model, two tables; exact SHAP 100 × 50 on all cores; Check C 66.8 s at 3 trials, the 24 baselines unchanged), notebook md5 `1e3a9eeb6a3d9f807bdf3a8287212158`, awaiting the user's commit. Next: T3 → T4a → T4b.1 → T4b.2 → T4b.3 → T5. The implementing session updates this line and ticks the sub-tasks.
 
 Written for the model that implements it, one sub-task per approval. Every sub-task has the
 code to write, a "done when" list and the commands that verify it. The user reads the diff in
@@ -523,6 +523,35 @@ plain `Literal` assignments, not the `type` statement: cloudpickle cannot pickle
     evaluation runs on training, validation and later test.
   - T4b is split into T4b.1 (records and search spaces), T4b.2 (builders, loop,
     aggregation) and T4b.3 (the notebook imports the package).
+
+- D22. **Added 2026-10-22 (the user, at T2.5's plan; revises D21's recipe):**
+  - **The bootstrap evaluator holds the resampling design only:**
+    `BootstrapEvaluator(n_resamples, alpha=0.05, random_state=None)`, and
+    `evaluate(model, X, y, groups=None, *, exposure=None, metrics)` takes a sequence of
+    `Metric` and always returns a DataFrame, one row per metric name: `score` (the
+    unresampled rows), `mean`, `lower`, `upper`. It predicts once and draws the replicates
+    once, so every metric scores the same resampled rows and the intervals are paired.
+    `BootstrapResult` went. The practice: scikit-learn's `cross_validate(scoring=[...])`;
+    no return type that depends on the input's shape (a Series for one metric, a frame for
+    several, was considered and declined). The seed stays a field, as in `KFold` and
+    `permutation_importance`; `None` means fresh entropy, NumPy's and scikit-learn's default.
+  - **The bootstrap stays outside the model** (D21 confirmed): the model's `evaluate` is a
+    pure scoring hook; the resampling settings are the evaluation's, not the model's.
+  - **Two separate components, not one recipe.** The evaluation (the evaluator over the
+    splits) and the importances (`PermutationImportance` and `ShapExplainer` called as they
+    are, D18). No `inspect_model`: with the evaluator taking the metrics, the over-splits
+    recipe is two calls and a `concat` in the notebook, so nothing else was added to the
+    package.
+  - **SHAP, measured** (the largest LightGBM sizes, 400 trees at depth 8,
+    `PYTHONWARNINGS=error`): exact at 100 rows × 100 background 376 / 476 s per model
+    single-threaded (Model 1 / Model 2), 89 / 141 s on all cores; at 100 × 50 on all cores
+    46 / 93 s; at 50 × 50 33 / 46 s. shap's own auto rule picks the exact explainer at ≤ 10
+    columns (9 here); the permutation explainer at its minimum 19 evaluations took 21 s and
+    was within 6% of exact per column with one rank swap. Chosen: exact, `n_shap_rows =
+    100` validation rows against `n_shap_background = 50` training rows, `n_jobs=-1` (the
+    explainer's existing setting). The bootstrap of 7 metrics × 1000 resamples costs 2–3.4
+    s per split and the permutation importance at `n_repeats = 10` 3 s (validation) to 9 s
+    (training), so SHAP decides the cost.
 
 **What does not change:** notebook sections 1–4 and the `cv`/`cv_groups` cell; the models in
 `src/age_group_prediction/modeling/` (the S1 `get_params`/`set_params` forwarding in
@@ -1964,7 +1993,7 @@ Recommendation: keep 200 and 10.
 `eec46ac5cbec902ffdd98cce6f4c9cbd`); Check A green; the 200-trial values of R0, R6a and R8a
 equal T2.2's and the handoff's.
 
-### [ ] T2.5 The best runs: bootstrap interval and feature importance (D18)
+### [x] T2.5 The best runs: bootstrap interval and feature importance (D18)
 
 After T2.4. For each model's best run in `best_df`:
 - **The fitted model:** run records keep no fitted model (D13), so the best run is refit from
@@ -1997,8 +2026,26 @@ part waits for the refit on training + validation, E11); the bootstrap covers se
 metrics, each explained in the header (Poisson deviance, cohort log loss, D² Poisson,
 MAE, RMSE, WMAPE, bias; scikit-learn's functions on the flattened cells, the two without a
 library form as one-line notebook functions); the run records gain `best_params`, so the
-best model is rebuilt with the existing `FixedTrial` path; the recipe `inspect_model` lives
-in the `inspection` package (D21); one explicit cell per model behind a button.
+best model is rebuilt with the existing `FixedTrial` path; one button.
+
+**Done 2026-10-22, as built (D22 revised the recipe):**
+- `src/age_group_prediction/inspection/bootstrap.py`: the evaluator of D22, its tests
+  rewritten (22, four new: shared replicates and one predict, the `score` column and the
+  row order, empty and duplicate metrics raise), `MODEL_INSPECTION.md` and
+  `MODULE_REFERENCE.md` updated; no `inspect_model`.
+- The notebook: the settings `n_repeats = 10`, `n_shap_rows = 100`, `n_shap_background =
+  50` (logged; the notebook test's expected dict gained them); the header paragraph; the
+  imports; the metrics cell (`on_cells`, `wmape`, `bias`, `COHORT_LOG_LOSS`,
+  `INSPECTION_METRICS`); `"best_params"` in the 24 records; the button
+  `run_inspection`; a seeded cell drawing `shap_rows` (validation) and `shap_background`
+  (training) once, so both models are explained on the same rows; per model three cells
+  behind the button: `best_run1` / `best_model1` (the lowest validation composite, rebuilt
+  from `best_params`, refit on training), `model1_intervals` (two `evaluate` calls, train
+  and val, concatenated), `model1_permutation` / `model1_shap`; `intervals_df` and
+  `importance_df` with their display.
+- Check C at 3 trials (`n_shap_rows = 5`, `n_repeats = 2`, three buttons patched,
+  `PYTHONWARNINGS=error`): 66.8 s, the 24 baselines reproduced, both tables rendered,
+  `best_params` in every record and JSON-serializable.
 
 **Open points, settled at T2.5's own plan:**
 - How the fitted best model is obtained: rebuild the components from the record's dicts, or

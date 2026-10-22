@@ -1,15 +1,17 @@
-"""The bootstrap interval of a fitted model's metric on an evaluation set.
+"""The bootstrap intervals of a fitted model's metrics on an evaluation set.
 
 The model predicts once; only the evaluation rows are resampled, so the
-interval is conditional on the fitted model (no refit).
+intervals are conditional on the fitted model (no refit). Every metric named
+in a call scores the same replicates, so their intervals are paired.
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from collections.abc import Sequence
 from typing import Annotated
 
 import numpy as np
+import pandas as pd
 from pydantic import Field
 from pydantic.dataclasses import dataclass as pydantic_dataclass
 from sklearn.utils.validation import check_consistent_length
@@ -19,31 +21,22 @@ from ..modeling import BaseAgeGroupModel
 from ..scoring import Metric
 from ..utils import DesignMatrix, Exposure, Groups, Target, take_rows
 
-__all__ = ["BootstrapEvaluator", "BootstrapResult"]
-
-
-@dataclass(frozen=True)
-class BootstrapResult:
-    """The mean of the replicate scores and their percentile interval."""
-
-    mean: float
-    lower: float
-    upper: float
+__all__ = ["BootstrapEvaluator"]
 
 
 # Settings are checked when the evaluator is built, not after the replicates:
 # strictly (a bool is not an int), and a misspelt keyword is rejected.
 @pydantic_dataclass(frozen=True, config=STRICT)
 class BootstrapEvaluator:
-    """Bootstrap a metric of a fitted model: its mean and ``1 - alpha`` percentile interval.
+    """The resampling design: ``n_resamples`` replicates and a ``1 - alpha`` percentile interval.
 
-    Each of ``n_resamples`` replicates draws the evaluation rows with
-    replacement, or whole groups when ``groups`` is given, and scores the
-    fixed predictions on them. Scores are reported raw, in the metric's own
+    The metrics are named per call, as ``cross_validate``'s ``scoring``.
+    Each replicate draws the evaluation rows with replacement, or whole
+    groups when ``groups`` is given, and scores the fixed predictions on
+    them with every metric. Scores are reported raw, in each metric's own
     direction.
     """
 
-    metric: Metric
     n_resamples: Annotated[int, Field(ge=1)]
     alpha: Annotated[float, Field(gt=0, lt=1)] = 0.05
     random_state: int | None = None
@@ -56,13 +49,23 @@ class BootstrapEvaluator:
         groups: Groups | None = None,
         *,
         exposure: Exposure | None = None,
-    ) -> BootstrapResult:
-        """Predict ``X`` once with the fitted ``model``, then bootstrap the metric.
+        metrics: Sequence[Metric],
+    ) -> pd.DataFrame:
+        """Predict ``X`` once with the fitted ``model``, then bootstrap every metric.
 
         ``X``, ``y``, ``groups`` and ``exposure`` are paired by position.
         ``groups`` holds one label per row (e.g. the neighborhood), and each
         replicate draws as many groups as there are, keeping all their rows.
+        Returns one row per metric, indexed by its name: ``score`` on the
+        unresampled rows, and the replicates' ``mean``, ``lower`` and
+        ``upper``.
         """
+        names = [metric.name for metric in metrics]
+        # An empty frame, or two rows under one label, would pass silently.
+        if not names:
+            raise ValueError("metrics must hold at least one Metric")
+        if len(set(names)) < len(names):
+            raise ValueError(f"metric names must be distinct, got {names}")
         # A longer y or groups would be silently mispaired with the predictions,
         # or leave rows out of every replicate.
         check_consistent_length(X, y, groups)
@@ -85,22 +88,37 @@ class BootstrapEvaluator:
             group_rows = np.split(
                 np.argsort(group_codes, kind="stable"), np.cumsum(group_sizes)[:-1]
             )
-        scores = np.empty(self.n_resamples)
+        scores = np.empty((self.n_resamples, len(metrics)))
         for replicate in range(self.n_resamples):
             if group_rows is None:
                 index = rng.integers(0, len(X), size=len(X))
             else:
                 drawn = rng.integers(0, len(group_rows), size=len(group_rows))
                 index = np.concatenate([group_rows[group] for group in drawn])
-            scores[replicate] = model.evaluate(
-                take_rows(y, index), take_rows(y_pred, index), self.metric
-            )
+            y_drawn, y_pred_drawn = take_rows(y, index), take_rows(y_pred, index)
+            for column, metric in enumerate(metrics):
+                scores[replicate, column] = model.evaluate(
+                    y_drawn, y_pred_drawn, metric
+                )
         # np.quantile would return nan bounds silently.
-        non_finite = int(np.sum(~np.isfinite(scores)))
-        if non_finite:
-            raise ValueError(
-                f"{non_finite} of {self.n_resamples} replicate scores are not "
-                "finite; check the data and that the metric suits the model"
+        non_finite = np.sum(~np.isfinite(scores), axis=0)
+        if non_finite.any():
+            failed = ", ".join(
+                f"{name}: {count} of {self.n_resamples}"
+                for name, count in zip(names, non_finite)
+                if count
             )
-        lower, upper = np.quantile(scores, [self.alpha / 2, 1 - self.alpha / 2])
-        return BootstrapResult(float(scores.mean()), float(lower), float(upper))
+            raise ValueError(
+                f"replicate scores are not finite ({failed}); check the data and "
+                "that the metric suits the model"
+            )
+        lower, upper = np.quantile(scores, [self.alpha / 2, 1 - self.alpha / 2], axis=0)
+        return pd.DataFrame(
+            {
+                "score": [model.evaluate(y, y_pred, metric) for metric in metrics],
+                "mean": scores.mean(axis=0),
+                "lower": lower,
+                "upper": upper,
+            },
+            index=pd.Index(names, name="metric"),
+        )

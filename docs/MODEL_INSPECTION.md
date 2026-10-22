@@ -19,7 +19,7 @@ build on each other in order.
 
 | part | answers | class |
 |---|---|---|
-| bootstrap | how sure is the validation score? | `BootstrapEvaluator(metric, n_resamples, alpha=0.05, random_state=None)` → `BootstrapResult(mean, lower, upper)` |
+| bootstrap | how sure is the validation score? | `BootstrapEvaluator(n_resamples, alpha=0.05, random_state=None).evaluate(..., metrics=[...])` → a DataFrame, one row per metric: `score`, `mean`, `lower`, `upper` |
 | permutation importance | which columns does the score depend on? | `PermutationImportance(metric, n_repeats, random_state=None)` → a DataFrame per column |
 | SHAP | how does each column move each row's prediction? | `ShapExplainer(method, max_evals=None, random_state=None, n_jobs=1)` → a `shap.Explanation` |
 
@@ -122,12 +122,16 @@ print(len(X_train), len(X_val), groups_val.nunique())
 ### The bootstrap
 
 ```python
-bootstrap = BootstrapEvaluator(COHORT_POISSON_DEVIANCE, 500, random_state=0)
+bootstrap = BootstrapEvaluator(500, random_state=0)
+metrics = [COHORT_POISSON_DEVIANCE]
 for name, model in models.items():
-    rows = bootstrap.evaluate(model, X_val, Y_val, exposure=exposure_val)
-    by_group = bootstrap.evaluate(model, X_val, Y_val, groups_val, exposure=exposure_val)
-    print(f"{name}  rows: {rows.mean:.3f} [{rows.lower:.3f}, {rows.upper:.3f}]"
-          f"  neighborhoods: {by_group.mean:.3f} [{by_group.lower:.3f}, {by_group.upper:.3f}]")
+    rows = bootstrap.evaluate(model, X_val, Y_val, exposure=exposure_val, metrics=metrics)
+    by_group = bootstrap.evaluate(
+        model, X_val, Y_val, groups_val, exposure=exposure_val, metrics=metrics
+    )
+    rows, by_group = rows.iloc[0], by_group.iloc[0]
+    print(f"{name}  rows: {rows['mean']:.3f} [{rows['lower']:.3f}, {rows['upper']:.3f}]"
+          f"  neighborhoods: {by_group['mean']:.3f} [{by_group['lower']:.3f}, {by_group['upper']:.3f}]")
 ```
 
 ```text
@@ -285,12 +289,15 @@ processes).
 
 ## 3. The Bootstrap
 
-`BootstrapEvaluator.evaluate(model, X, y, groups=None, *, exposure=None)`
+`BootstrapEvaluator.evaluate(model, X, y, groups=None, *, exposure=None, metrics)`
 predicts `X` **once**, then draws `n_resamples` replicates of the evaluation
-rows with replacement and recomputes the metric on each. `mean` is the mean
-of the replicate scores, `lower` and `upper` their `alpha/2` and
-`1 - alpha/2` quantiles (`np.quantile`, so the 95 % interval at the default
-`alpha=0.05`). The interval is **conditional on the fitted model**: nothing is
+rows with replacement and recomputes every metric on each. The evaluator
+holds the resampling design only; the metrics are named per call, as
+`cross_validate`'s `scoring`, and all of them score the same replicates, so
+their intervals are paired. The result has one row per metric name: `score`
+is the metric on the unresampled rows, `mean` the mean of the replicate
+scores, `lower` and `upper` their `alpha/2` and `1 - alpha/2` quantiles
+(`np.quantile`, so the 95 % interval at the default `alpha=0.05`). The interval is **conditional on the fitted model**: nothing is
 refit, so it measures how much the score depends on which rows were held out,
 not how much the model would change on other training data.
 
@@ -309,7 +316,7 @@ distinct groups raise `ValueError`.
 
 **Ratio metrics.** `COHORT_LOG_LOSS` is a ratio of sums recomputed on each
 replicate, as it should be; a replicate with no children at all is 0/0, and a
-non-finite replicate score raises `ValueError` naming how many, rather than
+non-finite replicate score raises `ValueError` naming the metric and how many, rather than
 returning NaN bounds silently.
 
 ## 4. Permutation Importance

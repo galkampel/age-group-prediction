@@ -116,6 +116,9 @@ def test_a_setting_missing_or_changed_in_a_settings_mapping_is_caught(
         "n_trials": "400",
         "n_startup_trials": "20",
         "n_resamples": "1000",
+        "n_repeats": "10",
+        "n_shap_rows": "100",
+        "n_shap_background": "50",
     }
 
 

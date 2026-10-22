@@ -75,8 +75,13 @@ As built for both models, after the user's reviews (D1–D18):
 **The order of work** (one sub-task per approval, plan mode before each; the user reviews the
 design and commits):
 1. T2.4 (done 2026-10-22, D19) and the budget decision (done, D20; awaiting commit).
-2. **T2.5, next:** the best runs' bootstrap intervals and feature importances (D18), as
-   settled on 2026-10-22 (the plan's T2.5 and D21):
+2. **T2.5, done 2026-10-22 (awaiting the user's commit; D22 in the plan):** the best runs'
+   bootstrap intervals and feature importances (D18). As built: `BootstrapEvaluator` holds
+   the resampling design and `evaluate(..., metrics=[...])` returns a frame (one row per
+   metric: `score`, `mean`, `lower`, `upper`); the evaluation and the importances are two
+   separate components in the notebook, no `inspect_model`; exact SHAP of 100 validation
+   rows against 50 training rows on all cores; three settings `n_repeats`, `n_shap_rows`,
+   `n_shap_background`. The plan's T2.5 lists the cells. As planned before:
    - the recipe `inspect_model(model, splits, *, metrics, n_resamples, alpha, n_repeats,
      shap_explainer, random_state)` goes into `src/age_group_prediction/inspection/`, typed
      and tested; it builds one `BootstrapEvaluator` per metric, runs `PermutationImportance`
@@ -306,11 +311,8 @@ The standing rules are in [NOTEBOOK_TUNING_PLAN.md](NOTEBOOK_TUNING_PLAN.md) §1
 
 ## 5. Open items
 
-- **T2.5 (next):** its design is settled (§1 and the plan's T2.5); what its plan still
-  measures is the SHAP and permutation cost at the chosen sizes (`n_shap_rows = 100`,
-  `n_shap_background = 100`, `n_repeats = 10`; target under a minute per model), and that
-  `FixedTrial(record["best_params"])` rebuilds the record's components exactly. Plots of
-  the results are a later item.
+- **T2.5 done (2026-10-22):** see the plan's D22 and T2.5. Plots of the results are a later
+  item; the inspection click costs about one to two minutes (SHAP decides it).
 - **What would shorten a click** (62 min at 400 trials) is a modeling choice the user has
   not asked for: fewer calibration inner folds (`calibration_cv`, 5 today) or a lower
   `n_estimators` ceiling (400). Pruning and other parallel places were measured and
