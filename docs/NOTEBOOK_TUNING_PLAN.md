@@ -1,6 +1,6 @@
 # Re-implement the hyperparameter tuning inside the notebook
 
-**Status (2026-10-21):** approved; T1.1 committed (`0416267`); T1.2 committed (`bee781a`) after the user's review (estimator dataclasses hold hyperparameters only; LightGBM's loss is a family); T1.3 committed (`7ae6314`) after three user reviews (components are a study's fixed settings, a `Literal` family and `use_exposure`; the family → transformer-names mapping is an argument of `suggest_feature_transformer`; no dataclass builds a model; the exposure a study setting, both arms; feature variants renamed feature transformers; D2, D3, D6, T1.4–T2.2 rewritten); T1.4 done 2026-10-19, then reworked at two rounds of the user's review on 2026-10-20 (D8: a named component per part of the composite under an abstract `Component`; the family checked from its `Literal`; each subclass holds its families' transformer names; `make_estimator(hyperparameters, *, seed)`; the T1.3 cells changed too; T1.4–T2.2 rewritten), committed (`8cc231d`); T1.5 done 2026-10-21 (`cv_score`, `tune_model`; at the user's review the fold variables named and an aggregator added, D9: `src/age_group_prediction/aggregation.py` and its tests, default `Mean`), committed (`a5ae06b`); T1.6 done 2026-10-21 (Model 1's button and run cell; Check C 14.7 s at 3 trials), then the redesign of D10 at its review, revised by D11 and D12 at the next reviews (search spaces with explicit suggest methods, the builder assembles components, the transformer by name; a study is a family combination and exposure; `feature_transformer_dict`; Check C reproduces T1.6's best values), committed (`6316d91`); T1.7 committed (`59acae6`); its 200-trial run took 380 s with no failed trial (D15); T1.8 done 2026-10-21 (independent review: no correctness bug, nine findings reproduced and settled, D15), committed (`9eca96e`); notebook md5 `9d49fe78f99d7ff4d96e17742ea7d277`; handoff rewritten 2026-10-21 for a new session; T2.1 done 2026-10-21 (Model 2's button and 16 run cells; no `MODEL2_TOTALS`, the run cells present are the runs tuned; Check C 53.3 s, Model 2's baseline recorded), awaiting the user's commit; notebook md5 `1405425ae7bf3da901cf0eba8860bf71`; T2.2 done 2026-10-21 (Model 2's tables, display and best-per-model cells; D16), 200-trial run 1827 s (Model 1 366 s, Model 2 1447 s, no failed trial); T2.1–T2.2 committed (`a2b8693`); T2.3 done 2026-10-21 (independent review: no correctness bug; findings F1–F8 settled), awaiting the user's commit; notebook md5 `eec46ac5cbec902ffdd98cce6f4c9cbd`; T2.4 (pruning and parallelization check) added at the user's request; D17: T4 replaces the package (T4a delete, T4b rebuild from the notebook). D18: T2.5 (the bootstrap interval and feature importance of the best runs) added. The `n_startup_trials` decision postponed by the user until after T2.4, with `n_trials`; all 24 runs kept (D6 stands). T2.3 committed (`7580304`), handoff committed (`1811551`). T2.4 done 2026-10-22 (measured: no pruning or parallelization place beats today's design, two are unsafe; D19: today's design kept, `catch` unchanged; docs only, notebook md5 unchanged `eec46ac5cbec902ffdd98cce6f4c9cbd`), awaiting the user's commit. Next: the `n_trials` / `n_startup_trials` decision (the evidence in T2.4) → T2.5 → T3 → T4a → T4b → T5. The implementing session updates this line and ticks the sub-tasks.
+**Status (2026-10-21):** approved; T1.1 committed (`0416267`); T1.2 committed (`bee781a`) after the user's review (estimator dataclasses hold hyperparameters only; LightGBM's loss is a family); T1.3 committed (`7ae6314`) after three user reviews (components are a study's fixed settings, a `Literal` family and `use_exposure`; the family → transformer-names mapping is an argument of `suggest_feature_transformer`; no dataclass builds a model; the exposure a study setting, both arms; feature variants renamed feature transformers; D2, D3, D6, T1.4–T2.2 rewritten); T1.4 done 2026-10-19, then reworked at two rounds of the user's review on 2026-10-20 (D8: a named component per part of the composite under an abstract `Component`; the family checked from its `Literal`; each subclass holds its families' transformer names; `make_estimator(hyperparameters, *, seed)`; the T1.3 cells changed too; T1.4–T2.2 rewritten), committed (`8cc231d`); T1.5 done 2026-10-21 (`cv_score`, `tune_model`; at the user's review the fold variables named and an aggregator added, D9: `src/age_group_prediction/aggregation.py` and its tests, default `Mean`), committed (`a5ae06b`); T1.6 done 2026-10-21 (Model 1's button and run cell; Check C 14.7 s at 3 trials), then the redesign of D10 at its review, revised by D11 and D12 at the next reviews (search spaces with explicit suggest methods, the builder assembles components, the transformer by name; a study is a family combination and exposure; `feature_transformer_dict`; Check C reproduces T1.6's best values), committed (`6316d91`); T1.7 committed (`59acae6`); its 200-trial run took 380 s with no failed trial (D15); T1.8 done 2026-10-21 (independent review: no correctness bug, nine findings reproduced and settled, D15), committed (`9eca96e`); notebook md5 `9d49fe78f99d7ff4d96e17742ea7d277`; handoff rewritten 2026-10-21 for a new session; T2.1 done 2026-10-21 (Model 2's button and 16 run cells; no `MODEL2_TOTALS`, the run cells present are the runs tuned; Check C 53.3 s, Model 2's baseline recorded), awaiting the user's commit; notebook md5 `1405425ae7bf3da901cf0eba8860bf71`; T2.2 done 2026-10-21 (Model 2's tables, display and best-per-model cells; D16), 200-trial run 1827 s (Model 1 366 s, Model 2 1447 s, no failed trial); T2.1–T2.2 committed (`a2b8693`); T2.3 done 2026-10-21 (independent review: no correctness bug; findings F1–F8 settled), awaiting the user's commit; notebook md5 `eec46ac5cbec902ffdd98cce6f4c9cbd`; T2.4 (pruning and parallelization check) added at the user's request; D17: T4 replaces the package (T4a delete, T4b rebuild from the notebook). D18: T2.5 (the bootstrap interval and feature importance of the best runs) added. The `n_startup_trials` decision postponed by the user until after T2.4, with `n_trials`; all 24 runs kept (D6 stands). T2.3 committed (`7580304`), handoff committed (`1811551`). T2.4 done 2026-10-22 (measured: no pruning or parallelization place beats today's design, two are unsafe; D19: today's design kept, `catch` unchanged; docs only, notebook md5 unchanged `eec46ac5cbec902ffdd98cce6f4c9cbd`), committed (`9075dd7`). The budget sub-task done 2026-10-22 (D20: `n_trials = 400`, `n_startup_trials = 20`, a new setting; `tune_model` keyword; the 24 run cells; the notebook test; the 400-trial click 3708 s, no failed trial; Check C baselines unchanged; D21 the T4 design and the inspection recipe's home, planned ahead), notebook md5 `d919a7838019a1494d92768f0bafd483`, awaiting the user's commit; handoff rewritten for a new session. Next: T2.5 (the recipe `inspect_model` in the inspection package) → T3 → T4a → T4b.1 → T4b.2 → T4b.3 → T5. The implementing session updates this line and ticks the sub-tasks.
 
 Written for the model that implements it, one sub-task per approval. Every sub-task has the
 code to write, a "done when" list and the commands that verify it. The user reads the diff in
@@ -63,7 +63,7 @@ plain `Literal` assignments, not the `type` statement: cloudpickle cannot pickle
 - D5. Pruning and parallelization beyond today's parallel studies are **not decided now**; a
   later performance pass (§7 holds the facts for it).
 - D6. Still in force from 2026-10-15: one joint study per family on the composite; a trial
-  chooses per component its feature transformer; `n_trials = 200`; studies of
+  chooses per component its feature transformer; `n_trials = 200` (since D20, 2026-10-22: 400, with `n_startup_trials = 20`); studies of
   one model in parallel with joblib, study i seeded `seed + i`; only the best run is refit;
   Model 2's totals come from the edited list `MODEL2_TOTALS` (superseded 2026-10-21, below:
   16 run cells, no list); `split_method = "random"`. (The parallel studies: superseded by
@@ -438,6 +438,92 @@ plain `Literal` assignments, not the `type` statement: cloudpickle cannot pickle
   - What would shorten a run is a modeling choice, not asked for here: fewer calibration
     inner folds, a lower `n_estimators` ceiling, or fewer trials.
 
+- D20. **Added 2026-10-22 (the user, after T2.4's measurements):** `n_trials = 400` and
+  `n_startup_trials = 20` (a new experiment setting, logged with the others; `tune_model`
+  takes it as a keyword and gives it to `TPESampler`). The user's rule: never decrease
+  `n_trials`; decide by best practice for the search space.
+  - **The search space:** 23–33 dimensions for the runs with LightGBM in every part (11 per
+    LightGBM component), 14–15 with one LightGBM part, 5–9 for the GLM runs.
+  - **Best practice:** Optuna's random start of 10 is a default for small spaces; Hyperopt's
+    TPE starts with 20, and the usual rule is 10–20% of the budget. For the budget, about 10
+    trials per dimension, and empirically a plateau of the best-so-far curve with agreement
+    between seeds.
+  - **Measured at 400 trials** (the folds in 5 processes, `PYTHONWARNINGS=error`):
+
+    | Run | Start | Best at 200 / 300 / 400 | Best found at | Wall |
+    |---|---|---|---|---|
+    | Model 2 `lgbm_gaussian+lgbm`, exposure on | 10 | 2.1066 / 2.1020 / 2.0947 | 399 | 177 s |
+    | same | 20 | 2.0962 / 2.0962 / 2.0962 | 177 | 269 s |
+    | same | 40 | 2.1127 / 2.1080 / 2.1080 | 283 | 356 s |
+    | Model 1 `lgbm_poisson`, exposure on | 10 | 2.1459 / 2.1429 / 2.1429 | 299 | 111 s |
+    | same | 40 | 2.1330 / 2.1253 / 2.1253 | 231 | 88 s |
+
+    Every run improved after 200, by 0.003–0.012, and T2.4's nine search paths of the same
+    pair at 200 spread over 0.02, as wide as the gap between the two LightGBM totals: at
+    200 the LightGBM runs were not converged. The random start's effect is within that
+    noise (40 won on Model 1 by 0.018 and lost on Model 2 by 0.013); its cost is not: the
+    random trials draw large models, so Model 2's run took 1.5–2× longer with 20 or 40.
+    Chosen: 400 and 20, the best practice at the lower cost.
+  - **Elimination considered and declined (the user):** by a racing rule (an arm more than
+    0.2, 10× the noise, behind its model's best at 200 trials is dropped) the exposure-off
+    GLM arms would go in both models (2 of Model 1's 8, 4 of Model 2's 16; about 15 of 70
+    minutes per click). The user kept all 24 runs, so the tables stay complete. Trimming
+    Model 2's totals from Model 1's ranking is not the practice: the total is its own
+    target; Model 2's own 200-trial results are the evidence, and they agree with Model 1's.
+  - **Check C is unchanged:** a 3-trial study draws the same points with a start of 10 or
+    20 (measured on two runs), so the 24 baselines at 3 trials stand.
+  - **The 400-trial click** (both buttons patched, `PYTHONWARNINGS=error`, 2026-10-22):
+    3708 s in all, Model 1 821 s, Model 2 2871 s; no failed trial, no warning; every
+    choice tried at least 11 times (Model 1) and 14 times (Model 2).
+    `lgbm_gaussian+lgbm` (exposure on) reproduced the probe's 2.0962.
+
+    | Model 1 run | Exposure on: cv_best / train / val / s | Exposure off: cv_best / train / val / s |
+    |---|---|---|---|
+    | `lgbm_poisson` | 2.1280 / 1.3350 / 2.1254 / 98 | 2.1654 / 1.2024 / 2.1919 / 90 |
+    | `lgbm_gaussian` | 2.1332 / 1.1452 / 2.1438 / 93 | 2.2085 / 1.2526 / 2.3043 / 97 |
+    | `poisson_glm` | 2.2490 / 2.1828 / 2.1895 / 39 | 2.8644 / 2.7846 / 3.0352 / 36 |
+    | `nb2` | 2.2436 / 2.1802 / 2.1993 / 194 | 2.8561 / 2.7991 / 3.0340 / 174 |
+
+    | Model 2 run | Exposure on: cv_best / train / val / s | Exposure off: cv_best / train / val / s |
+    |---|---|---|---|
+    | `lgbm_poisson+logistic` | 2.0489 / 1.2706 / 2.1285 / 67 | 2.0878 / 1.4289 / 2.1777 / 59 |
+    | `lgbm_poisson+lgbm` | 2.0809 / 1.1324 / 2.1775 / 224 | 2.0976 / 1.1519 / 2.1679 / 442 |
+    | `lgbm_gaussian+logistic` | 2.0715 / 1.4267 / 2.1256 / 56 | 2.1336 / 1.5228 / 2.2040 / 56 |
+    | `lgbm_gaussian+lgbm` | 2.0962 / 1.3288 / 2.1202 / 247 | 2.1483 / 1.3811 / 2.2304 / 306 |
+    | `poisson_glm+logistic` | 2.2418 / 2.1783 / 2.1749 / 58 | 2.8511 / 2.7754 / 3.0380 / 48 |
+    | `poisson_glm+lgbm` | 2.2562 / 2.0562 / 2.2019 / 231 | 2.8656 / 2.6479 / 3.0672 / 244 |
+    | `nb2+logistic` | 2.2289 / 2.1779 / 2.1848 / 87 | 2.8457 / 2.7792 / 3.0489 / 89 |
+    | `nb2+lgbm` | 2.2479 / 2.0261 / 2.2132 / 371 | 2.8633 / 2.6248 / 3.0780 / 286 |
+
+    `best_df`, by validation: Model 1 `lgbm_poisson`, exposure on, cv 2.1280, val 2.1254
+    (2.1604 at 200 trials); Model 2 `lgbm_gaussian+lgbm`, exposure on, cv 2.0962, val
+    2.1202 (at 200 trials `lgbm_gaussian+logistic` won with 2.0950; the four LightGBM pairs
+    with the exposure on sit within 0.06 on validation, inside the search noise, so the
+    best pair is not settled by this table). Model 2's LightGBM-classifier runs took 224–442
+    s, its logistic runs 48–89 s.
+
+- D21. **Added 2026-10-22 (the user, at the T4 design review, planned ahead):**
+  - **What moves into the package, what stays.** Code moves when it is a mechanism or a
+    record a test can pin down and another notebook could reuse: the params records, the
+    families and components, the search spaces (the bounds and candidates stay the one
+    source of truth the tables read), the builders, `fold_score` / `cv_score` /
+    `tune_model` / `fit_and_score`, and the aggregators. Code stays when it is the reading
+    of this experiment: the settings, the metrics (D4), the constants, the buttons, the 24
+    run cells, the tables, `best_df`, the inspection cells.
+  - **Six modules, one-way dependencies:** `params` ← `components` ← `search_spaces`;
+    `builders` uses those and `modeling`; `cross_validation` uses `aggregation` only (it
+    takes `suggest_model` as a callable); `aggregation` stands alone. No runner over
+    runs, no results-table class, no MLflow, no transformer registry in the package.
+  - **Evaluation stays outside the model.** No bootstrap or importance on
+    `BaseAgeGroupModel` (scikit-learn's split: estimators fit and predict; `inspection`
+    judges them; a model would otherwise carry settings that are not its own, and Model C
+    would inherit them). The three inspection classes keep their settings. T2.5's recipe,
+    "a fitted model, the splits, every metric's interval, the importances", becomes
+    `inspect_model` in `age_group_prediction.inspection`, typed and tested, so the same
+    evaluation runs on training, validation and later test.
+  - T4b is split into T4b.1 (records and search spaces), T4b.2 (builders, loop,
+    aggregation) and T4b.3 (the notebook imports the package).
+
 **What does not change:** notebook sections 1–4 and the `cv`/`cv_groups` cell; the models in
 `src/age_group_prediction/modeling/` (the S1 `get_params`/`set_params` forwarding in
 `IndependentCohortModels` stays: tested, `clone`-safe, simply unused by the notebook);
@@ -495,7 +581,7 @@ EOF
 ```
 
 **Check C, the clicked run on a copy** (T1.6 onward). Build a scratch project: `<scratch>/project/notebooks/02_experiments.py`
-= the notebook with `n_trials = 200` replaced by `n_trials = 3`, and `<scratch>/project/configs`
+= the notebook with `n_trials = 400` (200 before D20) replaced by `n_trials = 3`, and `<scratch>/project/configs`
 a symlink to the repo's `configs` (the notebook reads the config relative to its own directory;
 `src` comes from `PYTHONPATH`). Then:
 ```sh
@@ -1718,7 +1804,8 @@ Met 2026-10-21:
     `lgbm_gaussian+logistic`, exposure on, val 2.0872.
 - **The first Check C** ran the approved `value_counts(dropna=False)` version, and its sums
   did not add up. The fix was put to the user and approved (D16).
-- **The 200-trial run** (both buttons patched, `PYTHONWARNINGS=error`, run 2026-10-21):
+- **The 200-trial run** (both buttons patched, `PYTHONWARNINGS=error`, run 2026-10-21;
+  history since D20, whose 400-trial results are current):
   1827 s for the whole notebook.
   - Model 1 took 366 s and Model 2 1447 s, with no failed trial and no warning.
   - Model 1 reproduced D15's 200-trial values exactly.
@@ -1904,6 +1991,15 @@ The API, read 2026-10-21:
   `shap.Explanation`.
 - `n_resamples = 1000` is already in the notebook's settings.
 
+**Settled 2026-10-22 (the user, at T2.5's plan):** the best model is refit on the whole
+training part and bootstrapped on the training rows and on the validation rows (the test
+part waits for the refit on training + validation, E11); the bootstrap covers seven
+metrics, each explained in the header (Poisson deviance, cohort log loss, D² Poisson,
+MAE, RMSE, WMAPE, bias; scikit-learn's functions on the flattened cells, the two without a
+library form as one-line notebook functions); the run records gain `best_params`, so the
+best model is rebuilt with the existing `FixedTrial` path; the recipe `inspect_model` lives
+in the `inspection` package (D21); one explicit cell per model behind a button.
+
 **Open points, settled at T2.5's own plan:**
 - How the fitted best model is obtained: rebuild the components from the record's dicts, or
   keep `best_params` in the record and use `FixedTrial`.
@@ -1989,6 +2085,10 @@ Under `src/age_group_prediction/hyperparameter_tuning/`:
 | `builders.py` | `suggest_count_component`, `suggest_probability_component`, `suggest_model1_components`, `suggest_model2_components`, `make_count_model`, `build_model1`, `build_model2`, `suggest_model1`, `suggest_model2` |
 | `cross_validation.py` | `fold_score`, `cv_score`, `tune_model`, `fit_and_score` (with T2.4's approved changes) |
 | `aggregation.py` | `Aggregator`, `Mean`, `WeightedMean`, `UpperBound`, moved back from `age_group_prediction/aggregation.py` (D9's interim home), with `tests/unit/test_aggregation.py` |
+
+The rule for what moves and what stays, the one-way dependencies and the split into T4b.1
+(records and search spaces), T4b.2 (builders, loop, aggregation) and T4b.3 (the notebook
+imports the package) are D21 (2026-10-22).
 
 - **Code:** typed for mypy strict (the notebook code is untyped), docstrings kept to what
   matters, and an `__all__` per module. `pyproject.toml`'s mypy `files` and overrides list

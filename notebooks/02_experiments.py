@@ -245,7 +245,9 @@ def _(mo, pd):
     test_size = 0.2  # share of the whole table
     val_size = 0.2  # share of the whole table, so 0.25 of the remainder
     n_splits = 5
-    n_trials = 200
+    n_trials = 400
+    # TPE's random start: the trials drawn at random before its model guides the draws.
+    n_startup_trials = 20
     n_resamples = 1000
 
     # What every run logs.
@@ -256,6 +258,7 @@ def _(mo, pd):
         "val_size": val_size,
         "n_splits": n_splits,
         "n_trials": n_trials,
+        "n_startup_trials": n_startup_trials,
         "n_resamples": n_resamples,
     }
     print(
@@ -263,7 +266,15 @@ def _(mo, pd):
         + " ".join(f"{k}={v}" for k, v in EXPERIMENT_SETTINGS.items())
     )
     mo.md(f"```text\n{pd.DataFrame([EXPERIMENT_SETTINGS]).to_string(index=False)}\n```")
-    return n_splits, n_trials, seed, split_method, test_size, val_size
+    return (
+        n_splits,
+        n_startup_trials,
+        n_trials,
+        seed,
+        split_method,
+        test_size,
+        val_size,
+    )
 
 
 @app.cell(hide_code=True)
@@ -610,8 +621,9 @@ def _(mo):
     separate families, and the exposure a run setting: a study that sampled
     the loss split 30 trials 10/20 and did worse than either loss alone, and
     the exposure changes the target (a count or a weighted rate).
-    `n_trials = 200`; the tables of trials per choice show whether any was
-    tried too rarely to be judged. The runs go one after another, seeded
+    `n_trials = 400`, the first `n_startup_trials = 20` drawn at random; the
+    tables of trials per choice show whether any was tried too rarely to be
+    judged. The runs go one after another, seeded
     `seed + 0`, `seed + 1`, … in order, and each trial fits its 5 folds in
     parallel. A trial whose fit raises (an NB2 fit that does not converge) is
     marked failed and the run goes on; the tables count them. Each run keeps
@@ -1241,6 +1253,7 @@ def _(Mean, Parallel, TPESampler, delayed, optuna, time):
         *,
         study_seed,
         n_trials,
+        n_startup_trials,
         aggregator=None,
         n_jobs=1,
     ):
@@ -1249,7 +1262,8 @@ def _(Mean, Parallel, TPESampler, delayed, optuna, time):
         A trial whose fit raises RuntimeError (an NB2 fit that does not
         converge, re-raised as such from a fold's process) is marked FAIL and
         the study goes on; without ``catch`` one such trial would end the
-        study. ``aggregator`` and ``n_jobs`` go to ``cv_score``.
+        study. The first ``n_startup_trials`` are drawn at random, before TPE's
+        model guides the draws. ``aggregator`` and ``n_jobs`` go to ``cv_score``.
         """
 
         def objective(trial):
@@ -1267,7 +1281,8 @@ def _(Mean, Parallel, TPESampler, delayed, optuna, time):
             )
 
         study = optuna.create_study(
-            direction=metric.direction, sampler=TPESampler(seed=study_seed)
+            direction=metric.direction,
+            sampler=TPESampler(seed=study_seed, n_startup_trials=n_startup_trials),
         )
         start = time.perf_counter()
         study.optimize(objective, n_trials=n_trials, catch=(RuntimeError,))
@@ -1340,6 +1355,7 @@ def _(
     fit_and_score,
     mo,
     n_splits,
+    n_startup_trials,
     n_trials,
     partial,
     run_model1,
@@ -1371,6 +1387,7 @@ def _(
         COHORT_POISSON_DEVIANCE,
         study_seed=seed + 0,
         n_trials=n_trials,
+        n_startup_trials=n_startup_trials,
         n_jobs=n_splits,
     )
     # The best components, rebuilt from the best trial's parameters, are the
@@ -1423,6 +1440,7 @@ def _(
     fit_and_score,
     mo,
     n_splits,
+    n_startup_trials,
     n_trials,
     partial,
     run_model1,
@@ -1454,6 +1472,7 @@ def _(
         COHORT_POISSON_DEVIANCE,
         study_seed=seed + 1,
         n_trials=n_trials,
+        n_startup_trials=n_startup_trials,
         n_jobs=n_splits,
     )
     # The best components, rebuilt from the best trial's parameters, are the
@@ -1506,6 +1525,7 @@ def _(
     fit_and_score,
     mo,
     n_splits,
+    n_startup_trials,
     n_trials,
     partial,
     run_model1,
@@ -1537,6 +1557,7 @@ def _(
         COHORT_POISSON_DEVIANCE,
         study_seed=seed + 2,
         n_trials=n_trials,
+        n_startup_trials=n_startup_trials,
         n_jobs=n_splits,
     )
     # The best components, rebuilt from the best trial's parameters, are the
@@ -1589,6 +1610,7 @@ def _(
     fit_and_score,
     mo,
     n_splits,
+    n_startup_trials,
     n_trials,
     partial,
     run_model1,
@@ -1620,6 +1642,7 @@ def _(
         COHORT_POISSON_DEVIANCE,
         study_seed=seed + 3,
         n_trials=n_trials,
+        n_startup_trials=n_startup_trials,
         n_jobs=n_splits,
     )
     # The best components, rebuilt from the best trial's parameters, are the
@@ -1672,6 +1695,7 @@ def _(
     fit_and_score,
     mo,
     n_splits,
+    n_startup_trials,
     n_trials,
     partial,
     run_model1,
@@ -1703,6 +1727,7 @@ def _(
         COHORT_POISSON_DEVIANCE,
         study_seed=seed + 4,
         n_trials=n_trials,
+        n_startup_trials=n_startup_trials,
         n_jobs=n_splits,
     )
     # The best components, rebuilt from the best trial's parameters, are the
@@ -1755,6 +1780,7 @@ def _(
     fit_and_score,
     mo,
     n_splits,
+    n_startup_trials,
     n_trials,
     partial,
     run_model1,
@@ -1786,6 +1812,7 @@ def _(
         COHORT_POISSON_DEVIANCE,
         study_seed=seed + 5,
         n_trials=n_trials,
+        n_startup_trials=n_startup_trials,
         n_jobs=n_splits,
     )
     # The best components, rebuilt from the best trial's parameters, are the
@@ -1838,6 +1865,7 @@ def _(
     fit_and_score,
     mo,
     n_splits,
+    n_startup_trials,
     n_trials,
     partial,
     run_model1,
@@ -1869,6 +1897,7 @@ def _(
         COHORT_POISSON_DEVIANCE,
         study_seed=seed + 6,
         n_trials=n_trials,
+        n_startup_trials=n_startup_trials,
         n_jobs=n_splits,
     )
     # The best components, rebuilt from the best trial's parameters, are the
@@ -1921,6 +1950,7 @@ def _(
     fit_and_score,
     mo,
     n_splits,
+    n_startup_trials,
     n_trials,
     partial,
     run_model1,
@@ -1952,6 +1982,7 @@ def _(
         COHORT_POISSON_DEVIANCE,
         study_seed=seed + 7,
         n_trials=n_trials,
+        n_startup_trials=n_startup_trials,
         n_jobs=n_splits,
     )
     # The best components, rebuilt from the best trial's parameters, are the
@@ -2090,6 +2121,7 @@ def _(
     fit_and_score,
     mo,
     n_splits,
+    n_startup_trials,
     n_trials,
     partial,
     run_model2,
@@ -2122,6 +2154,7 @@ def _(
         COHORT_POISSON_DEVIANCE,
         study_seed=seed + 0,
         n_trials=n_trials,
+        n_startup_trials=n_startup_trials,
         n_jobs=n_splits,
     )
     # The best components, rebuilt from the best trial's parameters, are the
@@ -2174,6 +2207,7 @@ def _(
     fit_and_score,
     mo,
     n_splits,
+    n_startup_trials,
     n_trials,
     partial,
     run_model2,
@@ -2206,6 +2240,7 @@ def _(
         COHORT_POISSON_DEVIANCE,
         study_seed=seed + 1,
         n_trials=n_trials,
+        n_startup_trials=n_startup_trials,
         n_jobs=n_splits,
     )
     # The best components, rebuilt from the best trial's parameters, are the
@@ -2258,6 +2293,7 @@ def _(
     fit_and_score,
     mo,
     n_splits,
+    n_startup_trials,
     n_trials,
     partial,
     run_model2,
@@ -2294,6 +2330,7 @@ def _(
         COHORT_POISSON_DEVIANCE,
         study_seed=seed + 2,
         n_trials=n_trials,
+        n_startup_trials=n_startup_trials,
         n_jobs=n_splits,
     )
     # The best components, rebuilt from the best trial's parameters, are the
@@ -2346,6 +2383,7 @@ def _(
     fit_and_score,
     mo,
     n_splits,
+    n_startup_trials,
     n_trials,
     partial,
     run_model2,
@@ -2378,6 +2416,7 @@ def _(
         COHORT_POISSON_DEVIANCE,
         study_seed=seed + 3,
         n_trials=n_trials,
+        n_startup_trials=n_startup_trials,
         n_jobs=n_splits,
     )
     # The best components, rebuilt from the best trial's parameters, are the
@@ -2430,6 +2469,7 @@ def _(
     fit_and_score,
     mo,
     n_splits,
+    n_startup_trials,
     n_trials,
     partial,
     run_model2,
@@ -2466,6 +2506,7 @@ def _(
         COHORT_POISSON_DEVIANCE,
         study_seed=seed + 4,
         n_trials=n_trials,
+        n_startup_trials=n_startup_trials,
         n_jobs=n_splits,
     )
     # The best components, rebuilt from the best trial's parameters, are the
@@ -2518,6 +2559,7 @@ def _(
     fit_and_score,
     mo,
     n_splits,
+    n_startup_trials,
     n_trials,
     partial,
     run_model2,
@@ -2550,6 +2592,7 @@ def _(
         COHORT_POISSON_DEVIANCE,
         study_seed=seed + 5,
         n_trials=n_trials,
+        n_startup_trials=n_startup_trials,
         n_jobs=n_splits,
     )
     # The best components, rebuilt from the best trial's parameters, are the
@@ -2602,6 +2645,7 @@ def _(
     fit_and_score,
     mo,
     n_splits,
+    n_startup_trials,
     n_trials,
     partial,
     run_model2,
@@ -2638,6 +2682,7 @@ def _(
         COHORT_POISSON_DEVIANCE,
         study_seed=seed + 6,
         n_trials=n_trials,
+        n_startup_trials=n_startup_trials,
         n_jobs=n_splits,
     )
     # The best components, rebuilt from the best trial's parameters, are the
@@ -2690,6 +2735,7 @@ def _(
     fit_and_score,
     mo,
     n_splits,
+    n_startup_trials,
     n_trials,
     partial,
     run_model2,
@@ -2722,6 +2768,7 @@ def _(
         COHORT_POISSON_DEVIANCE,
         study_seed=seed + 7,
         n_trials=n_trials,
+        n_startup_trials=n_startup_trials,
         n_jobs=n_splits,
     )
     # The best components, rebuilt from the best trial's parameters, are the
@@ -2774,6 +2821,7 @@ def _(
     fit_and_score,
     mo,
     n_splits,
+    n_startup_trials,
     n_trials,
     partial,
     run_model2,
@@ -2806,6 +2854,7 @@ def _(
         COHORT_POISSON_DEVIANCE,
         study_seed=seed + 8,
         n_trials=n_trials,
+        n_startup_trials=n_startup_trials,
         n_jobs=n_splits,
     )
     # The best components, rebuilt from the best trial's parameters, are the
@@ -2858,6 +2907,7 @@ def _(
     fit_and_score,
     mo,
     n_splits,
+    n_startup_trials,
     n_trials,
     partial,
     run_model2,
@@ -2890,6 +2940,7 @@ def _(
         COHORT_POISSON_DEVIANCE,
         study_seed=seed + 9,
         n_trials=n_trials,
+        n_startup_trials=n_startup_trials,
         n_jobs=n_splits,
     )
     # The best components, rebuilt from the best trial's parameters, are the
@@ -2942,6 +2993,7 @@ def _(
     fit_and_score,
     mo,
     n_splits,
+    n_startup_trials,
     n_trials,
     partial,
     run_model2,
@@ -2974,6 +3026,7 @@ def _(
         COHORT_POISSON_DEVIANCE,
         study_seed=seed + 10,
         n_trials=n_trials,
+        n_startup_trials=n_startup_trials,
         n_jobs=n_splits,
     )
     # The best components, rebuilt from the best trial's parameters, are the
@@ -3026,6 +3079,7 @@ def _(
     fit_and_score,
     mo,
     n_splits,
+    n_startup_trials,
     n_trials,
     partial,
     run_model2,
@@ -3058,6 +3112,7 @@ def _(
         COHORT_POISSON_DEVIANCE,
         study_seed=seed + 11,
         n_trials=n_trials,
+        n_startup_trials=n_startup_trials,
         n_jobs=n_splits,
     )
     # The best components, rebuilt from the best trial's parameters, are the
@@ -3110,6 +3165,7 @@ def _(
     fit_and_score,
     mo,
     n_splits,
+    n_startup_trials,
     n_trials,
     partial,
     run_model2,
@@ -3142,6 +3198,7 @@ def _(
         COHORT_POISSON_DEVIANCE,
         study_seed=seed + 12,
         n_trials=n_trials,
+        n_startup_trials=n_startup_trials,
         n_jobs=n_splits,
     )
     # The best components, rebuilt from the best trial's parameters, are the
@@ -3194,6 +3251,7 @@ def _(
     fit_and_score,
     mo,
     n_splits,
+    n_startup_trials,
     n_trials,
     partial,
     run_model2,
@@ -3226,6 +3284,7 @@ def _(
         COHORT_POISSON_DEVIANCE,
         study_seed=seed + 13,
         n_trials=n_trials,
+        n_startup_trials=n_startup_trials,
         n_jobs=n_splits,
     )
     # The best components, rebuilt from the best trial's parameters, are the
@@ -3278,6 +3337,7 @@ def _(
     fit_and_score,
     mo,
     n_splits,
+    n_startup_trials,
     n_trials,
     partial,
     run_model2,
@@ -3310,6 +3370,7 @@ def _(
         COHORT_POISSON_DEVIANCE,
         study_seed=seed + 14,
         n_trials=n_trials,
+        n_startup_trials=n_startup_trials,
         n_jobs=n_splits,
     )
     # The best components, rebuilt from the best trial's parameters, are the
@@ -3362,6 +3423,7 @@ def _(
     fit_and_score,
     mo,
     n_splits,
+    n_startup_trials,
     n_trials,
     partial,
     run_model2,
@@ -3394,6 +3456,7 @@ def _(
         COHORT_POISSON_DEVIANCE,
         study_seed=seed + 15,
         n_trials=n_trials,
+        n_startup_trials=n_startup_trials,
         n_jobs=n_splits,
     )
     # The best components, rebuilt from the best trial's parameters, are the
