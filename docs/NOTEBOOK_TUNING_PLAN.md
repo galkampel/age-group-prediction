@@ -1,6 +1,6 @@
 # Re-implement the hyperparameter tuning inside the notebook
 
-**Status (2026-10-21):** approved; T1.1 committed (`0416267`); T1.2 committed (`bee781a`) after the user's review (estimator dataclasses hold hyperparameters only; LightGBM's loss is a family); T1.3 committed (`7ae6314`) after three user reviews (components are a study's fixed settings, a `Literal` family and `use_exposure`; the family → transformer-names mapping is an argument of `suggest_feature_transformer`; no dataclass builds a model; the exposure a study setting, both arms; feature variants renamed feature transformers; D2, D3, D6, T1.4–T2.2 rewritten); T1.4 done 2026-10-19, then reworked at two rounds of the user's review on 2026-10-20 (D8: a named component per part of the composite under an abstract `Component`; the family checked from its `Literal`; each subclass holds its families' transformer names; `make_estimator(hyperparameters, *, seed)`; the T1.3 cells changed too; T1.4–T2.2 rewritten), committed (`8cc231d`); T1.5 done 2026-10-21 (`cv_score`, `tune_model`; at the user's review the fold variables named and an aggregator added, D9: `src/age_group_prediction/aggregation.py` and its tests, default `Mean`), committed (`a5ae06b`); T1.6 done 2026-10-21 (Model 1's button and run cell; Check C 14.7 s at 3 trials), then the redesign of D10 at its review, revised by D11 and D12 at the next reviews (search spaces with explicit suggest methods, the builder assembles components, the transformer by name; a study is a family combination and exposure; `feature_transformer_dict`; Check C reproduces T1.6's best values), committed (`6316d91`); T1.7 committed (`59acae6`); its 200-trial run took 380 s with no failed trial (D15); T1.8 done 2026-10-21 (independent review: no correctness bug, nine findings reproduced and settled, D15), committed (`9eca96e`); notebook md5 `9d49fe78f99d7ff4d96e17742ea7d277`; handoff rewritten 2026-10-21 for a new session; T2.1 done 2026-10-21 (Model 2's button and 16 run cells; no `MODEL2_TOTALS`, the run cells present are the runs tuned; Check C 53.3 s, Model 2's baseline recorded), awaiting the user's commit; notebook md5 `1405425ae7bf3da901cf0eba8860bf71`; T2.2 done 2026-10-21 (Model 2's tables, display and best-per-model cells; D16), 200-trial run 1827 s (Model 1 366 s, Model 2 1447 s, no failed trial); T2.1–T2.2 committed (`a2b8693`); T2.3 done 2026-10-21 (independent review: no correctness bug; findings F1–F8 settled), awaiting the user's commit; notebook md5 `eec46ac5cbec902ffdd98cce6f4c9cbd`; T2.4 (pruning and parallelization check) added at the user's request; D17: T4 replaces the package (T4a delete, T4b rebuild from the notebook). D18: T2.5 (the bootstrap interval and feature importance of the best runs) added. The `n_startup_trials` decision postponed by the user until after T2.4, with `n_trials`; all 24 runs kept (D6 stands). Next: T2.3 → T2.4 → the `n_trials` / `n_startup_trials` decision → T2.5 → T3 → T4a → T4b → T5. The implementing session updates this line and ticks the sub-tasks.
+**Status (2026-10-21):** approved; T1.1 committed (`0416267`); T1.2 committed (`bee781a`) after the user's review (estimator dataclasses hold hyperparameters only; LightGBM's loss is a family); T1.3 committed (`7ae6314`) after three user reviews (components are a study's fixed settings, a `Literal` family and `use_exposure`; the family → transformer-names mapping is an argument of `suggest_feature_transformer`; no dataclass builds a model; the exposure a study setting, both arms; feature variants renamed feature transformers; D2, D3, D6, T1.4–T2.2 rewritten); T1.4 done 2026-10-19, then reworked at two rounds of the user's review on 2026-10-20 (D8: a named component per part of the composite under an abstract `Component`; the family checked from its `Literal`; each subclass holds its families' transformer names; `make_estimator(hyperparameters, *, seed)`; the T1.3 cells changed too; T1.4–T2.2 rewritten), committed (`8cc231d`); T1.5 done 2026-10-21 (`cv_score`, `tune_model`; at the user's review the fold variables named and an aggregator added, D9: `src/age_group_prediction/aggregation.py` and its tests, default `Mean`), committed (`a5ae06b`); T1.6 done 2026-10-21 (Model 1's button and run cell; Check C 14.7 s at 3 trials), then the redesign of D10 at its review, revised by D11 and D12 at the next reviews (search spaces with explicit suggest methods, the builder assembles components, the transformer by name; a study is a family combination and exposure; `feature_transformer_dict`; Check C reproduces T1.6's best values), committed (`6316d91`); T1.7 committed (`59acae6`); its 200-trial run took 380 s with no failed trial (D15); T1.8 done 2026-10-21 (independent review: no correctness bug, nine findings reproduced and settled, D15), committed (`9eca96e`); notebook md5 `9d49fe78f99d7ff4d96e17742ea7d277`; handoff rewritten 2026-10-21 for a new session; T2.1 done 2026-10-21 (Model 2's button and 16 run cells; no `MODEL2_TOTALS`, the run cells present are the runs tuned; Check C 53.3 s, Model 2's baseline recorded), awaiting the user's commit; notebook md5 `1405425ae7bf3da901cf0eba8860bf71`; T2.2 done 2026-10-21 (Model 2's tables, display and best-per-model cells; D16), 200-trial run 1827 s (Model 1 366 s, Model 2 1447 s, no failed trial); T2.1–T2.2 committed (`a2b8693`); T2.3 done 2026-10-21 (independent review: no correctness bug; findings F1–F8 settled), awaiting the user's commit; notebook md5 `eec46ac5cbec902ffdd98cce6f4c9cbd`; T2.4 (pruning and parallelization check) added at the user's request; D17: T4 replaces the package (T4a delete, T4b rebuild from the notebook). D18: T2.5 (the bootstrap interval and feature importance of the best runs) added. The `n_startup_trials` decision postponed by the user until after T2.4, with `n_trials`; all 24 runs kept (D6 stands). T2.3 committed (`7580304`), handoff committed (`1811551`). T2.4 done 2026-10-22 (measured: no pruning or parallelization place beats today's design, two are unsafe; D19: today's design kept, `catch` unchanged; docs only, notebook md5 unchanged `eec46ac5cbec902ffdd98cce6f4c9cbd`), awaiting the user's commit. Next: the `n_trials` / `n_startup_trials` decision (the evidence in T2.4) → T2.5 → T3 → T4a → T4b → T5. The implementing session updates this line and ticks the sub-tasks.
 
 Written for the model that implements it, one sub-task per approval. Every sub-task has the
 code to write, a "done when" list and the commands that verify it. The user reads the diff in
@@ -410,6 +410,33 @@ plain `Literal` assignments, not the `type` statement: cloudpickle cannot pickle
   - **Placement: T2.5**, after T2.4 and before T3, so the notebook is complete before T4b
     moves code into the package. It replaces the handoff's older item, "the bootstrap and
     importance check".
+
+- D19. **Added 2026-10-22 (T2.4, measured; the user's choice):** today's design stays as
+  it is: the folds of a trial in parallel (`n_jobs=n_splits`), no pruning, LightGBM
+  `n_jobs=1`, `catch=(RuntimeError,)`. T2.4 holds the measurements. In short:
+  - **Where the time goes:** in the slow pairs the LightGBM classifier's fit is the trial,
+    and the calibration multiplies it by about 5 (`CalibratedClassifierCV(cv=5,
+    ensemble=False)` fits the classifier 6 times per fold, 30 per trial). The totals,
+    prediction and scoring are a few percent.
+  - **Pruning loses:** `WilcoxonPruner` saves 2–22% of the fold fits but needs the folds one
+    after another, which costs the 65–72% the parallel folds save; the slowest pair ran
+    2.8–5× longer, the fastest family 3.3×. A pruned trial's value is a partial mean, so the
+    seeded search diverges. The pruner is experimental and its constructor raises
+    `ExperimentalWarning` under `-W error`. Early stopping inside LightGBM does not fit the
+    composites (no `eval_set` path; the final refit would have no stopping set).
+  - **Parallelization elsewhere loses:** LightGBM threads are 3× slower at 2 threads on 917
+    rows; Model 1's cohort fits in threads are slower; the calibration's inner folds in
+    parallel gain nothing inside a fold process (nested joblib runs sequentially).
+  - **Two places are unsafe:** concurrent `Parallel` calls from threads in one process
+    (runs at once in threads, or `study.optimize(n_jobs>1)` with fold processes) return
+    wrong scores: joblib's shared pool mixes the calls' inputs (measured: four fixed models,
+    different wrong values on every repeat). marimo also runs cells one at a time.
+  - **`catch` stays `(RuntimeError,)`:** NB2's non-convergence arrives as one from both fit
+    paths; a cohort unobserved in a fold is the same for every trial and should end the
+    run; a `ConvergenceWarning` raises only under strict warnings, which D15 wants visible,
+    and none occurred in 200 trials.
+  - What would shorten a run is a modeling choice, not asked for here: fewer calibration
+    inner folds, a lower `n_estimators` ceiling, or fewer trials.
 
 **What does not change:** notebook sections 1–4 and the `cv`/`cv_groups` cell; the models in
 `src/age_group_prediction/modeling/` (the S1 `get_params`/`set_params` forwarding in
@@ -1744,67 +1771,111 @@ Its eight findings were reproduced and settled:
 - **F7:** `catch` covers `RuntimeError` only. Noted in T2.4.
 - **F8:** the status line and Model 1's CV gap (0.616 and 0.614), corrected.
 
-### [ ] T2.4 Check whether pruning and parallelization help, and where (asked by the user, 2026-10-21)
-After T2.3, before T3. The order of the rest: T2.3 →
-T2.4 → the `n_trials` / `n_startup_trials` decision → T2.5 → T3 → T4a → T4b → T5. It revisits D13 (folds in parallel,
-no pruning), which was measured on Model 1 alone, now with Model 2's timings:
-- The LightGBM-classifier pairs take 4.1–6.5 s a trial with the folds one after another,
-  against 0.3–0.6 s for the logistic pairs.
-- With the folds in parallel, they take 0.4–1.8 s a trial at 3 trials.
+### [x] T2.4 Check whether pruning and parallelization help, and where (asked by the user, 2026-10-21)
+After T2.3, before T3. It revisits D13 (folds in parallel, no pruning), which was measured on
+Model 1 alone, with Model 2's timings. Done 2026-10-22: measured by read-only probes on the
+notebook's own functions under `PYTHONWARNINGS=error`, nothing added to the notebook (D19).
+The user's instruction: best practices, no over-complication.
 
-This sub-task measures and recommends. Nothing is added to the notebook unless the user
-approves it, and the implementation is a separate sub-task.
+**Where the time goes** (Apple M1 Pro, 8 cores, 6 performance; the training part's 917 rows,
+folds of 184/183; one fold, sampled trials):
 
-**Where the time goes first.** Profile one trial of the slowest pairs (for example
-`nb2+lgbm`, `poisson_glm+lgbm`) and one Model 1 NB2 trial, split into:
-- the total's fit;
-- the probability model's fit, including the one-row-per-child expansion and the
-  calibration;
-- prediction and scoring;
-- joblib's overhead.
+| Pair (fold 0) | Total fit | Probability fit | Same, calibration off | Predict + score |
+|---|---|---|---|---|
+| `nb2+lgbm` (5 trials) | 0.02–0.17 s | 0.46–1.67 s | 0.08–0.32 s | 0.01–0.04 s |
+| `poisson_glm+lgbm` (5 trials) | 0.01–0.07 s | 0.10–1.76 s | 0.04–0.31 s | ≤ 0.015 s |
+| `lgbm_gaussian+logistic` (3 trials) | 0.02–0.04 s | 0.03–0.06 s | 0.02–0.03 s | ≤ 0.013 s |
+| Model 1 `nb2` (5 trials) | 3 cohort fits, 0.15–0.49 s in all | – | – | ≤ 0.02 s |
 
-**Candidate places for parallelization, each measured against today's (the folds of a trial
-in parallel, `n_jobs=n_splits`, LightGBM `n_jobs=1`):**
-1. **The folds of a trial** (today): the speed-up per family at 200 trials.
-2. **LightGBM's own threads** (`n_jobs` > 1 in `make_estimator`), alone or with fewer fold
-   processes. This is the oversubscription trade-off on 8 cores (6 performance).
-3. **The parts inside a composite**, in parallel: Model 1's three cohort fits, and Model 2's
-   total and probability fits. This changes `src`; say so.
-4. **Several runs at once**, i.e. studies in parallel as before D13. It conflicts with D14's
-   one cell per run, unless marimo can run independent cells concurrently; check that.
-5. **Trials in parallel within one study** (`study.optimize(n_jobs>1)`, or processes sharing
-   an Optuna storage with `constant_liar`). This loses the seeded reproducibility; measure how
-   much, and whether the best values change.
+- In the slow pairs the LightGBM classifier's fit is the trial, and the calibration
+  multiplies it by about 5: `CalibratedClassifierCV(cv=5, ensemble=False)` fits the
+  classifier 5 times on inner folds plus once on all rows, 30 fits per trial; two of the
+  three calibration choices calibrate. The one-row-per-child expansion costs under 1 ms.
+- A whole trial of the slow pairs: 8–10 s with the folds one after another, 2.3–2.7 s in
+  parallel (×3.5); `lgbm_gaussian+logistic` 0.36 vs 0.16 s; Model 1 NB2 0.88 vs 0.32 s.
+- At 200 trials of `lgbm_gaussian+lgbm` (exposure on, seed 47) a trial takes 0.49 s on
+  average (median 0.35, p90 0.85, max 3.07): 97 s for the run, `cv_best` 2.1066 as T2.2.
+- joblib: the worker start is paid once per process (about 3 s); then a 5-fold trial of the
+  fast families costs 0.16–0.19 s.
 
-**Candidate places for pruning, each measured on wall time and best value at 200 trials:**
-1. **`WilcoxonPruner` across the folds.** It needs the folds one at a time, so it trades away
-   the parallel folds. Measure the share of trials pruned and the net time at
-   `p_threshold` 0.1 and 0.2 (the facts in §7).
-2. **A hybrid:** the folds in two parallel batches (e.g. 3 then 2), with a prune check
-   between them.
-3. **Pruning only the slow pairs** (the LightGBM classifier), where a pruned trial saves
-   the most.
-4. **Inside a LightGBM fit** (early stopping or a pruning callback). It needs a validation
-   set inside each fold's fit; check whether that fits the composite models at all.
+**Parallelization, each against today** (5 fold processes, LightGBM `n_jobs=1`):
 
-**Which errors fail one trial (T2.3's F7).** Today `catch=(RuntimeError,)`, NB2's
-non-convergence. Model 2 adds failures that raise `ValueError`: a fold without a cohort
-(`_check_every_cohort_observed`) and the row-sum check. Under `PYTHONWARNINGS=error`, a
-`ConvergenceWarning` also raises. Any of these would end a whole run. None happened at 200
-trials. Decide whether `catch` widens; a probe can force each case.
+| # | Place | Measured | Reproducible | Verdict |
+|---|---|---|---|---|
+| 1 | The folds of a trial (today) | ×2.3–3.6 per trial, identical scores | yes | keep |
+| 2 | LightGBM threads | slower everywhere on 917 rows: 2 threads ×3.2, 4 ×5–6, 8 ×11–14 (sequential folds); 2 threads with 5 fold processes ×4–9 | yes | reject |
+| 3a | Model 1's 3 cohort fits in threads | slower: 0.15→0.27 s, 0.39→0.74 s per fold (statsmodels holds the GIL); a trial 1.4–3.6 s vs 0.4–0.6 s today | yes | reject |
+| 3b | Model 2's total and probability in two threads (measured at the user's question) | 0.78–1.31× of one after the other: the total is 1–10% of a slow fit; only LightGBM releases the GIL, so the GLM and logistic pairs are 1.1–1.3× slower; the one gain (`lgbm_gaussian+lgbm`, 22%) is in an idle process, not inside 5 fold processes; a `src` change | yes | reject |
+| 3c | The calibration's inner folds in parallel (`CalibratedClassifierCV(n_jobs=5)`, a `src` change) | a probability fit 1.89→0.71 s and a sequential-fold trial 10.2→3.8 s, but with today's fold processes 2.60→2.42 s: a nested `Parallel` in a loky worker runs sequentially | yes | reject |
+| 4 | Several runs at once | marimo runs cells one at a time (`cell_runner` pops its queue "one at a time"; `mo.Thread` runs code, not cells), so it conflicts with D14. As threads over two studies with fold processes: wall 356 s vs 97 + 145 s alone, and wrong values (1.45, 1.17 against 2.1) | no | reject, unsafe |
+| 5a | Trials in parallel, `study.optimize(n_jobs=2)` with fold processes | 177 s and 100 s on two repeats, different bests (2.0920, 2.1013); values unreliable | no | reject, unsafe |
+| 5b | Trials in parallel, `n_jobs=4` threads with the folds in-process | 227 s and 155 s, bests 2.0958 / 2.0956 at trials 186 / 197; 1.6–2.3× today | no | reject |
 
-**After T2.4's approved changes:** re-decide `n_trials` (200 today) and `n_startup_trials`
-(10 today), from the cost of a trial and the coverage (D15).
+Concurrent `Parallel` calls from threads in one process give wrong scores (four fixed
+models: sequential 2.1981 / 2.2445 / 2.2471 / 2.3495, concurrent 2.09–2.20 and different
+on every repeat; with in-process folds the threads agree exactly): joblib's shared loky
+pool mixes the calls' inputs. That is why 4 and 5a are unsafe, not only slow.
 
-**For each candidate, report:**
-- the measured wall time at 200 trials, against today's;
-- the best values against today's, and whether the seeded study stays reproducible (Check C
-  unchanged or not);
-- the code it adds, in the notebook or in `src`;
-- a recommendation: add it or not, and where.
+**Pruning** (200 trials, `lgbm_gaussian+lgbm`, exposure on, seed 47). `WilcoxonPruner`
+(Optuna 4.9) is the pruner for a mean over fixed instances; Optuna's documented usage
+returns the partial mean on `should_prune()` instead of raising, and shuffles the fold
+order per trial (seeded here by `study_seed + trial.number`). Its constructor raises
+`ExperimentalWarning` under `-W error`, so a strict Check C would need it suppressed, as
+D7 found for `multivariate=True`. With 5 folds the one-sided exact test gives p = 1/2^n
+after n folds all worse: 0.125 after 3, 0.0625 after 4, so at threshold 0.1 a trial is
+pruned after fold 4 at the earliest, at 0.2 after fold 3; a 3-then-2 batch hybrid cannot
+prune at 0.1.
 
-The user decides; an approved change gets its own sub-task, with Check A, Check B and
-Check C, and with new baselines if the results change.
+| Run | Wall | Best (trial) | Pruned | Fold fits | Same search as today? |
+|---|---|---|---|---|---|
+| R0 today: 5 fold processes, no pruning | 97 s | 2.1066 (148) | 0 | 1000 | yes (T2.2's value) |
+| R1 Wilcoxon 0.1, folds sequential | 480 s | 2.1010 (154) | 56 | 944 | no |
+| R2 Wilcoxon 0.2, folds sequential | 408 s | 2.1053 (173) | 132 | 782 | no |
+| R3 hybrid 3 + 2 processes, 0.2 | 326 s | 2.0909 (164) | 68 | 864 | no |
+| R3b hybrid 3 + 2 processes, 0.1 | 169 s | 2.1066 (148) | 0 | 1000 | yes: prunes nothing, the pure cost of two batches (×1.7) |
+| R4 Wilcoxon 0.1 sequential + calibration `n_jobs=5` (`src` change) | 276 s | 2.1010 (154) | 56 | 944 | no (R1's search) |
+| R8a Model 1 `poisson_glm` today | 30 s | 2.2490 (199) | 0 | 1000 | yes (the handoff's value) |
+| R8b the same, Wilcoxon 0.1 sequential | 99 s | 2.2490 (199) | 21 | 979 | yes |
+
+- Pruning saves 2–22% of the fold fits but costs the parallel folds, which save 65–72%:
+  the slowest pair runs 2.8–5× longer, the fastest family 3.3× longer.
+- A pruned trial's value is the mean of fewer folds, so the sampler is fed other values and
+  the search diverges: R1–R4 found other bests, better or worse by chance.
+- Inside a LightGBM fit (early stopping, `LightGBMPruningCallback`): needs an `eval_set` at
+  every fit. `CountModel.fit` and `CohortProbabilityModel.fit` take none,
+  `CalibratedClassifierCV` forwards none to its inner fits, and the final refit on the whole
+  training part would have no stopping set, so `n_estimators` would be undefined there; it
+  is already searched (50–400). Not applicable.
+
+**Which errors fail one trial (T2.3's F7),** by forced failures through `cv_score`:
+
+| Failure | Arrives as | Trial-specific? | Today |
+|---|---|---|---|
+| NB2 IRLS or penalized fit does not converge (`max_iter=1`; `_PENALIZED_MAX_ITER=1`) | `RuntimeError`, from 1 or 5 processes | yes (dispersion, alpha) | caught |
+| sklearn `ConvergenceWarning` under `PYTHONWARNINGS=error` (`max_iter=1`) | `sklearn.exceptions.ConvergenceWarning` from a worker; `catch=(ConvergenceWarning,)` would mark FAIL | yes (C, alpha) | ends the run, strict runs only |
+| the same in marimo (no `PYTHONWARNINGS`) | printed by the worker, the trial completes | – | nothing to catch |
+| a cohort unobserved in a fold's training rows | `ValueError` | no: the folds are fixed, every trial fails alike | ends the run, rightly |
+| `_check_rows_sum_to_one` | unreachable: the objective is fixed to `multiclass` | – | – |
+
+`catch` stays `(RuntimeError,)` (D19).
+
+**The `n_trials` / `n_startup_trials` evidence** (decided next):
+
+| Run | Best found at trial | Best so far at 100 / 150 / 200 | Least-tried choice | Wall |
+|---|---|---|---|---|
+| `lgbm_gaussian+lgbm`, start 10 (R0) | 148 | 2.1068 / 2.1066 / 2.1066 | 16 | 97 s |
+| the same, start 40 (R7) | 192 | 2.1228 / 2.1201 / 2.1127 | 18 | 310 s |
+| `lgbm_poisson+lgbm`, start 10 (R6a) | 130 | 2.1102 / 2.0820 / 2.0820 | 16 | 145 s |
+| Model 1 `poisson_glm`, start 10 (R8a) | 199 | 2.2519 / 2.2496 / 2.2490 | 6 | 30 s |
+
+A random start of 40 draws the large slow models at random (3× the time) and ends worse.
+At 200 the LightGBM runs stop improving by 150, and the GLM's last 50 trials gain 0.0006;
+400 trials gave the GLM nothing (handoff §3). Every choice was tried at least 6 times.
+Recommendation: keep 200 and 10.
+
+**Done when** (met 2026-10-22): the measurements above; the notebook unchanged (md5
+`eec46ac5cbec902ffdd98cce6f4c9cbd`); Check A green; the 200-trial values of R0, R6a and R8a
+equal T2.2's and the handoff's.
 
 ### [ ] T2.5 The best runs: bootstrap interval and feature importance (D18)
 
@@ -1969,8 +2040,8 @@ Under `src/age_group_prediction/hyperparameter_tuning/`:
 
 ## 7. The performance pass (decided 2026-10-21 by D13: folds in parallel, no pruning; the facts weighed)
 
-Revisited by T2.4 (the user's request, 2026-10-21) with Model 2's timings; the facts below are
-its starting point.
+Revisited by T2.4 (the user's request, 2026-10-21) with Model 2's timings; the facts below were
+its starting point, and T2.4 measured them on 2026-10-22: D13's choice stands (D19).
 
 - **Pruning mid-CV.** Optuna's `WilcoxonPruner` (4.9: `p_threshold=0.1`, `n_startup_steps=2`)
   is the pruner designed for a mean over fixed instances such as CV folds: it pairs fold k of

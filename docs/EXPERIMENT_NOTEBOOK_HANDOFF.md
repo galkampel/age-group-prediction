@@ -4,6 +4,8 @@
 parallelization check) and the sub-tasks after it.
 
 **Written:** 2026-10-21, after T2 (Model 2) was completed, reviewed and committed (T2.1–T2.3).
+**Updated:** 2026-10-22, after T2.4 (the pruning and parallelization check: today's design
+kept, D19).
 
 **The plan:** [NOTEBOOK_TUNING_PLAN.md](NOTEBOOK_TUNING_PLAN.md) holds the sub-tasks, the code
 and the checks. Read it in full before the first edit:
@@ -71,8 +73,8 @@ As built for both models, after the user's reviews (D1–D18):
 
 **The order of work** (one sub-task per approval, plan mode before each; the user reviews the
 design and commits):
-1. T2.4: does pruning or parallelization help, and where (§5 below).
-2. The `n_trials` / `n_startup_trials` decision, after T2.4 (§3 below).
+1. T2.4: does pruning or parallelization help, and where. Done 2026-10-22: no (§3 below).
+2. The `n_trials` / `n_startup_trials` decision, next (§3 below).
 3. T2.5: the best runs' bootstrap interval and feature importance (D18).
 4. T3: the metric constants leave `scoring.py`.
 5. T4a deletes the old package; T4b builds the new one from the notebook's code (D17).
@@ -81,8 +83,9 @@ design and commits):
 
 ## 2. State of the branch (2026-10-21)
 
-- **Branch:** `feat/experiment-notebook`, HEAD `7580304` (T2.3), tree clean.
-- **Notebook md5:** `eec46ac5cbec902ffdd98cce6f4c9cbd`.
+- **Branch:** `feat/experiment-notebook`, HEAD `1811551` (the handoff after T2.3); T2.4's
+  docs edits (this file and the plan) await the user's commit.
+- **Notebook md5:** `eec46ac5cbec902ffdd98cce6f4c9cbd` (unchanged by T2.4).
 - **The commits of the task:**
 
   | Sub-task | Commit |
@@ -98,6 +101,8 @@ design and commits):
   | Handoff after T1 | `58c3bcb` |
   | T2.1–T2.2, D16–D18 | `a2b8693` |
   | T2.3 (review, F1–F8) | `7580304` |
+  | Handoff after T2 | `1811551` |
+  | T2.4 and D19 (docs only) | awaiting commit |
 
   Check `git status` and `git log -3` first; the user may have edited since.
 - **Checks at HEAD:**
@@ -158,6 +163,13 @@ All are in the plan's §0 with their evidence:
   family; `use_exposure` its own column.
 - D17: T4 replaces the package, as T4a and T4b.
 - D18: the bootstrap and importance in T2.5; no wrapper for the two importance methods.
+- D19 (2026-10-22, T2.4): today's design stays: folds in parallel, no pruning, LightGBM
+  `n_jobs=1`, `catch=(RuntimeError,)`. Measured at 200 trials on the slowest pair
+  (`lgbm_gaussian+lgbm`, 97 s today): `WilcoxonPruner` 276–480 s, the 3 + 2 hybrid
+  169–326 s, trials in parallel 100–227 s and not reproducible; LightGBM threads and
+  in-model threads slower; concurrent joblib calls from threads in one process return
+  wrong scores (runs at once, `optimize(n_jobs>1)` with fold processes). The hotspot is the
+  calibration's inner folds (6 classifier fits per fold). The plan's T2.4 holds the tables.
 
 **Decided by the user, 2026-10-21:**
 - `y_min` stays a builder argument, recorded once per run with the seed. The seed is an
@@ -168,18 +180,25 @@ All are in the plan's §0 with their evidence:
 - **All 24 runs are kept,** so D6 stands. The GLM totals with the exposure off are about 0.6
   worse on CV in both models, and no run is dropped.
 - `scoring.Metric` keeps `direction` and `__call__` (HEAD's form, from `8ee091a`).
-- **TPE's random start, `n_startup_trials` (40 or 10; today the default, 10), is postponed**
-  until after T2.4, together with `n_trials` (200 today). Pruning and parallelization change
-  what a trial costs. The evidence so far, at 200 trials with the exposure on:
+- **TPE's random start, `n_startup_trials` (40 or 10; today the default, 10), is the next
+  decision**, together with `n_trials` (200 today); T2.4 left the cost of a trial as it
+  is. The evidence, at 200 trials with the exposure on:
 
-  | Run | Random start | Best | Found at trial | Least-tried transformer per cohort | Time |
+  | Run | Random start | Best | Found at trial | Least-tried choice | Time |
   |---|---|---|---|---|---|
-  | Poisson GLM | 10 | 2.2490 | 199 | 6, 9, 9 | 25 s |
+  | Poisson GLM | 10 | 2.2490 | 199 | 6, 9, 9 | 25–30 s |
   | Poisson GLM | 40 | 2.2490 | 184 | 9, 10, 11 | 29 s |
   | NB2 | 10 | 2.2428 | 23 | 9, 9, 9 | 112 s |
   | NB2 | 40 | 2.2426 | 123 | 7, 9, 11 | 100 s |
+  | Model 2 `lgbm_gaussian+lgbm` (T2.4) | 10 | 2.1066 | 148 | 16 | 97 s |
+  | Model 2 `lgbm_gaussian+lgbm` (T2.4) | 40 | 2.1127 | 192 | 18 | 310 s |
+  | Model 2 `lgbm_poisson+lgbm` (T2.4) | 10 | 2.0820 | 130 | 16 | 145 s |
 
-  - 400 trials left the Poisson GLM's best at 2.2490.
+  - 400 trials left the Poisson GLM's best at 2.2490. The best so far at trial 100 / 150 /
+    200: `lgbm_gaussian+lgbm` 2.1068 / 2.1066 / 2.1066, `lgbm_poisson+lgbm` 2.1102 /
+    2.0820 / 2.0820, the Poisson GLM 2.2519 / 2.2496 / 2.2490.
+  - A random start of 40 draws the large slow LightGBM models at random (3× the time) and
+    ended worse. T2.4's recommendation: keep 200 and 10.
   - Model 2's coverage at 10: the GLM totals' transformer 7–9, logistic's transformer 8–12,
     every LightGBM choice 16 or more, the calibration 12–34.
   - A change re-runs both models at 200 trials (about 30 min) and resets the Check C
@@ -258,20 +277,13 @@ The standing rules are in [NOTEBOOK_TUNING_PLAN.md](NOTEBOOK_TUNING_PLAN.md) §1
 
 ## 5. Open items
 
-- **T2.4 (next): does pruning or parallelization help, and where.** The plan's T2.4 lists
-  the steps:
-  1. Profile one trial of the slowest pairs (`nb2+lgbm`, `poisson_glm+lgbm`) and one Model 1
-     NB2 trial.
-  2. Measure each parallelization place: folds (today), LightGBM threads, inside the
-     composite (a `src` change), runs at once (D14 conflict), trials in parallel (loses the
-     seeded reproducibility).
-  3. Measure each pruning place: Wilcoxon across folds, two batches of folds, slow pairs
-     only, inside LightGBM.
-  4. Decide `catch`'s scope (T2.3's F7). Model 2's `ValueError` checks, and a
-     `ConvergenceWarning` under `PYTHONWARNINGS=error`, would end a whole run.
-  5. Report wall time, best values, reproducibility and the code each adds, with a
-     recommendation per place.
-  6. Then re-decide `n_trials` and `n_startup_trials`.
+- **T2.4: done 2026-10-22 (D19).** No pruning or parallelization place beats today's
+  design, two are unsafe, and `catch` stays `(RuntimeError,)`. What would shorten a run is
+  a modeling choice the user has not asked for: fewer calibration inner folds
+  (`calibration_cv`, 5 today), a lower `n_estimators` ceiling (400), or fewer trials.
+- **The `n_trials` / `n_startup_trials` decision (next):** the evidence is in §3 and the
+  plan's T2.4; a change re-runs both models at 200 (about 30 min) and resets the Check C
+  baselines.
 - **T2.5's open points** (in the plan):
   - how the fitted best model is obtained (the records keep none);
   - which split gets the interval: `best_df` selects on validation, so the interval there is
@@ -300,18 +312,17 @@ results. Then read notebooks/02_experiments.py section 5 (from the "## 5) Hyperp
 tuning" cell to the end), src/age_group_prediction/aggregation.py, scoring.py, and
 src/age_group_prediction/inspection/ (for T2.5).
 
-Expected state: branch feat/experiment-notebook, HEAD 7580304 (T2.3) or a later commit of
-mine, a clean tree, notebook md5 eec46ac5cbec902ffdd98cce6f4c9cbd. Verify HEAD, git status and
-the md5 first; if anything has changes the handoff does not name, stop and show me the diff.
-I commit, push and merge myself: never commit, never add a Co-Authored-By line, never git
-checkout/stash/reset/mv.
+Expected state: branch feat/experiment-notebook, HEAD 1811551 (the handoff after T2.3) or a
+later commit of mine, a clean tree, notebook md5 eec46ac5cbec902ffdd98cce6f4c9cbd. Verify
+HEAD, git status and the md5 first; if anything has changes the handoff does not name, stop
+and show me the diff. I commit, push and merge myself: never commit, never add a
+Co-Authored-By line, never git checkout/stash/reset/mv.
 
-Task: sub-task T2.4 of docs/NOTEBOOK_TUNING_PLAN.md: check whether pruning and
-parallelization help, and where. First profile where a trial's time goes, then measure each
-candidate place against today's (folds in parallel, no pruning) on wall time, best values and
-reproducibility, plus the scope of tune_model's catch (T2.3's F7). Recommend, and change
-nothing in the notebook without my approval. Then, in the plan's order: the n_trials /
-n_startup_trials decision, T2.5, T3, T4a, T4b, T5, one sub-task per approval. Work in plan
+Task: the n_trials / n_startup_trials decision (T2.4 is done: today's design stays, D19;
+the evidence is in the handoff's §3 and the plan's T2.4). Put the recommendation and the
+trade-off to me; a change re-runs both models at 200 trials and resets the Check C
+baselines, as its own sub-task. Then, in the plan's order: T2.5, T3, T4a, T4b, T5, one
+sub-task per approval. Work in plan
 mode for each: re-verify the plan's facts with read-only probes (PYTHONPATH=src
 .venv/bin/python -W error -c "..."), summarize the sub-task in the chat, and ask for approval
 before editing. Do not re-ask the decisions of the plan's §0 or the handoff's §3. Write the
