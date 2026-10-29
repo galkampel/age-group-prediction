@@ -12,8 +12,10 @@ planning session verified the state and measured the baselines of §1; it edited
 package from the experiment notebook" goes into `feat/experiment-notebook` and covers T4a.1–T5, one
 commit per sub-task; the notebook md5 unchanged `425b6cf3ff396a478ad08756c2211338`. The user
 paused there. **T4a.2 committed `ed1a770`** (the four docs deleted, the five guides point at the
-notebook). **T4a.3 done 2026-10-29** (the 11 notes, the status lines, Check A and Check C),
-awaiting the user's commit; the notebook md5 unchanged. T4a is complete. **Next: T4b.1.** The implementing session updates this line, ticks the sub-tasks of
+notebook). **T4a.3 committed `6935416`** (the 11 notes, the status lines, Check A and Check C);
+T4a is complete. **T4b.1 done 2026-10-29** (`params.py`, `components.py`, `search_spaces.py`
+and their tests; §3's T4b.1 result), awaiting the user's commit; the notebook md5 unchanged.
+**Next: T4b.2.** The implementing session updates this line, ticks the sub-tasks of
 §2, and records each sub-task's commit and the notebook's md5 in §1 as it goes; this file is the
 handoff for any session that continues the work.
 
@@ -326,6 +328,24 @@ for mypy strict, `__all__` per module, docstrings kept to what matters; `pyproje
 and `from_params`, the trial names `<name>__<parameter>`, `from_params` on a trial's params
 equals the objective's draws (the notebook test's check, D25.4), `KeyError` names a missing
 field. The notebook keeps its own cells until T4b.3.
+
+*Result (2026-10-29), awaiting the user's commit:* the three modules and `__init__.py`; an AST
+comparison with the notebook's classes (annotations and docstrings stripped) finds every class
+identical except the approved changes: the families as `type` statements; `calibration_method`
+and `CALIBRATION_METHODS` typed `CalibrationMethod | None` (precision only: mypy accepts
+`str | None`, since `CohortProbabilityModel`'s scikit-learn base is untyped); a `cast` in
+`suggest_calibration_method` (Optuna types a mixed list's draw as any choice type, with either
+annotation); local `estimator_params:` declarations in `from_params`; at the user's review,
+`type EstimatorParams` (the four records' union, `params.py`) bounds the generic
+`set_estimator_params[P: EstimatorParams]` (it was typeshed's private `DataclassInstance`, any
+dataclass) and types the abstract `suggest_hyperparameters`. mypy no issues in 26 files;
+48 new tests under `-W error`; the non-slow suite 1272 passed before the review's two added tests
+(1 skipped, 1 xfailed, 19 deselected); eight mutations (the `shared` filter, the raising `else`,
+the prefix, the LightGBM losses, the calibration and transformer read-backs, a defaulted field)
+each fail the tests. The independent review found no bug; it added the two `KeyError` cases and
+the docstring's "LightGBM" (the scikit-learn estimators and NB2 raise on a typo themselves); the
+bounds stay unpinned by tests (one source of truth; Check C catches a change). Pickling: the
+components and search spaces round-trip through pickle, cloudpickle and loky workers.
 
 **T4b.2** (builders, loop, aggregation): `builders.py`, `cross_validation.py`, `aggregation.py`
 moved from the root (update `tests/unit/test_aggregation.py`'s import, or move it to
