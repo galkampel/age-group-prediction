@@ -1,8 +1,8 @@
 """How a trial's fold scores are combined into the one value the study minimizes.
 
 An aggregation knows nothing about the data: it receives each fold's score
-(lower is better) and size (its validation rows), computed by the
-evaluator, and returns a number.
+(lower is better) and size (its validation rows), computed by
+``cv_score``, and returns a number.
 
 - :class:`WeightedMean`: the size-weighted mean. For a metric
   that is a mean over rows (MAE, Poisson deviance) it equals the pooled
@@ -26,7 +26,7 @@ import numpy as np
 from pydantic import Field
 from pydantic.dataclasses import dataclass as pydantic_dataclass
 
-from ._config import STRICT
+from .._config import STRICT
 
 __all__ = [
     "Aggregator",
@@ -82,7 +82,9 @@ class Aggregator(ABC):
     """
 
     @abstractmethod
-    def aggregate(self, scores: Sequence[float], fold_sizes: Sequence[int]) -> float:
+    def aggregate_scores(
+        self, scores: Sequence[float], fold_sizes: Sequence[int]
+    ) -> float:
         """The trial's value, from every fold's score and size."""
 
 
@@ -92,7 +94,9 @@ class Aggregator(ABC):
 class WeightedMean(Aggregator):
     """The mean score weighted by fold size."""
 
-    def aggregate(self, scores: Sequence[float], fold_sizes: Sequence[int]) -> float:
+    def aggregate_scores(
+        self, scores: Sequence[float], fold_sizes: Sequence[int]
+    ) -> float:
         """The size-weighted mean."""
         return _weighted_mean(scores, fold_sizes)
 
@@ -101,7 +105,9 @@ class WeightedMean(Aggregator):
 class Mean(Aggregator):
     """The unweighted mean of the fold scores."""
 
-    def aggregate(self, scores: Sequence[float], fold_sizes: Sequence[int]) -> float:
+    def aggregate_scores(
+        self, scores: Sequence[float], fold_sizes: Sequence[int]
+    ) -> float:
         """The unweighted mean."""
         _check_folds(scores, fold_sizes)
         return float(np.mean(scores))
@@ -120,6 +126,8 @@ class UpperBound(Aggregator):
 
     z: Annotated[float, Field(gt=0)] = 1.0
 
-    def aggregate(self, scores: Sequence[float], fold_sizes: Sequence[int]) -> float:
+    def aggregate_scores(
+        self, scores: Sequence[float], fold_sizes: Sequence[int]
+    ) -> float:
         """The weighted mean plus ``z`` standard errors."""
         return _weighted_mean(scores, fold_sizes) + self.z * corrected_std_error(scores)

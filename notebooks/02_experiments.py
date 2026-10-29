@@ -733,7 +733,7 @@ def _():
         root_mean_squared_error,
     )
 
-    from age_group_prediction.aggregation import Mean
+    from age_group_prediction.hyperparameter_tuning import Mean
     from age_group_prediction.inspection import (
         BootstrapEvaluator,
         PermutationImportance,
@@ -1415,7 +1415,7 @@ def _(Mean, Parallel, TPESampler, delayed, optuna, time):
             for train_index, val_index in folds
         )
         fold_sizes = [len(val_index) for _, val_index in folds]
-        return aggregator.aggregate(scores, fold_sizes)
+        return aggregator.aggregate_scores(scores, fold_sizes)
 
     def tune_model(
         suggest_model,

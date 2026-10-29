@@ -13,22 +13,27 @@ package from the experiment notebook" goes into `feat/experiment-notebook` and c
 commit per sub-task; the notebook md5 unchanged `425b6cf3ff396a478ad08756c2211338`. The user
 paused there. **T4a.2 committed `ed1a770`** (the four docs deleted, the five guides point at the
 notebook). **T4a.3 committed `6935416`** (the 11 notes, the status lines, Check A and Check C);
-T4a is complete. **T4b.1 done 2026-10-29** (`params.py`, `components.py`, `search_spaces.py`
-and their tests; §3's T4b.1 result), awaiting the user's commit; the notebook md5 unchanged.
-**Next: T4b.2.** The implementing session updates this line, ticks the sub-tasks of
+T4a is complete. **T4b.1 committed `2765196`** (`params.py`, `components.py`,
+`search_spaces.py` and their tests). **T4b.2 done 2026-10-29** (`builders.py`,
+`cross_validation.py`, `aggregation.py` moved in, the root module removed, the notebook's `Mean`
+import, `Aggregator.aggregate` renamed `aggregate_scores`; §3's T4b.2 result), awaiting the
+user's commit; the notebook md5 `e8a0942fff75f66e6173d6b47ba162a4`. **Next: T4b.3.** The implementing session updates this line, ticks the sub-tasks of
 §2, and records each sub-task's commit and the notebook's md5 in §1 as it goes; this file is the
 handoff for any session that continues the work.
 
 **The prompt for the implementing session:**
 
 ```text
-Read docs/NOTEBOOK_T4_HANDOFF.md in full, then the documents its reading order lists. Verify
-its §1 state first (branch refactor/hyperparameter-tuning-package, HEAD my commit of the
-handoff update right after 5c0908a, git status clean, the notebook md5); if anything differs,
-stop and show me the diff. Then T4a.2 in plan
-mode: re-verify its facts with read-only probes, write the steps and the commit message in the
-chat, and wait for my approval before editing. One sub-task per approval; I commit myself. At
-each stop also give me the updated lines of draft PR #17's body.
+Read docs/NOTEBOOK_T4_HANDOFF.md in full, then the documents its reading order lists, and
+src/age_group_prediction/hyperparameter_tuning/ (T4b.1–T4b.2, already moved from the notebook)
+with its tests tests/unit/test_hyperparameter_tuning_*.py. Verify the state of the status line
+first (branch refactor/hyperparameter-tuning-package, HEAD my commit of T4b.2 right after
+2765196, git status clean, the notebook md5 e8a0942fff75f66e6173d6b47ba162a4); if anything
+differs, stop and show me the diff. Then wait for my notes on the package: plan each in plan
+mode (re-verify the facts with read-only probes, give a recommendation with evidence and the
+trade-off for any design question, write the steps and the commit message in the chat) and
+wait for my approval before editing. Without notes, the next sub-task is T4b.3, planned the
+same way. One sub-task per approval; I commit myself.
 ```
 
 **Repository:** `/Users/galkampel/Desktop/Projects/age-group-prediction`, branch
@@ -41,7 +46,8 @@ The source-of-truth documents, in reading order:
 3. `docs/NOTEBOOK_COMPONENT_REDESIGN_PLAN.md` §0 and §6 (the history of D23–D24; its code blocks
    are superseded by the notebook);
 4. `notebooks/02_experiments.py` from the `## 4) Feature variants` cell (line 378) to the end
-   (line 4446); `src/age_group_prediction/aggregation.py`;
+   (line 4446); `src/age_group_prediction/hyperparameter_tuning/` (since T4b.2 it holds the
+   aggregators too; the root `aggregation.py` is gone);
    `tests/characterization/test_experiments_notebook.py`.
 
 ## 0. The rules (the user's, standing)
@@ -77,9 +83,9 @@ The source-of-truth documents, in reading order:
   `.venv/bin/marimo`; `uv` at `~/.local/bin/uv` (`uv run --frozen mypy`). optuna 4.9.0, joblib
   1.5.3, lightgbm 4.7.0, scikit-learn 1.9.0, pandas 3.0.5.
 - **The pull request** is draft #17 from `refactor/hyperparameter-tuning-package` into
-  `feat/experiment-notebook` (the user opened it after T4a.1). At each stop also give the
-  updated lines of its body (the sub-task's checkbox ticked with its commit, the verification
-  results) for the user to paste. Never push or edit the PR yourself.
+  `feat/experiment-notebook` (the user opened it after T4a.1). The user updates its body only
+  for the final PR (said 2026-10-29): no PR lines at each stop; write the full body after T5.
+  Never push or edit the PR yourself.
 - `uv run --frozen mypy` re-syncs the project's editable install in `.venv` (no dependency
   changes; harmless). Use mypy's default cache: a cold cache in the scratchpad took over 6 min
   under load.
@@ -355,6 +361,35 @@ after another, `tune_model`'s `catch=(RuntimeError,)`, `n_startup_trials` reachi
 `_config.py`'s docstring names the package again. The notebook's import of `Mean` moves to the
 package path in T4b.3 (or here, if the root module goes here: then T4b.2 touches the one
 notebook import line and Checks A/B/C run).
+
+*Result (2026-10-29), awaiting the user's commit:* the root module went here (the user's
+choice): `aggregation.py` moved into the package (`from .._config`; its docstring names
+`cv_score` instead of the deleted evaluator), its tests as
+`test_hyperparameter_tuning_aggregation.py` (the import line only), the root module and its mypy
+entries removed, `_config.py`'s docstring, and the notebook's line 736 imports `Mean` from the
+package (md5 `766ac2cce2e4efe342b827110e58a331`; then `e8a0942fff75f66e6173d6b47ba162a4` after the
+rename below). `builders.py` and `cross_validation.py`: an AST
+comparison finds the eight functions identical to the notebook's (annotations, docstrings,
+decorators aside); typed with `fit_and_score[M: BaseAgeGroupModel]`,
+`Callable[[optuna.Trial], BaseAgeGroupModel]`, `BaseCrossValidator`, `Groups | None`; no cast
+needed. Two comments changed: the objective's "not to a cell" dropped, and "with both flags
+False it is HEAD's" now names the order the 24 baselines were recorded with. mypy no issues in
+28 files; the package's tests 95 under `-W error`; the non-slow suite 1294 passed before the
+review's two added tests (1 skipped, 1 xfailed, 19 deselected). Check A: the notebook test 12,
+ruff 14, the format hunks -158 and -213, `marimo check` the two known issues. Check B: `Mean`
+(from `hyperparameter_tuning.aggregation`), `tune_model`, the components, `COHORTS`,
+`PREDICTION_FLOOR` defined; `MODEL1_RUNS`, `MODEL2_RUNS`, `best_df` are not in an unclicked run
+(their cells read the button-gated run records) and are in Check C's. Check C (both flags
+`False`): the 24 baselines, no warning, 165.9 s. Mutations: thirteen (the shared draw, the
+replication, `y_min`, the aggregator, `catch` removed or widened, `n_startup_trials`, the
+direction, the composite's metric, the seeds of both models, the two transformer dicts swapped,
+`n_jobs` ignored) each fail the tests. The independent review found no bug; its four test gaps
+(the seeds, the dict swap, `n_jobs`; a fold process's `RuntimeError`) and two stale texts were
+fixed. `n_startup_trials` is read from Optuna's private `_n_startup_trials` (no public reader).
+Then, at the user's note, `Aggregator.aggregate` became `aggregate_scores` (the four
+definitions, `cv_score`, the aggregation tests, and the notebook's own `cv_score` cell, line
+1418, which calls the package's `Mean` since this sub-task); mypy 28 files, the package's tests
+95, Check A as above, Check C the 24 baselines (151.1 s, no warning).
 
 **T4b.3** (the notebook imports the package): the class and function cells (params, components,
 search spaces, builders, cross-validation, `fit_and_score`) go; the import cell imports them from

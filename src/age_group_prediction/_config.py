@@ -1,4 +1,4 @@
-"""The pydantic config shared by the user-built value objects of ``aggregation`` and ``inspection``."""
+"""The pydantic config shared by the user-built value objects of ``hyperparameter_tuning.aggregation`` and ``inspection``."""
 
 from __future__ import annotations
 

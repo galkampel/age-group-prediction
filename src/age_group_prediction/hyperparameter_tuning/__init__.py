@@ -9,6 +9,13 @@
 :mod:`~age_group_prediction.hyperparameter_tuning.search_spaces`
     Every Optuna call: one component's choices, sampled under
     ``<name>__<parameter>``.
+:mod:`~age_group_prediction.hyperparameter_tuning.builders`
+    The two composite models, built from components or from a trial's draws.
+:mod:`~age_group_prediction.hyperparameter_tuning.cross_validation`
+    A model's cross-validated score, the study that tunes it, the refit of
+    the best on the training part.
+:mod:`~age_group_prediction.hyperparameter_tuning.aggregation`
+    How a trial's fold scores are combined into its value.
 
 The code comes from the experiment notebook's section 5
 (``notebooks/02_experiments.py``); the design and its decisions are in
@@ -17,6 +24,19 @@ The code comes from the experiment notebook's section 5
 
 from __future__ import annotations
 
+from .aggregation import (
+    Aggregator,
+    Mean,
+    UpperBound,
+    WeightedMean,
+    corrected_std_error,
+)
+from .builders import (
+    build_independent_cohorts_model,
+    build_total_times_probability_model,
+    suggest_independent_cohorts_model,
+    suggest_total_times_probability_model,
+)
 from .components import (
     Component,
     CountComponent,
@@ -24,6 +44,7 @@ from .components import (
     ProbabilityComponent,
     ProbabilityFamily,
 )
+from .cross_validation import cv_score, fit_and_score, fold_score, tune_model
 from .params import (
     EstimatorParams,
     LGBMParams,
@@ -38,6 +59,7 @@ from .search_spaces import (
 )
 
 __all__ = [
+    "Aggregator",
     "Component",
     "ComponentSearchSpace",
     "CountComponent",
@@ -46,9 +68,21 @@ __all__ = [
     "EstimatorParams",
     "LGBMParams",
     "LogisticParams",
+    "Mean",
     "NB2Params",
     "PoissonGLMParams",
     "ProbabilityComponent",
     "ProbabilityFamily",
     "ProbabilitySearchSpace",
+    "UpperBound",
+    "WeightedMean",
+    "build_independent_cohorts_model",
+    "build_total_times_probability_model",
+    "corrected_std_error",
+    "cv_score",
+    "fit_and_score",
+    "fold_score",
+    "suggest_independent_cohorts_model",
+    "suggest_total_times_probability_model",
+    "tune_model",
 ]

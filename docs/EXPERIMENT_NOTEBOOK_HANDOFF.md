@@ -250,7 +250,7 @@ All are in the plan's §0 with their evidence:
 **Decided by the user, 2026-10-21:**
 - `y_min` stays a builder argument, recorded once per run with the seed. The seed is an
   argument of `make_estimator`.
-- `evaluate` is not changed. `Aggregator.aggregate` stays a named method.
+- `evaluate` is not changed. `Aggregator.aggregate` stays a named method (`aggregate_scores` since 2026-10-29, the user's note on T4b.2).
 - `num_leaves` above `2**max_depth` (T1's F7) is left as a known inefficiency.
 - Model 2 has all 16 run cells and no `MODEL2_TOTALS` list.
 - **All 24 runs are kept,** so D6 stands. The GLM totals with the exposure off are about 0.6

@@ -11,7 +11,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from age_group_prediction.aggregation import (
+from age_group_prediction.hyperparameter_tuning.aggregation import (
     Aggregator,
     Mean,
     UpperBound,
@@ -32,9 +32,11 @@ STD_ERROR = math.sqrt(13 / 12 * (1 / 3 + 1 / 2))
 
 
 class _Median(Aggregator):
-    """A custom rule: only aggregate is defined."""
+    """A custom rule: only aggregate_scores is defined."""
 
-    def aggregate(self, scores: Sequence[float], fold_sizes: Sequence[int]) -> float:
+    def aggregate_scores(
+        self, scores: Sequence[float], fold_sizes: Sequence[int]
+    ) -> float:
         return float(np.median(scores))
 
 
@@ -80,7 +82,7 @@ def test_singleton_strata_make_the_std_error_conservative() -> None:
 def test_each_aggregation_matches_the_hand_value(
     aggregation: Aggregator, expected: float
 ) -> None:
-    value = aggregation.aggregate(SCORES, FOLD_SIZES)
+    value = aggregation.aggregate_scores(SCORES, FOLD_SIZES)
     assert value == pytest.approx(expected)
     # Plain Python numbers: sqlite storage rejects numpy scalars as user attrs.
     assert type(value) is float
@@ -89,13 +91,13 @@ def test_each_aggregation_matches_the_hand_value(
 @pytest.mark.parametrize("aggregation", [WeightedMean(), Mean(), UpperBound()])
 def test_no_folds_are_rejected(aggregation: Aggregator) -> None:
     with pytest.raises(ValueError, match="at least one fold"):
-        aggregation.aggregate([], [])
+        aggregation.aggregate_scores([], [])
 
 
 @pytest.mark.parametrize("aggregation", [WeightedMean(), Mean(), UpperBound()])
 def test_unequal_lengths_are_rejected(aggregation: Aggregator) -> None:
     with pytest.raises(ValueError, match="equal lengths, got 3 and 2"):
-        aggregation.aggregate(SCORES, [20, 5])
+        aggregation.aggregate_scores(SCORES, [20, 5])
 
 
 @pytest.mark.filterwarnings("error")
