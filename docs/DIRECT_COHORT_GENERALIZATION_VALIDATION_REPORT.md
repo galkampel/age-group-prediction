@@ -10,6 +10,8 @@ into `feat/hyperparameter-tuning` at `1ea99e9`. **Date:** 2026-10-05. **Brief:**
 > no default, which the signature enforces).
 > They are kept in commit `c966edb`: `git show c966edb:docs/validation/pr12/<file>`.
 
+> **2026-10-29:** the `hyperparameter_tuning` package this document names was removed with its docs ([NOTEBOOK_TUNING_PLAN.md](NOTEBOOK_TUNING_PLAN.md) D17, T4a); T4b rebuilds it from the experiment notebook's section 5.
+
 ## 1. Verdict: ACCEPT WITH NOTES
 
 The code implements every decision of the plan's §2 as stated, and each one is backed by a probe

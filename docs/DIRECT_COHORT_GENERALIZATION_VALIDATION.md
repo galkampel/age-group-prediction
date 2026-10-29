@@ -5,6 +5,8 @@
 > no default, which the signature enforces).
 > They are kept in commit `c966edb`: `git show c966edb:docs/validation/pr12/<file>`.
 
+> **2026-10-29:** the `hyperparameter_tuning` package this document names was removed with its docs ([NOTEBOOK_TUNING_PLAN.md](NOTEBOOK_TUNING_PLAN.md) D17, T4a); T4b rebuilds it from the experiment notebook's section 5.
+
 **For:** an independent validating session with no memory of the implementation. **Written:** 2026-10-05.
 **Under validation:** branch `feat/estimator-and-feature-transformer` (PR #12, draft, into
 `feat/hyperparameter-tuning`), which implemented

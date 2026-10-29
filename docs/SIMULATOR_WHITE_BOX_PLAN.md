@@ -1,5 +1,7 @@
 # Plan: the white-box simulator
 
+> **2026-10-29:** the `hyperparameter_tuning` package this document names was removed with its docs ([NOTEBOOK_TUNING_PLAN.md](NOTEBOOK_TUNING_PLAN.md) D17, T4a); T4b rebuilds it from the experiment notebook's section 5.
+
 **Written for:** the model that implements each stop (Opus), and the user
 who verifies it. Self-contained: re-verify every fact against the code of
 the day before relying on it.

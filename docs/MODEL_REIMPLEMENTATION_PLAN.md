@@ -4,6 +4,8 @@
 `feat/hyperparameter-tuning`. Draft PR #6 merges into `feat/hyperparameter-tuning` (PR #5's branch).
 > **2026-10-05, [DIRECT_COHORT_GENERALIZATION_PLAN.md](DIRECT_COHORT_GENERALIZATION_PLAN.md) (PR #12):** `DirectCohortModel` takes any regressor as `estimator`, with the exposure as a weighted rate (`objective`, the ten LightGBM hyperparameters, `init_score`, `regressor_` and `base_log_rate_` are gone); each leaf model takes its own `feature_transformer`, and `ModelPipeline` is removed. This plan's record below is kept as it was.
 
+> **2026-10-29:** the `hyperparameter_tuning` package this document names was removed with its docs ([NOTEBOOK_TUNING_PLAN.md](NOTEBOOK_TUNING_PLAN.md) D17, T4a); T4b rebuilds it from the experiment notebook's section 5.
+
 **Status (2026-09-24):** Phases 0, 1 and 2 are done, including the docs cleanup in
 Step 2.6. The non-slow suite gives **956 passed**. PR #6 was squash-merged into `feat/hyperparameter-tuning` as `aee3e6a`. Next: roadmap
 step 2 (§5). *2026-10-01: roadmap step 3 is done too (Models A and B rebuilt,

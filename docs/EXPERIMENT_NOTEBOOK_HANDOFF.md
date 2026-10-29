@@ -130,10 +130,13 @@ design and commits):
   under `<name>__` and `shared__`, `Component.set_estimator_params`); the objectives are one loop
   each; the run cells set `_best_components` explicitly; the readers and
   `total_times_probability_search_spaces` removed; NOTEBOOK_TUNING_PLAN.md §0 D25.1–D25.4; the
-  notebook test 17/17, Check C the 24 baselines, the shared probe 2.1812).
-  T3, the redesign, D24, D25 and the docs committed together as `15932d7` (2026-10-29). **Next: T4a.1**,
-  planned with T4a.2–T4a.3, T4b and T5 in [NOTEBOOK_T4_HANDOFF.md](NOTEBOOK_T4_HANDOFF.md) (2026-10-29),
-  the handoff the implementing session reads first and updates.
+  notebook test 12/12, Check C the 24 baselines, the shared probe 2.1812).
+  T3, the redesign, D24, D25 and the docs committed together as `15932d7` (2026-10-29). T4a done
+  2026-10-29 on `refactor/hyperparameter-tuning-package` (draft PR #17 into
+  `feat/experiment-notebook`): T4a.1 `5c0908a`, T4a.2 `ed1a770`, T4a.3 awaiting the user's commit;
+  the notebook unchanged. **Next: T4b.1**, planned with T4b.2, T4b.3 and T5 in
+  [NOTEBOOK_T4_HANDOFF.md](NOTEBOOK_T4_HANDOFF.md) (2026-10-29), the handoff the implementing
+  session reads first and updates.
 - **The commits of the task:**
 
   | Sub-task | Commit |
@@ -151,7 +154,13 @@ design and commits):
   | T2.3 (review, F1–F8) | `7580304` |
   | Handoff after T2 | `1811551` |
   | T2.4 and D19 (docs only) | `9075dd7` |
-  | The budget sub-task, D20, D21 (notebook, test, docs) | awaiting commit |
+  | The budget sub-task, D20, D21 (notebook, test, docs) | `10d6e83` |
+  | T2.5 and D22 | `de94ac8` |
+  | T3, D23–D25 and the docs | `15932d7` |
+  | The T4 handoff | `e2a4f78`, `6f4b479` |
+  | T4a.1 (the old package's code) | `5c0908a` |
+  | T4a.2 (the current guides) | `ed1a770` |
+  | T4a.3 (the finished plans, the status lines) | awaiting commit |
 
   Check `git status` and `git log -3` first; the user may have edited since.
 - **Checks at HEAD:**

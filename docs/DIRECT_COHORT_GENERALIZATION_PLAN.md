@@ -1,5 +1,7 @@
 # Plan: Any regressor in `DirectCohortModel`, and the feature transformer inside each model
 
+> **2026-10-29:** the `hyperparameter_tuning` package this document names was removed with its docs ([NOTEBOOK_TUNING_PLAN.md](NOTEBOOK_TUNING_PLAN.md) D17, T4a); T4b rebuilds it from the experiment notebook's section 5.
+
 **Branch:** `feat/estimator-and-feature-transformer`, from `feat/hyperparameter-tuning` (where `modeling/` lives; PRs #6–#11 used the same base). PR into `feat/hyperparameter-tuning`.
 **Status (2026-10-05):** **All steps done** (draft PR #12; Steps 0–6 committed, Step 7's doc updates await the user's commit). The PR awaits review. Follow-up, by the user's decision a separate PR: the mixed fitted state after a failed refit in `TotalChildrenModel` and `CohortProbabilityModel` (Step 3's open finding). Handoff for the implementing session: `DIRECT_COHORT_GENERALIZATION_HANDOFF.md`. Baseline `uv run pytest -m "not slow"`: **1221 passed, 1 skipped, 1 xfailed**; after Step 1: **1224 passed**; after Step 2: **1232 passed** (1233 before the revision removed one test). After Step 3: **1239 passed**. After Step 4: **1232 passed** (the 5 `ModelPipeline` tests and its 5 contract cases removed, 3 added). After Step 5: **1230 passed** (2 evaluator tests removed).
 **Source of truth:** this file. Update its status and checkboxes at every stop.

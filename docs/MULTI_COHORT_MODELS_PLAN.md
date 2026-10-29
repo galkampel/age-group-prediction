@@ -8,6 +8,8 @@ This file is the source of truth: update its status line and checkboxes as steps
 
 > **2026-10-07, [TOTAL_TIMES_PROBABILITY_MODEL_PLAN.md](TOTAL_TIMES_PROBABILITY_MODEL_PLAN.md):** Model 2 is rebuilt again on library estimators (`TotalTimesProbabilityModel`: `CountModel`, the renamed `DirectCohortModel`, for the total, with NB2 as statsmodels' `NegativeBinomialRegressor`; a scikit-learn classifier for the cohort probabilities; no torch; done 2026-10-08, PR #13). The §9 B-steps below (the torch build) are superseded; their record is kept as it was.
 
+> **2026-10-29:** the `hyperparameter_tuning` package this document names was removed with its docs ([NOTEBOOK_TUNING_PLAN.md](NOTEBOOK_TUNING_PLAN.md) D17, T4a); T4b rebuilds it from the experiment notebook's section 5.
+
 **Status (2026-09-30):** **PR A is merged** (PR #10, merge commit `27459eb`
 into `feat/hyperparameter-tuning`; steps A0–A4 and the close-out `01837d4`).
 PR B's branch `feat/independent-total-probability-model` was created from

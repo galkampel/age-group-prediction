@@ -11,8 +11,9 @@ planning session verified the state and measured the baselines of §1; it edited
 (from `e2a4f78`, pushed), whose draft PR #17 "refactor(tuning): rebuild the hyperparameter_tuning
 package from the experiment notebook" goes into `feat/experiment-notebook` and covers T4a.1–T5, one
 commit per sub-task; the notebook md5 unchanged `425b6cf3ff396a478ad08756c2211338`. The user
-paused there. **T4a.2 done 2026-10-29** (the four docs deleted, the five guides point at the
-notebook), awaiting the user's commit; the notebook md5 unchanged. **Next: T4a.3.** The implementing session updates this line, ticks the sub-tasks of
+paused there. **T4a.2 committed `ed1a770`** (the four docs deleted, the five guides point at the
+notebook). **T4a.3 done 2026-10-29** (the 11 notes, the status lines, Check A and Check C),
+awaiting the user's commit; the notebook md5 unchanged. T4a is complete. **Next: T4b.1.** The implementing session updates this line, ticks the sub-tasks of
 §2, and records each sub-task's commit and the notebook's md5 in §1 as it goes; this file is the
 handoff for any session that continues the work.
 
@@ -237,7 +238,7 @@ INDEPENDENT_COHORT_MODELS and SPLITTING name the notebook's section 5 as
 the tuning; the new guide comes with T5.
 ```
 
-### [ ] T4a.3 The finished plans, the status lines, the notebook checks
+### [x] T4a.3 The finished plans, the status lines, the notebook checks
 
 1. In each of the 11 finished plans of §1 add one line, directly under the title (or under the
    existing dated notes some of them already carry), nothing else:
@@ -264,6 +265,17 @@ the tuning; the new guide comes with T5.
 
 **Done when:** the 11 notes present and nothing else changed in those files (`git diff --stat`
 shows +1 per file); the status lines updated; Check A and Check C as above; md5 unchanged.
+
+**Result (2026-10-29), awaiting the user's commit:** the 11 notes, each `2 0` in
+`git diff --numstat` (the note and a blank line: a `>` line directly after a paragraph or
+another quote merges into it), the note linking the plan and saying the docs went too; the
+status lines; 17 → 12 in the three places. Also, approved with the plan: the commits table of
+EXPERIMENT_NOTEBOOK_HANDOFF.md §2 lost its stale row (the budget sub-task is `10d6e83`) and its
+gap (T2.5, `15932d7`, the T4 handoff). Check A: the notebook test 12 passed, ruff 14, the format
+hunks -158 and -213 only, `marimo check` the two known empty cells. Check C (both sharing flags
+`False` in the copy, so the arm of the 24 baselines; the copy's `n_trials = 400` replaced by
+line, since the markdown at line 672 holds the same string): all 24 baselines to the fourth
+decimal, no warning under `PYTHONWARNINGS=error`, 117.7 s with the inspection. md5 unchanged.
 
 **Commit message:**
 ```
