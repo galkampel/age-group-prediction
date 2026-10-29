@@ -1,513 +1,549 @@
 # Hyperparameter Tuning
 
-> The `age_group_prediction.hyperparameter_tuning` package: Optuna tuning of the
-> rebuilt `modeling` models, split into three independent parts. Parameters say
-> which values a hyperparameter may take; `CVHyperparameterEvaluator` scores one
-> trial by cross-validation; `HyperparameterStudy` runs the search and reports the
-> winner. Built and tested on PR #5; the experiment notebook
-> ([plan](EXPERIMENT_NOTEBOOK_PLAN.md)) is its first client. The decisions
-> (D1–D20), the design with its measured evidence and the test table are in the
-> [tuning plan](HYPERPARAMETER_TUNING_PLAN.md). The old stack's tuning
-> (`tuning.py`, inside `models/`) is described in
-> [MODELING_GUIDE.md](MODELING_GUIDE.md#hyperparameter-tuning) until it is deleted.
+> The `age_group_prediction.hyperparameter_tuning` package tunes the two rebuilt composites,
+> the independent cohorts model (Model 1) and the total times probability model (Model 2),
+> with plain Optuna and a cross-validation loop written out in full. A trial draws each
+> component's choices, the components are set as complete records, and the composite is
+> built from them with constructor calls: there are no `set_params` paths. The code was
+> rebuilt from section 5 of the experiment notebook (`notebooks/02_experiments.py`), which
+> is its first client. The decisions and their measured evidence are D1–D26 of the
+> [notebook tuning plan](NOTEBOOK_TUNING_PLAN.md), above all D21 (what lives in the package),
+> D25 (components read back from `best_params`) and D26 (the tuner).
 
-Every code block below was run as written on 2026-10-11 (Optuna 4.9.0); the
-numbers are its output. The blocks build on each other in order.
+Every code block below was run as written on 2026-10-29 (optuna 4.9.0, joblib 1.5.3,
+LightGBM 4.7.0, scikit-learn 1.9.0); the numbers are its output. The blocks build on each
+other in order.
 
 ## 1. The Parts
 
-| part | answers | class |
+| module | answers | main names |
 |---|---|---|
-| parameters | which values may each hyperparameter take? | `FloatParameter`, `IntParameter`, `CategoricalParameter` |
-| evaluator | how is one trial scored? | `CVHyperparameterEvaluator` with an `Aggregator` |
-| study | how does Optuna search, and which trial won? | `HyperparameterStudy` → `TuningResult` |
+| `params` | which hyperparameters an estimator family searches | `LGBMParams`, `PoissonGLMParams`, `NB2Params`, `LogisticParams`, `EstimatorParams` |
+| `components` | what one part of a composite is: family, transformer, estimator params | `CountComponent`, `ProbabilityComponent` (`from_params`, `make_estimator`, `to_dict`), `CountFamily`, `ProbabilityFamily` |
+| `search_spaces` | how a trial samples one component's choices | `CountSearchSpace`, `ProbabilitySearchSpace` |
+| `builders` | which components a trial draws for a composite, and the composite built from components | `suggest_independent_cohorts_components`, `suggest_total_times_probability_components`, `build_independent_cohorts_model`, `build_total_times_probability_model` |
+| `cross_validation` | a model's cross-validated score, and the study of each composite | `CrossValidationTuner` |
+| `evaluation` | the refit of the best model, scored on training and validation | `fit_and_score` |
+| `aggregation` | how a trial's fold scores become its value | `Mean`, `WeightedMean`, `UpperBound`, `Aggregator`, `corrected_std_error` |
 
-One trial flows through them like this: the study asks Optuna for a trial; the
-evaluator suggests every parameter once, builds one copy of the model with them
-(`clone` + `set_params`), fits and scores it on each fold of a seeded
-`Splitter.cv` validator, and returns the aggregated score; the study keeps the
-best COMPLETE trial and a record of every trial. Imports go one way,
-`evaluator → parameters, aggregation, modeling, scoring, utils`; the study
-knows only the aggregation's standard error and accepts any `trial -> float`
-objective. Nothing here is re-exported from `age_group_prediction`'s root:
-import from `age_group_prediction.hyperparameter_tuning`.
+The dependencies run one way: `params` ← `components` ← `search_spaces` ← `builders` ←
+`cross_validation`, which also uses `aggregation`; within the package, `evaluation` and
+`aggregation` stand alone. Import from `age_group_prediction.hyperparameter_tuning`; nothing is re-exported from
+the project's root.
+
+What lives here is the mechanism: records a test can pin down and another notebook could
+reuse. What stays in the notebook is the reading of one experiment (D21): the candidate
+feature transformers of each family, the metrics, the settings, one cell per run, the tables
+and the inspection. The package holds no runner over runs, no results table, no MLflow and
+no transformer registry; the candidates are injected, as scikit-learn's
+`GridSearchCV(param_grid=...)` takes its grid.
 
 ## 2. The Worked Example
 
-Model 1 ([Independent cohort models](INDEPENDENT_COHORT_MODELS.md)): one
-`CountModel` with a LightGBM Poisson regressor per cohort, each tuned by its own
-study, then assembled and refit. The data are the simulator at 20 neighborhoods
-(79 buildings); `tree` is the declaration of
-[Feature transformations §8.1](FEATURE_TRANSFORMATIONS.md), copied until it
-lives in `src` (the notebook plan's D1).
-
-```python
-import optuna
-from lightgbm import LGBMRegressor
-
-from age_group_prediction.feature_engineering import FeatureTransformer, OneHot, Plan
-from age_group_prediction.hyperparameter_tuning import (
-    CVHyperparameterEvaluator,
-    FloatParameter,
-    HyperparameterStudy,
-    IntParameter,
-)
-from age_group_prediction.modeling import CountModel, IndependentCohortModels
-from age_group_prediction.preprocessing import ExposureTransformer, ShareTransformer
-from age_group_prediction.scoring import POISSON_DEVIANCE
-from age_group_prediction.splitting import Splitter
-from age_group_prediction.utils import take_rows
-from student_simulator import StudentPopulationSimulator, load_simulation_config
-
-optuna.logging.set_verbosity(optuna.logging.WARNING)
-
-config = load_simulation_config("configs/simulation.yml")
-config = config.with_overrides({"simulation": {"n_neighborhoods": 20}})
-table = ShareTransformer(
-    ("3_rooms", "4_rooms", "5_rooms", "6_rooms"), reference_column="3_rooms"
-).fit_transform(StudentPopulationSimulator(config).run())
-cohorts = ["n_kindergarten", "n_elementary", "n_highschool"]
-
-one_hot = Plan(
-    name="one_hot",
-    transforms=(OneHot(categories=("none", "existing", "planned"), reference_category="none"),),
-)
-tree = FeatureTransformer(
-    column_plans=(
-        (
-            Plan(name="passthrough"),
-            ["4_rooms_share", "5_rooms_share", "6_rooms_share", "ses",
-             "avg_household_size", "median_age", "n_daycares_500m", "n_apartments"],
-        ),
-        (one_hot, ["school_status"]),
-    )
-)
-
-# The exposure on the full table; then every array is taken by the split's positions.
-exposure = ExposureTransformer("n_apartments").fit_transform(table)
-groups = table["neighborhood_id"]
-splitter = Splitter("stratified_by_group")
-train_index, test_index = splitter.train_test_indices(table, groups, test_size=0.2, random_state=42)
-train, test = take_rows(table, train_index), take_rows(table, test_index)
-groups_train = take_rows(groups, train_index)
-exposure_train, exposure_test = take_rows(exposure, train_index), take_rows(exposure, test_index)
-
-parameters = [
-    IntParameter("estimator__max_depth", 3, 8),
-    IntParameter("estimator__num_leaves", 7, 63),
-    IntParameter("estimator__min_child_samples", 5, 40),
-    FloatParameter("estimator__learning_rate", 0.01, 0.2, log=True),
-    IntParameter("estimator__n_estimators", 50, 400),
-    FloatParameter("estimator__reg_alpha", 1e-8, 10.0, log=True),
-    FloatParameter("estimator__reg_lambda", 1e-8, 10.0, log=True),
-    FloatParameter("estimator__min_split_gain", 0.0, 1.0),
-    FloatParameter("estimator__subsample", 0.7, 1.0),
-    FloatParameter("estimator__colsample_bytree", 0.7, 1.0),
-]
-evaluator = CVHyperparameterEvaluator(
-    CountModel(
-        # subsample_freq=1: LightGBM ignores subsample without it. n_jobs=1: one thread.
-        estimator=LGBMRegressor(objective="poisson", subsample_freq=1, n_jobs=1, verbosity=-1, random_state=0),
-        use_exposure=True,
-        feature_transformer=tree,
-    ),
-    parameters,
-    cv=splitter.cv(n_splits=5, random_state=42),
-    metric=POISSON_DEVIANCE,
-)
-
-results, models = {}, {}
-for i, cohort in enumerate(cohorts):
-    y_train = train[cohort]
-    results[cohort] = HyperparameterStudy(seed=100 + i, n_trials=30).optimize(
-        lambda trial: evaluator.evaluate(trial, train, y_train, groups_train, exposure=exposure_train)
-    )
-    models[cohort] = evaluator.build_model(results[cohort].best_params)
-
-model = IndependentCohortModels(models).fit(train, train[cohorts], exposure=exposure_train)
-prediction = model.predict(test, exposure=exposure_test)
-
-result = results["n_elementary"]
-best = result.trials[result.best_trial_number]
-print(result.metric_name, round(result.best_value, 3), round(best.std_error, 3), result.best_trial_number)
-print({k: (round(v, 4) if isinstance(v, float) else v) for k, v in result.best_params.items()})
-print(prediction.shape)
-```
-
-```text
-poisson_deviance 1.812 0.225 13
-{'estimator__max_depth': 8, 'estimator__num_leaves': 21, 'estimator__min_child_samples': 11, 'estimator__learning_rate': 0.0308, 'estimator__n_estimators': 134, 'estimator__reg_alpha': 1.3506, 'estimator__reg_lambda': 0.0, 'estimator__min_split_gain': 0.3634, 'estimator__subsample': 0.8965, 'estimator__colsample_bytree': 0.9262}
-(20, 3)
-```
-
-The three studies (90 trials, 450 LightGBM fits) and the refit took 9 s. The
-names are `set_params` keys: `estimator__…` reaches the `CountModel`'s
-estimator; `num_leaves` and `max_depth` are sampled independently (LightGBM caps
-the leaves by depth). The same loop, as a test, is
-`tests/unit/test_hyperparameter_tuning_integration.py`.
-
-## 3. Parameters
-
-A search space is a plain list of parameters. Each is a frozen, strict pydantic
-dataclass, validated when created rather than at the first trial: pydantic checks
-the types (`IntParameter("p", 1.5, 9)` fails; so does a numpy bound, use
-`int(x)`), then Optuna's own distribution class checks the values, and four
-rules Optuna lets through silently are added: a step that does not divide the
-range (Optuna would quietly lower `high`), duplicate choices (double weight), a
-NaN or infinite float choice, and, in the evaluator, duplicate names (Optuna
-would reuse the first value).
-
-| class | Optuna call | arguments |
-|---|---|---|
-| `FloatParameter(name, low, high, *, log=False, step=None)` | `suggest_float` | `log` needs `low > 0`; `step` must divide `high − low`; not both |
-| `IntParameter(name, low, high, *, log=False, step=1)` | `suggest_int` | `log` needs `low ≥ 1` and `step == 1` |
-| `CategoricalParameter(name, choices)` | `suggest_categorical` | choices are `None`, `bool`, `int`, finite `float` or `str`; a list is stored as a tuple; a set is rejected (its order varies between runs) |
-| `KeyedParameter(name, choices)` | `suggest_categorical` over the keys | `choices` is a `Mapping[str, Any]`, stored read-only; the trial gets a key, `resolve(key)` gives its object (a `FeatureTransformer`) |
-
-Choices are restricted to Optuna's own scalar types (D18) because Optuna hands a
-choice back by reference: a list choice edited through a result changed the kept
-study and the parameter itself, and a tuple or an object cannot be written to
-JSON. For the same reason a NaN or infinite float choice is rejected: it would reach
-`best_params`, and strict JSON cannot write it. A `np.float64` is a `float` and is kept
-as given; a `np.int64` is rejected. An object choice goes through `KeyedParameter`:
-Optuna sees the string keys, so `best_params` stays JSON and `FixedTrial(best_params)`
-checks key membership, and the evaluator's `build_model` resolves the key to its object
-(§4). The keys are stored in a read-only copy (`MappingProxyType`), so an item assigned
-to the caller's dict later cannot change what a key resolves to; that copy does not
-survive plain `pickle`, while joblib's loky workers and cloudpickle carry it.
-
-```python
-import numpy as np
-
-from age_group_prediction.hyperparameter_tuning import CategoricalParameter
-
-for build in (
-    lambda: FloatParameter("estimator__learning_rate", 0.0, 1.0, step=0.3),
-    lambda: CategoricalParameter("calibration_method", [None, "temperature", "temperature"]),
-    lambda: CategoricalParameter("estimator__max_depth", [np.int64(3), np.int64(5)]),
-    lambda: IntParameter("estimator__max_depth", np.int64(3), 8),
-):
-    try:
-        build()
-    except ValueError as error:
-        print(error.errors()[0]["msg"])
-```
-
-```text
-Value error, parameter 'estimator__learning_rate': The distribution is specified by [0.0, 1.0] and step=0.3, but the range is not divisible by `step`. It will be replaced with [0.0, 0.9].
-Value error, parameter 'calibration_method': choices must be unique, got (None, 'temperature', 'temperature')
-Value error, choices must be None, bool, int, float or str, got [np.int64(3), np.int64(5)]
-Input should be a valid integer
-```
-
-Conditional or derived parameters (a parameter suggested only on some branches)
-are out of scope (D9).
-
-## 4. The Evaluator
-
-`CVHyperparameterEvaluator(model, parameters, *, cv, metric, aggregation=WeightedMean())`
-holds the settings (scikit-learn style: settings in the constructor, data as
-method arguments) and checks them when built: `model` is a
-`modeling.BaseAgeGroupModel`, `cv` a scikit-learn cross-validator (only the type is
-checked: build it with `Splitter.cv(n_splits=..., random_state=int)`, so every trial
-sees identical folds, D3; a seedless one would give each trial different folds),
-`metric` a `scoring.Metric`,
-`aggregation` an `Aggregator` (§5). Each check prevents a failure that would
-otherwise come after a fold was fitted.
-
-`evaluate(trial, X, y, groups=None, *, exposure=None) -> float` does, per trial:
-
-1. suggest every parameter once and build one copy of the model
-   (`build_model(params)`: each keyed parameter's key resolved to its object,
-   then `clone` and `set_params`, which raises on a misspelt name);
-2. for each fold, slice `X`, `y` and `exposure` by position (`take_rows`), fit the
-   copy on the training rows (the model fits its own `feature_transformer` there,
-   so no validation statistic leaks), predict and score the validation rows with
-   `model.evaluate(y_val, y_val_pred, metric)`;
-3. negate the score if the metric's direction is "maximize", so the study always
-   minimizes (D12); raise on a NaN or infinite score (Optuna would store it
-   silently); report the fold's own score to the pruner (§7);
-4. after the last fold, record `fold_scores`, `fold_sizes`, `metric_name` and
-   `direction` on the trial (the study reads them) and return
-   `aggregation.aggregate(scores, fold_sizes)`.
-
-`X` is the raw table (a numpy array works only with a model that takes the
-design matrix, i.e. `feature_transformer=None`). `y` is one target: a Series or
-array for `CountModel`, the (buildings × cohorts) count DataFrame for
-`CohortProbabilityModel` with `COHORT_LOG_LOSS`. `groups` are the neighborhood
-ids for the grouped and stratified methods and `None` for `random` (`KFold`
-warns otherwise). `exposure` is the raw count from `ExposureTransformer`, one
-value per row of `X` (checked; a longer one would be sliced to size silently).
-
-Two uses beyond a study. `optuna.trial.FixedTrial(params)` scores one setting
-without a search, with the same folds; and an **empty search space** scores a
-model as it is (D20), here NB2 at its defaults, in a study of one trial (more
-trials would repeat the same fit):
-
-```python
-from optuna.trial import FixedTrial
-
-from age_group_prediction.modeling import NegativeBinomialRegressor
-
-one = evaluator.evaluate(FixedTrial(result.best_params), train, train["n_elementary"], groups_train, exposure=exposure_train)
-print(round(one, 3), one == result.best_value)
-
-nb2 = CVHyperparameterEvaluator(
-    CountModel(estimator=NegativeBinomialRegressor(), use_exposure=True, feature_transformer=tree),
-    [],
-    cv=splitter.cv(n_splits=5, random_state=42),
-    metric=POISSON_DEVIANCE,
-)
-nb2_result = HyperparameterStudy(seed=0, n_trials=1).optimize(
-    lambda trial: nb2.evaluate(trial, train, train["n_elementary"], groups_train, exposure=exposure_train)
-)
-print(nb2_result.best_params, round(nb2_result.best_value, 3), round(nb2_result.trials[0].std_error, 3), len(nb2_result.trials))
-```
-
-```text
-1.812 True
-{} 2.247 0.454 1
-```
-
-## 5. Aggregation
-
-An aggregation turns a trial's fold scores into the one value the study
-minimizes. It takes plain lists and knows nothing about the data.
-
-| class | trial value | use it |
-|---|---|---|
-| `WeightedMean()` (default) | `Σ nₖ·scoreₖ / Σ nₖ` | almost always: for a per-row mean metric (MAE, Poisson deviance) it is the pooled score a test set would report |
-| `Mean()` | `mean(scoreₖ)` | to match `cross_val_score(...).mean()` |
-| `UpperBound(z=1.0)` | `weighted mean + z·SE` | a loss's pessimistic bound, to prefer stable settings over the best average |
-
-`UpperBound` is a penalty on each candidate's **own** uncertainty, not the
-one-SE rule (the simplest model within one SE of the best): a noisy candidate
-loses even when its mean lies inside the best one's interval. `z=1.645` is
-roughly a one-sided 95% bound. Its ranking is noisier than the mean's, because
-the SE is estimated from only K scores; and its `best_value` is not the CV mean,
-so log the aggregation beside it.
-
-The SE is `corrected_std_error(scores)`: Nadeau–Bengio's correction in its K-fold
-form, `s · sqrt(1/K + n_val/n_train)` with `n_val/n_train = 1/(K−1)`, `s` the
-scores' standard deviation (ddof=1). The naive `s/sqrt(K)` ignores that the folds
-share most of their training rows, so it understates how much the whole CV
-estimate would vary on new data. The correction is an approximation of that
-variance, not an exact formula: the `1/(K−1)` identity holds when every row is
-validated once (`random`, `grouped`; under `stratified_by_group` rows alone in
-their stratum are never validated, so the true ratio is a little smaller), and
-for a predictor that does not depend on its training rows there is nothing to
-correct and it overstates (measured, a fixed predictor on 5 folds: true SE 0.061,
-corrected 0.090, naive 0.060). It needs at least 2 folds, which `Splitter.cv`
-guarantees. The study stores it per trial as `TrialRecord.std_error`.
-
-```python
-from collections.abc import Sequence
-
-from age_group_prediction.hyperparameter_tuning import Aggregator, Mean, UpperBound, WeightedMean, corrected_std_error
-
-scores, sizes = [3.0, 5.0, 4.5], [20, 5, 3]
-print(WeightedMean().aggregate(scores, sizes), Mean().aggregate(scores, sizes), round(corrected_std_error(scores), 4), round(UpperBound().aggregate(scores, sizes), 4))
-
-stable = [1.0 - 0.05 / np.sqrt(3), 1.0 + 0.05 / np.sqrt(3)]  # mean 1.00, SE 0.05
-simple = [1.03 - 0.2 / np.sqrt(3), 1.03 + 0.2 / np.sqrt(3)]  # mean 1.03, SE 0.20: within one SE of the stable one
-print(round(UpperBound().aggregate(stable, [1, 1]), 2), round(UpperBound().aggregate(simple, [1, 1]), 2))
-
-
-class Median(Aggregator):
-    def aggregate(self, scores: Sequence[float], fold_sizes: Sequence[int]) -> float:
-        return float(np.median(scores))
-
-
-print(Median().aggregate(scores, sizes))
-```
-
-```text
-3.517857142857143 4.166666666666667 0.9501 4.468
-1.05 1.23
-4.5
-```
-
-A custom rule subclasses `Aggregator` with the one method; for a rule with a
-validated setting, decorate it as `UpperBound` is (a frozen pydantic dataclass
-with the package's strict config).
-
-## 6. The Study
-
-`HyperparameterStudy(*, seed, n_trials=50, sampler=None, pruner=None)` holds
-the search settings; `optimize(objective) -> TuningResult` runs it. The default
-sampler is `TPESampler(seed=seed, multivariate=True)`, built afresh for each
-`optimize`, so two calls on one study draw the same trials; a given `sampler` is
-used as is and the seed is then unused (but still recorded: every study's seed
-is logged). The default pruner is `NopPruner`. Trials run one after the other;
-a timeout, parallel jobs and warm-start trials were dropped because no client
-uses them (D19). The study always minimizes; `n_trials < 1` and a misspelt
-keyword are rejected.
-
-`optimize` returns the best **COMPLETE** trial (a pruned trial's value comes
-from fewer folds, D8), chosen here rather than by Optuna's `best_trial`, with a
-tie going to the lowest trial number; it raises `RuntimeError` when no trial
-completed. The Optuna study stays on the object as `optuna_study_`, also when
-the search raised, for `optuna.visualization` or inspection.
-
-`TuningResult`: `best_params` (a copy), `best_value`, `best_trial_number`,
-`metric_name` (the evaluator's; `None` for a plain objective) and `trials`, one
-`TrialRecord` per COMPLETE, PRUNED or FAIL trial (`number`, `state`, `params`,
-`value`, `fold_values`, `fold_sizes`, `std_error`). Values are the metric in its
-**own sign** (an R² searched as −0.7 is reported as 0.7; a loss is reported as it
-is); the search-side numbers stay in `optuna_study_`. All but `number`, `state`
-and `params` are `None` unless the trial is COMPLETE: a pruned trial's Optuna
-value is its last intermediate, not a CV score. A plain objective's trial has
-`fold_values` and `std_error` `None`. `to_dict()` is JSON-safe (the state by
-name, tuples as lists), for MLflow artifacts.
+The notebook's data (sections 1–3: the simulator at 150 neighborhoods × 9 buildings, the
+`random` split of [Splitting §3](SPLITTING.md#3-train-validation-and-test), seed 42), two
+candidate transformers per family, and one short study of each composite. The notebook runs
+the same calls at 400 trials, one cell per family and exposure.
 
 ```python
 import json
 
-payload = result.to_dict()
-print(sorted(payload), sorted(payload["trials"][0]))
-print(json.loads(json.dumps(payload)) == payload)
+import optuna
+import pandas as pd
+from sklearn.metrics import mean_poisson_deviance
 
-plain = HyperparameterStudy(seed=0, n_trials=3).optimize(lambda t: (t.suggest_float("x", -1, 1) - 0.2) ** 2)
-print(plain.metric_name, [round(t.value, 3) for t in plain.trials], plain.trials[0].fold_values)
+from age_group_prediction.feature_engineering import FeatureTransformer, OneHot, Plan, Quadratic, Standardize, CenterByReferencePoint
+from age_group_prediction.hyperparameter_tuning import (
+    CountComponent, CrossValidationTuner, ProbabilityComponent,
+    build_independent_cohorts_model, build_total_times_probability_model, fit_and_score,
+)
+from age_group_prediction.preprocessing import ExposureTransformer, ShareTransformer
+from age_group_prediction.scoring import Metric, cohort_poisson_deviance
+from age_group_prediction.splitting import Splitter
+from age_group_prediction.utils import AgeGroupDataset
+from student_simulator import (
+    ApartmentSimulator, BuildingSimulator, CohortCompositionSimulator, NeighborhoodSimulator,
+    StudentPopulationSimulator, TotalChildrenSimulator, load_simulation_config,
+)
+
+# Optuna logs every trial at INFO.
+optuna.logging.set_verbosity(optuna.logging.WARNING)
+
+# The data of the notebook's sections 1-3: 150 neighborhoods, the random split, seed 42.
+config = load_simulation_config("configs/simulation.yml").with_overrides({
+    "simulation": {"n_neighborhoods": 150},
+    "building": {"buildings_per_neighborhood_rate": 9.0},
+})
+simulator = StudentPopulationSimulator(
+    NeighborhoodSimulator(config.simulation, config.neighborhood),
+    BuildingSimulator(config.simulation, config.building, config.transforms),
+    ApartmentSimulator(config.simulation, config.building.room_mix),
+    TotalChildrenSimulator(config.simulation, config.total_children, config.transforms),
+    CohortCompositionSimulator(
+        config.simulation, config.cohort, config.transforms, config.total_children
+    ),
+    n_neighborhoods=config.simulation.n_neighborhoods,
+    seed=config.simulation.seed,
+)
+df = ShareTransformer(
+    ("3_rooms", "4_rooms", "5_rooms", "6_rooms"), reference_column="3_rooms"
+).fit_transform(simulator.simulate().dataset)
+cohorts = ["n_kindergarten", "n_elementary", "n_highschool"]
+X = df.drop(columns=["building_id", "neighborhood_id", *cohorts])
+Y = df[cohorts]
+exposure = ExposureTransformer("n_apartments").fit_transform(df)
+
+splitter = Splitter("random")
+train_val_index, test_index = splitter.train_test_indices(df, None, test_size=0.2, random_state=42)
+train_sub, val_sub = splitter.train_test_indices(
+    df.iloc[train_val_index], None, test_size=0.25, random_state=42
+)
+train, val = (
+    AgeGroupDataset(
+        X.iloc[index], Y.iloc[index], exposure.iloc[index],
+        df["neighborhood_id"].iloc[index], df["building_id"].iloc[index],
+    )
+    for index in (train_val_index[train_sub], train_val_index[val_sub])
+)
+print(len(train.X), len(val.X), len(test_index))
 ```
 
 ```text
-['best_params', 'best_trial_number', 'best_value', 'metric_name', 'trials'] ['fold_sizes', 'fold_values', 'number', 'params', 'state', 'std_error', 'value']
-True
-None [0.01, 0.053, 0.0] None
+917 306 306
 ```
 
-## 7. Pruning
-
-The evaluator reports each fold's own score at `step = fold`, the contract of
-Optuna's `WilcoxonPruner`, which pairs fold k across trials. Use
-`WilcoxonPruner` or `SuccessiveHalvingPruner` for cross-validation, never
-`MedianPruner` or `PercentilePruner`: those compare a trial's *best* value over
-its steps, a learning-curve assumption, and on folds of unequal difficulty they
-prune by fold luck (measured in the plan, §4.2). The folds run in a fixed order
-in every trial, although Optuna's Wilcoxon docs suggest shuffling: measured,
-shuffling changed little under Wilcoxon and made successive halving worse,
-because it compares trials at the same step, which must then be the same fold.
-Pruning pays with many folds; on this 5-fold example `WilcoxonPruner()` at its
-default `p_threshold=0.1` pruned nothing, and `SuccessiveHalvingPruner()` at its
-defaults completed only 2 of 30 trials. `WilcoxonPruner` emits Optuna's
-`ExperimentalWarning` once, when constructed.
+The candidates are the experiment's data. The tuner holds the study's design, which every
+run shares; each call then names a composite, its settings and its seed.
 
 ```python
-from optuna.pruners import WilcoxonPruner
-
-y_train = train["n_elementary"]
-pruned_study = HyperparameterStudy(seed=101, n_trials=30, pruner=WilcoxonPruner(p_threshold=0.2))
-pruned = pruned_study.optimize(
-    lambda trial: evaluator.evaluate(trial, train, y_train, groups_train, exposure=exposure_train)
+# Each family's candidate transformers, by name: the experiment's data, not the package's.
+room_shares = ["4_rooms_share", "5_rooms_share", "6_rooms_share"]
+numeric = [*room_shares, "ses", "avg_household_size", "median_age", "n_daycares_500m"]
+school = (
+    Plan(name="one_hot", transforms=(
+        OneHot(categories=("none", "existing", "planned"), reference_category="none"),
+    )),
+    ["school_status"],
 )
-states = [t.state.name for t in pruned.trials]
-fits = sum(len(t.intermediate_values) for t in pruned_study.optuna_study_.trials)
-print(states.count("COMPLETE"), states.count("PRUNED"), fits, round(pruned.best_value, 3), round(result.best_value, 3))
+ses_squared = (
+    Plan(name="square_around_0", transforms=(CenterByReferencePoint(reference_point=0.0), Quadratic())),
+    ["ses"],
+)
+standardize = Plan(name="standardize", transforms=(Standardize(),))
+# The trees take n_apartments as a feature too; the GLMs take it as the exposure only.
+tree_candidates = {
+    "tree": FeatureTransformer(
+        column_plans=((Plan(name="passthrough"), [*numeric, "n_apartments"]), school)
+    ),
+    "tree__ses_quadratic": FeatureTransformer(
+        column_plans=((Plan(name="passthrough"), [*numeric, "n_apartments"]), ses_squared, school)
+    ),
+}
+glm_candidates = {
+    "glm_base": FeatureTransformer(column_plans=((standardize, numeric), school)),
+    "glm__ses_quadratic": FeatureTransformer(
+        column_plans=((standardize, numeric), school, ses_squared)
+    ),
+}
+
+# The study's design, shared by every run: the metric scores each fold and
+# gives the direction; 5 folds fitted in 5 processes.
+COHORT_POISSON_DEVIANCE = Metric("cohort_poisson_deviance", cohort_poisson_deviance)
+tuner = CrossValidationTuner(
+    cv=splitter.cv(n_splits=5, random_state=42),
+    metric=COHORT_POISSON_DEVIANCE,
+    n_trials=20,
+    n_startup_trials=10,
+    n_jobs=5,
+)
+print(tuner.cv, tuner.aggregator, tuner.n_trials, tuner.n_startup_trials, tuner.n_jobs)
 ```
 
 ```text
-18 12 130 1.694 1.812
+KFold(n_splits=5, random_state=42, shuffle=True) Mean() 20 10 5
 ```
-
-Twelve trials were pruned, saving 20 of 150 fits. The best value differs from
-the unpruned run of the same seed because pruned trials change what the sampler
-has seen; the folds themselves are unchanged.
-
-## 8. Reproducibility
-
-The study's `seed` covers the default sampler only. What it does not cover must
-be seeded on its own: the estimator (`random_state` on `LGBMRegressor`), a
-sampler you pass in, the split
-(`Splitter.train_test_indices(..., random_state=...)`) and the folds
-(`Splitter.cv(..., random_state=...)`, required). With those fixed, the same
-seed gives an identical result, trial for trial, because the trials run one
-after the other with a fixed count:
 
 ```python
-again = HyperparameterStudy(seed=101, n_trials=30).optimize(
-    lambda trial: evaluator.evaluate(trial, train, y_train, groups_train, exposure=exposure_train)
+# The independent cohorts model: LightGBM's Poisson loss, the exposure on, one
+# set of hyperparameters for every cohort, each cohort its own transformer.
+study_1, seconds_1 = tuner.tune_independent_cohorts_model(
+    train.X, train.Y, train.exposure,
+    family="lgbm_poisson",
+    use_exposure=True,
+    cohorts=cohorts,
+    feature_transformer_dict=tree_candidates,
+    share_hyperparams=True,
+    share_feature_transformer=False,
+    y_min=1e-9,
+    random_state=42,
+    study_seed=42,
 )
-print(again == result)
+print(f"{study_1.best_value:.4f}", len(study_1.trials), len(study_1.best_params))
+print(sorted({name.split("__")[0] for name in study_1.best_params}))
+print({name: value for name, value in study_1.best_params.items() if name.endswith("transformer")})
 ```
 
 ```text
-True
+2.1569 20 13
+['n_elementary', 'n_highschool', 'n_kindergarten', 'shared']
+{'n_kindergarten__feature_transformer': 'tree', 'n_elementary__feature_transformer': 'tree__ses_quadratic', 'n_highschool__feature_transformer': 'tree'}
 ```
 
-The examples also set LightGBM's `n_jobs=1`. LightGBM guarantees identical
-results across thread counts only with `deterministic=True` (its parameter
-docs), so one thread is the safe default. Measured on LightGBM 4.7.0 (8 cores),
-1, 2, 4 and 8 threads gave bit-identical fits in all seven settings tried
-(60 to 400 000 rows, up to 500 columns, Poisson with weights and bagging, row-
-and column-wise histograms, `deterministic=True`), and the worked example's
-study with 1, 4 and 8 threads was identical too: on this setup the thread count
-changes the speed, not the fit.
+With `share_hyperparams=True` the ten LightGBM hyperparameters are drawn once, under
+`shared__`, and each cohort still draws its transformer: 13 parameters instead of 33.
 
-The notebook plan uses one logged `seed` for every random component (E12);
-the i-th study of a run, per cohort or component, gets `seed + i`.
+```python
+# The total times probability model: a Poisson GLM total with the exposure,
+# logistic cohort probabilities with a searched calibration.
+study_2, seconds_2 = tuner.tune_total_times_probability_model(
+    train.X, train.Y, train.exposure,
+    total_family="poisson_glm",
+    probability_family="logistic",
+    use_exposure=True,
+    total_feature_transformer_dict=glm_candidates,
+    probability_feature_transformer_dict=glm_candidates,
+    y_min=1e-9,
+    random_state=42,
+    study_seed=43,
+)
+print(f"{study_2.best_value:.4f}")
+print({name: round(value, 4) if isinstance(value, float) else value
+       for name, value in study_2.best_params.items()})
+```
 
-## 9. Making A Model Tunable
+```text
+2.2520
+{'total__alpha': 0.0018, 'total__feature_transformer': 'glm__ses_quadratic', 'probability__C': 24.8263, 'probability__calibration_method': 'sigmoid', 'probability__feature_transformer': 'glm__ses_quadratic'}
+```
 
-The evaluator tunes any `modeling.BaseAgeGroupModel` (D17). A model is tunable
-when it stores its constructor settings verbatim and validates in `fit`: it then
-gets `get_params`, `set_params` and `clone` from scikit-learn's `BaseEstimator`,
-and a contract test (`tests/unit/test_modeling_contract.py`) runs scikit-learn's
-parameter checks over every model in the package. Nested names reach inside:
-`estimator__alpha` for a `CountModel`'s regressor, `total_model__estimator__alpha`
-and `probability_model__calibration_method` for `TotalTimesProbabilityModel`.
+A study keeps every trial; only the best is refit. Its components are read back from
+`best_params` by the component types (§3), built the same way the objective built them,
+refit on the whole training part and scored on both parts:
 
-`IndependentCohortModels` forwards `cohort_models__<cohort>__<param>` into its mapping
-(and `cohort_models__<cohort>` replaces one model), so Model 1 is tuned as one study on
-the composite with `COHORT_POISSON_DEVIANCE`, each cohort's parameters named by its
-prefix ([Independent cohort models §3](INDEPENDENT_COHORT_MODELS.md#3-independentcohortmodels)).
-Model 2 is tuned as two studies (the notebook plan's
-E4): the total `CountModel` on `POISSON_DEVIANCE` of `y.sum(axis=1)` and the
-`CohortProbabilityModel` on `COHORT_LOG_LOSS` of `y`; the tuned components are
-then assembled into one `TotalTimesProbabilityModel` and refit.
+```python
+# The best components, read back from best_params by their type, then built,
+# refit on the whole training part and scored on training and validation.
+best_components_1 = tuple(
+    CountComponent.from_params(
+        study_1.best_params, name=cohort, family="lgbm_poisson",
+        use_exposure=True, feature_transformer_dict=tree_candidates,
+    )
+    for cohort in cohorts
+)
+best_total = CountComponent.from_params(
+    study_2.best_params, name="total", family="poisson_glm",
+    use_exposure=True, feature_transformer_dict=glm_candidates,
+)
+best_probability = ProbabilityComponent.from_params(
+    study_2.best_params, name="probability", family="logistic",
+    feature_transformer_dict=glm_candidates,
+)
+POISSON_DEVIANCE = Metric("poisson_deviance", mean_poisson_deviance)
+for label, model in [
+    ("model 1", build_independent_cohorts_model(best_components_1, y_min=1e-9, random_state=42)),
+    ("model 2", build_total_times_probability_model(
+        best_total, best_probability, y_min=1e-9, random_state=42
+    )),
+]:
+    _, score_table = fit_and_score(
+        model, train, val, cohort_metric=POISSON_DEVIANCE, metric=COHORT_POISSON_DEVIANCE
+    )
+    print(label)
+    print(pd.DataFrame(score_table).round(4).to_string(index=False))
+```
+
+```text
+model 1
+        cohort  train    val
+n_kindergarten 1.4953 2.2851
+  n_elementary 1.2335 1.9329
+  n_highschool 1.4479 2.1662
+     composite 1.3922 2.1281
+model 2
+        cohort  train    val
+n_kindergarten 2.3719 2.4573
+  n_elementary 1.9832 2.0303
+  n_highschool 2.1978 2.0501
+     composite 2.1843 2.1792
+```
+
+The refit's training scores are in-sample; the validation column is the one that compares
+runs (the notebook's `best_df`). What a run keeps:
+
+```python
+# What a run keeps: every trial, and each best component as plain data.
+record = json.loads(json.dumps(best_total.to_dict()))
+print(sorted(record))
+print(record["estimator_params"], record["feature_transformer"]["column_plans"][0]["plan"]["name"])
+trials = study_2.trials_dataframe()
+print(len(trials), sorted(column for column in trials.columns if column.startswith("params_")))
+```
+
+```text
+['estimator_params', 'family', 'feature_transformer', 'name', 'use_exposure']
+{'alpha': 0.0017885780393720311} standardize
+20 ['params_probability__C', 'params_probability__calibration_method', 'params_probability__feature_transformer', 'params_total__alpha', 'params_total__feature_transformer']
+```
+
+## 3. The Records
+
+**Params records** (`params`) hold an estimator family's searched hyperparameters and
+nothing else. They are frozen and keyword-only, and their field names are the estimator's
+keywords, so a component makes its estimator as `Estimator(<fixed settings>,
+**asdict(params))`. A typo raises when the record is built; LightGBM would accept
+`max_dept=3` and fit silently (D11). `LGBMParams` serves the regressor and the classifier.
+`EstimatorParams` is the union of the four.
+
+**Components** (`components`) are complete records of one part of a run: `name` (a cohort,
+or `"total"` / `"probability"`), `family`, `feature_transformer` (the object itself) and
+`estimator_params`; `CountComponent` adds `use_exposure`, `ProbabilityComponent`
+`calibration_method`. A component is set in one of two ways: by its constructor from a
+trial's draws (the objective, §5), or by `from_params(best_params, *, name, family, ...,
+feature_transformer_dict)` from a study's parameters (the refit). `from_params` takes the
+entries under `<name>__` and under `shared__` (a choice is shared or the component's own,
+never both), fills the family's record field by field, so a missing entry raises `KeyError`
+naming it, and resolves the transformer's name through the dict.
+
+`make_estimator(*, random_state=None)` is an `if`/`elif` on the family with a raising
+`else`. Each family adds fixed settings to the record's values:
+
+| family | estimator | fixed settings |
+|---|---|---|
+| `lgbm_poisson` | `LGBMRegressor` | `objective="poisson"`, `subsample_freq=1`, `n_jobs=1`, `verbosity=-1`, `random_state` |
+| `lgbm_gaussian` | `LGBMRegressor` | `objective="regression"`, the rest as above |
+| `poisson_glm` | `PoissonRegressor` | `max_iter=1000` |
+| `nb2` | `NegativeBinomialRegressor` | — |
+| `logistic` | `LogisticRegression` | `max_iter=1000` |
+| `lgbm` (probability) | `LGBMClassifier` | `objective="multiclass"`, `subsample_freq=1`, `n_jobs=1`, `verbosity=-1`, `random_state` |
+
+LightGBM's two losses are separate families (D6): TPE samples each parameter on its own,
+so it cannot learn that good hyperparameters differ per loss. `subsample_freq=1` is needed
+for `subsample` to act; `n_jobs=1` keeps the parallel folds from oversubscribing the cores
+(D19). `to_dict()` gives the record as plain data, the transformer by its declaration
+(`FeatureTransformer.to_dict()`: each plan with its columns, the interactions, the
+remainder).
+
+```python
+from age_group_prediction.hyperparameter_tuning import NB2Params
+
+# A typo is caught when the record is built (LightGBM would accept it silently).
+try:
+    NB2Params(dispersion=0.15, alpah=0.01)
+except TypeError as error:
+    print(error)
+# A missing entry is named when a component is read back.
+try:
+    CountComponent.from_params(
+        {"total__dispersion": 0.15, "total__feature_transformer": "glm_base"},
+        name="total", family="nb2", use_exposure=True, feature_transformer_dict=glm_candidates,
+    )
+except KeyError as error:
+    print(repr(error))
+print(best_total.make_estimator(random_state=42))
+print(best_components_1[0].make_estimator(random_state=42).get_params()["objective"])
+```
+
+```text
+NB2Params.__init__() got an unexpected keyword argument 'alpah'. Did you mean 'alpha'?
+KeyError('alpha')
+PoissonRegressor(alpha=0.0017885780393720311, max_iter=1000)
+poisson
+```
+
+## 4. The Search Spaces
+
+A search space holds every Optuna call for one component and builds nothing (D10, D11).
+Given the component's `name`, its `family` and its candidate transformers' names, it samples
+under `<name>__<parameter>`: `suggest_hyperparameters(trial)` dispatches to the family's
+explicit `suggest_<family>_hyperparams`, `suggest_feature_transformer_name(trial)` draws a
+name (Optuna's choices must be primitives; the caller resolves the object through its dict,
+D25.1), and `ProbabilitySearchSpace.suggest_calibration_method(trial)` draws from
+`CALIBRATION_METHODS`. The separator is `__` because cohort names hold `_`.
+
+| family | parameter | range |
+|---|---|---|
+| LightGBM (both losses, and the classifier) | `max_depth` | 3–8 |
+| | `num_leaves` | 7–63 |
+| | `min_child_samples` | 5–40 |
+| | `learning_rate` | 0.01–0.2, log |
+| | `n_estimators` | 50–400 |
+| | `reg_alpha`, `reg_lambda` | 1e-8–10, log |
+| | `min_split_gain` | 0–1 |
+| | `subsample`, `colsample_bytree` | 0.7–1 |
+| `poisson_glm` | `alpha` | 1e-4–10, log |
+| `nb2` | `dispersion` | 0.01–1, log (the estimated dispersions are 0.12–0.18) |
+| | `alpha` | 1e-3–1, log (from the unpenalized fit to all-zero coefficients) |
+| `logistic` | `C` | 1e-3–100, log |
+| probability, any family | `calibration_method` | `None`, `"temperature"`, `"sigmoid"` |
+
+Isotonic calibration is not a candidate: its lowest score block can hold no child of a
+cohort and then maps a building there to probability 0, an infinite log loss (measured with
+the LightGBM classifier). The search spaces read nothing back; a study's `best_params` is
+read by the components (§3).
+
+## 5. The Builders
+
+`suggest_independent_cohorts_components(trial, *, family, use_exposure, cohorts,
+feature_transformer_dict, share_hyperparams, share_feature_transformer)` returns one
+`CountComponent` per cohort; `suggest_total_times_probability_components(trial, *,
+total_family, probability_family, use_exposure, total_feature_transformer_dict,
+probability_feature_transformer_dict)` returns the total's component and the probabilities'.
+They draw and set components only; `y_min` and `random_state` are build settings (D26.1).
+
+The two sharing flags of the independent cohorts model (D23–D24): a shared choice is drawn
+once, before the cohorts, under `shared__`, and every cohort takes it; otherwise each cohort
+draws its own under `<cohort>__`. With LightGBM and three cohorts a trial draws 33
+parameters with neither flag, 13 with `share_hyperparams`, 11 with both. Partial sharing
+keeps the per-cohort feature choice (daycares matter for kindergarten, not for high school)
+while TPE searches ten hyperparameters instead of thirty.
+
+**The draw order is part of the result.** A seeded study draws the same values only in the
+same order: the cohorts in the given order, each its hyperparameters then its transformer;
+for Model 2 the total's hyperparameters and transformer, then the probabilities'
+hyperparameters, calibration and transformer. The 24 baselines of §9 pin it.
+
+`build_independent_cohorts_model(components, *, y_min, random_state)` makes one
+`CountModel` per component, keyed by its name; `build_total_times_probability_model(total,
+probability, *, y_min, random_state)` makes the total's `CountModel` and a
+`CohortProbabilityModel` whose replication is fixed at `"weighted"` (D24.1: for the logistic
+classifier the two replications are the same fit; for LightGBM they differed within noise
+and `"per_child"` is 2–3× slower). `y_min` floors the predicted mean (a Gaussian loss can
+predict a negative count; the Poisson deviance is infinite at 0). The objective and the
+refit share these two functions, so the model scored in a trial is the model refit.
+
+## 6. The Tuner
+
+`CrossValidationTuner(cv, metric, n_trials, n_startup_trials, aggregator=Mean(), n_jobs=1)`
+is a frozen dataclass holding what every run shares: the folds, the metric (it scores each
+fold and gives the study its direction), the budget, TPE's random start, how fold scores
+combine (§7) and how many processes fit a trial's folds. Each call takes the data, the
+groups, the composite's settings and the study's seed (D26):
+
+- `cv_score(model, X, Y, exposure, groups=None)` refits `model` on each fold's training rows
+  (`fit` replaces all state) and aggregates the validation scores. The folds are fitted in
+  `n_jobs` processes; the scores are the same as one after another, so a seeded study does
+  not depend on `n_jobs` (D13: ×2.3–3.3 per trial with 5 processes).
+- `tune_independent_cohorts_model(X, Y, exposure, groups=None, *, <the builder's
+  settings>, y_min, random_state, study_seed)` and `tune_total_times_probability_model(...)`
+  each run one study whose objective draws the components, builds the composite and
+  returns its `cv_score`; they return the study and its seconds. The method names the
+  model, so no callable is passed in.
+
+The study is `optuna.create_study(direction=metric.direction,
+sampler=TPESampler(seed=study_seed, n_startup_trials=n_startup_trials))`. The notebook runs
+400 trials with a random start of 20 (D20: the LightGBM runs still improved after 200, and a
+start of 10–20% of the budget is the usual rule). `study.optimize(..., catch=(RuntimeError,))`
+marks a trial FAIL when its fit raises `RuntimeError` (NB2 that does not converge, raised
+from a fold's process as such) and goes on; any other error ends the study, so a bug is not
+hidden (D7, D19). There is no pruning: `WilcoxonPruner` needs the folds one after another,
+which costs more than it saves (D19).
+
+## 7. Aggregation
+
+An aggregator turns a trial's fold scores into its value; it takes plain lists and knows
+nothing about the data. It decides the selection (D9: on two Model 1 models the weighted
+mean differed from the mean by 0.0006, while the median flipped which family won).
+
+| class | trial value | use it |
+|---|---|---|
+| `Mean()` (the default) | `mean(scoreₖ)` | as `cross_val_score(...).mean()`; the folds differ by one row at most |
+| `WeightedMean()` | `Σ nₖ·scoreₖ / Σ nₖ` | for unequal folds: for a per-row mean metric it is the pooled score a test set would report |
+| `UpperBound(z=1.0)` | weighted mean + `z`·SE | a loss's pessimistic bound, to prefer stable settings over the best average |
+
+`UpperBound` penalizes each candidate's own uncertainty; it is not the one-SE rule. Its
+ranking is noisier than the mean's, because the SE comes from only K scores, and its
+`best_value` is not the CV mean. The SE is `corrected_std_error(scores)`, Nadeau–Bengio's
+correction in its K-fold form, `s · sqrt(1/K + 1/(K−1))`: the naive `s/sqrt(K)` ignores
+that the folds share most of their training rows. A custom rule subclasses `Aggregator`
+with the one method `aggregate_scores(scores, fold_sizes)`.
+
+```python
+import dataclasses
+from collections.abc import Sequence
+
+import numpy as np
+
+from age_group_prediction.hyperparameter_tuning import (
+    Aggregator, Mean, UpperBound, WeightedMean, corrected_std_error,
+)
+
+scores, sizes = [3.0, 5.0, 4.5], [20, 5, 3]
+print(
+    Mean().aggregate_scores(scores, sizes),
+    WeightedMean().aggregate_scores(scores, sizes),
+    round(corrected_std_error(scores), 4),
+    round(UpperBound().aggregate_scores(scores, sizes), 4),
+)
+
+
+class Median(Aggregator):
+    def aggregate_scores(self, scores: Sequence[float], fold_sizes: Sequence[int]) -> float:
+        return float(np.median(scores))
+
+
+print(Median().aggregate_scores(scores, sizes))
+print(dataclasses.replace(tuner, aggregator=UpperBound(z=1.645)).aggregator)
+```
+
+```text
+4.166666666666667 3.517857142857143 0.9501 4.468
+4.5
+UpperBound(z=1.645)
+```
+
+## 8. The Refit And The Run Record
+
+`fit_and_score(model, train_age_group, val_age_group, *, cohort_metric, metric)` fits the
+model on the training part and returns it with a score table: one row per cohort column,
+scored by `cohort_metric`, then the composite, scored by `metric`, each on training and
+validation. The best model is rebuilt from `best_params` (§3), so no fitted model or Optuna
+study needs to be kept. A notebook run keeps a record: its settings,
+`study.trials_dataframe()` (every trial, about 1.7 KiB each), `[c.to_dict() for c in
+best_components]`, `best_params`, `best_value`, the score table, the seconds, the seed and
+`y_min`. To save it as JSON use `trials.to_json(orient="records")`: `json.dumps(record,
+default=str)` writes a bare `NaN`, which strict readers reject.
+
+## 9. Reproducibility
+
+- `study_seed` seeds TPE's draws; `random_state` seeds the estimators (LightGBM's bagging
+  and column sampling). The notebook seeds run *i* with `seed + i`, in a fixed order of
+  cells, and passes `random_state=seed`.
+- The folds come from the seeded `cv`; fitting them in parallel changes nothing (tested).
+- The draw order (§5) is fixed; a change to it, to a range, or to a candidate list changes
+  every seeded result.
+- **The regression check:** the notebook's 24 runs at 3 trials, both sharing flags off,
+  reproduce to the fourth decimal the baselines recorded in the
+  [handoff](NOTEBOOK_T4_HANDOFF.md) §5 (Check C). Every change to this package since it was
+  rebuilt has passed it.
 
 ## 10. Hazards
 
-- **Leakage.** The model fits its features on each fold's training rows only
-  because it owns its `feature_transformer`. A table transformed on all rows and
-  a model with `feature_transformer=None` leak validation statistics into every
-  fold.
-- **The exposure.** Build it on the full table with `ExposureTransformer` (it
-  rejects what LightGBM would accept silently) and take its rows by the split's
-  positions, never `train["n_apartments"]`; the evaluator checks only its shape.
-- **One column per metric.** `POISSON_DEVIANCE`, `RMSE` and `MAE` score one
-  target column; a (n, K) matrix raises "Multioutput not supported". The matrix
-  metric `COHORT_LOG_LOSS` normalizes rows, so it ignores the total;
-  `COHORT_POISSON_DEVIANCE` scores the whole count matrix, the mean of the
-  per-cohort deviances.
-- **`groups=None` for `random`.** `KFold` warns on every split that receives
-  groups.
-- **An empty search space with many trials** repeats one fit `n_trials` times;
-  pair it with `n_trials=1`.
-- **numpy numbers.** A `np.int64` bound or choice is rejected (`int(x)`); a
-  `np.float64` choice is a float and passes.
-- **`UpperBound`'s `best_value`** is the mean plus `z` SE, not the CV mean: log
-  the aggregation beside it.
-- **Warnings.** Building parameters escalates Optuna's `UserWarning`s to errors
-  process-wide for the duration of the check, so it is not thread-safe; the
-  default sampler's `ExperimentalWarning` is silenced around its construction
-  only; a pruner's is not.
-- **A NaN score** from the evaluator raises and stops the study (the trial
-  FAILs); a plain objective's NaN only fails its trial, and the search goes on
-  with a FAIL record.
-- **A metric's own error stops the study too.** Optuna catches nothing by
-  default, so an exception inside the metric propagates out of `optimize`
-  (the trials so far stay in `optuna_study_`). Measured 2026-10-15: a Gaussian
-  LightGBM `CountModel` without an exposure predicted a negative count in trial
-  4 and scikit-learn's Poisson deviance raised; with `y_min=np.finfo(float).eps`,
-  `CountModel.predict` floors the mean, so that trial scores a large deviance
-  and the study goes on.
+- **Two `Parallel` calls at once from threads in one process return wrong scores**
+  (measured: joblib's shared pool mixes the calls' inputs). Never run two tuner calls
+  concurrently from threads, nor `study.optimize(n_jobs>1)`; marimo runs cells one at a
+  time.
+- **A warning in a fold process does not raise under `-W error`**: the processes do not
+  inherit a script's `-W` filters. Set `PYTHONWARNINGS=error` in the environment for a
+  strict check (D15).
+- **A cohort name must not contain `__` nor be `shared`**: `from_params` splits the
+  parameter names at the first `__`, and `shared__` is the shared choices' prefix. Nothing
+  checks it.
+- **A function sent to joblib must pickle**: in a notebook, a callable that captures the
+  notebook's globals fails (`_thread.lock`). The tuner sends its bound `fold_score`, the
+  model and the data, all of which pickle.
+- **pandas turns a `None` calibration into NaN** in the trials table, and `value_counts()`
+  drops it: count by label after `fillna("None")` (D16).
+- **`num_leaves` above `2**max_depth` changes nothing in LightGBM**; TPE spends some trials
+  on equivalent settings (T1's F7, left as a known inefficiency).
+- **The logistic model needs scaled inputs**: it does not converge on the `tree`
+  declaration, so its candidates are the GLM declarations.
+- **NB2 can fail to converge**: its trial is marked FAIL and counted in the notebook's
+  tables; a run whose trials all fail raises in its own cell.
 
 ## 11. What Remains
 
-- The notebook plan's PR D logs a `TuningResult` to MLflow (`log_tuning_result`), the
-  first user of `to_dict()`, and runs the NB2 one-trial studies.
-- Only on demand: out-of-fold predictions from the evaluator, Optuna
-  visualizations as artifacts, conditional parameters.
-- The old stack's `tuning.py` and `models/` are deleted with roadmap step 5 of
-  the [re-implementation plan](MODEL_REIMPLEMENTATION_PLAN.md).
+- MLflow runs from the notebook's run records.
+- The final evaluation on the test part, after the refit on training + validation
+  ([experiment notebook plan](EXPERIMENT_NOTEBOOK_PLAN.md) E11).
+- Measured and rejected, not planned: pruning, LightGBM threads, the cohort fits in
+  threads (D19).

@@ -1,5 +1,7 @@
 # Plan: rebuild Model 2 as `TotalTimesProbabilityModel` (scikit-learn classifiers, statsmodels NB2)
 
+> **2026-10-29:** the `hyperparameter_tuning` package this document names was removed with its docs ([NOTEBOOK_TUNING_PLAN.md](NOTEBOOK_TUNING_PLAN.md) D17, T4a); T4b rebuilds it from the experiment notebook's section 5.
+
 **Written for:** the implementing model (Claude Opus 5.5) and the user who
 validates each sub-task. Self-contained: it assumes no memory of the planning
 conversation. This file is the source of truth: update its status line and the

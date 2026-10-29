@@ -295,9 +295,10 @@ order at fit whatever the mapping's order, indexed like `X`.
   one model, `cohort_models` the mapping (applied first, as scikit-learn applies a whole
   object before its nested names, so a name set together with a new mapping lands on the
   new model). A cohort name must not contain `__` (the name is split at it; not checked).
-  `clone` copies the mapping value by value, so the tuner's `clone(model).set_params(...)`
-  leaves the template untouched. One study then tunes every cohort on the composite's
-  score ([Hyperparameter tuning §9](HYPERPARAMETER_TUNING.md#9-making-a-model-tunable)).
+  `clone` copies the mapping value by value, so a tuner's `clone(model).set_params(...)`
+  leaves the template untouched. One study can then tune every cohort on the composite's
+  score through these names; the experiment notebook builds its components explicitly
+  instead ([NOTEBOOK_TUNING_PLAN.md](NOTEBOOK_TUNING_PLAN.md) D1).
 - *Set before `fit`.* The models and their estimators and transformers are cloned in
   `fit`; `predict` follows the fitted copies, so a refit equals a fresh fit (the contract
   test). A plain `dict` suffices for the mapping.

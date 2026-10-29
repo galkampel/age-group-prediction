@@ -1,5 +1,7 @@
 # Handoff: generalize `DirectCohortModel` and move the feature transformer into the models
 
+> **2026-10-29:** the `hyperparameter_tuning` package this document names was removed with its docs ([NOTEBOOK_TUNING_PLAN.md](NOTEBOOK_TUNING_PLAN.md) D17, T4a); T4b rebuilds it from the experiment notebook's section 5.
+
 **For:** the implementing session (Sonnet or Opus). **Written:** 2026-10-05; **updated
 2026-10-05 after Step 7**: the plan is complete.
 **Plan (source of truth):** [DIRECT_COHORT_GENERALIZATION_PLAN.md](DIRECT_COHORT_GENERALIZATION_PLAN.md). Read it in full before the first edit; this file only orients you.
