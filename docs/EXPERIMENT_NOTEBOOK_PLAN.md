@@ -28,6 +28,14 @@ user's order of work recorded in
 [EXPERIMENT_NOTEBOOK_HANDOFF.md](EXPERIMENT_NOTEBOOK_HANDOFF.md) (split,
 feature configurations, tuning, inspection check, MLflow runs).
 
+**Status (2026-10-29):** step 3 (tuning) was re-planned on 2026-10-18 as
+[NOTEBOOK_TUNING_PLAN.md](NOTEBOOK_TUNING_PLAN.md) and is done (T1–T5): section 5 of the
+notebook tunes both models in 24 run cells and inspects each model's best run, through the new
+`hyperparameter_tuning` package (PR #17; the guide
+[HYPERPARAMETER_TUNING.md](HYPERPARAMETER_TUNING.md)). Still open here: the MLflow runs (the
+logging of D2–D3, E9, E10), D4 (the comparison table and E11's final run) and D5. **Next:**
+[EXPERIMENT_NOTEBOOK_HANDOFF.md](EXPERIMENT_NOTEBOOK_HANDOFF.md) §6.
+
 **Branch state:** `feat/experiment-notebook` from `main` at `49301d0`, HEAD
 `98640ba`; non-slow suite 1295 passed, 1 skipped, 1 xfailed.
 
@@ -317,6 +325,11 @@ registry keyed on "the" prediction; keep `Metric` as is).
 - In MLflow (E9): one **parent run per setting**, one **nested child run per
   study** (per cohort, or per component).
 
+> **2026-10-29:** superseded by the notebook tuning plan's D6 and D12: one joint study per
+> family combination and exposure, on the composite's cohort Poisson deviance, the components
+> drawn per trial; not one study per cohort or component. The MLflow nesting of the last
+> bullet is open again (E9's note).
+
 **E5. Exposure on/off is a setting (two runs), not a `CategoricalParameter`.**
 A boolean parameter would be legal (no conditional parameters, D9 of the tuning
 plan), but: `use_exposure` changes the target (weighted rate vs count), so the
@@ -325,6 +338,10 @@ the losing arm; "no exposure" normally re-adds `n_apartments` as a feature,
 which is a feature-variant change anyway; and Model 1 cannot express it as a
 parameter at all (E2 of §2). Two runs with the same seeds and folds, compared on
 validation.
+
+> **2026-10-29:** confirmed by the notebook tuning plan's D6: every count family runs with
+> the exposure on and off; the GLMs are about 0.6 worse with it off, and all 24 runs are kept
+> (D20).
 
 **E6. The three-way split needs no new class.** Positions, as everything else:
 
@@ -386,6 +403,12 @@ explained rows.
 
 Test metrics (`test/<metric>`) appear **only** in the final run (E11).
 
+> **2026-10-29:** to be revisited in the MLflow plan. Each run cell's record (the notebook
+> tuning plan's D14) already holds the settings, `trials_dataframe()`, the components'
+> `to_dict()`, `best_params`, `cv_best`, the score table, the seconds, the seed and `y_min`.
+> There is no `TuningResult` or `TrialRecord`, no `feature_variant` (the transformer is
+> searched per component) and no nested study per cohort.
+
 **E10. MLflow helper: start inline, extract functions, no class.** The first
 run cell uses `mlflow.start_run` and plain `log_params` / `log_metrics` /
 `log_artifact` calls. When the second cell repeats them, the repeated parts
@@ -404,6 +427,11 @@ and scored once on `test_index` with the E3 bootstrap set; logged in a run
 tagged `final=true`. The validation scores remain the selection evidence; the
 test score is reported, never used to choose.
 
+> **2026-10-29:** the winner is rebuilt from its `best_params` with
+> `CountComponent.from_params` / `ProbabilityComponent.from_params` and `build_*_model`
+> ([HYPERPARAMETER_TUNING.md §8](HYPERPARAMETER_TUNING.md#8-the-refit-and-the-run-record)),
+> not `evaluator.build_model(best_params)`; the rest of E11 stands.
+
 **E12. Seed.** One `seed` (42), logged, for every random component: both
 `train_test_indices` calls, `Splitter.cv`, the Optuna sampler (study i, per
 cohort or component, gets `seed + i`, otherwise the studies would share their
@@ -421,6 +449,9 @@ after the other with a fixed `n_trials`, so a seeded sampler reproduces it
 The synthetic population's own seed is the simulator config's
 (`configs/simulation.yml`, 42), shown and overridable in the notebook's data
 settings.
+
+> **2026-10-29:** as built, run *i* in the cells' order gets `study_seed=seed + i`, and every
+> estimator `random_state=seed`; the rest stands.
 
 ---
 
@@ -879,6 +910,11 @@ One cell, inline MLflow calls (E10):
 **Done when:** the run appears in the scratch MLflow UI with every E9 item;
 the cell's wall time is recorded in the doc (budget: 3 cohorts × 30 trials × 5
 folds LightGBM fits ≈ a few minutes).
+
+> **2026-10-29:** the tuning of D2 and D3 is done by the notebook tuning plan's T1–T2 (24 run
+> cells; the candidate transformers are searched per component, so D3's item 5 is superseded).
+> What remains of both is the MLflow logging (E9, E10), planned from the run records; the
+> checkboxes stay open.
 
 ### [ ] D3. The remaining runs and the helper module
 

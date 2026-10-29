@@ -21,12 +21,15 @@ import, `Aggregator.aggregate` renamed `aggregate_scores`; §3's T4b.2 result); 
 NOTEBOOK_TUNING_PLAN.md D26: the suggest functions return components, `CrossValidationTuner`,
 `evaluation.py`; the package only, the notebook unchanged; §3's T4b.2b result). **T4b.3 committed
 `1370236`** (the notebook imports the package; §3's T4b.3 result); the notebook md5
-`771464b5583902cf0cf8279359ae0f23`; T4b is complete. **T5.1 done 2026-10-29** (the guide and the
-docs that state current API; §3's T5.1 result), awaiting the user's commit. **Next: T5.2** (§3). The implementing session updates this line, ticks the sub-tasks of
+`771464b5583902cf0cf8279359ae0f23`; T4b is complete. **T5.1 committed `6c89a61`** (the guide and the
+docs that state current API; §3's T5.1 result). **T5.2 done 2026-10-29** (§3's T5.2 result),
+awaiting the user's commit. **The work of this handoff is complete**; the next session starts
+from [EXPERIMENT_NOTEBOOK_HANDOFF.md](EXPERIMENT_NOTEBOOK_HANDOFF.md) §6. The implementing session updates this line, ticks the sub-tasks of
 §2, and records each sub-task's commit and the notebook's md5 in §1 as it goes; this file is the
 handoff for any session that continues the work.
 
-**The prompt for the implementing session:**
+**The prompt for the implementing session** (answered: T4a–T5 are done; the next session's
+prompt is in [EXPERIMENT_NOTEBOOK_HANDOFF.md](EXPERIMENT_NOTEBOOK_HANDOFF.md) §6):
 
 ```text
 Read docs/NOTEBOOK_T4_HANDOFF.md in full, then the documents its reading order lists, and
@@ -484,6 +487,15 @@ E12, D2, D3 and its status line point at the notebook's tuning and the package;
 decisions, the dataclass-vs-TypedDict table, §6 the prompt for the items after: E11's final
 evaluation on test, MLflow runs from the run records); T5 ticked. Then the full body of draft
 PR #17, in the chat.
+
+*Result (2026-10-29), awaiting the user's commit:* EXPERIMENT_NOTEBOOK_PLAN.md gained a dated
+status paragraph and dated notes under E4, E5, E9, E11, E12 and D2–D3 (additions only: `git diff
+--numstat` 36 / 0); EXPERIMENT_NOTEBOOK_HANDOFF.md rewritten for the session that adds the
+MLflow runs, D4's comparison and E11's final evaluation (its facts re-checked: ruff's 14 at their
+lines, mypy 29 files, the baselines against §5, the PR and branch state); T5 ticked in
+NOTEBOOK_TUNING_PLAN.md; the redesign plan's status and docs/README.md's two rows point at the
+new handoff. Every relative link and anchor of the edited documents resolves. The notebook
+unchanged.
 
 ## 4. The checks (NOTEBOOK_TUNING_PLAN.md §1.1, with today's values)
 
