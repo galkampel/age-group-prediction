@@ -328,7 +328,7 @@ def test_the_gaussian_weighted_rate_is_least_squares_of_the_count() -> None:
 def test_a_negative_gaussian_prediction_breaking_the_deviance_is_caught() -> None:
     # A Gaussian loss extrapolates below zero; unfloored, scikit-learn's
     # Poisson deviance raises on it and stops a whole tuning study (measured,
-    # docs/HYPERPARAMETER_TUNING.md §10). A floor of 0 would still raise.
+    # docs/INDEPENDENT_COHORT_MODELS.md). A floor of 0 would still raise.
     X_line = pd.DataFrame({"ses": [0.0, 1.0, 2.0, 3.0]})
     y_line = pd.Series([1.0, 2.0, 3.0, 4.0])  # y = 1 + ses
     X_below = pd.DataFrame({"ses": [-3.0]})

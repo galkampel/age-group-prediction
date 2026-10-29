@@ -7,7 +7,9 @@ relying on them, since the user edits between turns.
 
 **Status (2026-10-29):** written and approved by the user after the reading of 2026-10-29 (the
 planning session verified the state and measured the baselines of §1; it edited nothing else).
-**Next: T4a.1.** The implementing session updates this line, ticks the sub-tasks of §2, and
+**T4a.1 done 2026-10-29** on the branch `refactor/hyperparameter-tuning-package` (from `e2a4f78`;
+its PR, on refactoring the package, goes into `feat/experiment-notebook`), awaiting the user's
+commit; the notebook md5 unchanged `425b6cf3ff396a478ad08756c2211338`. **Next: T4a.2.** The implementing session updates this line, ticks the sub-tasks of §2, and
 records each sub-task's commit and the notebook's md5 in §1 as it goes; this file is the handoff
 for any session that continues the work.
 
@@ -72,6 +74,7 @@ approval; I commit myself.
 cd /Users/galkampel/Desktop/Projects/age-group-prediction
 git branch --show-current          # feat/experiment-notebook
 git log -3 --oneline               # 15932d7 refactor(notebook): D25 ...; de94ac8 ...; 10d6e83 ...
+                                   # (since committed: e2a4f78, this handoff, docs only)
 git status --short                 # clean
 md5 -q notebooks/02_experiments.py # 425b6cf3ff396a478ad08756c2211338
 ```
@@ -122,7 +125,7 @@ is not needed (no cell changes). `src/age_group_prediction/aggregation.py` and
 `tests/unit/test_aggregation.py` stay (D9's interim home; T4b.2 moves them into the new
 package). `optuna` stays in `pyproject.toml`.
 
-### [ ] T4a.1 The code: the package, its tests, the config
+### [x] T4a.1 The code: the package, its tests, the config
 
 1. `rm -r src/age_group_prediction/hyperparameter_tuning`
 2. `rm tests/unit/test_hyperparameter_tuning_aggregation.py tests/unit/test_hyperparameter_tuning_evaluator.py tests/unit/test_hyperparameter_tuning_integration.py tests/unit/test_hyperparameter_tuning_parameters.py tests/unit/test_hyperparameter_tuning_study.py`
