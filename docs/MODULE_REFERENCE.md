@@ -2,13 +2,14 @@
 
 One entry per Python module in `src/`: what it owns, its main public API, what
 it depends on inside the project, and where to read more. Names come from the
-code as of 2026-10-13 (`inspection`), 2026-10-08 (the `modeling` package) and 2026-09-30 (the rest). A module's own docstring, when present, is the most
+code as of 2026-10-29 (`hyperparameter_tuning`), 2026-10-13 (`inspection`), 2026-10-08 (the `modeling` package) and 2026-09-30 (the rest). A module's own docstring, when present, is the most
 detailed and current description.
 
 Modules or names starting with `_` are internal: they can change without
 notice. Import public names from a package root (`age_group_prediction`,
 `age_group_prediction.models`, `age_group_prediction.modeling`,
 `age_group_prediction.inspection`,
+`age_group_prediction.hyperparameter_tuning`,
 `age_group_prediction.experiment`,
 `age_group_prediction.tracking`, `student_simulator`).
 
@@ -65,7 +66,7 @@ does not import `tracking`.
 | `splitting/splitters.py` | The three split methods; each pairs a train/test split with its cross-validator. Replaces `data_splitting.py`, not yet wired | `Splitter`, `Method` | `splitting.stratified` | [Splitting](SPLITTING.md) |
 | `splitting/stratified.py` | The two splitters scikit-learn does not provide: split within every group, keeping each on both sides | `StratifiedHoldout`, `StratifiedFolds` | — (numpy, scikit-learn only) | [Splitting §4](SPLITTING.md#4-what-stratified_by_group-guarantees) |
 | `utils.py` | Helpers shared across packages: table type aliases and positional row selection | `take_rows`, `DesignMatrix`, `Target`, `Groups`, `Exposure` | — | — |
-| `scoring.py` | A named scoring function of `(y_true, y_pred)` with its direction; shared by `modeling`, `inspection` and the notebook, which build their metrics from it. `cohort_log_loss` scores cohort probabilities against cohort counts, per child (rows of `y_pred` normalized by their sum, so predicted counts score as proportions); `cohort_poisson_deviance` scores the count matrix, the mean Poisson deviance over every (building, cohort) cell. Not the root-level `Metric` protocol from `metrics.py` | `Metric`, `POISSON_DEVIANCE`, `RMSE`, `MAE`, `COHORT_LOG_LOSS`, `COHORT_POISSON_DEVIANCE`, `cohort_log_loss`, `cohort_poisson_deviance` | — (numpy, scipy, scikit-learn only) | [Independent cohort models §4](INDEPENDENT_COHORT_MODELS.md#4-api) |
+| `scoring.py` | A named scoring function of `(y_true, y_pred)` with its direction; shared by `modeling`, `inspection`, `hyperparameter_tuning` and the notebook, which build their metrics from it. `cohort_log_loss` scores cohort probabilities against cohort counts, per child (rows of `y_pred` normalized by their sum, so predicted counts score as proportions); `cohort_poisson_deviance` scores the count matrix, the mean Poisson deviance over every (building, cohort) cell. Not the root-level `Metric` protocol from `metrics.py` | `Metric`, `Direction`, `cohort_log_loss`, `cohort_poisson_deviance` (no metric constants: each client builds its own) | — (numpy, scipy, scikit-learn only) | [Independent cohort models §4](INDEPENDENT_COHORT_MODELS.md#4-api) |
 | `hashing.py` | Stable content hashes for tables and column schemas | `table_hash`, `column_schema_hash` | — | [Data and splitting §4](DATA_AND_SPLITTING.md#4-splitmanifest); guide §14 |
 | `fitted_features.py` | Fold-fitted scaling, splines, schema-driven one-hot encoding, exposure offset, and state export. Was `feature_engineering.py`; the models still use it, and it is slated for removal | `FittedFeatureTransformer` | `modeling_config`, `state_bundle` | [Feature engineering](FEATURE_ENGINEERING.md); guide §5 |
 | `feature_engineering/transforms.py` | The vocabulary of typed transformations, each a frozen model carrying only its own parameters | `Standardize`, `Center`, `CenterByReferencePoint`, `Quadratic`, `Log`, `Log1p`, `DomainScale`, `DomainMinMax`, `RelativeSaturation`, `Log1pRatioScaler`, `OneHot`, `Transform` | — (pydantic, pandas, numpy, scikit-learn only) | [Feature transformations §8](FEATURE_TRANSFORMATIONS.md) |
@@ -108,6 +109,27 @@ are rebuilt. Plans: [MODEL_REIMPLEMENTATION_PLAN.md](MODEL_REIMPLEMENTATION_PLAN
 | `total_times_probability.py` | **Model 2.** The predicted total times the predicted cohort probabilities: `total_model` (a `BaseAgeGroupModel`, fitted on the row sum of `y`) and `probability_model` (a `CohortProbabilityModel`, on `y`), each with its own `feature_transformer`, cloned in `fit`, the same exposure to both (the probability model ignores it), the fitted state set only once both succeeded; predicts `probabilities * total[:, None]`, a DataFrame with `y`'s columns and `X`'s index, each row summing to the predicted total. Nested `set_params` names reach both | `TotalTimesProbabilityModel` | `base`, `cohort_probability` |
 
 Model descriptions: Model 1, [INDEPENDENT_COHORT_MODELS.md](INDEPENDENT_COHORT_MODELS.md) (`CountModel`, `NegativeBinomialRegressor`, `IndependentCohortModels`); Model 2, [TOTAL_TIMES_PROBABILITY_MODEL.md](TOTAL_TIMES_PROBABILITY_MODEL.md).
+
+## `age_group_prediction.hyperparameter_tuning` — Tuning The Rebuilt Models
+
+Plain Optuna over the two `modeling` composites, rebuilt from the experiment notebook's
+section 5, which imports it: a trial draws each component's choices, the components are
+complete records, and the composite is built from them with constructor calls; a
+`CrossValidationTuner` runs one study per call. The candidate transformers, metrics,
+settings, run cells and tables stay in the notebook. Guide:
+[HYPERPARAMETER_TUNING.md](HYPERPARAMETER_TUNING.md); decisions:
+[NOTEBOOK_TUNING_PLAN.md](NOTEBOOK_TUNING_PLAN.md) (D21, D25, D26).
+
+| Module | Responsibility | Main public API | Depends on |
+|---|---|---|---|
+| `__init__.py` | Public surface of the tuning package | the names below | the seven modules |
+| `params.py` | An estimator family's searched hyperparameters as frozen, keyword-only records whose fields are the estimator's keywords (a typo raises when built) | `LGBMParams`, `PoissonGLMParams`, `NB2Params`, `LogisticParams`, `EstimatorParams` | — |
+| `components.py` | One part of a composite as a complete record (name, family, the transformer object, the estimator params; the exposure or the calibration): set from a trial's draws or read back from `best_params` (`from_params`: the entries under `<name>__` and `shared__`, a missing one a `KeyError`); `make_estimator` adds the family's fixed settings; `to_dict` the plain record | `CountComponent`, `ProbabilityComponent`, `Component`, `CountFamily`, `ProbabilityFamily` | `params`, `modeling`, `feature_engineering` (LightGBM, scikit-learn) |
+| `search_spaces.py` | Every Optuna call for one component: its family's hyperparameters, the transformer's name from the injected candidates, the calibration from `CALIBRATION_METHODS` (no isotonic), sampled under `<name>__<parameter>`; reads nothing back | `CountSearchSpace`, `ProbabilitySearchSpace`, `ComponentSearchSpace` | `params`, `components`, `modeling` (optuna) |
+| `builders.py` | The components a trial draws for each composite (the independent cohorts model's two sharing flags, drawn once under `shared__`), and each composite built from components (`y_min`, `random_state`; Model 2's replication fixed at `"weighted"`) | `suggest_independent_cohorts_components`, `suggest_total_times_probability_components`, `build_independent_cohorts_model`, `build_total_times_probability_model` | `components`, `search_spaces`, `modeling`, `feature_engineering` (optuna) |
+| `cross_validation.py` | The study's design in a frozen dataclass (`cv`, `metric`, `n_trials`, `n_startup_trials`, `aggregator`, `n_jobs`): `cv_score` with the folds in `n_jobs` processes (the same scores as one after another), and one named tune method per composite whose objective draws, builds and scores; `TPESampler(seed, n_startup_trials)`, `catch=(RuntimeError,)` | `CrossValidationTuner` | `builders`, `components`, `aggregation`, `modeling`, `scoring`, `utils`, `feature_engineering` (optuna, joblib, scikit-learn) |
+| `evaluation.py` | The refit of a run's best model on the training part, with a score table per cohort and for the composite on training and validation | `fit_and_score` | `modeling`, `scoring`, `utils` |
+| `aggregation.py` | How a trial's fold scores become its value: the mean (the default), the size-weighted mean, the weighted mean plus `z` corrected standard errors; Nadeau–Bengio's corrected SE | `Mean`, `WeightedMean`, `UpperBound`, `Aggregator`, `corrected_std_error` | `_config` (numpy, pydantic) |
 
 ## `age_group_prediction.models` — Model Families
 

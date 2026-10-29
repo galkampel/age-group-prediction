@@ -19,9 +19,10 @@ T4a is complete. **T4b.1 committed `2765196`** (`params.py`, `components.py`,
 import, `Aggregator.aggregate` renamed `aggregate_scores`; §3's T4b.2 result); the notebook md5
 `e8a0942fff75f66e6173d6b47ba162a4`. **T4b.2b committed `362cab6`** (the user's notes on T4b.2,
 NOTEBOOK_TUNING_PLAN.md D26: the suggest functions return components, `CrossValidationTuner`,
-`evaluation.py`; the package only, the notebook unchanged; §3's T4b.2b result). **T4b.3 done
-2026-10-29** (the notebook imports the package; §3's T4b.3 result), awaiting the user's commit;
-the notebook md5 `771464b5583902cf0cf8279359ae0f23`; T4b is complete. **Next: T5** (§3). The implementing session updates this line, ticks the sub-tasks of
+`evaluation.py`; the package only, the notebook unchanged; §3's T4b.2b result). **T4b.3 committed
+`1370236`** (the notebook imports the package; §3's T4b.3 result); the notebook md5
+`771464b5583902cf0cf8279359ae0f23`; T4b is complete. **T5.1 done 2026-10-29** (the guide and the
+docs that state current API; §3's T5.1 result), awaiting the user's commit. **Next: T5.2** (§3). The implementing session updates this line, ticks the sub-tasks of
 §2, and records each sub-task's commit and the notebook's md5 in §1 as it goes; this file is the
 handoff for any session that continues the work.
 
@@ -31,13 +32,13 @@ handoff for any session that continues the work.
 Read docs/NOTEBOOK_T4_HANDOFF.md in full, then the documents its reading order lists, and
 src/age_group_prediction/hyperparameter_tuning/ (T4b, the package the notebook now imports,
 D26's API) with its tests tests/unit/test_hyperparameter_tuning_*.py. Verify the state of the
-status line first (branch refactor/hyperparameter-tuning-package, HEAD my commit of T4b.3 right
-after 362cab6, git status clean, the notebook md5 771464b5583902cf0cf8279359ae0f23); if anything
+status line first (branch refactor/hyperparameter-tuning-package, HEAD my commit of T5.1 right
+after 1370236, git status clean, the notebook md5 771464b5583902cf0cf8279359ae0f23); if anything
 differs, stop and show me the diff. Then wait for my notes on the package: plan each in plan
 mode (re-verify the facts with read-only probes, give a recommendation with evidence and the
 trade-off for any design question, write the steps and the commit message in the chat) and
-wait for my approval before editing. Without notes, the next sub-task is T5 (§3), planned the
-same way; after T5, write the full body of draft PR #17. One sub-task per approval; I commit myself.
+wait for my approval before editing. Without notes, the next sub-task is T5.2 (§3), planned the
+same way; after T5.2, write the full body of draft PR #17. One sub-task per approval; I commit myself.
 ```
 
 **Repository:** `/Users/galkampel/Desktop/Projects/age-group-prediction`, branch
@@ -460,11 +461,29 @@ check` the two known issues. Check B: the seven names are the package's objects,
 `PYTHONWARNINGS=error`): the 24 baselines, the seven tables and records defined, no warning,
 84.4 s. The non-slow suite 1299 passed (1 skipped, 1 xfailed, 19 deselected).
 
-**T5** (docs, §6): a new `docs/HYPERPARAMETER_TUNING.md` for the new package; `MODULE_REFERENCE.md`
-rows for the six modules; `README.md` and `docs/README.md` entries; the handoff rewritten for the
-next session (§1 history, §2 state, §3 decisions, §6 the prompt for the items after: E11's final
-evaluation on test, MLflow runs from the run records); `EXPERIMENT_NOTEBOOK_PLAN.md` E4, E5, E11,
-E12, D2/D3 and its status line; the dataclass-vs-TypedDict table into the handoff.
+**T5** (docs, §6), as two sub-tasks:
+
+**T5.1** (the guide and the docs that state current API): a new `docs/HYPERPARAMETER_TUNING.md`
+in `MODEL_INSPECTION.md`'s form; `MODULE_REFERENCE.md` rows for the package (`__init__` and the
+seven modules) and the `scoring.py` row without T3's constants; `README.md` and `docs/README.md`
+entries (the guide; the notebook tuning plan, the redesign plan and this handoff in the index);
+`SPLITTING.md` §8 names the tuner.
+
+*Result (2026-10-29), awaiting the user's commit:* the guide, 549 lines: the parts, a worked
+example on both models (the notebook's data, 20 trials each, the refit from `best_params`, the
+score tables, a component's record), the records with the fixed settings per family, the search
+spaces with their ranges, the builders and the sharing flags, the tuner, aggregation, the refit
+and the run record, reproducibility, hazards, what remains. Its eight code blocks, extracted from
+the guide and run in order under `PYTHONWARNINGS=error`, print their text blocks exactly (and two
+runs of the blocks gave the same output). Every relative link and anchor of the five edited
+documents resolves; no stale name is left in the four current guides. The notebook unchanged.
+
+**T5.2** (the plans and the next session's handoff): `EXPERIMENT_NOTEBOOK_PLAN.md` E4, E5, E11,
+E12, D2, D3 and its status line point at the notebook's tuning and the package;
+`EXPERIMENT_NOTEBOOK_HANDOFF.md` rewritten for the next session (§1 history, §2 state, §3
+decisions, the dataclass-vs-TypedDict table, §6 the prompt for the items after: E11's final
+evaluation on test, MLflow runs from the run records); T5 ticked. Then the full body of draft
+PR #17, in the chat.
 
 ## 4. The checks (NOTEBOOK_TUNING_PLAN.md §1.1, with today's values)
 
