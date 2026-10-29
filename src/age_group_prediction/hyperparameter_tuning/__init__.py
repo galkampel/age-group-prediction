@@ -10,16 +10,19 @@
     Every Optuna call: one component's choices, sampled under
     ``<name>__<parameter>``.
 :mod:`~age_group_prediction.hyperparameter_tuning.builders`
-    The two composite models, built from components or from a trial's draws.
+    The two composite models' components, drawn from a trial, and the
+    models built from components.
 :mod:`~age_group_prediction.hyperparameter_tuning.cross_validation`
-    A model's cross-validated score, the study that tunes it, the refit of
-    the best on the training part.
+    The tuner: a model's cross-validated score and the study of each model.
+:mod:`~age_group_prediction.hyperparameter_tuning.evaluation`
+    The refit of a run's best model on the training part, scored on
+    training and validation.
 :mod:`~age_group_prediction.hyperparameter_tuning.aggregation`
     How a trial's fold scores are combined into its value.
 
 The code comes from the experiment notebook's section 5
 (``notebooks/02_experiments.py``); the design and its decisions are in
-``docs/NOTEBOOK_TUNING_PLAN.md`` (D21, D25).
+``docs/NOTEBOOK_TUNING_PLAN.md`` (D21, D25, D26).
 """
 
 from __future__ import annotations
@@ -34,8 +37,8 @@ from .aggregation import (
 from .builders import (
     build_independent_cohorts_model,
     build_total_times_probability_model,
-    suggest_independent_cohorts_model,
-    suggest_total_times_probability_model,
+    suggest_independent_cohorts_components,
+    suggest_total_times_probability_components,
 )
 from .components import (
     Component,
@@ -44,7 +47,8 @@ from .components import (
     ProbabilityComponent,
     ProbabilityFamily,
 )
-from .cross_validation import cv_score, fit_and_score, fold_score, tune_model
+from .cross_validation import CrossValidationTuner
+from .evaluation import fit_and_score
 from .params import (
     EstimatorParams,
     LGBMParams,
@@ -65,6 +69,7 @@ __all__ = [
     "CountComponent",
     "CountFamily",
     "CountSearchSpace",
+    "CrossValidationTuner",
     "EstimatorParams",
     "LGBMParams",
     "LogisticParams",
@@ -79,10 +84,7 @@ __all__ = [
     "build_independent_cohorts_model",
     "build_total_times_probability_model",
     "corrected_std_error",
-    "cv_score",
     "fit_and_score",
-    "fold_score",
-    "suggest_independent_cohorts_model",
-    "suggest_total_times_probability_model",
-    "tune_model",
+    "suggest_independent_cohorts_components",
+    "suggest_total_times_probability_components",
 ]

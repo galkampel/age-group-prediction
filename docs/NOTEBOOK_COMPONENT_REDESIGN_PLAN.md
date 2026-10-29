@@ -12,7 +12,7 @@ every component record JSON), the shared probe (13 parameters, ten `shared__*`, 
 (§6) and edited the notebook; the session was interrupted before applying them. **S6 done
 2026-10-26** (§6): the names settled, D23.9 and D23.10 applied, HEAD's returns restored; Check C 56 s,
 the 24 baselines reproduced; notebook md5 `df5d373e868e79a9c7323dfe61ffb829`. Awaiting the user's
-commit with T3. **D25 (2026-10-29)** then revised D24.3 and D24.5 at the user's review: the search spaces read nothing back, `estimator_params`, `from_params` per component type, the one-loop objectives (NOTEBOOK_TUNING_PLAN.md §0 D25; this file's code blocks are history). **Next: T4b.1** (NOTEBOOK_TUNING_PLAN.md §5; T4a done 2026-10-29). The draft PR for the branch could not be
+commit with T3. **D25 (2026-10-29)** then revised D24.3 and D24.5 at the user's review: the search spaces read nothing back, `estimator_params`, `from_params` per component type, the one-loop objectives (NOTEBOOK_TUNING_PLAN.md §0 D25; this file's code blocks are history). **Next: T4b.3** (NOTEBOOK_TUNING_PLAN.md §5; T4a, T4b.1, T4b.2 done 2026-10-29, T4b.2b D26). The draft PR for the branch could not be
 opened from the session (permission); the command is in §7.
 
 Companion of [NOTEBOOK_TUNING_PLAN.md](NOTEBOOK_TUNING_PLAN.md) (its §1 rules and checks A/B/C

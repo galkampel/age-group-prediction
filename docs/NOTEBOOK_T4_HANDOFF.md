@@ -14,10 +14,13 @@ commit per sub-task; the notebook md5 unchanged `425b6cf3ff396a478ad08756c221133
 paused there. **T4a.2 committed `ed1a770`** (the four docs deleted, the five guides point at the
 notebook). **T4a.3 committed `6935416`** (the 11 notes, the status lines, Check A and Check C);
 T4a is complete. **T4b.1 committed `2765196`** (`params.py`, `components.py`,
-`search_spaces.py` and their tests). **T4b.2 done 2026-10-29** (`builders.py`,
+`search_spaces.py` and their tests). **T4b.2 committed `2bdc808`** (`builders.py`,
 `cross_validation.py`, `aggregation.py` moved in, the root module removed, the notebook's `Mean`
-import, `Aggregator.aggregate` renamed `aggregate_scores`; §3's T4b.2 result), awaiting the
-user's commit; the notebook md5 `e8a0942fff75f66e6173d6b47ba162a4`. **Next: T4b.3.** The implementing session updates this line, ticks the sub-tasks of
+import, `Aggregator.aggregate` renamed `aggregate_scores`; §3's T4b.2 result); the notebook md5
+`e8a0942fff75f66e6173d6b47ba162a4`. **T4b.2b done 2026-10-29** (the user's notes on T4b.2,
+NOTEBOOK_TUNING_PLAN.md D26: the suggest functions return components, `CrossValidationTuner`,
+`evaluation.py`; the package only, the notebook unchanged; §3's T4b.2b result), awaiting the
+user's commit. **Next: T4b.3**, as §3 now describes it. The implementing session updates this line, ticks the sub-tasks of
 §2, and records each sub-task's commit and the notebook's md5 in §1 as it goes; this file is the
 handoff for any session that continues the work.
 
@@ -25,15 +28,15 @@ handoff for any session that continues the work.
 
 ```text
 Read docs/NOTEBOOK_T4_HANDOFF.md in full, then the documents its reading order lists, and
-src/age_group_prediction/hyperparameter_tuning/ (T4b.1–T4b.2, already moved from the notebook)
-with its tests tests/unit/test_hyperparameter_tuning_*.py. Verify the state of the status line
-first (branch refactor/hyperparameter-tuning-package, HEAD my commit of T4b.2 right after
-2765196, git status clean, the notebook md5 e8a0942fff75f66e6173d6b47ba162a4); if anything
+src/age_group_prediction/hyperparameter_tuning/ (T4b.1–T4b.2b, already moved from the notebook
+and revised by D26) with its tests tests/unit/test_hyperparameter_tuning_*.py. Verify the state
+of the status line first (branch refactor/hyperparameter-tuning-package, HEAD my commit of T4b.2b
+right after 2bdc808, git status clean, the notebook md5 e8a0942fff75f66e6173d6b47ba162a4); if anything
 differs, stop and show me the diff. Then wait for my notes on the package: plan each in plan
 mode (re-verify the facts with read-only probes, give a recommendation with evidence and the
 trade-off for any design question, write the steps and the commit message in the chat) and
-wait for my approval before editing. Without notes, the next sub-task is T4b.3, planned the
-same way. One sub-task per approval; I commit myself.
+wait for my approval before editing. Without notes, the next sub-task is T4b.3 (§3, after D26),
+planned the same way. One sub-task per approval; I commit myself.
 ```
 
 **Repository:** `/Users/galkampel/Desktop/Projects/age-group-prediction`, branch
@@ -322,9 +325,10 @@ settings, the metrics, the buttons, the 8 + 16 run cells (1511–2259, 2354–40
 (2261–2325, 4033–4071 and the Model 2 tables cell before 4033), `best_df`, the inspection cells
 (4074–4441).
 
-**Dependencies (D21, one-way):** `params` ← `components` ← `search_spaces`; `builders` uses those
-and `modeling`; `cross_validation` uses `aggregation` only (it takes `suggest_model` as a
-callable); `aggregation` stands alone. No runner, no results table, no MLflow, no transformer
+**Dependencies (D21, one-way; D26 revised the loop's):** `params` ← `components` ← `search_spaces`;
+`builders` uses those and `modeling`; `cross_validation` (`CrossValidationTuner`) uses `builders`
+and `aggregation`; `evaluation` (`fit_and_score`) uses `modeling`, `scoring`, `utils`;
+`aggregation` stands alone. No runner, no results table, no MLflow, no transformer
 registry in the package.
 
 **T4b.1** (records and search spaces): `params.py`, `components.py`, `search_spaces.py`, typed
@@ -391,18 +395,53 @@ definitions, `cv_score`, the aggregation tests, and the notebook's own `cv_score
 1418, which calls the package's `Mean` since this sub-task); mypy 28 files, the package's tests
 95, Check A as above, Check C the 24 baselines (151.1 s, no warning).
 
-**T4b.3** (the notebook imports the package): the class and function cells (params, components,
-search spaces, builders, cross-validation, `fit_and_score`) go; the import cell imports them from
-`age_group_prediction.hyperparameter_tuning`; the families cell keeps `COHORTS` and
-`PREDICTION_FLOOR`; the header's prose unchanged unless it names a cell that left.
-`tests/characterization/test_experiments_notebook.py`: the `tune_model` rule exempts the import
-cell instead of the `def tune_model(` cell; its `notebook_defs` fixture still reads the classes
-from `app.run()`'s defs (an imported name is a def). Ruff's baseline is re-counted (the 7 marimo
-`return` findings may change with the removed cells). Check B names: `CountComponent`,
-`ProbabilityComponent`, `CountSearchSpace`, `ProbabilitySearchSpace`, the four builders,
-`tune_model`, `fit_and_score`, `Mean`, `COHORTS`, `PREDICTION_FLOOR`, `MODEL1_RUNS`,
-`MODEL2_RUNS`, `model1_df`, `model2_df`, `best_df`, `intervals_df`, `importance_df`. Check C
-must reproduce the 24 baselines.
+**T4b.2b** (the user's notes on T4b.2, D26; the package only): the suggest functions became
+`suggest_independent_cohorts_components` / `suggest_total_times_probability_components` (they
+return the components; no `y_min`, no `random_state`); `fold_score`, `cv_score`, `tune_model`
+became `CrossValidationTuner` (the study's design in the constructor: `cv`, `metric`, `n_trials`,
+`n_startup_trials`, `aggregator` by `default_factory=Mean`, `n_jobs`; `groups` for `cv_groups`; one
+named tune method per model, `_optimize` shared); `fit_and_score` moved to `evaluation.py`
+unchanged (the user chose two named methods over one `tune` with a `Literal`, and `evaluation.py`
+over `refit.py`).
+
+*Result (2026-10-29), awaiting the user's commit:* mypy no issues in 29 files; the package's tests
+98 under `-W error` (the cross-validation tests rewritten for the class; `fit_and_score`'s in
+`test_hyperparameter_tuning_evaluation.py`; new: each tune method's trial values equal `cv_score`
+of the model rebuilt from the trial's params with `from_params`, the grouped split needs
+`groups`); the non-slow suite 1299 passed (1 skipped, 1 xfailed, 19 deselected). The 24 baselines through the tuner, before T4b.3: the
+unclicked notebook's data, `cv`, `cv_groups`, candidate dicts and seed, the settings and seed
+offsets read from the 24 run cells, `n_trials=3`, both flags `False`, `PYTHONWARNINGS=error`: all
+24 to the fourth decimal, no warning, 43.0 s. Sixteen mutations (`random_state` and `y_min` not
+built in, for both models; each sharing flag fixed; Model 2's exposure fixed; `groups` dropped; the
+aggregator ignored; `catch` widened; `n_startup_trials`, `n_trials`, `n_jobs`, the study seed, the
+direction ignored; the shared draw ignored) each fail the tests (the trial-value tests' floor is
+2.0, so that `y_min` binds). The notebook unchanged (md5 `e8a0942f…`), its test 12 passed.
+
+**T4b.3** (the notebook imports the package, the API of D26): the class and function cells
+(params, components, search spaces, builders, cross-validation, `fit_and_score`) go; the import cell
+imports from `age_group_prediction.hyperparameter_tuning` the names the remaining cells read
+(probed at T4b.2b's planning: `CountComponent`, `ProbabilityComponent`, `ProbabilitySearchSpace`
+for the calibration table, the two `build_*_model`, `CrossValidationTuner`, `fit_and_score`; the
+suggest functions only if a cell calls them) and drops what only the removed cells used (`abc`,
+`dataclasses`, `time`, `ClassVar`, `Literal`, `Parallel`, `delayed`, `TPESampler`, the estimator
+classes, `Mean`, the `modeling` import; `optuna` stays for `set_verbosity`). One cell builds the
+tuner from the settings (`CrossValidationTuner(cv=cv, metric=COHORT_POISSON_DEVIANCE,
+n_trials=n_trials, n_startup_trials=n_startup_trials, n_jobs=n_splits)`); the 24 run cells call
+`tuner.tune_independent_cohorts_model(...)` / `tuner.tune_total_times_probability_model(...)`
+with `study_seed=seed + i` (no `partial` in the run cells, no `tune_model`) and take `fit_and_score` as a cell input
+(marimo's runtime finds an imported name without it, ruff reports F821). The families cell keeps
+`COHORTS` and `PREDICTION_FLOOR`; the header's prose unchanged unless it names a cell that left.
+`tests/characterization/test_experiments_notebook.py`: the string rule that every tuning cell
+holds `mo.stop(not ` keys on the tune-method calls (`.tune_`) instead of `tune_model`, the tuner
+cell holding none; its three notebook tests call the suggest functions' new names (components,
+then `build_*_model`). Ruff's baseline is re-counted (14 today; no finding is in a removed cell).
+Check B names: the imported names, `tuner`, `COHORTS`, `PREDICTION_FLOOR`, the candidate dicts;
+absent: the removed classes and functions, `tune_model`, `Mean`, `CountSearchSpace` (`partial`
+stays: the metrics cell uses it);
+`MODEL1_RUNS`, `MODEL2_RUNS`, `model1_df`, `model2_df`, `best_df`, `intervals_df`,
+`importance_df` in Check C's defs. Check C must reproduce the 24 baselines (the copy's
+`n_trials = 400` and `share_hyperparams = True` lines replaced; the header holds the first string
+too).
 
 **T5** (docs, §6): a new `docs/HYPERPARAMETER_TUNING.md` for the new package; `MODULE_REFERENCE.md`
 rows for the six modules; `README.md` and `docs/README.md` entries; the handoff rewritten for the
@@ -487,6 +526,7 @@ State which arm was run. The shared probe (D23–D25): a 3-trial `lgbm_poisson` 
 - `json.dumps(record, default=str)` writes a `NaN` token; use `trials.to_json(orient="records")`
   when records are saved.
 - The characterization test requires every cell containing the string `tune_model` (except the
-  `def tune_model(` cell, the import cell after T4b.3) to hold `mo.stop(not `; the name must not
-  appear in the markdown cell or comments outside run cells.
+  `def tune_model(` cell) to hold `mo.stop(not `; the name must not appear in the markdown cell
+  or comments outside run cells. Since D26 the package has no `tune_model`: T4b.3 keys the rule
+  on the tune-method calls (`.tune_`) instead, and the same care applies to that string.
 - The user is not familiar with marimo's UI terms ("button"): explain them.

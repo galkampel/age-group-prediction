@@ -1,13 +1,14 @@
-"""The two composite models, built from components or from a trial's draws.
+"""The two composite models' components, drawn from a trial, and the models built from components.
 
 The suggest functions call a search space's methods explicitly and set the
 components with constructor calls, the transformer resolved through the
-candidate dict; the build functions turn components into models, with no
-Optuna. A study is one family combination and exposure (D12): the objective
-is ``suggest_independent_cohorts_model`` /
-``suggest_total_times_probability_model``, and the best run's refit sets its
-components from the study's ``best_params`` with the component types'
-``from_params`` (D25) and builds the same way.
+candidate dict; they build no model. The build functions turn components
+into models, with no Optuna. A study is one family combination and exposure
+(D12): its objective draws the components with
+``suggest_independent_cohorts_components`` /
+``suggest_total_times_probability_components`` and builds them; the best
+run's refit sets its components from the study's ``best_params`` with the
+component types' ``from_params`` (D25) and builds them the same way.
 """
 
 from __future__ import annotations
@@ -34,8 +35,8 @@ from .search_spaces import CountSearchSpace, ProbabilitySearchSpace
 __all__ = [
     "build_independent_cohorts_model",
     "build_total_times_probability_model",
-    "suggest_independent_cohorts_model",
-    "suggest_total_times_probability_model",
+    "suggest_independent_cohorts_components",
+    "suggest_total_times_probability_components",
 ]
 
 
@@ -56,7 +57,7 @@ def build_independent_cohorts_model(
     )
 
 
-def suggest_independent_cohorts_model(
+def suggest_independent_cohorts_components(
     trial: BaseTrial,
     *,
     family: CountFamily,
@@ -65,10 +66,8 @@ def suggest_independent_cohorts_model(
     feature_transformer_dict: Mapping[str, FeatureTransformer],
     share_hyperparams: bool,
     share_feature_transformer: bool,
-    y_min: float,
-    random_state: int | None,
-) -> IndependentCohortModels:
-    """The independent cohorts model of the components ``trial`` draws for one family and exposure.
+) -> tuple[CountComponent, ...]:
+    """The components ``trial`` draws for the independent cohorts model of one family and exposure, one per cohort.
 
     ``share_hyperparams``: one draw of the hyperparameters in every component;
     ``share_feature_transformer``: one draw of the transformer in every
@@ -116,10 +115,7 @@ def suggest_independent_cohorts_model(
                 feature_transformer=feature_transformer_dict[feature_transformer_name],
             )
         )
-    independent_cohorts_model = build_independent_cohorts_model(
-        cohort_components, y_min=y_min, random_state=random_state
-    )
-    return independent_cohorts_model
+    return tuple(cohort_components)
 
 
 def build_total_times_probability_model(
@@ -150,7 +146,7 @@ def build_total_times_probability_model(
     )
 
 
-def suggest_total_times_probability_model(
+def suggest_total_times_probability_components(
     trial: BaseTrial,
     *,
     total_family: CountFamily,
@@ -158,10 +154,8 @@ def suggest_total_times_probability_model(
     use_exposure: bool,
     total_feature_transformer_dict: Mapping[str, FeatureTransformer],
     probability_feature_transformer_dict: Mapping[str, FeatureTransformer],
-    y_min: float,
-    random_state: int | None,
-) -> TotalTimesProbabilityModel:
-    """The total times probability model of the components ``trial`` draws for one family pair and exposure."""
+) -> tuple[CountComponent, ProbabilityComponent]:
+    """The components ``trial`` draws for the total times probability model of one family pair and exposure: the total's, then the probabilities'."""
     # The draws, in order: the total's hyperparameters and transformer under
     # `total__`, then the probabilities' hyperparameters, calibration and
     # transformer under `probability__`.
@@ -193,10 +187,4 @@ def suggest_total_times_probability_model(
             probability_search_space.suggest_feature_transformer_name(trial)
         ],
     )
-    total_times_probability_model = build_total_times_probability_model(
-        total_component,
-        probability_component,
-        y_min=y_min,
-        random_state=random_state,
-    )
-    return total_times_probability_model
+    return total_component, probability_component

@@ -19,8 +19,8 @@ from age_group_prediction.hyperparameter_tuning import (
     ProbabilityComponent,
     build_independent_cohorts_model,
     build_total_times_probability_model,
-    suggest_independent_cohorts_model,
-    suggest_total_times_probability_model,
+    suggest_independent_cohorts_components,
+    suggest_total_times_probability_components,
 )
 
 PASSTHROUGH = Plan(name="passthrough")
@@ -59,9 +59,11 @@ def _trial(seed: int) -> Trial:
     return optuna.create_study(sampler=RandomSampler(seed=seed)).ask()
 
 
-def _count_components(params: dict[str, Any], *, family: Any) -> list[CountComponent]:
+def _count_components(
+    params: dict[str, Any], *, family: Any
+) -> tuple[CountComponent, ...]:
     """The components ``CountComponent.from_params`` reads back from ``params``, one per cohort."""
-    return [
+    return tuple(
         CountComponent.from_params(
             params,
             name=cohort,
@@ -70,7 +72,7 @@ def _count_components(params: dict[str, Any], *, family: Any) -> list[CountCompo
             feature_transformer_dict=TRANSFORMERS,
         )
         for cohort in COHORTS
-    ]
+    )
 
 
 @pytest.mark.parametrize(("share_hyperparams", "share_feature_transformer"), SHARING)
@@ -82,7 +84,7 @@ def test_a_shared_choice_is_one_draw_in_every_cohorts_component(
     # hyperparameters: one draw under `shared__`, each cohort still drawing its
     # transformer, 13. Both shared: 11, one transformer in every component.
     trial = _trial(0)
-    suggest_independent_cohorts_model(
+    components = suggest_independent_cohorts_components(
         trial,
         family="lgbm_poisson",
         use_exposure=True,
@@ -90,15 +92,13 @@ def test_a_shared_choice_is_one_draw_in_every_cohorts_component(
         feature_transformer_dict=TRANSFORMERS,
         share_hyperparams=share_hyperparams,
         share_feature_transformer=share_feature_transformer,
-        y_min=Y_MIN,
-        random_state=0,
     )
     names = sorted(trial.params)
     shared_names = [name for name in names if name.startswith("shared__")]
     transformer_names = [
         name for name in names if name.endswith("__feature_transformer")
     ]
-    components = _count_components(trial.params, family="lgbm_poisson")
+    assert [component.name for component in components] == list(COHORTS)
     if share_feature_transformer:
         assert transformer_names == ["shared__feature_transformer"]
         assert len({id(c.feature_transformer) for c in components}) == 1
@@ -118,13 +118,13 @@ def test_a_shared_choice_is_one_draw_in_every_cohorts_component(
 
 @pytest.mark.parametrize("family", ["lgbm_poisson", "nb2"])
 @pytest.mark.parametrize(("share_hyperparams", "share_feature_transformer"), SHARING)
-def test_the_independent_cohorts_model_read_back_from_a_trials_params_is_the_one_drawn(
+def test_the_independent_cohorts_components_read_back_from_a_trials_params_are_the_ones_drawn(
     family: str, share_hyperparams: bool, share_feature_transformer: bool
 ) -> None:
-    # The refit reads the best components from best_params (D25): the model
-    # built from them must be the model the objective built from the draws.
+    # The refit reads the best components from best_params (D25): they must be
+    # the components the objective drew, so both build the same model.
     trial = _trial(1)
-    drawn = suggest_independent_cohorts_model(
+    drawn = suggest_independent_cohorts_components(
         trial,
         family=family,  # type: ignore[arg-type]
         use_exposure=True,
@@ -132,36 +132,22 @@ def test_the_independent_cohorts_model_read_back_from_a_trials_params_is_the_one
         feature_transformer_dict=TRANSFORMERS,
         share_hyperparams=share_hyperparams,
         share_feature_transformer=share_feature_transformer,
-        y_min=Y_MIN,
-        random_state=0,
     )
-    read = build_independent_cohorts_model(
-        _count_components(trial.params, family=family), y_min=Y_MIN, random_state=0
-    )
-    assert list(drawn.cohort_models) == list(read.cohort_models) == list(COHORTS)
-    for cohort in COHORTS:
-        drawn_model, read_model = (
-            drawn.cohort_models[cohort],
-            read.cohort_models[cohort],
-        )
-        assert read_model.estimator.get_params() == drawn_model.estimator.get_params()
-        assert read_model.feature_transformer is drawn_model.feature_transformer
+    assert _count_components(trial.params, family=family) == drawn
 
 
 @pytest.mark.parametrize("probability_family", ["lgbm", "logistic"])
-def test_the_total_times_probability_model_read_back_from_a_trials_params_is_the_one_drawn(
+def test_the_total_times_probability_components_read_back_from_a_trials_params_are_the_ones_drawn(
     probability_family: str,
 ) -> None:
     trial = _trial(2)
-    drawn = suggest_total_times_probability_model(
+    drawn = suggest_total_times_probability_components(
         trial,
         total_family="lgbm_gaussian",
         probability_family=probability_family,  # type: ignore[arg-type]
         use_exposure=True,
         total_feature_transformer_dict=TRANSFORMERS,
         probability_feature_transformer_dict=PROBABILITY_TRANSFORMERS,
-        y_min=Y_MIN,
-        random_state=0,
     )
     # The two parts share LightGBM's parameter names; each reads its own.
     total = CountComponent.from_params(
@@ -177,17 +163,7 @@ def test_the_total_times_probability_model_read_back_from_a_trials_params_is_the
         family=probability_family,  # type: ignore[arg-type]
         feature_transformer_dict=PROBABILITY_TRANSFORMERS,
     )
-    read = build_total_times_probability_model(
-        total, probability, y_min=Y_MIN, random_state=0
-    )
-    for part in ("total_model", "probability_model"):
-        drawn_part, read_part = getattr(drawn, part), getattr(read, part)
-        assert read_part.estimator.get_params() == drawn_part.estimator.get_params()
-        assert read_part.feature_transformer is drawn_part.feature_transformer
-    assert (
-        read.probability_model.calibration_method
-        == drawn.probability_model.calibration_method
-    )
+    assert (total, probability) == drawn
 
 
 def test_the_independent_cohorts_build_passes_each_components_settings_on() -> None:
