@@ -11,7 +11,8 @@ planning session verified the state and measured the baselines of §1; it edited
 (from `e2a4f78`, pushed), whose draft PR #17 "refactor(tuning): rebuild the hyperparameter_tuning
 package from the experiment notebook" goes into `feat/experiment-notebook` and covers T4a.1–T5, one
 commit per sub-task; the notebook md5 unchanged `425b6cf3ff396a478ad08756c2211338`. The user
-paused there. **Next: T4a.2.** The implementing session updates this line, ticks the sub-tasks of
+paused there. **T4a.2 done 2026-10-29** (the four docs deleted, the five guides point at the
+notebook), awaiting the user's commit; the notebook md5 unchanged. **Next: T4a.3.** The implementing session updates this line, ticks the sub-tasks of
 §2, and records each sub-task's commit and the notebook's md5 in §1 as it goes; this file is the
 handoff for any session that continues the work.
 
@@ -179,7 +180,7 @@ files and overrides drop the package; one test comment points at
 INDEPENDENT_COHORT_MODELS.md instead of the guide T4a.2 deletes.
 ```
 
-### [ ] T4a.2 The docs that state current API
+### [x] T4a.2 The docs that state current API
 
 1. `rm docs/HYPERPARAMETER_TUNING.md docs/HYPERPARAMETER_TUNING_PLAN.md docs/HYPERPARAMETER_TUNING_REVIEW.md docs/HYPERPARAMETER_TUNING_VALIDATION.md`
 2. `README.md:36–39`: the bullet "[Hyperparameter tuning package](docs/HYPERPARAMETER_TUNING.md):
@@ -216,6 +217,15 @@ INDEPENDENT_COHORT_MODELS.md instead of the guide T4a.2 deletes.
 - `ls docs/HYPERPARAMETER_TUNING*` finds nothing;
 - every link the edited lines keep resolves (`NOTEBOOK_TUNING_PLAN.md` exists);
 - `git status` shows the four deletions and the five edits; the notebook md5 unchanged.
+
+**Result (2026-10-29), awaiting the user's commit:** the grep empty; the four docs gone; every
+relative link of the five guides resolves; `git status` the four deletions, the five edits and
+this file; md5 unchanged. Two departures from the wording above, approved with the plan: the new
+README and docs/README text says "the old tuning package" (steps 2–3 named the package, which
+the done-when grep forbids), and `INDEPENDENT_COHORT_MODELS.md` says "a tuner's
+`clone(model).set_params(...)`" for "the tuner's" (the tuner was the deleted evaluator; the file
+says "a tuner" elsewhere). Left for T5: `MODULE_REFERENCE.md`'s `scoring.py` row still lists the
+five constants T3 removed.
 
 **Commit message:**
 ```

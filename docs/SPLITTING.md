@@ -263,9 +263,9 @@ the §3 block for every method) and
 1. **Migrate the consumers.** `experiment/partitions.py` shrinks rather than
    ports — its disjointness and exact-partition checks become structurally
    impossible once folds are index complements. Then `models/fold_scoring.py`
-   and the old models' nested tuning loops. The new tuning package already
-   consumes `cv`: every trial re-splits with the same seeded validator
-   ([Hyperparameter tuning §4](HYPERPARAMETER_TUNING.md#4-the-evaluator)).
+   and the old models' nested tuning loops. The experiment notebook's tuning
+   loop (`cv_score`, section 5 of `notebooks/02_experiments.py`) already
+   consumes `cv`: every trial splits with the same seeded validator.
 2. **Report metrics by group size** (1 / 2-3 / 4-7 / 8+) instead of filtering,
    so the coverage gap in §4 is visible rather than silent.
 3. **Surface `_prediction_fallback_count`** in the Bayesian model's evidence,

@@ -20,9 +20,8 @@ implementation details conflict, the model specification controls behavior.
     (PR #11; see the [plan](MULTI_COHORT_MODELS_PLAN.md)) and rebuilt again on
     library estimators as `TotalTimesProbabilityModel`, without torch (PR #13;
     see the [plan](TOTAL_TIMES_PROBABILITY_MODEL_PLAN.md));
-  - the `hyperparameter_tuning` package is complete (PR #5; the
-    [user guide](HYPERPARAMETER_TUNING.md); decisions and design in its
-    [plan](HYPERPARAMETER_TUNING_PLAN.md));
+  - the old tuning package was removed on 2026-10-29; a new one is rebuilt from
+    the experiment notebook's section 5 ([plan](NOTEBOOK_TUNING_PLAN.md) D17, T4b);
   - the `splitting` package (built and tested, not yet wired);
   - the `inspection` package is complete (PRs #14 and C; the
     [user guide](MODEL_INSPECTION.md); decisions in the
@@ -41,7 +40,6 @@ implementation details conflict, the model specification controls behavior.
 |---|---|
 | [Modeling guide](MODELING_GUIDE.md) | User guide to the simulator-to-model pipeline, public APIs, configuration, evidence, and invariants |
 | [MLflow experiments guide](MLFLOW_EXPERIMENTS_GUIDE.md) | User guide to scratch tracking, run layout, metrics, search, final-run semantics, and model loading |
-| [Hyperparameter tuning](HYPERPARAMETER_TUNING.md) | User guide to the `hyperparameter_tuning` package: parameters, the cross-validation evaluator, fold aggregation and the corrected standard error, the study and its records, pruning, reproducibility, making a model tunable, hazards; the worked example run as written |
 | [Model inspection](MODEL_INSPECTION.md) | User guide to the `inspection` package: the bootstrap interval of a metric (rows or whole neighborhoods), permutation importance per raw column (held-out and training rows, per component), SHAP values of the rate or the count (exact or permutation, codes for string columns, the plots), hazards; the worked example on both rebuilt models run as written |
 
 ## Model And Component References
@@ -71,7 +69,6 @@ implementation details conflict, the model specification controls behavior.
 | [Model re-implementation plan](MODEL_REIMPLEMENTATION_PLAN.md) | Decisions and step-by-step record for the scikit-learn-style `modeling` package |
 | [Multi-cohort models plan](MULTI_COHORT_MODELS_PLAN.md) | Decisions, steps and evidence for `IndependentCohortModels` (Model A's cohorts in one object; PR #10) and the rebuilt Model B in `modeling` (PR #11), with the smoke run comparing them |
 | [Total times probability model plan](TOTAL_TIMES_PROBABILITY_MODEL_PLAN.md) | Model B rebuilt again on library estimators (PR #13): `CountModel` with NB2 as `NegativeBinomialRegressor`, `CohortProbabilityModel` on any classifier with calibration inside, `TotalTimesProbabilityModel`; decisions P1–P15, measured evidence, the sub-task records and the smoke run |
-| [Hyperparameter tuning plan](HYPERPARAMETER_TUNING_PLAN.md) | Implemented (PR #5): decisions D1–D20, the design with its measured evidence and the test table of the `hyperparameter_tuning` package; the user guide is above |
 | [Direct cohort generalization plan](DIRECT_COHORT_GENERALIZATION_PLAN.md) | Any regressor in `DirectCohortModel` (the exposure as a weighted rate, with the derivation), the `feature_transformer` inside each model in place of `ModelPipeline`, and the tuning evaluator on the raw table |
 | [Experiment notebook plan](EXPERIMENT_NOTEBOOK_PLAN.md) | The MLflow experiment notebook and the work before it, as four PRs: the tuning study (A), the three-way split and the cohort count metric (B), feature importance (C), the notebook with the data and MLflow (D); decisions E1–E12, sub-tasks with done-when lists |
 | [Experiment notebook handoff](EXPERIMENT_NOTEBOOK_HANDOFF.md) | Where the notebook stands (2026-10-14) and the user's order of work: split, feature configurations (with the exposure rule), tuning both models, the bootstrap and importance check, MLflow runs |

@@ -33,10 +33,10 @@ building-level DataFrame:
   explains how Model A and Model B tune with seeded Optuna studies nested
   inside each training fold, what is tuned, and where the evidence is logged
   (the Bayesian model uses fixed priors and NUTS profiles instead).
-- [Hyperparameter tuning package](docs/HYPERPARAMETER_TUNING.md): the
-  `hyperparameter_tuning` package that tunes the rebuilt `modeling` models
-  (parameters, a cross-validation evaluator, fold aggregation, an Optuna
-  study), with a worked example run as written.
+- [Hyperparameter tuning of the rebuilt models](docs/NOTEBOOK_TUNING_PLAN.md):
+  section 5 of `notebooks/02_experiments.py`, plain Optuna and a hand-written
+  cross-validation loop. The old tuning package was removed on 2026-10-29; a
+  new one is rebuilt from that code, with its guide.
 - [Model inspection](docs/MODEL_INSPECTION.md): the `inspection` package for
   the rebuilt models: bootstrap intervals of a metric, permutation importance
   per raw column and SHAP values of the predicted rate or count, with a
