@@ -23,6 +23,10 @@ import optuna
 import pytest
 from optuna.samplers import RandomSampler
 
+from age_group_prediction.hyperparameter_tuning import (
+    suggest_independent_cohorts_components,
+    suggest_total_times_probability_components,
+)
 from student_simulator import load_simulation_config
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -186,14 +190,13 @@ def test_a_seed_override_not_reaching_the_simulator_is_caught(tmp_path: Path) ->
 def test_a_tuning_cell_outside_a_run_button_is_caught() -> None:
     # A cell that tunes without `mo.stop(not <button>.value)` would fit its
     # run's study on every script run, the notebook test included. A string
-    # check on the cells that name `tune_model` (each run cell calls it): the
-    # stop's presence, not its position; the script run's wall time above is
-    # the behavioural guard.
+    # check on the cells that call the tuner's tune methods (each run cell
+    # calls one; the cell building the tuner calls none): the stop's
+    # presence, not its position; the script run's wall time above is the
+    # behavioural guard.
     source = NOTEBOOK_PATH.read_text(encoding="utf-8")
     cells = source.split("@app.cell")
-    tuning_cells = [
-        cell for cell in cells if "tune_model" in cell and "def tune_model(" not in cell
-    ]
+    tuning_cells = [cell for cell in cells if "tuner.tune_" in cell]
     assert len(tuning_cells) >= 1
     assert all(re.search(r"mo\.stop\(\s*not ", cell) for cell in tuning_cells)
 
@@ -212,12 +215,12 @@ def notebook_defs() -> dict:
 SHARING = [(False, False), (True, False), (True, True)]
 
 
-def _count_components(notebook_defs: dict, params: dict, **settings) -> list:
+def _count_components(notebook_defs: dict, params: dict, **settings) -> tuple:
     """The components ``CountComponent.from_params`` reads back from ``params``, one per cohort."""
-    return [
+    return tuple(
         notebook_defs["CountComponent"].from_params(params, name=cohort, **settings)
         for cohort in notebook_defs["COHORTS"]
-    ]
+    )
 
 
 @pytest.mark.parametrize(("share_hyperparams", "share_feature_transformer"), SHARING)
@@ -227,9 +230,10 @@ def test_a_shared_choice_is_one_draw_in_every_cohorts_component(
     # Independent: each of the three cohorts draws LightGBM's ten hyperparameters
     # and its transformer, 33 parameters. Shared hyperparameters: one draw under
     # `shared__` in every component, each cohort still drawing its transformer,
-    # 13. Both shared: 11, one transformer in every component. The objective
-    # builds the model from the draws; the components are read back from the
-    # trial's params by the component type, as the best run's are (D25).
+    # 13. Both shared: 11, one transformer in every component. The package's
+    # objective draws the components on the notebook's cohorts and candidates;
+    # they are read back from the trial's params by the component type, as the
+    # best run's are (D25, D26).
     trial = optuna.create_study(sampler=RandomSampler(seed=0)).ask()
     cohorts = notebook_defs["COHORTS"]
     settings = {
@@ -239,13 +243,11 @@ def test_a_shared_choice_is_one_draw_in_every_cohorts_component(
             "lgbm_poisson"
         ],
     }
-    model = notebook_defs["suggest_independent_cohorts_model"](
+    drawn = suggest_independent_cohorts_components(
         trial,
         cohorts=cohorts,
         share_hyperparams=share_hyperparams,
         share_feature_transformer=share_feature_transformer,
-        y_min=notebook_defs["PREDICTION_FLOOR"],
-        random_state=0,
         **settings,
     )
     names = sorted(trial.params)
@@ -254,6 +256,7 @@ def test_a_shared_choice_is_one_draw_in_every_cohorts_component(
         name for name in names if name.endswith("__feature_transformer")
     ]
     components = _count_components(notebook_defs, trial.params, **settings)
+    assert components == drawn
     estimator_params = {component.estimator_params for component in components}
     transformers = {id(component.feature_transformer) for component in components}
     if share_feature_transformer:
@@ -271,12 +274,6 @@ def test_a_shared_choice_is_one_draw_in_every_cohorts_component(
         assert len(names) == 33
         assert shared_names == []
         assert all(name.split("__")[0] in cohorts for name in names)
-    # The read-back components make the estimators the objective made.
-    for cohort, component in zip(cohorts, components, strict=True):
-        assert (
-            component.make_estimator(random_state=0).get_params()
-            == model.cohort_models[cohort].estimator.get_params()
-        )
     # The record of a run: plain data, the transformer by its declaration.
     for component in components:
         record = json.loads(json.dumps(component.to_dict()))
@@ -288,49 +285,33 @@ def test_the_best_components_are_read_back_from_the_trials_params(
     notebook_defs: dict, share_hyperparams: bool, share_feature_transformer: bool
 ) -> None:
     # The refit after a study reads the best components from best_params by
-    # the component type (D25): the model built from them must be the model
-    # the objective built from the same draws, for either model.
+    # the component type (D25): they must be the components the objective drew
+    # from the same trial, for either model; the build is the same for both.
     trial = optuna.create_study(sampler=RandomSampler(seed=1)).ask()
-    cohorts = notebook_defs["COHORTS"]
     settings = {
         "family": "nb2",
         "use_exposure": False,
         "feature_transformer_dict": notebook_defs["COUNT_FEATURE_TRANSFORMERS"]["nb2"],
     }
-    drawn = notebook_defs["suggest_independent_cohorts_model"](
+    drawn = suggest_independent_cohorts_components(
         trial,
-        cohorts=cohorts,
+        cohorts=notebook_defs["COHORTS"],
         share_hyperparams=share_hyperparams,
         share_feature_transformer=share_feature_transformer,
-        y_min=notebook_defs["PREDICTION_FLOOR"],
-        random_state=0,
         **settings,
     )
-    read = notebook_defs["build_independent_cohorts_model"](
-        _count_components(notebook_defs, trial.params, **settings),
-        y_min=notebook_defs["PREDICTION_FLOOR"],
-        random_state=0,
-    )
-    for cohort in cohorts:
-        drawn_model, read_model = (
-            drawn.cohort_models[cohort],
-            read.cohort_models[cohort],
-        )
-        assert read_model.estimator.get_params() == drawn_model.estimator.get_params()
-        assert read_model.feature_transformer is drawn_model.feature_transformer
+    assert _count_components(notebook_defs, trial.params, **settings) == drawn
 
     trial = optuna.create_study(sampler=RandomSampler(seed=2)).ask()
     count_transformers = notebook_defs["COUNT_FEATURE_TRANSFORMERS"]["lgbm_gaussian"]
     probability_transformers = notebook_defs["PROBABILITY_FEATURE_TRANSFORMERS"]["lgbm"]
-    drawn = notebook_defs["suggest_total_times_probability_model"](
+    drawn = suggest_total_times_probability_components(
         trial,
         total_family="lgbm_gaussian",
         probability_family="lgbm",
         use_exposure=True,
         total_feature_transformer_dict=count_transformers,
         probability_feature_transformer_dict=probability_transformers,
-        y_min=notebook_defs["PREDICTION_FLOOR"],
-        random_state=0,
     )
     # The two parts share LightGBM's parameter names; each reads its own.
     total = notebook_defs["CountComponent"].from_params(
@@ -346,22 +327,7 @@ def test_the_best_components_are_read_back_from_the_trials_params(
         family="lgbm",
         feature_transformer_dict=probability_transformers,
     )
-    read = notebook_defs["build_total_times_probability_model"](
-        total, probability, y_min=notebook_defs["PREDICTION_FLOOR"], random_state=0
-    )
-    assert (
-        read.total_model.estimator.get_params()
-        == drawn.total_model.estimator.get_params()
-    )
-    assert (
-        read.probability_model.estimator.get_params()
-        == drawn.probability_model.estimator.get_params()
-    )
-    assert read.total_model.feature_transformer is drawn.total_model.feature_transformer
-    assert (
-        read.probability_model.calibration_method
-        == drawn.probability_model.calibration_method
-    )
+    assert (total, probability) == drawn
     assert total.estimator_params.max_depth == trial.params["total__max_depth"]
     assert (
         probability.estimator_params.max_depth == trial.params["probability__max_depth"]

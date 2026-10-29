@@ -135,8 +135,10 @@ design and commits):
   2026-10-29 on `refactor/hyperparameter-tuning-package` (draft PR #17 into
   `feat/experiment-notebook`): T4a.1 `5c0908a`, T4a.2 `ed1a770`, T4a.3 `6935416`;
   the notebook unchanged. T4b.1 `2765196`, T4b.2 `2bdc808` (the notebook imports `Mean` from the
-  package, md5 `e8a0942fff75f66e6173d6b47ba162a4`), T4b.2b (D26, the user's notes on T4b.2; the
-  package only) awaiting the user's commit. **Next: T4b.3**, planned with T5 in
+  package, md5 `e8a0942fff75f66e6173d6b47ba162a4`), T4b.2b `362cab6` (D26, the user's notes on T4b.2;
+  the package only), T4b.3 (the notebook imports the package, md5
+  `771464b5583902cf0cf8279359ae0f23`) awaiting the user's commit; T4b complete. **Next: T5**,
+  planned in
   [NOTEBOOK_T4_HANDOFF.md](NOTEBOOK_T4_HANDOFF.md) (2026-10-29), the handoff the implementing
   session reads first and updates.
 - **The commits of the task:**
@@ -165,7 +167,8 @@ design and commits):
   | T4a.3 (the finished plans, the status lines) | `6935416` |
   | T4b.1 (params, components, search spaces) | `2765196` |
   | T4b.2 (builders, the loop, the aggregators) | `2bdc808` |
-  | T4b.2b (D26: components-only suggest functions, `CrossValidationTuner`, `evaluation.py`) | awaiting commit |
+  | T4b.2b (D26: components-only suggest functions, `CrossValidationTuner`, `evaluation.py`) | `362cab6` |
+  | T4b.3 (the notebook imports the package) | awaiting commit |
 
   Check `git status` and `git log -3` first; the user may have edited since.
 - **Checks at HEAD:**

@@ -17,10 +17,11 @@ T4a is complete. **T4b.1 committed `2765196`** (`params.py`, `components.py`,
 `search_spaces.py` and their tests). **T4b.2 committed `2bdc808`** (`builders.py`,
 `cross_validation.py`, `aggregation.py` moved in, the root module removed, the notebook's `Mean`
 import, `Aggregator.aggregate` renamed `aggregate_scores`; §3's T4b.2 result); the notebook md5
-`e8a0942fff75f66e6173d6b47ba162a4`. **T4b.2b done 2026-10-29** (the user's notes on T4b.2,
+`e8a0942fff75f66e6173d6b47ba162a4`. **T4b.2b committed `362cab6`** (the user's notes on T4b.2,
 NOTEBOOK_TUNING_PLAN.md D26: the suggest functions return components, `CrossValidationTuner`,
-`evaluation.py`; the package only, the notebook unchanged; §3's T4b.2b result), awaiting the
-user's commit. **Next: T4b.3**, as §3 now describes it. The implementing session updates this line, ticks the sub-tasks of
+`evaluation.py`; the package only, the notebook unchanged; §3's T4b.2b result). **T4b.3 done
+2026-10-29** (the notebook imports the package; §3's T4b.3 result), awaiting the user's commit;
+the notebook md5 `771464b5583902cf0cf8279359ae0f23`; T4b is complete. **Next: T5** (§3). The implementing session updates this line, ticks the sub-tasks of
 §2, and records each sub-task's commit and the notebook's md5 in §1 as it goes; this file is the
 handoff for any session that continues the work.
 
@@ -28,15 +29,15 @@ handoff for any session that continues the work.
 
 ```text
 Read docs/NOTEBOOK_T4_HANDOFF.md in full, then the documents its reading order lists, and
-src/age_group_prediction/hyperparameter_tuning/ (T4b.1–T4b.2b, already moved from the notebook
-and revised by D26) with its tests tests/unit/test_hyperparameter_tuning_*.py. Verify the state
-of the status line first (branch refactor/hyperparameter-tuning-package, HEAD my commit of T4b.2b
-right after 2bdc808, git status clean, the notebook md5 e8a0942fff75f66e6173d6b47ba162a4); if anything
+src/age_group_prediction/hyperparameter_tuning/ (T4b, the package the notebook now imports,
+D26's API) with its tests tests/unit/test_hyperparameter_tuning_*.py. Verify the state of the
+status line first (branch refactor/hyperparameter-tuning-package, HEAD my commit of T4b.3 right
+after 362cab6, git status clean, the notebook md5 771464b5583902cf0cf8279359ae0f23); if anything
 differs, stop and show me the diff. Then wait for my notes on the package: plan each in plan
 mode (re-verify the facts with read-only probes, give a recommendation with evidence and the
 trade-off for any design question, write the steps and the commit message in the chat) and
-wait for my approval before editing. Without notes, the next sub-task is T4b.3 (§3, after D26),
-planned the same way. One sub-task per approval; I commit myself.
+wait for my approval before editing. Without notes, the next sub-task is T5 (§3), planned the
+same way; after T5, write the full body of draft PR #17. One sub-task per approval; I commit myself.
 ```
 
 **Repository:** `/Users/galkampel/Desktop/Projects/age-group-prediction`, branch
@@ -442,6 +443,22 @@ stays: the metrics cell uses it);
 `importance_df` in Check C's defs. Check C must reproduce the 24 baselines (the copy's
 `n_trials = 400` and `share_hyperparams = True` lines replaced; the header holds the first string
 too).
+
+*Result (2026-10-29), awaiting the user's commit:* built by a scratch script from the committed
+notebook (each rewritten cell formatted on its own), first checked on a copy outside the repo, then
+applied: 4445 → 3491 lines, md5 `771464b5583902cf0cf8279359ae0f23`. The import cell takes seven
+names from the package (`CountComponent`, `CrossValidationTuner`, `ProbabilityComponent`,
+`ProbabilitySearchSpace`, the two `build_*_model`, `fit_and_score`); a `tuner` cell before Model
+1's button; the 24 run cells call `tuner.tune_*` with the old `partial`'s settings and
+`study_seed=seed + i`. The notebook test (the user's choice: keep, rewritten): the rule keys on
+`tuner.tune_` (24 cells; a removed stop is caught), the tuning tests take the suggest functions from
+the package and the data from the notebook and check drawn components == read-back components.
+Check A: the notebook test 12 passed, ruff 14 (none new), the format hunks -158 and -213, `marimo
+check` the two known issues. Check B: the seven names are the package's objects, `tuner`,
+`COHORTS`, `PREDICTION_FLOOR`, the candidate dicts, `partial` defined; the removed names, `Mean`,
+`CountSearchSpace`, `tune_model`, the old `suggest_*_model` absent. Check C (both flags `False`,
+`PYTHONWARNINGS=error`): the 24 baselines, the seven tables and records defined, no warning,
+84.4 s. The non-slow suite 1299 passed (1 skipped, 1 xfailed, 19 deselected).
 
 **T5** (docs, §6): a new `docs/HYPERPARAMETER_TUNING.md` for the new package; `MODULE_REFERENCE.md`
 rows for the six modules; `README.md` and `docs/README.md` entries; the handoff rewritten for the
