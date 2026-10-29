@@ -4,7 +4,8 @@
 `notebooks/02_experiments.py`: the runs logged from the notebook's run records, the comparison
 table, and E11's refit on training + validation scored once on test.
 
-**Written:** 2026-10-29, after T5 of [NOTEBOOK_TUNING_PLAN.md](NOTEBOOK_TUNING_PLAN.md). The
+**Written:** 2026-10-29, after T5 of [NOTEBOOK_TUNING_PLAN.md](NOTEBOOK_TUNING_PLAN.md);
+**updated** the same day after PR #17 was squash-merged (§2). The
 detailed history of the tuning work is in that plan (§0 D1–D26, §2–§6 the sub-tasks), in
 [NOTEBOOK_T4_HANDOFF.md](NOTEBOOK_T4_HANDOFF.md) (T4–T5) and in git. Re-verify every fact here
 against the code of the day.
@@ -64,11 +65,13 @@ used yet; the old `tracking/` package belongs to the old stack.
 
 ## 2. State (2026-10-29)
 
-- **Branches and PRs:** `refactor/hyperparameter-tuning-package` (draft PR #17 into
-  `feat/experiment-notebook`) holds T4a–T5, one commit per sub-task. `feat/experiment-notebook`
-  (from `main`) holds T1–T3 and D23–D25 and has no PR into `main` yet. The user merges.
-- **HEAD:** the user's commit of T5.2, after `6c89a61` (T5.1). **Notebook md5:**
-  `771464b5583902cf0cf8279359ae0f23`.
+- **Branch:** `feat/experiment-notebook` (from `main`). PR #17 (T4a–T5) was squash-merged
+  into it as `a748cd4` on 2026-10-29, and its branch `refactor/hyperparameter-tuning-package`
+  was deleted locally and on GitHub. `feat/experiment-notebook` holds T1–T5 and has no PR into
+  `main` yet. The user merges.
+- **HEAD:** the user's commit of this handoff's update, right after `a748cd4`. **Notebook md5:**
+  `771464b5583902cf0cf8279359ae0f23` (unchanged by the merge: the merged tree equals the PR
+  branch's last commit, `b66a8ed`).
 - **Checks at HEAD:**
   - the notebook test (`tests/characterization/test_experiments_notebook.py`) 12 passed;
   - `ruff check notebooks/02_experiments.py`: 14 findings, all pre-existing: 12 marimo
@@ -129,7 +132,12 @@ used yet; the old `tracking/` package belongs to the old stack.
   | The T4 handoff | `e2a4f78`, `6f4b479` |
   | T4a.1 / T4a.2 / T4a.3 (the old package, its docs, the notes) | `5c0908a` / `ed1a770` / `6935416` |
   | T4b.1 / T4b.2 / T4b.2b / T4b.3 (the new package, D26, the notebook's import) | `2765196` / `2bdc808` / `362cab6` / `1370236` |
-  | T5.1 / T5.2 (the guide; the plans and this handoff) | `6c89a61` / the user's next commit |
+  | T5.1 / T5.2 (the guide; the plans and this handoff) | `6c89a61` / `b66a8ed` |
+  | PR #17 squash-merged (T4a.1–T5.2 in one commit) | `a748cd4` |
+  | This handoff's update after the merge | the user's next commit |
+
+  The T4a–T5 hashes above are PR #17's commits: after the squash they are not in
+  `feat/experiment-notebook`'s history, and GitHub keeps them under the PR.
 
 ## 3. Decisions (do not re-ask)
 
@@ -279,7 +287,8 @@ planned with the user:
 Read docs/EXPERIMENT_NOTEBOOK_HANDOFF.md in full, then docs/HYPERPARAMETER_TUNING.md,
 docs/MODEL_INSPECTION.md, docs/EXPERIMENT_NOTEBOOK_PLAN.md §3, §4 (E3, E7–E12 and their
 2026-10-29 notes) and §9 (D2–D5), and notebooks/02_experiments.py. Verify the state of §2 first
-(the branch I name, HEAD, git status clean, the notebook md5 771464b5583902cf0cf8279359ae0f23);
+(branch feat/experiment-notebook, HEAD my commit of the handoff update right after a748cd4,
+git status clean, the notebook md5 771464b5583902cf0cf8279359ae0f23);
 if anything differs, stop and show me the diff. Then plan the items of §6 in order, starting with
 the MLflow runs from the run records: plan mode first, re-verify the facts with read-only probes,
 give a recommendation with evidence and the trade-off for any design question, write the steps
