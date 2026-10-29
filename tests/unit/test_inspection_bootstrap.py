@@ -14,7 +14,9 @@ from sklearn.linear_model import LogisticRegression
 
 from age_group_prediction.inspection import BootstrapEvaluator
 from age_group_prediction.modeling import BaseAgeGroupModel, CohortProbabilityModel
-from age_group_prediction.scoring import COHORT_LOG_LOSS, Direction, Metric
+from age_group_prediction.scoring import Direction, Metric, cohort_log_loss
+
+COHORT_LOG_LOSS = Metric("cohort_log_loss", cohort_log_loss)
 
 # y is the row id, and the spy model predicts it too, so a metric can tell
 # which rows a replicate drew and whether y and the predictions stay paired.

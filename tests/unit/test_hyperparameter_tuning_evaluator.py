@@ -19,7 +19,7 @@ from optuna.trial import FixedTrial
 from pydantic import ValidationError
 from sklearn.base import clone
 from sklearn.exceptions import NotFittedError
-from sklearn.metrics import mean_squared_error
+from sklearn.metrics import mean_poisson_deviance, mean_squared_error
 from sklearn.preprocessing import StandardScaler
 from sklearn.utils.validation import check_is_fitted
 
@@ -39,13 +39,7 @@ from age_group_prediction.hyperparameter_tuning import (
     WeightedMean,
 )
 from age_group_prediction.modeling import BaseAgeGroupModel, CountModel
-from age_group_prediction.scoring import (
-    COHORT_LOG_LOSS,
-    POISSON_DEVIANCE,
-    Direction,
-    Metric,
-    cohort_log_loss,
-)
+from age_group_prediction.scoring import Direction, Metric, cohort_log_loss
 from age_group_prediction.splitting import Method, Splitter
 
 PARAMETERS = [FloatParameter("alpha", 0.1, 10.0, log=True)]
@@ -58,6 +52,8 @@ Y = np.arange(28.0) ** 1.5
 EXPOSURE = np.arange(1.0, 29.0)  # distinct per row
 
 MSE = Metric("mse", mean_squared_error)
+POISSON_DEVIANCE = Metric("poisson_deviance", mean_poisson_deviance)
+COHORT_LOG_LOSS = Metric("cohort_log_loss", cohort_log_loss)
 
 
 class _RecordingModel(BaseAgeGroupModel):
@@ -372,7 +368,6 @@ def test_each_fold_reports_its_score_and_the_value_is_the_aggregation(
     study = _optimize(
         _evaluator(metric=_mean_of_y(), aggregation=aggregation), n_trials=1
     )
-
     scores, sizes = _fold_scores()
     assert len(set(sizes)) > 1  # the folds really differ in size
     reported = study.trials[0].intermediate_values

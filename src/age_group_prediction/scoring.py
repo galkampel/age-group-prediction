@@ -4,9 +4,10 @@ Any callable works, from :mod:`sklearn.metrics` or custom, so the direction is
 stored rather than assumed: a tuner reads ``direction``, in Optuna's terms,
 to know whether to minimize the value (a loss) or maximize it (a score).
 
-Shared by :mod:`~age_group_prediction.modeling` and
-:mod:`~age_group_prediction.hyperparameter_tuning`. Not the ``Metric`` protocol
-the package root exports from the old ``metrics.py``.
+Shared by :mod:`~age_group_prediction.modeling`,
+:mod:`~age_group_prediction.inspection` and the experiment notebook, which
+build their metrics from these. Not the ``Metric`` protocol the package root
+exports from the old ``metrics.py``.
 """
 
 from __future__ import annotations
@@ -18,18 +19,9 @@ from typing import Literal, get_args
 import numpy as np
 from numpy.typing import ArrayLike
 from scipy.special import xlogy
-from sklearn.metrics import (
-    mean_absolute_error,
-    mean_poisson_deviance,
-    root_mean_squared_error,
-)
+from sklearn.metrics import mean_poisson_deviance
 
 __all__ = [
-    "COHORT_LOG_LOSS",
-    "COHORT_POISSON_DEVIANCE",
-    "MAE",
-    "POISSON_DEVIANCE",
-    "RMSE",
     "Direction",
     "Metric",
     "cohort_log_loss",
@@ -96,7 +88,7 @@ def cohort_poisson_deviance(y_true: ArrayLike, y_pred: ArrayLike) -> float:
 
     ``y_true`` holds the cohort counts, one row per building and one column per
     cohort; ``y_pred`` the predicted counts in the same layout, paired by
-    position. Each cohort weighs as its own ``POISSON_DEVIANCE`` would: the
+    position. Each cohort weighs as its own ``mean_poisson_deviance`` would: the
     value is the mean of the per-cohort deviances.
     """
     counts = np.asarray(y_true, dtype=float)
@@ -109,10 +101,3 @@ def cohort_poisson_deviance(y_true: ArrayLike, y_pred: ArrayLike) -> float:
             f"same shape, got {counts.shape} and {predictions.shape}"
         )
     return float(mean_poisson_deviance(counts.ravel(), predictions.ravel()))
-
-
-POISSON_DEVIANCE = Metric("poisson_deviance", mean_poisson_deviance)
-RMSE = Metric("rmse", root_mean_squared_error)
-MAE = Metric("mae", mean_absolute_error)
-COHORT_LOG_LOSS = Metric("cohort_log_loss", cohort_log_loss)
-COHORT_POISSON_DEVIANCE = Metric("cohort_poisson_deviance", cohort_poisson_deviance)

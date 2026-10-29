@@ -49,6 +49,7 @@ import numpy as np
 import pandas as pd
 from lightgbm import LGBMRegressor
 from sklearn.linear_model import LogisticRegression, PoissonRegressor
+from sklearn.metrics import mean_poisson_deviance
 
 from age_group_prediction.feature_engineering import FeatureTransformer, OneHot, Plan, Standardize
 from age_group_prediction.inspection import BootstrapEvaluator, PermutationImportance, ShapExplainer
@@ -56,10 +57,15 @@ from age_group_prediction.modeling import (
     CohortProbabilityModel, CountModel, IndependentCohortModels, TotalTimesProbabilityModel,
 )
 from age_group_prediction.preprocessing import ExposureTransformer, ShareTransformer
-from age_group_prediction.scoring import COHORT_LOG_LOSS, COHORT_POISSON_DEVIANCE, POISSON_DEVIANCE
+from age_group_prediction.scoring import Metric, cohort_log_loss, cohort_poisson_deviance
 from age_group_prediction.splitting import Splitter
 from age_group_prediction.utils import take_rows
 from student_simulator import StudentPopulationSimulator, load_simulation_config
+
+# The metrics, built here: the notebook does the same (the scoring module holds no constants).
+COHORT_POISSON_DEVIANCE = Metric("cohort_poisson_deviance", cohort_poisson_deviance)
+COHORT_LOG_LOSS = Metric("cohort_log_loss", cohort_log_loss)
+POISSON_DEVIANCE = Metric("poisson_deviance", mean_poisson_deviance)
 
 base = load_simulation_config("configs/simulation.yml")
 config = base.with_overrides({
@@ -314,7 +320,7 @@ neighborhoods, as above, it is usable. With one group every replicate would
 be the whole set and the interval would have zero width, so fewer than two
 distinct groups raise `ValueError`.
 
-**Ratio metrics.** `COHORT_LOG_LOSS` is a ratio of sums recomputed on each
+**Ratio metrics.** The cohort log loss is a ratio of sums recomputed on each
 replicate, as it should be; a replicate with no children at all is 0/0, and a
 non-finite replicate score raises `ValueError` naming the metric and how many, rather than
 returning NaN bounds silently.
@@ -346,8 +352,8 @@ simulator's columns are correlated by construction. There are no column
 blocks; compare with mean |SHAP|, which credits a used column regardless.
 
 **Per component.** The fitted children of Model 2 are public, so the recipe
-above runs the total's `CountModel` on `POISSON_DEVIANCE` of `y.sum(axis=1)`
-with the exposure, and the `CohortProbabilityModel` on `COHORT_LOG_LOSS` of
+above runs the total's `CountModel` on the Poisson deviance of `y.sum(axis=1)`
+with the exposure, and the `CohortProbabilityModel` on the cohort log loss of
 the count matrix (it normalizes the rows, so the total does not enter). For
 Model 1 the composite restricted to one output column is the cohort's own
 model, so there is nothing more to split.
@@ -450,9 +456,10 @@ print(sorted(path.name for path in out.iterdir()))
   whole background: subsample `X` (a few hundred rows) and `background` (a few
   dozen), count the raw columns before choosing the method, and use `n_jobs`
   only when a run is long.
-- **One column per metric.** `POISSON_DEVIANCE`, `RMSE` and `MAE` score one
-  target column; `COHORT_LOG_LOSS` ignores the total; `COHORT_POISSON_DEVIANCE`
-  scores the whole count matrix.
+- **One column per metric.** scikit-learn's `mean_poisson_deviance`,
+  `root_mean_squared_error` and `mean_absolute_error` score one target column;
+  `cohort_log_loss` ignores the total; `cohort_poisson_deviance` scores the
+  whole count matrix.
 - **Correlated columns** split permutation importance between them and can
   hide a column the model needs; read permutation and mean |SHAP| together.
 

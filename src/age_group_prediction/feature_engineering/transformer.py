@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Sequence
+from typing import Any
 
 import numpy as np
 import pandas as pd
@@ -190,6 +191,20 @@ class FeatureTransformer(TransformerMixin, BaseEstimator):
         """The design matrix's columns, in order."""
         check_is_fitted(self)
         return np.asarray(self.feature_names_, dtype=object)
+
+    def to_dict(self) -> dict[str, Any]:
+        """The declaration as plain JSON data: each plan's dump with its columns, the interactions', the remainder."""
+        # mode="json": tuples (a plan's transforms, a one-hot's categories) as lists.
+        return {
+            "column_plans": [
+                {"plan": plan.model_dump(mode="json"), "columns": list(columns)}
+                for plan, columns in self.column_plans
+            ],
+            "interactions": [
+                interaction.model_dump(mode="json") for interaction in self.interactions
+            ],
+            "remainder": self.remainder,
+        }
 
     def _build(self) -> Pipeline:
         """Return the unfitted pipeline the plans and interactions describe."""

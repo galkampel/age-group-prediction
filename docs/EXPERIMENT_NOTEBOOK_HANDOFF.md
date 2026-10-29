@@ -95,10 +95,10 @@ design and commits):
      through a one-line `on_cells`; `wmape` and `bias` one-line notebook functions, having
      no library form);
    - the 24 run records gain `"best_params": _study.best_params`, so the best model is
-     rebuilt with the existing `FixedTrial` path; new settings `n_repeats`, `n_shap_rows`,
+     rebuilt from them (since D24.3 read back through the search spaces, no `FixedTrial`); new settings `n_repeats`, `n_shap_rows`,
      `n_shap_background` (sizes confirmed by a timing probe: exact SHAP costs 512
      evaluations per row at 9 columns); a button; one explicit cell per model; two tables.
-3. T3: the metric constants leave `scoring.py`.
+3. T3: the metric constants leave `scoring.py` (done 2026-10-22, awaiting the user's commit).
 4. T4a deletes the old package; T4b.1–3 build the new one from the notebook's code (D17,
    D21: six one-way modules; the runs, metrics, settings and tables stay in the notebook).
 5. T5: the docs.
@@ -106,10 +106,32 @@ design and commits):
 
 ## 2. State of the branch (2026-10-22)
 
-- **Branch:** `feat/experiment-notebook`, HEAD `9075dd7` (T2.4 and D19). The budget sub-task
-  awaits the user's commit: `notebooks/02_experiments.py`,
-  `tests/characterization/test_experiments_notebook.py`, this file and the plan.
-- **Notebook md5:** `d919a7838019a1494d92768f0bafd483` (after the budget sub-task).
+- **Branch:** `feat/experiment-notebook`, HEAD `de94ac8` (T2.5). T3 and the component redesign
+  (D23, S1–S6) await the user's commit.
+- **Notebook md5:** `d919a7838019a1494d92768f0bafd483` (after the budget sub-task);
+  `1e3a9eeb6a3d9f807bdf3a8287212158` after T2.5 (`de94ac8`); `7477a8c9819c29d54f1747b0ef4c6b60` after the
+  component redesign of 2026-10-25 (D23 S1–S5, [NOTEBOOK_COMPONENT_REDESIGN_PLAN.md](NOTEBOOK_COMPONENT_REDESIGN_PLAN.md));
+  `1ce2db86efa3ffe83f0eb85f6859c772` after the user's edits that followed (renames, `fit_and_score`
+  as `@app.function`, marimo-trimmed returns); `df5d373e868e79a9c7323dfe61ffb829` after S6
+  (2026-10-26: D23.9 the candidates injected as `feature_transformers` from the section-4 dicts
+  `COUNT_FEATURE_TRANSFORMERS` / `PROBABILITY_FEATURE_TRANSFORMERS`, D23.10 the shared draw inside
+  the loop, `share_hyperparams`, HEAD's returns restored; Check C the 24 baselines);
+  `c42c578ec48f5da3d6e1ae9ff1ba5e1f` after D24 (2026-10-27, the user's notes: `replication_method` fixed at
+  `"weighted"`, `share_feature_transformer` (a shared choice drawn once before the loop under `shared__`),
+  the best components read from `best_params` with
+  `*_components_from_params` and no `FixedTrial`, both sharing flags experiment settings
+  (`True` / `False`; the other arm a click), `feature_transformer_dict`, the builders
+  `build_independent_cohorts_model` / `build_total_times_probability_model`; NOTEBOOK_TUNING_PLAN.md
+  §0 D24.1–D24.5).
+  `425b6cf3ff396a478ad08756c2211338` after D25 (2026-10-29, the user's review of D24: the search spaces read nothing
+  back and hold `feature_transformer_names`, `suggest_feature_transformer_name`; the component's record is
+  the field `estimator_params`, set by the constructor from a trial's draws or by
+  `CountComponent.from_params` / `ProbabilityComponent.from_params` from `best_params` (the entries
+  under `<name>__` and `shared__`, `Component.set_estimator_params`); the objectives are one loop
+  each; the run cells set `_best_components` explicitly; the readers and
+  `total_times_probability_search_spaces` removed; NOTEBOOK_TUNING_PLAN.md §0 D25.1–D25.4; the
+  notebook test 17/17, Check C the 24 baselines, the shared probe 2.1812).
+  **Uncommitted:** T3, the redesign, D24 and D25 (one commit), then the docs (a second). **Next: T4a.**
 - **The commits of the task:**
 
   | Sub-task | Commit |
@@ -177,6 +199,16 @@ design and commits):
 
   Check C of the whole notebook at 3 trials takes about 47–53 s.
 
+  The table above is the arm with both sharing flags `False` (D24.4; the Model 2 values do not
+  depend on the flags). The two arms the settings offer (2026-10-27, D24; `n_trials = 3`):
+
+  | Model 1 `cv_best` | `share_hyperparams=True`, transformer per cohort (the default): on / off | both shared: on / off |
+  |---|---|---|
+  | `lgbm_poisson` | 2.1812 / 2.2193 | 2.1957 / 2.2710 |
+  | `lgbm_gaussian` | 2.2177 / 2.2805 | 2.2279 / 2.2805 |
+  | `poisson_glm` | 2.4158 / 2.8685 | 2.2655 / 2.8759 |
+  | `nb2` | 2.2762 / 2.8707 | 2.2532 / 2.8740 |
+
 ## 3. Decisions (do not re-ask)
 
 All are in the plan's §0 with their evidence:
@@ -199,6 +231,10 @@ All are in the plan's §0 with their evidence:
 - D21: the T4 design (what moves, six one-way modules, T4b in three stops) and the
   evaluation recipe's home: `inspect_model` in the `inspection` package, nothing on the base
   model.
+- D25: the search spaces read nothing back; `estimator_params` the component's record;
+  `from_params` per component type with the split by `__` (`shared__` folded in) and
+  `set_estimator_params` as the check; the objectives one loop each; the run cells set the
+  best components explicitly. The T4b module table reflects it.
 
 **Decided by the user, 2026-10-21:**
 - `y_min` stays a builder argument, recorded once per run with the seed. The seed is an
@@ -264,7 +300,7 @@ The standing rules are in [NOTEBOOK_TUNING_PLAN.md](NOTEBOOK_TUNING_PLAN.md) §1
   3. insert them before `if __name__`;
   4. check that the insertion leaves no extra blank line, which would add a third hunk to
      the format diff.
-- No new ruff finding (baseline 8). A display cell without a value needs no bare `return`,
+- No new ruff finding (baseline 14 since the user's D24 edits; 8 before). A display cell without a value needs no bare `return`,
   which PLR1711 would flag.
 
 **Probes and checks**
@@ -302,8 +338,12 @@ The standing rules are in [NOTEBOOK_TUNING_PLAN.md](NOTEBOOK_TUNING_PLAN.md) §1
 - explicit cells, one per run, not loops over runs or lists of settings;
 - no function unless it is reused;
 - names that say what a thing holds (`score_table`, `y_pred_*`, `feature_transformer_dict`);
-- records that refer to registered objects by name;
-- one source of truth for a list of candidates (a ClassVar of the search space);
+- the trial records a registered object's name; the component holds the object and its
+  record writes the object's declaration (D23, 2026-10-25; before it, records referred to
+  registered objects by name);
+- one source of truth for a list of candidates: the feature transformers in the notebook's
+  section-4 dicts, injected into the search space (D23.9); the calibration methods a ClassVar of
+  the search space;
 - no field or check that nothing reads;
 - scikit-learn's terms (`make_estimator`);
 - if/elif with a raising `else`;
@@ -331,38 +371,38 @@ The standing rules are in [NOTEBOOK_TUNING_PLAN.md](NOTEBOOK_TUNING_PLAN.md) §1
 ## 6. The prompt for the next session
 
 ```text
-Read docs/EXPERIMENT_NOTEBOOK_HANDOFF.md in full, then docs/NOTEBOOK_TUNING_PLAN.md: §0
-(decisions D1–D21), §1 (the rules and the checks A/B/C), §3 (T2.5, as settled), §4–§6 (T3,
-T4a, T4b.1–3, T5) and §7; §2 and T2.1–T2.4 hold the notebook's current code and results.
-Then read notebooks/02_experiments.py section 5 (from the "## 5) Hyperparameter tuning"
-cell to the end), src/age_group_prediction/inspection/ (all three modules and __init__),
-src/age_group_prediction/scoring.py, aggregation.py, and utils.py (AgeGroupDataset).
+Read docs/EXPERIMENT_NOTEBOOK_HANDOFF.md in full, then docs/NOTEBOOK_TUNING_PLAN.md §0 (D1–D25,
+D21 and D25 above all), §1 (the rules and the checks A/B/C) and §5–§6 (T4a, T4b.1–3, T5), then
+docs/NOTEBOOK_COMPONENT_REDESIGN_PLAN.md §0 and §6 (the history of D23–D24; its code blocks are
+superseded by the notebook). Then read notebooks/02_experiments.py from the "## 4) Feature
+variants" cell to the end of section 5 (the class and function cells, one Model 1 run cell, one
+Model 2 run cell, the two tables cells, the two inspection rebuild cells),
+src/age_group_prediction/aggregation.py, src/age_group_prediction/hyperparameter_tuning/ (the old
+package T4a deletes) and tests/characterization/test_experiments_notebook.py.
 
-Expected state: branch feat/experiment-notebook, HEAD my commit of the budget sub-task
-(after 9075dd7), a clean tree, notebook md5 d919a7838019a1494d92768f0bafd483. Verify HEAD,
-git status and the md5 first; if anything has changes the handoff does not name, stop and
-show me the diff. I commit, push and merge myself: never commit, never add a Co-Authored-By
-line, never git checkout/stash/reset/mv.
+Expected state: branch feat/experiment-notebook, HEAD at my commits of T3, D23, D24, D25 and the
+docs (read git log -3; de94ac8 is the last commit before them), a clean tree, notebook md5
+`425b6cf3ff396a478ad08756c2211338`. Verify HEAD, git status and the md5 first; if anything differs from
+what the handoff §2 names, stop and show me the diff. I commit, push and merge myself: never
+commit, never add a Co-Authored-By line, never git checkout/stash/reset/mv.
 
-Task: sub-task T2.5 of docs/NOTEBOOK_TUNING_PLAN.md as settled on 2026-10-22 (the plan's
-T2.5 and D21, the handoff's §1): the recipe inspect_model in the inspection package, typed
-and tested, with nothing added to BaseAgeGroupModel; the seven metrics built and explained
-in the notebook; "best_params" added to the 24 run records; the new settings; one explicit
-cell per model behind a button; the two tables; the header. Work in plan mode first:
-re-verify the plan's facts with read-only probes (PYTHONPATH=src .venv/bin/python -W error
--c "..."), measure the SHAP and permutation cost at the chosen sizes, summarize the
-sub-task in the chat, and ask for approval before editing. Then, in the plan's order: T3,
-T4a, T4b.1, T4b.2, T4b.3, T5, one sub-task per approval, plan mode for each. Do not re-ask
-the decisions of the plan's §0 or the handoff's §3. Write the code as the plan gives it; if
-you must deviate, say why with measured evidence before doing so. I review the design of
-each sub-task: when I ask a design question, answer with a recommendation, the evidence and
-the trade-off, and wait for my answer before editing. Use best practices and do not
-over-complicate: add no mechanism the measurements do not pay for.
+Task: T4a, T4b.1, T4b.2, T4b.3, T5 of docs/NOTEBOOK_TUNING_PLAN.md §5–§6: delete the old
+hyperparameter_tuning package, then rebuild it from the notebook's section 5 as it is now (D21's
+six modules; the T4b table lists what each holds after D25), then make the notebook import it,
+then the docs. One sub-task per approval. Before each sub-task: plan mode, re-verify the facts
+with read-only probes (PYTHONPATH=src .venv/bin/python -W error -c "..."), write the sub-tasks
+and the commit message of the sub-task in the chat, and ask for approval before editing. Do not
+re-ask the decisions of the plans' §0. Move the notebook's code as it is; if you must change
+it, say why with evidence before doing so. When I ask a design question, answer with a
+recommendation, the evidence and the trade-off, and wait for my answer before editing. Use best
+practices and do not over-complicate: add no mechanism the measurements do not pay for.
 
-At each sub-task's stop give me: a file-by-file summary; the results of the plan's checks
-for that sub-task (Check A, Check B, and Check C run under PYTHONWARNINGS=error, reproducing
-the 24 baselines; the package tests and mypy where src changes); ruff on the notebook (8
-pre-existing findings, no new one); ruff format --diff (only the two known hunks at lines
-158 and 213); the notebook's new md5; and the suggested commit message in the chat. Tick
-the sub-task and update the status line in docs/NOTEBOOK_TUNING_PLAN.md.
+At each stop give me: a file-by-file summary; the check results (Check A, B, C with the 24
+baselines in the handoff §2's table and the tuning plan's T2.1; the package tests and mypy
+where src changes); ruff on the notebook (14 pre-existing findings, re-counted when cells are
+removed, no new one); ruff format --diff (only the two known hunks at lines 158 and 213); the
+notebook's new md5; and the commit message in the chat. Tick the sub-task and update the
+status lines in the plan documents. The machine can be heavily loaded: run every notebook
+check in the background with stdin closed, unbuffered and logged to the scratchpad; a Check C
+copy outside the repo needs PYTHONPATH=src and configs/ linked beside notebooks/.
 ```

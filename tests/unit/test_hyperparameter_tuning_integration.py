@@ -15,6 +15,7 @@ import pandas as pd
 import pytest
 from lightgbm import LGBMRegressor
 from optuna.trial import TrialState
+from sklearn.metrics import mean_poisson_deviance
 
 from age_group_prediction.feature_engineering import (
     FeatureTransformer,
@@ -29,10 +30,12 @@ from age_group_prediction.hyperparameter_tuning import (
 )
 from age_group_prediction.modeling import CountModel
 from age_group_prediction.preprocessing import ExposureTransformer, ShareTransformer
-from age_group_prediction.scoring import POISSON_DEVIANCE
+from age_group_prediction.scoring import Metric
 from age_group_prediction.splitting import Splitter
 from age_group_prediction.utils import take_rows
 from student_simulator import StudentPopulationSimulator, load_simulation_config
+
+POISSON_DEVIANCE = Metric("poisson_deviance", mean_poisson_deviance)
 
 COHORTS = ("n_kindergarten", "n_elementary", "n_highschool")
 

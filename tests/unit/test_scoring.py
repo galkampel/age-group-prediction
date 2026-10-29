@@ -7,19 +7,9 @@ from collections.abc import Callable
 import numpy as np
 import pandas as pd
 import pytest
-from sklearn.metrics import (
-    log_loss,
-    mean_absolute_error,
-    mean_poisson_deviance,
-    root_mean_squared_error,
-)
+from sklearn.metrics import log_loss, mean_absolute_error, mean_poisson_deviance
 
 from age_group_prediction.scoring import (
-    COHORT_LOG_LOSS,
-    COHORT_POISSON_DEVIANCE,
-    MAE,
-    POISSON_DEVIANCE,
-    RMSE,
     Metric,
     cohort_log_loss,
     cohort_poisson_deviance,
@@ -28,25 +18,6 @@ from age_group_prediction.scoring import (
 # Three buildings, the second without children; probabilities that differ per row.
 COUNTS = np.array([[2.0, 1.0, 0.0], [0.0, 0.0, 0.0], [1.0, 3.0, 2.0]])
 PROBABILITIES = np.array([[0.5, 0.3, 0.2], [0.2, 0.3, 0.5], [0.1, 0.6, 0.3]])
-
-
-@pytest.mark.parametrize(
-    ("metric", "name", "function"),
-    [
-        (POISSON_DEVIANCE, "poisson_deviance", mean_poisson_deviance),
-        (RMSE, "rmse", root_mean_squared_error),
-        (MAE, "mae", mean_absolute_error),
-        (COHORT_LOG_LOSS, "cohort_log_loss", cohort_log_loss),
-        (COHORT_POISSON_DEVIANCE, "cohort_poisson_deviance", cohort_poisson_deviance),
-    ],
-)
-def test_ready_made_metrics_wrap_their_function(
-    metric: Metric, name: str, function: Callable[..., float]
-) -> None:
-    assert metric.name == name
-    assert metric.function is function
-    # All are losses; a tuner relies on this to minimize them.
-    assert metric.direction == "minimize"
 
 
 def test_calling_a_metric_applies_its_function_as_a_float() -> None:
@@ -149,7 +120,7 @@ EXPECTED_COUNTS = np.array(
 
 
 def test_cohort_poisson_deviance_is_the_mean_of_the_cohort_deviances() -> None:
-    # Each cohort weighs as its own CountModel's POISSON_DEVIANCE would.
+    # Each cohort weighs as its own CountModel's mean_poisson_deviance would.
     per_cohort = [
         mean_poisson_deviance(COHORT_COUNTS[:, k], EXPECTED_COUNTS[:, k])
         for k in range(3)

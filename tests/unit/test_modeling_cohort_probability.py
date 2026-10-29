@@ -27,7 +27,7 @@ from age_group_prediction.modeling import (
     CalibrationMethod,
     Classifier,
     CohortProbabilityModel,
-    ReplicationType,
+    ReplicationMethod,
 )
 from age_group_prediction.scoring import cohort_log_loss
 
@@ -66,7 +66,7 @@ def _logistic() -> LogisticRegression:
     return LogisticRegression(C=np.inf, max_iter=1000)
 
 
-REPLICATIONS: list[ReplicationType] = ["weighted", "per_child"]
+REPLICATIONS: list[ReplicationMethod] = ["weighted", "per_child"]
 CELLS = pd.DataFrame({"kg": [2, 0, 0], "el": [0, 0, 3], "hs": [1, 0, 0]})
 
 
@@ -123,7 +123,7 @@ def test_both_replications_fit_the_same_likelihood() -> None:
     # or reweights children fits another logistic regression.
     weighted = CohortProbabilityModel(estimator=_logistic()).fit(X, Y)
     per_child = CohortProbabilityModel(
-        estimator=_logistic(), replication="per_child"
+        estimator=_logistic(), replication_method="per_child"
     ).fit(X, Y)
 
     pd.testing.assert_frame_equal(
@@ -150,7 +150,7 @@ def test_per_child_rows_fit_a_classifier_without_sample_weight(
     # classifier.
     model = CohortProbabilityModel(
         estimator=build(),
-        replication="per_child",
+        replication_method="per_child",
         calibration_method=calibration_method,
     )
 
@@ -204,16 +204,16 @@ CLASSIFIERS: dict[str, Callable[[], Classifier]] = {
 }
 
 
-@pytest.mark.parametrize("replication", REPLICATIONS)
+@pytest.mark.parametrize("replication_method", REPLICATIONS)
 @pytest.mark.parametrize("build", CLASSIFIERS.values(), ids=list(CLASSIFIERS))
 def test_every_classifier_kind_keeps_the_cohort_order(
-    build: Callable[[], Classifier], replication: ReplicationType
+    build: Callable[[], Classifier], replication_method: ReplicationMethod
 ) -> None:
     # The protocol must hold for multinomial, tree and one-vs-rest
     # classifiers alike: each must order its classes as y's columns, and a
     # column dropped, repeated or permuted breaks the cohorts or their sum.
     with sklearn.config_context(enable_metadata_routing=True):
-        model = CohortProbabilityModel(estimator=build(), replication=replication).fit(
+        model = CohortProbabilityModel(estimator=build(), replication_method=replication_method).fit(
             X, Y
         )
         probabilities = model.predict(X)
@@ -250,15 +250,15 @@ def test_an_unobserved_cohort_raises_naming_it() -> None:
         CohortProbabilityModel(estimator=_logistic()).fit(X, Y.assign(hs=0))
 
 
-@pytest.mark.parametrize("replication", REPLICATIONS)
+@pytest.mark.parametrize("replication_method", REPLICATIONS)
 def test_a_building_without_children_adds_nothing_and_is_still_predicted(
-    replication: ReplicationType,
+    replication_method: ReplicationMethod,
 ) -> None:
     # Its row has no child to label; fitting on it anyway (a zero-weight row
     # or a made-up label) would change the fit.
     empty = Y.sum(axis=1) == 0
     assert empty.any()
-    template = CohortProbabilityModel(estimator=_logistic(), replication=replication)
+    template = CohortProbabilityModel(estimator=_logistic(), replication_method=replication_method)
 
     model = clone(template).fit(X, Y)
     without = clone(template).fit(X[~empty], Y[~empty])
@@ -282,9 +282,9 @@ def test_a_passed_exposure_is_ignored() -> None:
     )
 
 
-@pytest.mark.parametrize("replication", REPLICATIONS)
+@pytest.mark.parametrize("replication_method", REPLICATIONS)
 def test_the_feature_transformer_is_fitted_on_the_buildings(
-    replication: ReplicationType,
+    replication_method: ReplicationMethod,
 ) -> None:
     # Fitted on the categorical rows, its statistics would be weighted by each
     # building's children: here the centre of u moves, since buildings with a
@@ -300,7 +300,7 @@ def test_the_feature_transformer_is_fitted_on_the_buildings(
 
     model = CohortProbabilityModel(
         estimator=_logistic(),
-        replication=replication,
+        replication_method=replication_method,
         feature_transformer=features,
     ).fit(X_raw, y)
 
@@ -426,21 +426,21 @@ def test_calibration_fits_one_model_on_all_rows_with_the_given_method(
     )
 
 
-@pytest.mark.parametrize("replication", REPLICATIONS)
+@pytest.mark.parametrize("replication_method", REPLICATIONS)
 def test_calibration_folds_keep_each_sample_on_one_side(
-    replication: ReplicationType,
+    replication_method: ReplicationMethod,
 ) -> None:
     # Ungrouped folds (cv=int is stratified by cohort) would put a sample's
     # rows in a fit fold and its calibration fold; a fixed fold count would
     # ignore calibration_cv.
     model = CohortProbabilityModel(
         estimator=_logistic(),
-        replication=replication,
+        replication_method=replication_method,
         calibration_method="temperature",
         calibration_cv=3,
     ).fit(X, Y)
     sample_positions, _, _ = CohortProbabilityModel.multinomial_to_categorical(
-        Y, replication
+        Y, replication_method
     )
 
     calibrated = model.estimator_
@@ -481,10 +481,10 @@ def test_both_replications_calibrate_on_the_same_folds() -> None:
     # Folds of categorical rows balance cells under "weighted" and children
     # under "per_child", so the two would calibrate on different samples and
     # their comparison would mix the replication with the folds.
-    def inverse_temperature(replication: ReplicationType) -> float:
+    def inverse_temperature(replication_method: ReplicationMethod) -> float:
         model = CohortProbabilityModel(
             estimator=_logistic(),
-            replication=replication,
+            replication_method=replication_method,
             calibration_method="temperature",
         ).fit(X, Y)
         calibrated = model.estimator_

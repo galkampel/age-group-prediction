@@ -1,6 +1,6 @@
 # Re-implement the hyperparameter tuning inside the notebook
 
-**Status (2026-10-21):** approved; T1.1 committed (`0416267`); T1.2 committed (`bee781a`) after the user's review (estimator dataclasses hold hyperparameters only; LightGBM's loss is a family); T1.3 committed (`7ae6314`) after three user reviews (components are a study's fixed settings, a `Literal` family and `use_exposure`; the family → transformer-names mapping is an argument of `suggest_feature_transformer`; no dataclass builds a model; the exposure a study setting, both arms; feature variants renamed feature transformers; D2, D3, D6, T1.4–T2.2 rewritten); T1.4 done 2026-10-19, then reworked at two rounds of the user's review on 2026-10-20 (D8: a named component per part of the composite under an abstract `Component`; the family checked from its `Literal`; each subclass holds its families' transformer names; `make_estimator(hyperparameters, *, seed)`; the T1.3 cells changed too; T1.4–T2.2 rewritten), committed (`8cc231d`); T1.5 done 2026-10-21 (`cv_score`, `tune_model`; at the user's review the fold variables named and an aggregator added, D9: `src/age_group_prediction/aggregation.py` and its tests, default `Mean`), committed (`a5ae06b`); T1.6 done 2026-10-21 (Model 1's button and run cell; Check C 14.7 s at 3 trials), then the redesign of D10 at its review, revised by D11 and D12 at the next reviews (search spaces with explicit suggest methods, the builder assembles components, the transformer by name; a study is a family combination and exposure; `feature_transformer_dict`; Check C reproduces T1.6's best values), committed (`6316d91`); T1.7 committed (`59acae6`); its 200-trial run took 380 s with no failed trial (D15); T1.8 done 2026-10-21 (independent review: no correctness bug, nine findings reproduced and settled, D15), committed (`9eca96e`); notebook md5 `9d49fe78f99d7ff4d96e17742ea7d277`; handoff rewritten 2026-10-21 for a new session; T2.1 done 2026-10-21 (Model 2's button and 16 run cells; no `MODEL2_TOTALS`, the run cells present are the runs tuned; Check C 53.3 s, Model 2's baseline recorded), awaiting the user's commit; notebook md5 `1405425ae7bf3da901cf0eba8860bf71`; T2.2 done 2026-10-21 (Model 2's tables, display and best-per-model cells; D16), 200-trial run 1827 s (Model 1 366 s, Model 2 1447 s, no failed trial); T2.1–T2.2 committed (`a2b8693`); T2.3 done 2026-10-21 (independent review: no correctness bug; findings F1–F8 settled), awaiting the user's commit; notebook md5 `eec46ac5cbec902ffdd98cce6f4c9cbd`; T2.4 (pruning and parallelization check) added at the user's request; D17: T4 replaces the package (T4a delete, T4b rebuild from the notebook). D18: T2.5 (the bootstrap interval and feature importance of the best runs) added. The `n_startup_trials` decision postponed by the user until after T2.4, with `n_trials`; all 24 runs kept (D6 stands). T2.3 committed (`7580304`), handoff committed (`1811551`). T2.4 done 2026-10-22 (measured: no pruning or parallelization place beats today's design, two are unsafe; D19: today's design kept, `catch` unchanged; docs only, notebook md5 unchanged `eec46ac5cbec902ffdd98cce6f4c9cbd`), committed (`9075dd7`). The budget sub-task done 2026-10-22 (D20: `n_trials = 400`, `n_startup_trials = 20`, a new setting; `tune_model` keyword; the 24 run cells; the notebook test; the 400-trial click 3708 s, no failed trial; Check C baselines unchanged; D21 the T4 design and the inspection recipe's home, planned ahead), notebook md5 `d919a7838019a1494d92768f0bafd483`, committed (`10d6e83`); handoff rewritten for a new session. T2.5 done 2026-10-22 (D22: `BootstrapEvaluator` holds the resampling design and `evaluate(..., metrics=[...])` returns a frame; the evaluation and the importances are two separate components, no `inspect_model`; the seven metrics, the three settings, `best_params` in the 24 records, a button, three cells per model, two tables; exact SHAP 100 × 50 on all cores; Check C 66.8 s at 3 trials, the 24 baselines unchanged), notebook md5 `1e3a9eeb6a3d9f807bdf3a8287212158`, awaiting the user's commit. Next: T3 → T4a → T4b.1 → T4b.2 → T4b.3 → T5. The implementing session updates this line and ticks the sub-tasks.
+**Status (2026-10-21):** approved; T1.1 committed (`0416267`); T1.2 committed (`bee781a`) after the user's review (estimator dataclasses hold hyperparameters only; LightGBM's loss is a family); T1.3 committed (`7ae6314`) after three user reviews (components are a study's fixed settings, a `Literal` family and `use_exposure`; the family → transformer-names mapping is an argument of `suggest_feature_transformer`; no dataclass builds a model; the exposure a study setting, both arms; feature variants renamed feature transformers; D2, D3, D6, T1.4–T2.2 rewritten); T1.4 done 2026-10-19, then reworked at two rounds of the user's review on 2026-10-20 (D8: a named component per part of the composite under an abstract `Component`; the family checked from its `Literal`; each subclass holds its families' transformer names; `make_estimator(hyperparameters, *, seed)`; the T1.3 cells changed too; T1.4–T2.2 rewritten), committed (`8cc231d`); T1.5 done 2026-10-21 (`cv_score`, `tune_model`; at the user's review the fold variables named and an aggregator added, D9: `src/age_group_prediction/aggregation.py` and its tests, default `Mean`), committed (`a5ae06b`); T1.6 done 2026-10-21 (Model 1's button and run cell; Check C 14.7 s at 3 trials), then the redesign of D10 at its review, revised by D11 and D12 at the next reviews (search spaces with explicit suggest methods, the builder assembles components, the transformer by name; a study is a family combination and exposure; `feature_transformer_dict`; Check C reproduces T1.6's best values), committed (`6316d91`); T1.7 committed (`59acae6`); its 200-trial run took 380 s with no failed trial (D15); T1.8 done 2026-10-21 (independent review: no correctness bug, nine findings reproduced and settled, D15), committed (`9eca96e`); notebook md5 `9d49fe78f99d7ff4d96e17742ea7d277`; handoff rewritten 2026-10-21 for a new session; T2.1 done 2026-10-21 (Model 2's button and 16 run cells; no `MODEL2_TOTALS`, the run cells present are the runs tuned; Check C 53.3 s, Model 2's baseline recorded), awaiting the user's commit; notebook md5 `1405425ae7bf3da901cf0eba8860bf71`; T2.2 done 2026-10-21 (Model 2's tables, display and best-per-model cells; D16), 200-trial run 1827 s (Model 1 366 s, Model 2 1447 s, no failed trial); T2.1–T2.2 committed (`a2b8693`); T2.3 done 2026-10-21 (independent review: no correctness bug; findings F1–F8 settled), awaiting the user's commit; notebook md5 `eec46ac5cbec902ffdd98cce6f4c9cbd`; T2.4 (pruning and parallelization check) added at the user's request; D17: T4 replaces the package (T4a delete, T4b rebuild from the notebook). D18: T2.5 (the bootstrap interval and feature importance of the best runs) added. The `n_startup_trials` decision postponed by the user until after T2.4, with `n_trials`; all 24 runs kept (D6 stands). T2.3 committed (`7580304`), handoff committed (`1811551`). T2.4 done 2026-10-22 (measured: no pruning or parallelization place beats today's design, two are unsafe; D19: today's design kept, `catch` unchanged; docs only, notebook md5 unchanged `eec46ac5cbec902ffdd98cce6f4c9cbd`), committed (`9075dd7`). The budget sub-task done 2026-10-22 (D20: `n_trials = 400`, `n_startup_trials = 20`, a new setting; `tune_model` keyword; the 24 run cells; the notebook test; the 400-trial click 3708 s, no failed trial; Check C baselines unchanged; D21 the T4 design and the inspection recipe's home, planned ahead), notebook md5 `d919a7838019a1494d92768f0bafd483`, committed (`10d6e83`); handoff rewritten for a new session. T2.5 done 2026-10-22 (D22: `BootstrapEvaluator` holds the resampling design and `evaluate(..., metrics=[...])` returns a frame; the evaluation and the importances are two separate components, no `inspect_model`; the seven metrics, the three settings, `best_params` in the 24 records, a button, three cells per model, two tables; exact SHAP 100 × 50 on all cores; Check C 66.8 s at 3 trials, the 24 baselines unchanged), notebook md5 `1e3a9eeb6a3d9f807bdf3a8287212158`, committed (`de94ac8`). T3 done 2026-10-22 (the five constants left `scoring.py`; `Metric` and the two functions stay, the user's scope; eight test sites and three doc blocks build their metric inline; mypy clean, the non-slow suite green, the notebook unchanged), awaiting the user's commit. The component redesign done 2026-10-25 (D23, [NOTEBOOK_COMPONENT_REDESIGN_PLAN.md](NOTEBOOK_COMPONENT_REDESIGN_PLAN.md): `ComponentSearchSpace` returns objects, components hold the transformer, `FeatureTransformer.to_dict()`, the builders named after the models, `shared_hyperparams`; Check C 59 s at 3 trials, the 24 baselines reproduced; the notebook test 7/7), then S6 done 2026-10-26 (D23.9–D23.11: the candidates injected as `feature_transformers`, the shared draw by prefix inside the loop, `share_hyperparams`; Check C 56 s at 3 trials, the 24 baselines reproduced; the shared probe 2.1812), notebook md5 `df5d373e868e79a9c7323dfe61ffb829`; then D24 done 2026-10-27 (the user's notes: `replication_method` fixed at `"weighted"`, `share_feature_transformer` with the sharing rule written once, the best components read from `best_params` with no `FixedTrial`, the two flags as settings, `feature_transformer_dict`, the builders `build_*_model`; the notebook test 11/11, Check C the 24 baselines at both flags `False` and the new arms recorded), notebook md5 `c42c578ec48f5da3d6e1ae9ff1ba5e1f`, awaiting the user's commit with T3 and D23; then D25 done 2026-10-29 (the user's review of D24: no readers on the search spaces, `estimator_params`, `from_params` per component type, the one-loop objectives, `_best_components` in the run cells; Check C the 24 baselines, the shared probe 2.1812, the notebook test 17/17, the non-slow suite green), notebook md5 `425b6cf3ff396a478ad08756c2211338`, awaiting the user's commit (T3, D23, D24, D25 in one; the docs in a second). Next: T4a → T4b.1 → T4b.2 → T4b.3 → T5. The implementing session updates this line and ticks the sub-tasks.
 
 Written for the model that implements it, one sub-task per approval. Every sub-task has the
 code to write, a "done when" list and the commands that verify it. The user reads the diff in
@@ -552,6 +552,98 @@ plain `Literal` assignments, not the `type` statement: cloudpickle cannot pickle
     explainer's existing setting). The bootstrap of 7 metrics × 1000 resamples costs 2–3.4
     s per split and the permutation importance at `n_repeats = 10` 3 s (validation) to 9 s
     (training), so SHAP decides the cost.
+
+- D23. **Added 2026-10-25 (the user; the decisions and the code are in
+  [NOTEBOOK_COMPONENT_REDESIGN_PLAN.md](NOTEBOOK_COMPONENT_REDESIGN_PLAN.md) §0):** the search
+  space (`ComponentSearchSpace`) holds the injected registry and returns the chosen
+  `FeatureTransformer`; explicit public `suggest_<family>_hyperparams` methods; the component
+  holds the transformer object and `to_dict()` writes it as its declaration
+  (`FeatureTransformer.to_dict()` in `src`); the `Literal` checks removed; `random_state=None`
+  replaces `seed`; the builders named after the models with `CountModel` and
+  `CohortProbabilityModel` constructed inline; `shared_hyperparams` for Model 1 (one draw of the
+  hyperparameters under `shared__`, each cohort its own transformer; the 8 run cells pass
+  `False`, a test checks both values). Check C reproduced the 24 baselines. Supersedes D10's
+  "the transformer by name" in the record and D11's `suggest_feature_transformer_name`.
+  **Revised 2026-10-26 (S6, the user's D23.9–D23.11):** a search space takes
+  `feature_transformers`, one family's candidates (name → object), and draws from its keys; no
+  `FEATURE_TRANSFORMER_NAMES`, no registry, no `__post_init__`. The candidates are data in the
+  notebook's section 4, `COUNT_FEATURE_TRANSFORMERS` and `PROBABILITY_FEATURE_TRANSFORMERS` (family →
+  `{name: object}`, today's order), the one source of truth the run cells and the tables read
+  (superseding D15's and D16's ClassVar for the transformers; `CALIBRATION_METHODS` stays a
+  ClassVar). The package holds the mechanism and the notebook the data, as in scikit-learn's
+  `GridSearchCV(param_grid=...)`. The shared hyperparameters are drawn inside the loop: every
+  cohort asks the `shared` space, the first draws, and the trial returns the stored values to the
+  next (probed for `RandomSampler`, `TPESampler`, `FixedTrial`). The flag is `share_hyperparams`
+  everywhere. The two arms to compare are no sharing and partial sharing; complete sharing needs
+  no run. Check C reproduced the 24 baselines again; the shared probe gave 2.1812, as before.
+- D24. **Added 2026-10-27 (the user's notes on the S6 notebook):**
+  - D24.1 `CohortProbabilityModel`'s `replication` is renamed `replication_method` (the alias
+    `ReplicationType` → `ReplicationMethod`) and is **fixed at `"weighted"`** in the builder, not
+    searched and not a run setting: for the logistic classifier the two replications are the same
+    fit (the likelihood identity, TOTAL_TIMES_PROBABILITY_MODEL.md §3.1), for LightGBM they
+    differed within noise and `"per_child"` is 2–3× slower; a categorical that cannot change the
+    objective for one family only splits TPE's trials (D6's lesson). The §3.3 remark about tuning
+    it concerns row-resampling forests, which the notebook does not tune.
+  - D24.2 **`share_feature_transformer` beside `share_hyperparams`; a shared choice is drawn once,
+    before the loop, under `shared__`** (the `shared` `CountSearchSpace`), and each cohort takes
+    it or draws its own under `<cohort>__`; no `None`, no index test, no second suggest. The
+    user's hand-written version recorded the shared draws under the first cohort's name and
+    required a keyword the run cells did not pass; a first replacement (a generator of per-cohort
+    spaces relying on Optuna's repeated suggest) was rejected as hard to read. With both flags
+    `False` the draw order is HEAD's, so the 8 baselines reproduce; the shared arms' values are
+    the handoff's tables.
+  - D24.3 **The best components are read from `best_params` through the search spaces, no
+    `FixedTrial`:** `hyperparameters_from_params` dispatches by family, as `suggest_hyperparameters`
+    does, to an explicit `<family>_hyperparams_from_params` that builds the family's params class
+    field by field (`params[f"{prefix}max_depth"]`, …); `feature_transformer_from_params` reads the
+    candidate dict by the recorded name; `calibration_method_from_params`; the builders cell's
+    `independent_cohorts_components_from_params`
+    and `total_times_probability_components_from_params` take a study's `best_params` and the
+    run's fixed settings (family, exposure, cohorts, candidate dict, share flags: what
+    `best_params` cannot hold).
+  - D24.4 **The two sharing flags are experiment settings** (revises D23.2 and D23.11): section 2
+    holds `share_hyperparams = True` and `share_feature_transformer = False`, logged with the
+    others, in every Model 1 record and in `model1_df`; the other arm (both `True`) is a click with
+    the setting changed. The test covers the three cases (33 / 13 / 11 parameters).
+  - D24.5 **Names:** the search-space field and the builders' keyword `feature_transformer_dict`
+    (`total_…`, `probability_…` for Model 2; reverses D23.9's naming only); the builders named
+    after the model they return, `build_independent_cohorts_model` and
+    `build_total_times_probability_model`, the objectives `suggest_independent_cohorts_model` and
+    `suggest_total_times_probability_model`; prose names the models "the independent cohorts
+    model (Model 1)" and "the total times probability model (Model 2)", variable names unchanged
+    (D23.4).
+- D25. **Added 2026-10-29 (the user's review of the D24 notebook; revises D24.3 and D24.5):**
+  - D25.1 **The search spaces read nothing back:** no `*_from_params` methods. One family's
+    candidates are injected as names, `feature_transformer_names: tuple[str, ...]` (the keys of
+    the notebook's `COUNT_FEATURE_TRANSFORMERS[family]` / `PROBABILITY_FEATURE_TRANSFORMERS[family]`),
+    and `suggest_feature_transformer_name` returns the drawn name; the caller resolves the
+    object through the dict.
+  - D25.2 **The component keeps its record as an object,** the field `estimator_params`
+    (`LGBMParams`, `PoissonGLMParams`, `NB2Params`, `LogisticParams`: the record `make_estimator`
+    unpacks into the estimator's constructor; scikit-learn's term). Two ways to set a component:
+    the plain constructor from a trial's draws (the objective), and one classmethod per
+    component type, `CountComponent.from_params(best_params, *, name, family, use_exposure,
+    feature_transformer_dict)` / `ProbabilityComponent.from_params(best_params, *, name, family,
+    feature_transformer_dict)`: one comprehension selects the entries under `<name>__` and
+    `shared__` with the prefix stripped (a choice is shared or the cohort's own, never both;
+    without the filter the cohorts' entries would collide), `Component.set_estimator_params(params,
+    params_class)` fills the family's record by its fields (a missing one raises `KeyError`
+    naming it, the check), the transformer through the dict, the calibration from its entry.
+    No reader per model (`independent_cohorts_components_from_params` and
+    `total_times_probability_components_from_params` removed), no stored prefix, no `FixedTrial`.
+  - D25.3 **The objectives are one loop each:** `suggest_independent_cohorts_model` draws the
+    shared choices once before the loop under `shared__`, then per cohort its own choices or the
+    shared ones, and sets its component with a constructor call; `suggest_total_times_probability_model`
+    the same for its two parts, the search spaces constructed inline
+    (`total_times_probability_search_spaces` removed). The draw order is D24's: Check C reproduced
+    the 24 baselines at 3 trials; the shared probe gave 2.1812 with 13 parameters.
+  - D25.4 **The run cells set the best components explicitly:** `_best_components = tuple(
+    CountComponent.from_params(_study.best_params, name=cohort, ...) for cohort in COHORTS)` in
+    Model 1's 8 cells, the two `from_params` calls in Model 2's 16; the inspection cells the same
+    on the records' `best_params`; the build calls unchanged. The notebook test: the objective's
+    model equals the one rebuilt from `from_params` on the trial's params, both models, the three
+    sharing cases; `KeyError` on an empty mapping (17 tests). ruff's baseline on the notebook is
+    14 since the user's D24 edits (none new).
 
 **What does not change:** notebook sections 1–4 and the `cv`/`cv_groups` cell; the models in
 `src/age_group_prediction/modeling/` (the S1 `get_params`/`set_params` forwarding in
@@ -2067,7 +2159,9 @@ best model is rebuilt with the existing `FixedTrial` path; one button.
   interval table and the comparison table for both models.
 - The baselines are unchanged.
 
-## 4. T3: the metric constants leave `scoring.py` (src, tests, docs)
+## 4. [x] T3: the metric constants leave `scoring.py` (src, tests, docs)
+
+**Done 2026-10-22.** Scope decided by the user at the plan summary: the constants only; `Metric`, `cohort_log_loss` and `cohort_poisson_deviance` stay. The two tuning tests that T4a deletes got a module-level inline constant each and nothing else. `docs/HYPERPARAMETER_TUNING.md` was left as is (deleted in T4a).
 
 - `src/age_group_prediction/scoring.py`: delete `POISSON_DEVIANCE`, `RMSE`, `MAE`,
   `COHORT_LOG_LOSS`, `COHORT_POISSON_DEVIANCE`, their `__all__` entries, the now-unused
@@ -2127,9 +2221,9 @@ Under `src/age_group_prediction/hyperparameter_tuning/`:
 | Module | From notebook section 5 |
 |---|---|
 | `params.py` | `LGBMParams`, `PoissonGLMParams`, `NB2Params`, `LogisticParams` |
-| `components.py` | `CountFamily`, `ProbabilityFamily` (as `type` statements, which pickle from a module, D3), `Component`, `CountComponent`, `ProbabilityComponent` |
-| `search_spaces.py` | `SearchSpace`, `CountSearchSpace`, `ProbabilitySearchSpace` (with `FEATURE_TRANSFORMER_NAMES` and `CALIBRATION_METHODS`) |
-| `builders.py` | `suggest_count_component`, `suggest_probability_component`, `suggest_model1_components`, `suggest_model2_components`, `make_count_model`, `build_model1`, `build_model2`, `suggest_model1`, `suggest_model2` |
+| `components.py` | `CountFamily`, `ProbabilityFamily` (as `type` statements, which pickle from a module, D3), `Component` (with `set_estimator_params`), `CountComponent`, `ProbabilityComponent` (each with `from_params`, D25.2; the field `estimator_params`) |
+| `search_spaces.py` | `ComponentSearchSpace`, `CountSearchSpace`, `ProbabilitySearchSpace` (with `CALIBRATION_METHODS`; one family's candidate names injected as `feature_transformer_names`, D25.1; the `suggest_*` methods, `suggest_feature_transformer_name` among them; no readers; the candidate dicts stay in the notebook) |
+| `builders.py` | `build_independent_cohorts_model`, `suggest_independent_cohorts_model`, `build_total_times_probability_model`, `suggest_total_times_probability_model` (D25.3: the objectives are one loop each and set the components with constructor calls; no helper per model, no readers, no `FixedTrial`) |
 | `cross_validation.py` | `fold_score`, `cv_score`, `tune_model`, `fit_and_score` (with T2.4's approved changes) |
 | `aggregation.py` | `Aggregator`, `Mean`, `WeightedMean`, `UpperBound`, moved back from `age_group_prediction/aggregation.py` (D9's interim home), with `tests/unit/test_aggregation.py` |
 
@@ -2143,7 +2237,7 @@ imports the package) are D21 (2026-10-22).
 - **Unit tests per module**, in new files `tests/unit/test_hyperparameter_tuning_*.py`:
   - the records' validation: an unknown family raises, `kw_only`, a typo in the params
     raises;
-  - the search spaces' trial names, and a `FixedTrial` rebuild equal to the drawn component;
+  - the search spaces' trial names, and the `from_params` read-back of a trial's params equal to the objective's model (the notebook test's check, D25.4);
   - the builders' models;
   - `cv_score` with the folds in parallel equal to one after another;
   - `tune_model`'s `catch`.

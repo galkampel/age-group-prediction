@@ -26,7 +26,9 @@ from age_group_prediction.modeling import (
     TotalTimesProbabilityModel,
 )
 from age_group_prediction.preprocessing import ExposureTransformer
-from age_group_prediction.scoring import COHORT_POISSON_DEVIANCE, Direction, Metric
+from age_group_prediction.scoring import Direction, Metric, cohort_poisson_deviance
+
+COHORT_POISSON_DEVIANCE = Metric("cohort_poisson_deviance", cohort_poisson_deviance)
 from student_simulator import StudentPopulationSimulator, load_simulation_config
 
 # A shuffled index that is not 0..n-1, so code pairing rows by label fails.

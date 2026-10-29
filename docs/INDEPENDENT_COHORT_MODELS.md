@@ -317,8 +317,9 @@ classes of the old stack.
 | `NegativeBinomialRegressor` | `dispersion=None` ($\alpha$ estimated, or fixed by a float), `alpha=0.0` (L1 on $\beta$, needs a fixed dispersion), `max_iter=500` | `X`, the counts `y`, `exposure=None` (raw) | `intercept_`, `coef_`, `dispersion_` ($\alpha$), `n_features_in_`, `feature_names_in_` | $E\cdot\exp(b + X\beta)$, or $\exp(b + X\beta)$ without an exposure |
 | `IndependentCohortModels` | `cohort_models` (a mapping cohort → `BaseAgeGroupModel`); nested: `cohort_models__<cohort>__<param>`, `cohort_models__<cohort>` | the raw table, a DataFrame of cohort counts, `exposure=` for every cohort | `cohort_models_` | a DataFrame, one column per cohort in `y`'s order, indexed like `X` |
 
-Every model has `evaluate(y_true, y_pred, metric)` with a `Metric`
-(`POISSON_DEVIANCE`, `RMSE`, `MAE`, or a custom one). Build LightGBM with `n_jobs=1`
+Every model has `evaluate(y_true, y_pred, metric)` with a `Metric` wrapping a
+scoring function (scikit-learn's `mean_poisson_deviance`, `root_mean_squared_error`,
+`mean_absolute_error`, or a custom one). Build LightGBM with `n_jobs=1`
 while the old stack's tests still import torch: more OpenMP threads crash alongside it
 on macOS. LightGBM ignores `subsample` unless `subsample_freq >= 1` is set too.
 
@@ -336,13 +337,15 @@ on macOS. LightGBM ignores `subsample` unless `subsample_freq >= 1` is set too.
 
 ```python
 from lightgbm import LGBMRegressor
+from sklearn.metrics import mean_poisson_deviance
 from age_group_prediction.modeling import CountModel, IndependentCohortModels
 from age_group_prediction.preprocessing import ExposureTransformer, ShareTransformer
-from age_group_prediction.scoring import POISSON_DEVIANCE
+from age_group_prediction.scoring import Metric
 from age_group_prediction.splitting import Splitter
 from age_group_prediction.utils import take_rows
 
 COHORTS = ["n_kindergarten", "n_elementary", "n_highschool"]
+POISSON_DEVIANCE = Metric("poisson_deviance", mean_poisson_deviance)
 
 # 1. On the full table: raw_table is the simulator's or the real data
 table = ShareTransformer(

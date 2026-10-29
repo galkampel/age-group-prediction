@@ -87,7 +87,7 @@ Verified 2026-10-11 on `feat/hyperparameter-tuning`. Paths are under
 - `CountModel(*, estimator, use_exposure=False, feature_transformer=None)`:
   one count target. An estimator taking `exposure` (NB2) gets it raw; one taking
   `sample_weight` (Poisson GLM, LightGBM) fits the weighted rate.
-- `CohortProbabilityModel(*, estimator, replication="weighted",
+- `CohortProbabilityModel(*, estimator, replication_method="weighted",
   calibration_method=None, calibration_cv=5, feature_transformer=None)`:
   `y` is the (buildings × cohorts) count DataFrame; `predict` returns
   probabilities, rows summing to 1.

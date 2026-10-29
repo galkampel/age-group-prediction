@@ -15,6 +15,7 @@ from sklearn.base import BaseEstimator, clone
 from sklearn.ensemble import HistGradientBoostingRegressor
 from sklearn.exceptions import NotFittedError
 from sklearn.linear_model import LinearRegression, PoissonRegressor
+from sklearn.metrics import mean_poisson_deviance
 from sklearn.utils.validation import check_is_fitted
 from statsmodels.discrete.discrete_model import NegativeBinomial
 from statsmodels.tools import add_constant
@@ -25,7 +26,9 @@ from age_group_prediction.modeling import (
     NegativeBinomialRegressor,
     Regressor,
 )
-from age_group_prediction.scoring import POISSON_DEVIANCE
+from age_group_prediction.scoring import Metric
+
+POISSON_DEVIANCE = Metric("poisson_deviance", mean_poisson_deviance)
 
 
 def _data(rows: int = 300) -> tuple[pd.DataFrame, pd.Series, np.ndarray]:

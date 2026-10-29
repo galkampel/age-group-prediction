@@ -222,7 +222,7 @@ def _(DATA_SETTINGS, X, config, df, groups, hashlib, json, mo, pd):
             mo.md(f"```text\n{X.head().to_string(index=False)}\n```"),
         ]
     )
-    return config_hash, config_params
+    return
 
 
 @app.cell(hide_code=True)
@@ -248,6 +248,11 @@ def _(mo, pd):
     n_trials = 400
     # TPE's random start: the trials drawn at random before its model guides the draws.
     n_startup_trials = 20
+    # The independent cohorts model's search: one set of hyperparameters for
+    # all cohorts, and one feature transformer for all cohorts (D24.4); the
+    # other arm is a click with share_feature_transformer = True.
+    share_hyperparams = True
+    share_feature_transformer = False
     n_resamples = 1000
     # The inspection of the best runs: permutation repeats per column, and the
     # validation rows SHAP explains against the training rows it averages over.
@@ -264,6 +269,8 @@ def _(mo, pd):
         "n_splits": n_splits,
         "n_trials": n_trials,
         "n_startup_trials": n_startup_trials,
+        "share_hyperparams": share_hyperparams,
+        "share_feature_transformer": share_feature_transformer,
         "n_resamples": n_resamples,
         "n_repeats": n_repeats,
         "n_shap_rows": n_shap_rows,
@@ -283,6 +290,8 @@ def _(mo, pd):
         n_startup_trials,
         n_trials,
         seed,
+        share_feature_transformer,
+        share_hyperparams,
         split_method,
         test_size,
         val_size,
@@ -590,9 +599,13 @@ def _(
         ),
     )
 
-    FEATURE_TRANSFORMERS = {
-        "tree": tree,
-        "tree__ses_quadratic": tree__ses_quadratic,
+    # Each family's candidate feature transformers, by name, in the order a trial
+    # draws them. The trees take n_apartments as a feature and the offset; the
+    # GLMs take it as the exposure only (docs/FEATURE_TRANSFORMATIONS.md §3.3,
+    # §4.4); the logistic model needs the scaled plans (it does not converge on
+    # `tree`).
+    _tree_candidates = {"tree": tree, "tree__ses_quadratic": tree__ses_quadratic}
+    _glm_count_candidates = {
         "glm_base": glm_base,
         "count__ses_quadratic": count__ses_quadratic,
         "count__daycare_log1p": count__daycare_log1p,
@@ -601,14 +614,26 @@ def _(
         "count__room_share_x_household_size_and_ses": (
             count__room_share_x_household_size_and_ses
         ),
-        "probability__daycare_log1p": probability__daycare_log1p,
-        "probability__room_share_x_median_age": probability__room_share_x_median_age,
-        "probability__room_share_x_daycare": probability__room_share_x_daycare,
-        "probability__room_share_x_median_age_and_daycare": (
-            probability__room_share_x_median_age_and_daycare
-        ),
     }
-    return (FEATURE_TRANSFORMERS,)
+    COUNT_FEATURE_TRANSFORMERS = {
+        "lgbm_poisson": _tree_candidates,
+        "lgbm_gaussian": _tree_candidates,
+        "poisson_glm": _glm_count_candidates,
+        "nb2": _glm_count_candidates,
+    }
+    PROBABILITY_FEATURE_TRANSFORMERS = {
+        "logistic": {
+            "glm_base": glm_base,
+            "probability__daycare_log1p": probability__daycare_log1p,
+            "probability__room_share_x_median_age": probability__room_share_x_median_age,
+            "probability__room_share_x_daycare": probability__room_share_x_daycare,
+            "probability__room_share_x_median_age_and_daycare": (
+                probability__room_share_x_median_age_and_daycare
+            ),
+        },
+        "lgbm": _tree_candidates,
+    }
+    return COUNT_FEATURE_TRANSFORMERS, PROBABILITY_FEATURE_TRANSFORMERS
 
 
 @app.cell
@@ -621,15 +646,26 @@ def _(mo):
     mo.md(r"""
     ## 5) Hyperparameter tuning
 
-    One run per model family and exposure (on or off, fixed for the run), each
-    in its own cell: one Optuna study on the composite, so the model that is
-    scored is the model that is tuned, by the cohort Poisson deviance of its
+    Two models: the independent cohorts model (Model 1, one count model per
+    cohort) and the total times probability model (Model 2, a count model of
+    the total times a classifier's cohort probabilities). One run per model
+    family and exposure (on or off, fixed for the run), each in its own cell:
+    one Optuna study on the composite, so the model that is scored is the
+    model that is tuned, by the cohort Poisson deviance of its
     cross-validation folds on the training part, the plain mean over folds.
-    A trial draws, per cohort (per part for Model 2), the estimator's
-    hyperparameters and the feature transformer by name, under the names
-    `<component>__<parameter>`; they make a component, a complete record of
+    A trial draws, per cohort (per part for the total times probability
+    model), the estimator's hyperparameters and the feature transformer,
+    under the names `<component>__<parameter>` (the transformer by its name,
+    resolved to the object); they make a component, a complete record of
     that part, and the composite is built from the components with
-    constructor calls. LightGBM's two losses, Poisson and Gaussian, are
+    constructor calls; the best run's components are read back from the
+    study's `best_params` by the component type, the same records. Two
+    settings decide what the independent cohorts model's cohorts share,
+    each drawn once under `shared__`:
+    `share_hyperparams` (one set of hyperparameters for all cohorts) and
+    `share_feature_transformer` (one transformer for all cohorts). The runs
+    below take `True` and `False`; the other arm, both `True`, is a click
+    with the setting changed. LightGBM's two losses, Poisson and Gaussian, are
     separate families, and the exposure a run setting: a study that sampled
     the loss split 30 trials 10/20 and did worse than either loss alone, and
     the exposure changes the target (a count or a weighted rate).
@@ -639,13 +675,18 @@ def _(mo):
     `seed + 0`, `seed + 1`, … in order, and each trial fits its 5 folds in
     parallel. A trial whose fit raises (an NB2 fit that does not converge) is
     marked failed and the run goes on; the tables count them. Each run keeps
-    every trial and its best components, which alone are rebuilt, refit on
-    the training part and scored on training and validation. A Gaussian loss
-    can predict a negative count, which `CountModel` floors at `y_min` (eps).
-    Model 2 is tuned the same way, one run per total family, the total's
+    every trial and its best components, which alone are read back from the
+    best trial's parameters, refit on the training part and scored on
+    training and validation. A Gaussian loss can predict a negative count,
+    which `CountModel` floors at `y_min` (eps). The total times probability
+    model is tuned the same way, one run per total family, the total's
     exposure and a classifier family, 16 runs, under `total__…` and
     `probability__…`; the probability model ignores the exposure, and its
-    calibration is searched.
+    calibration is searched. Its replication of the counts into classifier
+    rows is fixed at `weighted`, not searched: for the logistic classifier
+    the two replications are the same fit, and for LightGBM they differed
+    within noise while `per_child` is 2-3× slower
+    (`docs/TOTAL_TIMES_PROBABILITY_MODEL.md` §3.1).
     The last table shows each model's best run on validation. The run
     cells sit behind buttons: opening the notebook fits nothing.
 
@@ -677,15 +718,13 @@ def _():
     import dataclasses
     import time
     from functools import partial
-    from types import MappingProxyType
-    from typing import ClassVar, Literal, get_args, get_type_hints
+    from typing import ClassVar, Literal
 
     import numpy as np
     import optuna
     from joblib import Parallel, delayed
     from lightgbm import LGBMClassifier, LGBMRegressor
     from optuna.samplers import TPESampler
-    from optuna.trial import FixedTrial
     from sklearn.linear_model import LogisticRegression, PoissonRegressor
     from sklearn.metrics import (
         d2_tweedie_score,
@@ -720,13 +759,11 @@ def _():
         ClassVar,
         CohortProbabilityModel,
         CountModel,
-        FixedTrial,
         IndependentCohortModels,
         LGBMClassifier,
         LGBMRegressor,
         Literal,
         LogisticRegression,
-        MappingProxyType,
         Mean,
         Metric,
         NegativeBinomialRegressor,
@@ -742,8 +779,6 @@ def _():
         d2_tweedie_score,
         dataclasses,
         delayed,
-        get_args,
-        get_type_hints,
         mean_absolute_error,
         mean_poisson_deviance,
         np,
@@ -860,6 +895,7 @@ def _(dataclasses):
 @app.cell
 def _(
     CountFamily,
+    FeatureTransformer,
     LGBMClassifier,
     LGBMParams,
     LGBMRegressor,
@@ -872,34 +908,40 @@ def _(
     ProbabilityFamily,
     abc,
     dataclasses,
-    get_args,
-    get_type_hints,
 ):
-    # Complete records of one part of a run, built by hand or from a trial's
-    # draws; no Optuna here (D10, D11). They read no notebook global, so the
-    # classes can move to a package.
+    # Complete records of one part of a run, built by the constructor from a
+    # trial's draws or by from_params from a study's best_params (D25); no Optuna
+    # here (D10, D11). They read no notebook global, so the classes can move to
+    # a package.
     @dataclasses.dataclass(frozen=True, kw_only=True)
     class Component(abc.ABC):
-        """A named part of a composite: its family, feature transformer and hyperparameters."""
+        """A named part of a composite: its family, feature transformer and estimator params."""
 
         name: str
         family: str
-        # A key of FEATURE_TRANSFORMERS, resolved by the builder, so the record
-        # stays JSON.
-        feature_transformer_name: str
+        # CountModel and CohortProbabilityModel clone it at fit, so the shared
+        # declaration is safe.
+        feature_transformer: FeatureTransformer
 
-        def __post_init__(self):
-            # The subclass annotates `family` with its Literal, which holds the
-            # valid names.
-            families = get_args(get_type_hints(type(self))["family"])
-            if self.family not in families:
-                raise ValueError(
-                    f"unknown {type(self).__name__} family {self.family!r}"
-                )
+        @staticmethod
+        def set_estimator_params(params, params_class):
+            """The record ``params_class`` filled from ``params`` by its fields; a missing one raises KeyError."""
+            return params_class(
+                **{
+                    field.name: params[field.name]
+                    for field in dataclasses.fields(params_class)
+                }
+            )
 
         @abc.abstractmethod
-        def make_estimator(self, *, seed):
-            """The unfitted estimator: the family's fixed settings and ``hyperparameters``."""
+        def make_estimator(self, *, random_state=None):
+            """The unfitted estimator: the family's fixed settings and ``estimator_params``."""
+
+        def to_dict(self):
+            """The record as plain data: the transformer by its declaration (plans, interactions)."""
+            record = dataclasses.asdict(self)
+            record["feature_transformer"] = self.feature_transformer.to_dict()
+            return record
 
     @dataclasses.dataclass(frozen=True, kw_only=True)
     class CountComponent(Component):
@@ -907,10 +949,42 @@ def _(
 
         family: CountFamily
         use_exposure: bool
-        hyperparameters: LGBMParams | PoissonGLMParams | NB2Params
+        estimator_params: LGBMParams | PoissonGLMParams | NB2Params
 
-        def make_estimator(self, *, seed):
-            hyperparameters = dataclasses.asdict(self.hyperparameters)
+        @classmethod
+        def from_params(
+            cls, best_params, *, name, family, use_exposure, feature_transformer_dict
+        ):
+            """The component ``best_params`` names under ``name``: its family's record and its transformer, through ``feature_transformer_dict``.
+
+            A choice the independent cohorts model shares sits under
+            ``shared__`` and counts as the component's own.
+            """
+            params = {
+                parameter_name.split("__", 1)[1]: value
+                for parameter_name, value in best_params.items()
+                if parameter_name.split("__", 1)[0] in (name, "shared")
+            }
+            if family in ("lgbm_poisson", "lgbm_gaussian"):
+                estimator_params = cls.set_estimator_params(params, LGBMParams)
+            elif family == "poisson_glm":
+                estimator_params = cls.set_estimator_params(params, PoissonGLMParams)
+            elif family == "nb2":
+                estimator_params = cls.set_estimator_params(params, NB2Params)
+            else:
+                raise ValueError(f"unknown count family {family!r}")
+            return cls(
+                name=name,
+                family=family,
+                use_exposure=use_exposure,
+                estimator_params=estimator_params,
+                feature_transformer=feature_transformer_dict[
+                    params["feature_transformer"]
+                ],
+            )
+
+        def make_estimator(self, *, random_state=None):
+            estimator_params = dataclasses.asdict(self.estimator_params)
             if self.family in ("lgbm_poisson", "lgbm_gaussian"):
                 # LightGBM's name for the loss, which the family fixes (D6).
                 objective = "poisson" if self.family == "lgbm_poisson" else "regression"
@@ -921,41 +995,65 @@ def _(
                     subsample_freq=1,
                     n_jobs=1,
                     verbosity=-1,
-                    random_state=seed,
-                    **hyperparameters,
+                    random_state=random_state,
+                    **estimator_params,
                 )
             elif self.family == "poisson_glm":
-                return PoissonRegressor(max_iter=1000, **hyperparameters)
+                return PoissonRegressor(max_iter=1000, **estimator_params)
             elif self.family == "nb2":
-                return NegativeBinomialRegressor(**hyperparameters)
+                return NegativeBinomialRegressor(**estimator_params)
             else:
                 raise ValueError(f"unknown count family {self.family!r}")
 
     @dataclasses.dataclass(frozen=True, kw_only=True)
     class ProbabilityComponent(Component):
-        """Model 2's CohortProbabilityModel part of a run; the exposure does not apply."""
+        """The total times probability model's CohortProbabilityModel part of a run; the exposure does not apply."""
 
         family: ProbabilityFamily
         calibration_method: str | None
-        hyperparameters: LGBMParams | LogisticParams
+        estimator_params: LGBMParams | LogisticParams
 
-        def make_estimator(self, *, seed):
-            hyperparameters = dataclasses.asdict(self.hyperparameters)
+        @classmethod
+        def from_params(cls, best_params, *, name, family, feature_transformer_dict):
+            """The component ``best_params`` names under ``name``: its family's record, calibration and transformer, through ``feature_transformer_dict``."""
+            params = {
+                parameter_name.split("__", 1)[1]: value
+                for parameter_name, value in best_params.items()
+                if parameter_name.split("__", 1)[0] in (name, "shared")
+            }
+            if family == "lgbm":
+                estimator_params = cls.set_estimator_params(params, LGBMParams)
+            elif family == "logistic":
+                estimator_params = cls.set_estimator_params(params, LogisticParams)
+            else:
+                raise ValueError(f"unknown probability family {family!r}")
+            return cls(
+                name=name,
+                family=family,
+                calibration_method=params["calibration_method"],
+                estimator_params=estimator_params,
+                feature_transformer=feature_transformer_dict[
+                    params["feature_transformer"]
+                ],
+            )
+
+        def make_estimator(self, *, random_state=None):
+            estimator_params = dataclasses.asdict(self.estimator_params)
             if self.family == "lgbm":
                 return LGBMClassifier(
                     objective="multiclass",
                     subsample_freq=1,
                     n_jobs=1,
                     verbosity=-1,
-                    random_state=seed,
-                    **hyperparameters,
+                    random_state=random_state,
+                    **estimator_params,
                 )
             elif self.family == "logistic":
-                return LogisticRegression(max_iter=1000, **hyperparameters)
+                return LogisticRegression(max_iter=1000, **estimator_params)
             else:
                 raise ValueError(f"unknown probability family {self.family!r}")
 
-    return Component, CountComponent, ProbabilityComponent
+    return CountComponent, ProbabilityComponent
 
 
 @app.cell
@@ -964,37 +1062,26 @@ def _(
     CountFamily,
     LGBMParams,
     LogisticParams,
-    MappingProxyType,
     NB2Params,
     PoissonGLMParams,
     ProbabilityFamily,
     abc,
     dataclasses,
-    get_args,
-    get_type_hints,
 ):
     # Every Optuna call (D10, D11): a search space, given a component's name and
-    # family, samples its choices from a trial under `<name>__<parameter>`; the
-    # caller feeds them into the component.
+    # family, samples its choices from a trial under `<name>__<parameter>` and
+    # returns them by value or name. The trial's params, under those names, are
+    # the record the components and the build read, so a study's best_params is
+    # read the same way (D25); the search space reads nothing back.
     @dataclasses.dataclass(frozen=True, kw_only=True)
-    class SearchSpace(abc.ABC):
-        """The search of one component's choices, given its name and family."""
+    class ComponentSearchSpace(abc.ABC):
+        """The search of one component's choices, given its name, family and transformer candidates."""
 
         name: str
         family: str
-        # Set by each subclass: each family's candidate feature transformers, by
-        # name. Fixed on the class, so no search space carries another family's.
-        FEATURE_TRANSFORMER_NAMES: ClassVar[MappingProxyType[str, tuple[str, ...]]]
-
-        def __post_init__(self):
-            # At construction, before a run starts.
-            families = get_args(get_type_hints(type(self))["family"])
-            if self.family not in families:
-                raise ValueError(
-                    f"unknown {type(self).__name__} family {self.family!r}"
-                )
-            if self.family not in self.FEATURE_TRANSFORMER_NAMES:
-                raise ValueError(f"no feature transformers for family {self.family!r}")
+        # The family's candidates by name, in the order a trial draws them; the
+        # caller resolves the drawn name through its dict.
+        feature_transformer_names: tuple[str, ...]
 
         @property
         def prefix(self):
@@ -1002,17 +1089,17 @@ def _(
             return f"{self.name}__"
 
         def suggest_feature_transformer_name(self, trial):
-            """A name from the family's candidates; Optuna's choices must be primitives."""
+            """The chosen transformer's name, drawn from the candidates (Optuna's choices must be primitives)."""
             return trial.suggest_categorical(
                 f"{self.prefix}feature_transformer",
-                list(self.FEATURE_TRANSFORMER_NAMES[self.family]),
+                list(self.feature_transformer_names),
             )
 
         @abc.abstractmethod
         def suggest_hyperparameters(self, trial):
-            """The family's params record, sampled under ``prefix``."""
+            """The family's params record: its ``suggest_<family>_hyperparams``."""
 
-        def _suggest_lgbm(self, trial):
+        def suggest_lgbm_hyperparams(self, trial):
             prefix = self.prefix
             return LGBMParams(
                 max_depth=trial.suggest_int(f"{prefix}max_depth", 3, 8),
@@ -1038,74 +1125,42 @@ def _(
             )
 
     @dataclasses.dataclass(frozen=True, kw_only=True)
-    class CountSearchSpace(SearchSpace):
+    class CountSearchSpace(ComponentSearchSpace):
         """A count component's search: its hyperparameters and feature transformer."""
 
         family: CountFamily
-        # The trees take n_apartments as a feature and the offset; the GLMs take
-        # it as the exposure only (docs/FEATURE_TRANSFORMATIONS.md §3.3, §4.4).
-        FEATURE_TRANSFORMER_NAMES: ClassVar[MappingProxyType[str, tuple[str, ...]]] = (
-            MappingProxyType(
-                {
-                    **dict.fromkeys(
-                        ("lgbm_poisson", "lgbm_gaussian"),
-                        ("tree", "tree__ses_quadratic"),
-                    ),
-                    **dict.fromkeys(
-                        ("poisson_glm", "nb2"),
-                        (
-                            "glm_base",
-                            "count__ses_quadratic",
-                            "count__daycare_log1p",
-                            "count__room_share_x_household_size",
-                            "count__room_share_x_ses",
-                            "count__room_share_x_household_size_and_ses",
-                        ),
-                    ),
-                }
-            )
-        )
 
         def suggest_hyperparameters(self, trial):
-            prefix = self.prefix
             if self.family in ("lgbm_poisson", "lgbm_gaussian"):
-                return self._suggest_lgbm(trial)
+                return self.suggest_lgbm_hyperparams(trial)
             elif self.family == "poisson_glm":
-                return PoissonGLMParams(
-                    alpha=trial.suggest_float(f"{prefix}alpha", 1e-4, 10.0, log=True)
-                )
+                return self.suggest_poisson_glm_hyperparams(trial)
             elif self.family == "nb2":
-                # The estimated dispersions are 0.12 to 0.18; the penalty's path runs
-                # from the unpenalized fit at 1e-3 to all-zero coefficients at 1.
-                return NB2Params(
-                    dispersion=trial.suggest_float(
-                        f"{prefix}dispersion", 0.01, 1.0, log=True
-                    ),
-                    alpha=trial.suggest_float(f"{prefix}alpha", 1e-3, 1.0, log=True),
-                )
+                return self.suggest_nb2_hyperparams(trial)
             else:
                 raise ValueError(f"unknown count family {self.family!r}")
 
+        def suggest_poisson_glm_hyperparams(self, trial):
+            return PoissonGLMParams(
+                alpha=trial.suggest_float(f"{self.prefix}alpha", 1e-4, 10.0, log=True)
+            )
+
+        def suggest_nb2_hyperparams(self, trial):
+            prefix = self.prefix
+            # The estimated dispersions are 0.12 to 0.18; the penalty's path runs
+            # from the unpenalized fit at 1e-3 to all-zero coefficients at 1.
+            return NB2Params(
+                dispersion=trial.suggest_float(
+                    f"{prefix}dispersion", 0.01, 1.0, log=True
+                ),
+                alpha=trial.suggest_float(f"{prefix}alpha", 1e-3, 1.0, log=True),
+            )
+
     @dataclasses.dataclass(frozen=True, kw_only=True)
-    class ProbabilitySearchSpace(SearchSpace):
+    class ProbabilitySearchSpace(ComponentSearchSpace):
         """A probability component's search: its hyperparameters, calibration and feature transformer."""
 
         family: ProbabilityFamily
-        # The logistic model needs the scaled plans (it does not converge on `tree`).
-        FEATURE_TRANSFORMER_NAMES: ClassVar[MappingProxyType[str, tuple[str, ...]]] = (
-            MappingProxyType(
-                {
-                    "logistic": (
-                        "glm_base",
-                        "probability__daycare_log1p",
-                        "probability__room_share_x_median_age",
-                        "probability__room_share_x_daycare",
-                        "probability__room_share_x_median_age_and_daycare",
-                    ),
-                    "lgbm": ("tree", "tree__ses_quadratic"),
-                }
-            )
-        )
         # No isotonic: its lowest score block can hold no child of a cohort and
         # then maps a building there to probability 0, an infinite log loss
         # (measured 2026-10-15 with the LightGBM classifier).
@@ -1117,20 +1172,23 @@ def _(
 
         def suggest_hyperparameters(self, trial):
             if self.family == "lgbm":
-                return self._suggest_lgbm(trial)
+                return self.suggest_lgbm_hyperparams(trial)
             elif self.family == "logistic":
-                return LogisticParams(
-                    C=trial.suggest_float(f"{self.prefix}C", 1e-3, 100.0, log=True)
-                )
+                return self.suggest_logistic_hyperparams(trial)
             else:
                 raise ValueError(f"unknown probability family {self.family!r}")
+
+        def suggest_logistic_hyperparams(self, trial):
+            return LogisticParams(
+                C=trial.suggest_float(f"{self.prefix}C", 1e-3, 100.0, log=True)
+            )
 
         def suggest_calibration_method(self, trial):
             return trial.suggest_categorical(
                 f"{self.prefix}calibration_method", list(self.CALIBRATION_METHODS)
             )
 
-    return CountSearchSpace, ProbabilitySearchSpace, SearchSpace
+    return CountSearchSpace, ProbabilitySearchSpace
 
 
 @app.cell
@@ -1144,153 +1202,178 @@ def _(
     ProbabilitySearchSpace,
     TotalTimesProbabilityModel,
 ):
-    # The suggest functions call a search space's methods explicitly and feed the
-    # draws into a component; the build functions turn components into models,
-    # with no Optuna. A study is one family combination and exposure (D12): the
-    # objective calls suggest_model1/2, and the best run's refit rebuilds the best
-    # components with suggest_model1/2_components on FixedTrial(best_params).
-    def suggest_count_component(trial, space, *, use_exposure):
-        """The count component of ``trial``'s draws in ``space``; the exposure is the study's."""
-        # Keyword arguments are evaluated left to right, so this is the order of
-        # the draws: the hyperparameters, then the transformer. A seeded study's
-        # result depends on it.
-        return CountComponent(
-            name=space.name,
-            family=space.family,
-            use_exposure=use_exposure,
-            hyperparameters=space.suggest_hyperparameters(trial),
-            feature_transformer_name=space.suggest_feature_transformer_name(trial),
-        )
-
-    def suggest_probability_component(trial, space):
-        """The probability component of ``trial``'s draws in ``space``."""
-        # The draws, in order: the hyperparameters, the calibration, the transformer.
-        return ProbabilityComponent(
-            name=space.name,
-            family=space.family,
-            hyperparameters=space.suggest_hyperparameters(trial),
-            calibration_method=space.suggest_calibration_method(trial),
-            feature_transformer_name=space.suggest_feature_transformer_name(trial),
-        )
-
-    def suggest_model1_components(trial, *, family, use_exposure, cohorts):
-        """Model 1's components ``trial`` draws: one per cohort, all of ``family``."""
-        return tuple(
-            suggest_count_component(
-                trial,
-                CountSearchSpace(name=cohort, family=family),
-                use_exposure=use_exposure,
-            )
-            for cohort in cohorts
-        )
-
-    def suggest_model2_components(
-        trial, *, total_family, probability_family, use_exposure
-    ):
-        """Model 2's total and probability components ``trial`` draws, the total first."""
-        total = suggest_count_component(
-            trial,
-            CountSearchSpace(name="total", family=total_family),
-            use_exposure=use_exposure,
-        )
-        probability = suggest_probability_component(
-            trial, ProbabilitySearchSpace(name="probability", family=probability_family)
-        )
-        return total, probability
-
-    def make_count_model(component, *, feature_transformer_dict, y_min, seed):
-        """The CountModel of a count component."""
-        # CountModel clones the transformer at fit, so the shared declaration is safe.
-        return CountModel(
-            estimator=component.make_estimator(seed=seed),
-            use_exposure=component.use_exposure,
-            feature_transformer=feature_transformer_dict[
-                component.feature_transformer_name
-            ],
-            y_min=y_min,
-        )
-
-    def build_model1(components, *, feature_transformer_dict, y_min, seed):
-        """Model 1: one CountModel per component, keyed by the component's name, a cohort."""
+    # The suggest functions call a search space's methods explicitly and set the
+    # components with constructor calls, the transformer resolved through the
+    # candidate dict; the build functions turn components into models, with no
+    # Optuna. A study is one family combination and exposure (D12): the
+    # objective is suggest_independent_cohorts_model /
+    # suggest_total_times_probability_model, and the best run's refit sets its
+    # components from the study's best_params with the component types'
+    # from_params (D25) and builds the same way.
+    def build_independent_cohorts_model(components, *, y_min, random_state):
+        """The independent cohorts model: one CountModel per component, keyed by the component's name, a cohort."""
         return IndependentCohortModels(
             {
-                component.name: make_count_model(
-                    component,
-                    feature_transformer_dict=feature_transformer_dict,
+                component.name: CountModel(
+                    estimator=component.make_estimator(random_state=random_state),
+                    use_exposure=component.use_exposure,
+                    feature_transformer=component.feature_transformer,
                     y_min=y_min,
-                    seed=seed,
                 )
                 for component in components
             }
         )
 
-    def build_model2(total, probability, *, feature_transformer_dict, y_min, seed):
-        """Model 2: the total's CountModel and the cohort probabilities' classifier."""
-        return TotalTimesProbabilityModel(
-            total_model=make_count_model(
-                total,
-                feature_transformer_dict=feature_transformer_dict,
-                y_min=y_min,
-                seed=seed,
-            ),
-            probability_model=CohortProbabilityModel(
-                estimator=probability.make_estimator(seed=seed),
-                calibration_method=probability.calibration_method,
-                feature_transformer=feature_transformer_dict[
-                    probability.feature_transformer_name
-                ],
-            ),
-        )
-
-    def suggest_model1(
-        trial, *, family, use_exposure, cohorts, feature_transformer_dict, y_min, seed
+    def suggest_independent_cohorts_model(
+        trial,
+        *,
+        family,
+        use_exposure,
+        cohorts,
+        feature_transformer_dict,
+        share_hyperparams,
+        share_feature_transformer,
+        y_min,
+        random_state,
     ):
-        """Model 1 of the components ``trial`` draws for one family and exposure."""
-        components = suggest_model1_components(
-            trial, family=family, use_exposure=use_exposure, cohorts=cohorts
+        """The independent cohorts model of the components ``trial`` draws for one family and exposure.
+
+        ``share_hyperparams``: one draw of the hyperparameters in every component;
+        ``share_feature_transformer``: one draw of the transformer in every
+        component; each drawn once, before the loop, under ``shared__``. A
+        cohort's own choices are drawn under ``<cohort>__``, its hyperparameters
+        then its transformer.
+        """
+        # A seeded study's result depends on the draw order; with both flags
+        # False it is HEAD's.
+        feature_transformer_names = tuple(feature_transformer_dict)
+        shared_search_space = CountSearchSpace(
+            name="shared",
+            family=family,
+            feature_transformer_names=feature_transformer_names,
         )
-        return build_model1(
-            components,
-            feature_transformer_dict=feature_transformer_dict,
-            y_min=y_min,
-            seed=seed,
+        if share_hyperparams:
+            shared_estimator_params = shared_search_space.suggest_hyperparameters(trial)
+        if share_feature_transformer:
+            shared_feature_transformer_name = (
+                shared_search_space.suggest_feature_transformer_name(trial)
+            )
+        cohort_components = []
+        for cohort in cohorts:
+            cohort_search_space = CountSearchSpace(
+                name=cohort,
+                family=family,
+                feature_transformer_names=feature_transformer_names,
+            )
+            estimator_params = (
+                shared_estimator_params
+                if share_hyperparams
+                else cohort_search_space.suggest_hyperparameters(trial)
+            )
+            feature_transformer_name = (
+                shared_feature_transformer_name
+                if share_feature_transformer
+                else cohort_search_space.suggest_feature_transformer_name(trial)
+            )
+            cohort_components.append(
+                CountComponent(
+                    name=cohort,
+                    family=family,
+                    use_exposure=use_exposure,
+                    estimator_params=estimator_params,
+                    feature_transformer=feature_transformer_dict[
+                        feature_transformer_name
+                    ],
+                )
+            )
+        independent_cohorts_model = build_independent_cohorts_model(
+            cohort_components, y_min=y_min, random_state=random_state
+        )
+        return independent_cohorts_model
+
+    def build_total_times_probability_model(
+        total_component, probability_component, *, y_min, random_state
+    ):
+        """The total times probability model: the total's CountModel and the cohort probabilities' classifier."""
+        return TotalTimesProbabilityModel(
+            total_model=CountModel(
+                estimator=total_component.make_estimator(random_state=random_state),
+                use_exposure=total_component.use_exposure,
+                feature_transformer=total_component.feature_transformer,
+                y_min=y_min,
+            ),
+            # The replication is fixed, not searched: for the logistic
+            # classifier the two replications are the same fit, for LightGBM
+            # they differed within noise and "per_child" is 2-3x slower
+            # (docs/TOTAL_TIMES_PROBABILITY_MODEL.md §3.1).
+            probability_model=CohortProbabilityModel(
+                estimator=probability_component.make_estimator(
+                    random_state=random_state
+                ),
+                replication_method="weighted",
+                calibration_method=probability_component.calibration_method,
+                feature_transformer=probability_component.feature_transformer,
+            ),
         )
 
-    def suggest_model2(
+    def suggest_total_times_probability_model(
         trial,
         *,
         total_family,
         probability_family,
         use_exposure,
-        feature_transformer_dict,
+        total_feature_transformer_dict,
+        probability_feature_transformer_dict,
         y_min,
-        seed,
+        random_state,
     ):
-        """Model 2 of the components ``trial`` draws for one family pair and exposure."""
-        total, probability = suggest_model2_components(
-            trial,
-            total_family=total_family,
-            probability_family=probability_family,
+        """The total times probability model of the components ``trial`` draws for one family pair and exposure."""
+        # The draws, in order: the total's hyperparameters and transformer under
+        # `total__`, then the probabilities' hyperparameters, calibration and
+        # transformer under `probability__`.
+        total_search_space = CountSearchSpace(
+            name="total",
+            family=total_family,
+            feature_transformer_names=tuple(total_feature_transformer_dict),
+        )
+        total_component = CountComponent(
+            name=total_search_space.name,
+            family=total_family,
             use_exposure=use_exposure,
+            estimator_params=total_search_space.suggest_hyperparameters(trial),
+            feature_transformer=total_feature_transformer_dict[
+                total_search_space.suggest_feature_transformer_name(trial)
+            ],
         )
-        return build_model2(
-            total,
-            probability,
-            feature_transformer_dict=feature_transformer_dict,
+        probability_search_space = ProbabilitySearchSpace(
+            name="probability",
+            family=probability_family,
+            feature_transformer_names=tuple(probability_feature_transformer_dict),
+        )
+        probability_component = ProbabilityComponent(
+            name=probability_search_space.name,
+            family=probability_family,
+            estimator_params=probability_search_space.suggest_hyperparameters(trial),
+            calibration_method=probability_search_space.suggest_calibration_method(
+                trial
+            ),
+            feature_transformer=probability_feature_transformer_dict[
+                probability_search_space.suggest_feature_transformer_name(trial)
+            ],
+        )
+        total_times_probability_model = build_total_times_probability_model(
+            total_component,
+            probability_component,
             y_min=y_min,
-            seed=seed,
+            random_state=random_state,
         )
+        return total_times_probability_model
 
     return (
-        build_model1,
-        build_model2,
-        make_count_model,
-        suggest_count_component,
-        suggest_model1,
-        suggest_model1_components,
-        suggest_model2,
-        suggest_model2_components,
-        suggest_probability_component,
+        build_independent_cohorts_model,
+        build_total_times_probability_model,
+        suggest_independent_cohorts_model,
+        suggest_total_times_probability_model,
     )
 
 
@@ -1380,12 +1463,12 @@ def _(Mean, Parallel, TPESampler, delayed, optuna, time):
         study.optimize(objective, n_trials=n_trials, catch=(RuntimeError,))
         return study, time.perf_counter() - start
 
-    return cv_score, fold_score, tune_model
+    return (tune_model,)
 
 
 @app.cell
 def _(mo):
-    run_model1 = mo.ui.run_button(label="Tune Model 1")
+    run_model1 = mo.ui.run_button(label="Tune the independent cohorts model")
     mo.md(
         f"{run_model1} 8 runs, one cell each (a count family × exposure on or off); "
         "each trial fits its folds in parallel."
@@ -1393,58 +1476,49 @@ def _(mo):
     return (run_model1,)
 
 
-@app.cell
-def _():
-    def fit_and_score(model, train_age_group, val_age_group, *, cohort_metric, metric):
-        """Fit ``model`` on the training part; it and its score table on training and validation.
+@app.function
+def fit_and_score(model, train_age_group, val_age_group, *, cohort_metric, metric):
+    """Fit ``model`` on the training part; it and its score table on training and validation.
 
-        A row per cohort column, scored by ``cohort_metric``, then the
-        composite, scored by ``metric``.
-        """
-        model.fit(
-            train_age_group.X, train_age_group.Y, exposure=train_age_group.exposure
-        )
-        y_pred_train = model.predict(
-            train_age_group.X, exposure=train_age_group.exposure
-        )
-        y_pred_val = model.predict(val_age_group.X, exposure=val_age_group.exposure)
-        score_table = [
-            {
-                "cohort": cohort,
-                "train": model.evaluate(
-                    train_age_group.Y[cohort], y_pred_train[cohort], cohort_metric
-                ),
-                "val": model.evaluate(
-                    val_age_group.Y[cohort], y_pred_val[cohort], cohort_metric
-                ),
-            }
-            for cohort in train_age_group.Y.columns
-        ]
-        score_table.append(
-            {
-                "cohort": "composite",
-                "train": model.evaluate(train_age_group.Y, y_pred_train, metric),
-                "val": model.evaluate(val_age_group.Y, y_pred_val, metric),
-            }
-        )
-        return model, score_table
-
-    return (fit_and_score,)
+    A row per cohort column, scored by ``cohort_metric``, then the
+    composite, scored by ``metric``.
+    """
+    model.fit(train_age_group.X, train_age_group.Y, exposure=train_age_group.exposure)
+    y_pred_train = model.predict(train_age_group.X, exposure=train_age_group.exposure)
+    y_pred_val = model.predict(val_age_group.X, exposure=val_age_group.exposure)
+    score_table = [
+        {
+            "cohort": cohort,
+            "train": model.evaluate(
+                train_age_group.Y[cohort], y_pred_train[cohort], cohort_metric
+            ),
+            "val": model.evaluate(
+                val_age_group.Y[cohort], y_pred_val[cohort], cohort_metric
+            ),
+        }
+        for cohort in train_age_group.Y.columns
+    ]
+    score_table.append(
+        {
+            "cohort": "composite",
+            "train": model.evaluate(train_age_group.Y, y_pred_train, metric),
+            "val": model.evaluate(val_age_group.Y, y_pred_val, metric),
+        }
+    )
+    return model, score_table
 
 
 @app.cell
 def _(
     COHORTS,
     COHORT_POISSON_DEVIANCE,
-    FEATURE_TRANSFORMERS,
-    FixedTrial,
+    COUNT_FEATURE_TRANSFORMERS,
+    CountComponent,
     POISSON_DEVIANCE,
     PREDICTION_FLOOR,
-    build_model1,
+    build_independent_cohorts_model,
     cv,
     cv_groups,
-    dataclasses,
-    fit_and_score,
     mo,
     n_splits,
     n_startup_trials,
@@ -1452,24 +1526,31 @@ def _(
     partial,
     run_model1,
     seed,
-    suggest_model1,
-    suggest_model1_components,
+    share_feature_transformer,
+    share_hyperparams,
+    suggest_independent_cohorts_model,
     train_age_group,
     tune_model,
     val_age_group,
 ):
-    mo.stop(not run_model1.value, mo.md("Click the button to tune Model 1."))
-    # Model 1, run 1 of 8: LightGBM with the Poisson loss, exposure on.
+    mo.stop(
+        not run_model1.value,
+        mo.md("Click the button to tune the independent cohorts model."),
+    )
+    # The independent cohorts model, run 1 of 8: LightGBM with the Poisson loss,
+    # exposure on.
     _family, _use_exposure = "lgbm_poisson", True
     _study, _seconds = tune_model(
         partial(
-            suggest_model1,
+            suggest_independent_cohorts_model,
             family=_family,
             use_exposure=_use_exposure,
             cohorts=COHORTS,
-            feature_transformer_dict=FEATURE_TRANSFORMERS,
+            feature_transformer_dict=COUNT_FEATURE_TRANSFORMERS[_family],
+            share_hyperparams=share_hyperparams,
+            share_feature_transformer=share_feature_transformer,
             y_min=PREDICTION_FLOOR,
-            seed=seed,
+            random_state=seed,
         ),
         train_age_group.X,
         train_age_group.Y,
@@ -1482,20 +1563,21 @@ def _(
         n_startup_trials=n_startup_trials,
         n_jobs=n_splits,
     )
-    # The best components, rebuilt from the best trial's parameters, are the
-    # model scored and the record kept (D10-D12, D14).
-    _best = suggest_model1_components(
-        FixedTrial(_study.best_params),
-        family=_family,
-        use_exposure=_use_exposure,
-        cohorts=COHORTS,
+    # The best components, read from the best trial's parameters by their
+    # type, are the model scored and the record kept (D10-D12, D14, D25).
+    _best_components = tuple(
+        CountComponent.from_params(
+            _study.best_params,
+            name=cohort,
+            family=_family,
+            use_exposure=_use_exposure,
+            feature_transformer_dict=COUNT_FEATURE_TRANSFORMERS[_family],
+        )
+        for cohort in COHORTS
     )
     _, _score_table = fit_and_score(
-        build_model1(
-            _best,
-            feature_transformer_dict=FEATURE_TRANSFORMERS,
-            y_min=PREDICTION_FLOOR,
-            seed=seed,
+        build_independent_cohorts_model(
+            _best_components, y_min=PREDICTION_FLOOR, random_state=seed
         ),
         train_age_group,
         val_age_group,
@@ -1506,8 +1588,10 @@ def _(
     model1_lgbm_poisson_exposure = {
         "family": _family,
         "use_exposure": _use_exposure,
+        "share_hyperparams": share_hyperparams,
+        "share_feature_transformer": share_feature_transformer,
         "trials": _study.trials_dataframe(),
-        "components": [dataclasses.asdict(c) for c in _best],
+        "components": [component.to_dict() for component in _best_components],
         "cv_best": _study.best_value,
         "best_params": _study.best_params,
         "score_table": _score_table,
@@ -1522,15 +1606,13 @@ def _(
 def _(
     COHORTS,
     COHORT_POISSON_DEVIANCE,
-    FEATURE_TRANSFORMERS,
-    FixedTrial,
+    COUNT_FEATURE_TRANSFORMERS,
+    CountComponent,
     POISSON_DEVIANCE,
     PREDICTION_FLOOR,
-    build_model1,
+    build_independent_cohorts_model,
     cv,
     cv_groups,
-    dataclasses,
-    fit_and_score,
     mo,
     n_splits,
     n_startup_trials,
@@ -1538,24 +1620,31 @@ def _(
     partial,
     run_model1,
     seed,
-    suggest_model1,
-    suggest_model1_components,
+    share_feature_transformer,
+    share_hyperparams,
+    suggest_independent_cohorts_model,
     train_age_group,
     tune_model,
     val_age_group,
 ):
-    mo.stop(not run_model1.value, mo.md("Click the button to tune Model 1."))
-    # Model 1, run 2 of 8: LightGBM with the Poisson loss, exposure off.
+    mo.stop(
+        not run_model1.value,
+        mo.md("Click the button to tune the independent cohorts model."),
+    )
+    # The independent cohorts model, run 2 of 8: LightGBM with the Poisson loss,
+    # exposure off.
     _family, _use_exposure = "lgbm_poisson", False
     _study, _seconds = tune_model(
         partial(
-            suggest_model1,
+            suggest_independent_cohorts_model,
             family=_family,
             use_exposure=_use_exposure,
             cohorts=COHORTS,
-            feature_transformer_dict=FEATURE_TRANSFORMERS,
+            feature_transformer_dict=COUNT_FEATURE_TRANSFORMERS[_family],
+            share_hyperparams=share_hyperparams,
+            share_feature_transformer=share_feature_transformer,
             y_min=PREDICTION_FLOOR,
-            seed=seed,
+            random_state=seed,
         ),
         train_age_group.X,
         train_age_group.Y,
@@ -1568,20 +1657,21 @@ def _(
         n_startup_trials=n_startup_trials,
         n_jobs=n_splits,
     )
-    # The best components, rebuilt from the best trial's parameters, are the
-    # model scored and the record kept (D10-D12, D14).
-    _best = suggest_model1_components(
-        FixedTrial(_study.best_params),
-        family=_family,
-        use_exposure=_use_exposure,
-        cohorts=COHORTS,
+    # The best components, read from the best trial's parameters by their
+    # type, are the model scored and the record kept (D10-D12, D14, D25).
+    _best_components = tuple(
+        CountComponent.from_params(
+            _study.best_params,
+            name=cohort,
+            family=_family,
+            use_exposure=_use_exposure,
+            feature_transformer_dict=COUNT_FEATURE_TRANSFORMERS[_family],
+        )
+        for cohort in COHORTS
     )
     _, _score_table = fit_and_score(
-        build_model1(
-            _best,
-            feature_transformer_dict=FEATURE_TRANSFORMERS,
-            y_min=PREDICTION_FLOOR,
-            seed=seed,
+        build_independent_cohorts_model(
+            _best_components, y_min=PREDICTION_FLOOR, random_state=seed
         ),
         train_age_group,
         val_age_group,
@@ -1592,8 +1682,10 @@ def _(
     model1_lgbm_poisson_no_exposure = {
         "family": _family,
         "use_exposure": _use_exposure,
+        "share_hyperparams": share_hyperparams,
+        "share_feature_transformer": share_feature_transformer,
         "trials": _study.trials_dataframe(),
-        "components": [dataclasses.asdict(c) for c in _best],
+        "components": [component.to_dict() for component in _best_components],
         "cv_best": _study.best_value,
         "best_params": _study.best_params,
         "score_table": _score_table,
@@ -1608,15 +1700,13 @@ def _(
 def _(
     COHORTS,
     COHORT_POISSON_DEVIANCE,
-    FEATURE_TRANSFORMERS,
-    FixedTrial,
+    COUNT_FEATURE_TRANSFORMERS,
+    CountComponent,
     POISSON_DEVIANCE,
     PREDICTION_FLOOR,
-    build_model1,
+    build_independent_cohorts_model,
     cv,
     cv_groups,
-    dataclasses,
-    fit_and_score,
     mo,
     n_splits,
     n_startup_trials,
@@ -1624,24 +1714,31 @@ def _(
     partial,
     run_model1,
     seed,
-    suggest_model1,
-    suggest_model1_components,
+    share_feature_transformer,
+    share_hyperparams,
+    suggest_independent_cohorts_model,
     train_age_group,
     tune_model,
     val_age_group,
 ):
-    mo.stop(not run_model1.value, mo.md("Click the button to tune Model 1."))
-    # Model 1, run 3 of 8: LightGBM with the Gaussian loss, exposure on.
+    mo.stop(
+        not run_model1.value,
+        mo.md("Click the button to tune the independent cohorts model."),
+    )
+    # The independent cohorts model, run 3 of 8: LightGBM with the Gaussian loss,
+    # exposure on.
     _family, _use_exposure = "lgbm_gaussian", True
     _study, _seconds = tune_model(
         partial(
-            suggest_model1,
+            suggest_independent_cohorts_model,
             family=_family,
             use_exposure=_use_exposure,
             cohorts=COHORTS,
-            feature_transformer_dict=FEATURE_TRANSFORMERS,
+            feature_transformer_dict=COUNT_FEATURE_TRANSFORMERS[_family],
+            share_hyperparams=share_hyperparams,
+            share_feature_transformer=share_feature_transformer,
             y_min=PREDICTION_FLOOR,
-            seed=seed,
+            random_state=seed,
         ),
         train_age_group.X,
         train_age_group.Y,
@@ -1654,20 +1751,21 @@ def _(
         n_startup_trials=n_startup_trials,
         n_jobs=n_splits,
     )
-    # The best components, rebuilt from the best trial's parameters, are the
-    # model scored and the record kept (D10-D12, D14).
-    _best = suggest_model1_components(
-        FixedTrial(_study.best_params),
-        family=_family,
-        use_exposure=_use_exposure,
-        cohorts=COHORTS,
+    # The best components, read from the best trial's parameters by their
+    # type, are the model scored and the record kept (D10-D12, D14, D25).
+    _best_components = tuple(
+        CountComponent.from_params(
+            _study.best_params,
+            name=cohort,
+            family=_family,
+            use_exposure=_use_exposure,
+            feature_transformer_dict=COUNT_FEATURE_TRANSFORMERS[_family],
+        )
+        for cohort in COHORTS
     )
     _, _score_table = fit_and_score(
-        build_model1(
-            _best,
-            feature_transformer_dict=FEATURE_TRANSFORMERS,
-            y_min=PREDICTION_FLOOR,
-            seed=seed,
+        build_independent_cohorts_model(
+            _best_components, y_min=PREDICTION_FLOOR, random_state=seed
         ),
         train_age_group,
         val_age_group,
@@ -1678,8 +1776,10 @@ def _(
     model1_lgbm_gaussian_exposure = {
         "family": _family,
         "use_exposure": _use_exposure,
+        "share_hyperparams": share_hyperparams,
+        "share_feature_transformer": share_feature_transformer,
         "trials": _study.trials_dataframe(),
-        "components": [dataclasses.asdict(c) for c in _best],
+        "components": [component.to_dict() for component in _best_components],
         "cv_best": _study.best_value,
         "best_params": _study.best_params,
         "score_table": _score_table,
@@ -1694,15 +1794,13 @@ def _(
 def _(
     COHORTS,
     COHORT_POISSON_DEVIANCE,
-    FEATURE_TRANSFORMERS,
-    FixedTrial,
+    COUNT_FEATURE_TRANSFORMERS,
+    CountComponent,
     POISSON_DEVIANCE,
     PREDICTION_FLOOR,
-    build_model1,
+    build_independent_cohorts_model,
     cv,
     cv_groups,
-    dataclasses,
-    fit_and_score,
     mo,
     n_splits,
     n_startup_trials,
@@ -1710,24 +1808,31 @@ def _(
     partial,
     run_model1,
     seed,
-    suggest_model1,
-    suggest_model1_components,
+    share_feature_transformer,
+    share_hyperparams,
+    suggest_independent_cohorts_model,
     train_age_group,
     tune_model,
     val_age_group,
 ):
-    mo.stop(not run_model1.value, mo.md("Click the button to tune Model 1."))
-    # Model 1, run 4 of 8: LightGBM with the Gaussian loss, exposure off.
+    mo.stop(
+        not run_model1.value,
+        mo.md("Click the button to tune the independent cohorts model."),
+    )
+    # The independent cohorts model, run 4 of 8: LightGBM with the Gaussian loss,
+    # exposure off.
     _family, _use_exposure = "lgbm_gaussian", False
     _study, _seconds = tune_model(
         partial(
-            suggest_model1,
+            suggest_independent_cohorts_model,
             family=_family,
             use_exposure=_use_exposure,
             cohorts=COHORTS,
-            feature_transformer_dict=FEATURE_TRANSFORMERS,
+            feature_transformer_dict=COUNT_FEATURE_TRANSFORMERS[_family],
+            share_hyperparams=share_hyperparams,
+            share_feature_transformer=share_feature_transformer,
             y_min=PREDICTION_FLOOR,
-            seed=seed,
+            random_state=seed,
         ),
         train_age_group.X,
         train_age_group.Y,
@@ -1740,20 +1845,21 @@ def _(
         n_startup_trials=n_startup_trials,
         n_jobs=n_splits,
     )
-    # The best components, rebuilt from the best trial's parameters, are the
-    # model scored and the record kept (D10-D12, D14).
-    _best = suggest_model1_components(
-        FixedTrial(_study.best_params),
-        family=_family,
-        use_exposure=_use_exposure,
-        cohorts=COHORTS,
+    # The best components, read from the best trial's parameters by their
+    # type, are the model scored and the record kept (D10-D12, D14, D25).
+    _best_components = tuple(
+        CountComponent.from_params(
+            _study.best_params,
+            name=cohort,
+            family=_family,
+            use_exposure=_use_exposure,
+            feature_transformer_dict=COUNT_FEATURE_TRANSFORMERS[_family],
+        )
+        for cohort in COHORTS
     )
     _, _score_table = fit_and_score(
-        build_model1(
-            _best,
-            feature_transformer_dict=FEATURE_TRANSFORMERS,
-            y_min=PREDICTION_FLOOR,
-            seed=seed,
+        build_independent_cohorts_model(
+            _best_components, y_min=PREDICTION_FLOOR, random_state=seed
         ),
         train_age_group,
         val_age_group,
@@ -1764,8 +1870,10 @@ def _(
     model1_lgbm_gaussian_no_exposure = {
         "family": _family,
         "use_exposure": _use_exposure,
+        "share_hyperparams": share_hyperparams,
+        "share_feature_transformer": share_feature_transformer,
         "trials": _study.trials_dataframe(),
-        "components": [dataclasses.asdict(c) for c in _best],
+        "components": [component.to_dict() for component in _best_components],
         "cv_best": _study.best_value,
         "best_params": _study.best_params,
         "score_table": _score_table,
@@ -1780,15 +1888,13 @@ def _(
 def _(
     COHORTS,
     COHORT_POISSON_DEVIANCE,
-    FEATURE_TRANSFORMERS,
-    FixedTrial,
+    COUNT_FEATURE_TRANSFORMERS,
+    CountComponent,
     POISSON_DEVIANCE,
     PREDICTION_FLOOR,
-    build_model1,
+    build_independent_cohorts_model,
     cv,
     cv_groups,
-    dataclasses,
-    fit_and_score,
     mo,
     n_splits,
     n_startup_trials,
@@ -1796,24 +1902,30 @@ def _(
     partial,
     run_model1,
     seed,
-    suggest_model1,
-    suggest_model1_components,
+    share_feature_transformer,
+    share_hyperparams,
+    suggest_independent_cohorts_model,
     train_age_group,
     tune_model,
     val_age_group,
 ):
-    mo.stop(not run_model1.value, mo.md("Click the button to tune Model 1."))
-    # Model 1, run 5 of 8: the Poisson GLM, exposure on.
+    mo.stop(
+        not run_model1.value,
+        mo.md("Click the button to tune the independent cohorts model."),
+    )
+    # The independent cohorts model, run 5 of 8: the Poisson GLM, exposure on.
     _family, _use_exposure = "poisson_glm", True
     _study, _seconds = tune_model(
         partial(
-            suggest_model1,
+            suggest_independent_cohorts_model,
             family=_family,
             use_exposure=_use_exposure,
             cohorts=COHORTS,
-            feature_transformer_dict=FEATURE_TRANSFORMERS,
+            feature_transformer_dict=COUNT_FEATURE_TRANSFORMERS[_family],
+            share_hyperparams=share_hyperparams,
+            share_feature_transformer=share_feature_transformer,
             y_min=PREDICTION_FLOOR,
-            seed=seed,
+            random_state=seed,
         ),
         train_age_group.X,
         train_age_group.Y,
@@ -1826,20 +1938,21 @@ def _(
         n_startup_trials=n_startup_trials,
         n_jobs=n_splits,
     )
-    # The best components, rebuilt from the best trial's parameters, are the
-    # model scored and the record kept (D10-D12, D14).
-    _best = suggest_model1_components(
-        FixedTrial(_study.best_params),
-        family=_family,
-        use_exposure=_use_exposure,
-        cohorts=COHORTS,
+    # The best components, read from the best trial's parameters by their
+    # type, are the model scored and the record kept (D10-D12, D14, D25).
+    _best_components = tuple(
+        CountComponent.from_params(
+            _study.best_params,
+            name=cohort,
+            family=_family,
+            use_exposure=_use_exposure,
+            feature_transformer_dict=COUNT_FEATURE_TRANSFORMERS[_family],
+        )
+        for cohort in COHORTS
     )
     _, _score_table = fit_and_score(
-        build_model1(
-            _best,
-            feature_transformer_dict=FEATURE_TRANSFORMERS,
-            y_min=PREDICTION_FLOOR,
-            seed=seed,
+        build_independent_cohorts_model(
+            _best_components, y_min=PREDICTION_FLOOR, random_state=seed
         ),
         train_age_group,
         val_age_group,
@@ -1850,8 +1963,10 @@ def _(
     model1_poisson_glm_exposure = {
         "family": _family,
         "use_exposure": _use_exposure,
+        "share_hyperparams": share_hyperparams,
+        "share_feature_transformer": share_feature_transformer,
         "trials": _study.trials_dataframe(),
-        "components": [dataclasses.asdict(c) for c in _best],
+        "components": [component.to_dict() for component in _best_components],
         "cv_best": _study.best_value,
         "best_params": _study.best_params,
         "score_table": _score_table,
@@ -1866,15 +1981,13 @@ def _(
 def _(
     COHORTS,
     COHORT_POISSON_DEVIANCE,
-    FEATURE_TRANSFORMERS,
-    FixedTrial,
+    COUNT_FEATURE_TRANSFORMERS,
+    CountComponent,
     POISSON_DEVIANCE,
     PREDICTION_FLOOR,
-    build_model1,
+    build_independent_cohorts_model,
     cv,
     cv_groups,
-    dataclasses,
-    fit_and_score,
     mo,
     n_splits,
     n_startup_trials,
@@ -1882,24 +1995,30 @@ def _(
     partial,
     run_model1,
     seed,
-    suggest_model1,
-    suggest_model1_components,
+    share_feature_transformer,
+    share_hyperparams,
+    suggest_independent_cohorts_model,
     train_age_group,
     tune_model,
     val_age_group,
 ):
-    mo.stop(not run_model1.value, mo.md("Click the button to tune Model 1."))
-    # Model 1, run 6 of 8: the Poisson GLM, exposure off.
+    mo.stop(
+        not run_model1.value,
+        mo.md("Click the button to tune the independent cohorts model."),
+    )
+    # The independent cohorts model, run 6 of 8: the Poisson GLM, exposure off.
     _family, _use_exposure = "poisson_glm", False
     _study, _seconds = tune_model(
         partial(
-            suggest_model1,
+            suggest_independent_cohorts_model,
             family=_family,
             use_exposure=_use_exposure,
             cohorts=COHORTS,
-            feature_transformer_dict=FEATURE_TRANSFORMERS,
+            feature_transformer_dict=COUNT_FEATURE_TRANSFORMERS[_family],
+            share_hyperparams=share_hyperparams,
+            share_feature_transformer=share_feature_transformer,
             y_min=PREDICTION_FLOOR,
-            seed=seed,
+            random_state=seed,
         ),
         train_age_group.X,
         train_age_group.Y,
@@ -1912,20 +2031,21 @@ def _(
         n_startup_trials=n_startup_trials,
         n_jobs=n_splits,
     )
-    # The best components, rebuilt from the best trial's parameters, are the
-    # model scored and the record kept (D10-D12, D14).
-    _best = suggest_model1_components(
-        FixedTrial(_study.best_params),
-        family=_family,
-        use_exposure=_use_exposure,
-        cohorts=COHORTS,
+    # The best components, read from the best trial's parameters by their
+    # type, are the model scored and the record kept (D10-D12, D14, D25).
+    _best_components = tuple(
+        CountComponent.from_params(
+            _study.best_params,
+            name=cohort,
+            family=_family,
+            use_exposure=_use_exposure,
+            feature_transformer_dict=COUNT_FEATURE_TRANSFORMERS[_family],
+        )
+        for cohort in COHORTS
     )
     _, _score_table = fit_and_score(
-        build_model1(
-            _best,
-            feature_transformer_dict=FEATURE_TRANSFORMERS,
-            y_min=PREDICTION_FLOOR,
-            seed=seed,
+        build_independent_cohorts_model(
+            _best_components, y_min=PREDICTION_FLOOR, random_state=seed
         ),
         train_age_group,
         val_age_group,
@@ -1936,8 +2056,10 @@ def _(
     model1_poisson_glm_no_exposure = {
         "family": _family,
         "use_exposure": _use_exposure,
+        "share_hyperparams": share_hyperparams,
+        "share_feature_transformer": share_feature_transformer,
         "trials": _study.trials_dataframe(),
-        "components": [dataclasses.asdict(c) for c in _best],
+        "components": [component.to_dict() for component in _best_components],
         "cv_best": _study.best_value,
         "best_params": _study.best_params,
         "score_table": _score_table,
@@ -1952,15 +2074,13 @@ def _(
 def _(
     COHORTS,
     COHORT_POISSON_DEVIANCE,
-    FEATURE_TRANSFORMERS,
-    FixedTrial,
+    COUNT_FEATURE_TRANSFORMERS,
+    CountComponent,
     POISSON_DEVIANCE,
     PREDICTION_FLOOR,
-    build_model1,
+    build_independent_cohorts_model,
     cv,
     cv_groups,
-    dataclasses,
-    fit_and_score,
     mo,
     n_splits,
     n_startup_trials,
@@ -1968,24 +2088,31 @@ def _(
     partial,
     run_model1,
     seed,
-    suggest_model1,
-    suggest_model1_components,
+    share_feature_transformer,
+    share_hyperparams,
+    suggest_independent_cohorts_model,
     train_age_group,
     tune_model,
     val_age_group,
 ):
-    mo.stop(not run_model1.value, mo.md("Click the button to tune Model 1."))
-    # Model 1, run 7 of 8: the negative binomial GLM (NB2), exposure on.
+    mo.stop(
+        not run_model1.value,
+        mo.md("Click the button to tune the independent cohorts model."),
+    )
+    # The independent cohorts model, run 7 of 8: the negative binomial GLM (NB2),
+    # exposure on.
     _family, _use_exposure = "nb2", True
     _study, _seconds = tune_model(
         partial(
-            suggest_model1,
+            suggest_independent_cohorts_model,
             family=_family,
             use_exposure=_use_exposure,
             cohorts=COHORTS,
-            feature_transformer_dict=FEATURE_TRANSFORMERS,
+            feature_transformer_dict=COUNT_FEATURE_TRANSFORMERS[_family],
+            share_hyperparams=share_hyperparams,
+            share_feature_transformer=share_feature_transformer,
             y_min=PREDICTION_FLOOR,
-            seed=seed,
+            random_state=seed,
         ),
         train_age_group.X,
         train_age_group.Y,
@@ -1998,20 +2125,21 @@ def _(
         n_startup_trials=n_startup_trials,
         n_jobs=n_splits,
     )
-    # The best components, rebuilt from the best trial's parameters, are the
-    # model scored and the record kept (D10-D12, D14).
-    _best = suggest_model1_components(
-        FixedTrial(_study.best_params),
-        family=_family,
-        use_exposure=_use_exposure,
-        cohorts=COHORTS,
+    # The best components, read from the best trial's parameters by their
+    # type, are the model scored and the record kept (D10-D12, D14, D25).
+    _best_components = tuple(
+        CountComponent.from_params(
+            _study.best_params,
+            name=cohort,
+            family=_family,
+            use_exposure=_use_exposure,
+            feature_transformer_dict=COUNT_FEATURE_TRANSFORMERS[_family],
+        )
+        for cohort in COHORTS
     )
     _, _score_table = fit_and_score(
-        build_model1(
-            _best,
-            feature_transformer_dict=FEATURE_TRANSFORMERS,
-            y_min=PREDICTION_FLOOR,
-            seed=seed,
+        build_independent_cohorts_model(
+            _best_components, y_min=PREDICTION_FLOOR, random_state=seed
         ),
         train_age_group,
         val_age_group,
@@ -2022,8 +2150,10 @@ def _(
     model1_nb2_exposure = {
         "family": _family,
         "use_exposure": _use_exposure,
+        "share_hyperparams": share_hyperparams,
+        "share_feature_transformer": share_feature_transformer,
         "trials": _study.trials_dataframe(),
-        "components": [dataclasses.asdict(c) for c in _best],
+        "components": [component.to_dict() for component in _best_components],
         "cv_best": _study.best_value,
         "best_params": _study.best_params,
         "score_table": _score_table,
@@ -2038,15 +2168,13 @@ def _(
 def _(
     COHORTS,
     COHORT_POISSON_DEVIANCE,
-    FEATURE_TRANSFORMERS,
-    FixedTrial,
+    COUNT_FEATURE_TRANSFORMERS,
+    CountComponent,
     POISSON_DEVIANCE,
     PREDICTION_FLOOR,
-    build_model1,
+    build_independent_cohorts_model,
     cv,
     cv_groups,
-    dataclasses,
-    fit_and_score,
     mo,
     n_splits,
     n_startup_trials,
@@ -2054,24 +2182,31 @@ def _(
     partial,
     run_model1,
     seed,
-    suggest_model1,
-    suggest_model1_components,
+    share_feature_transformer,
+    share_hyperparams,
+    suggest_independent_cohorts_model,
     train_age_group,
     tune_model,
     val_age_group,
 ):
-    mo.stop(not run_model1.value, mo.md("Click the button to tune Model 1."))
-    # Model 1, run 8 of 8: the negative binomial GLM (NB2), exposure off.
+    mo.stop(
+        not run_model1.value,
+        mo.md("Click the button to tune the independent cohorts model."),
+    )
+    # The independent cohorts model, run 8 of 8: the negative binomial GLM (NB2),
+    # exposure off.
     _family, _use_exposure = "nb2", False
     _study, _seconds = tune_model(
         partial(
-            suggest_model1,
+            suggest_independent_cohorts_model,
             family=_family,
             use_exposure=_use_exposure,
             cohorts=COHORTS,
-            feature_transformer_dict=FEATURE_TRANSFORMERS,
+            feature_transformer_dict=COUNT_FEATURE_TRANSFORMERS[_family],
+            share_hyperparams=share_hyperparams,
+            share_feature_transformer=share_feature_transformer,
             y_min=PREDICTION_FLOOR,
-            seed=seed,
+            random_state=seed,
         ),
         train_age_group.X,
         train_age_group.Y,
@@ -2084,20 +2219,21 @@ def _(
         n_startup_trials=n_startup_trials,
         n_jobs=n_splits,
     )
-    # The best components, rebuilt from the best trial's parameters, are the
-    # model scored and the record kept (D10-D12, D14).
-    _best = suggest_model1_components(
-        FixedTrial(_study.best_params),
-        family=_family,
-        use_exposure=_use_exposure,
-        cohorts=COHORTS,
+    # The best components, read from the best trial's parameters by their
+    # type, are the model scored and the record kept (D10-D12, D14, D25).
+    _best_components = tuple(
+        CountComponent.from_params(
+            _study.best_params,
+            name=cohort,
+            family=_family,
+            use_exposure=_use_exposure,
+            feature_transformer_dict=COUNT_FEATURE_TRANSFORMERS[_family],
+        )
+        for cohort in COHORTS
     )
     _, _score_table = fit_and_score(
-        build_model1(
-            _best,
-            feature_transformer_dict=FEATURE_TRANSFORMERS,
-            y_min=PREDICTION_FLOOR,
-            seed=seed,
+        build_independent_cohorts_model(
+            _best_components, y_min=PREDICTION_FLOOR, random_state=seed
         ),
         train_age_group,
         val_age_group,
@@ -2108,8 +2244,10 @@ def _(
     model1_nb2_no_exposure = {
         "family": _family,
         "use_exposure": _use_exposure,
+        "share_hyperparams": share_hyperparams,
+        "share_feature_transformer": share_feature_transformer,
         "trials": _study.trials_dataframe(),
-        "components": [dataclasses.asdict(c) for c in _best],
+        "components": [component.to_dict() for component in _best_components],
         "cv_best": _study.best_value,
         "best_params": _study.best_params,
         "score_table": _score_table,
@@ -2122,7 +2260,7 @@ def _(
 
 @app.cell
 def _(
-    CountSearchSpace,
+    COUNT_FEATURE_TRANSFORMERS,
     model1_lgbm_gaussian_exposure,
     model1_lgbm_gaussian_no_exposure,
     model1_lgbm_poisson_exposure,
@@ -2145,7 +2283,12 @@ def _(
     ]
     _score_rows, _arm_rows = [], []
     for _run in MODEL1_RUNS:
-        _settings = {"family": _run["family"], "use_exposure": _run["use_exposure"]}
+        _settings = {
+            "family": _run["family"],
+            "use_exposure": _run["use_exposure"],
+            "share_hyperparams": _run["share_hyperparams"],
+            "share_feature_transformer": _run["share_feature_transformer"],
+        }
         _trials = _run["trials"]
         _complete = _trials[_trials["state"] == "COMPLETE"]
         _score_rows.extend({**_settings, **row} for row in _run["score_table"][:-1])
@@ -2159,11 +2302,11 @@ def _(
                 "seconds": _run["seconds"],
             }
         )
-        # The completed trials per feature transformer, Model 1's only categorical
-        # choice: TPE concentrates on what looked good early, so a transformer
+        # The completed trials per feature transformer, the model's categorical
+        # choice (one column per cohort, or `shared__`): TPE concentrates on what looked good early, so a transformer
         # tried a few times has not been judged (D14). Every candidate of the
         # family is listed, so one never tried shows 0 rather than nothing.
-        _candidates = CountSearchSpace.FEATURE_TRANSFORMER_NAMES[_run["family"]]
+        _candidates = list(COUNT_FEATURE_TRANSFORMERS[_run["family"]])
         for _column in _trials.columns:
             if _column.endswith("__feature_transformer"):
                 _counts = (
@@ -2187,7 +2330,7 @@ def _(mo, model1_arms_df, model1_df):
     mo.vstack(
         [
             mo.md(
-                "**Model 1: cohort Poisson deviance** (cv_best: the run's value; "
+                "**The independent cohorts model: cohort Poisson deviance** (cv_best: the run's value; "
                 "n_complete / n_failed: its trials)"
             ),
             mo.md(f"```text\n{model1_df.round(4).to_string(index=False)}\n```"),
@@ -2195,11 +2338,12 @@ def _(mo, model1_arms_df, model1_df):
             mo.md(f"```text\n{model1_arms_df.to_string(index=False)}\n```"),
         ]
     )
+    return
 
 
 @app.cell
 def _(mo):
-    run_model2 = mo.ui.run_button(label="Tune Model 2")
+    run_model2 = mo.ui.run_button(label="Tune the total times probability model")
     mo.md(
         f"{run_model2} 16 runs, one cell each (a total family × exposure on or off "
         "× a probability family); each trial fits its folds in parallel."
@@ -2210,15 +2354,15 @@ def _(mo):
 @app.cell
 def _(
     COHORT_POISSON_DEVIANCE,
-    FEATURE_TRANSFORMERS,
-    FixedTrial,
+    COUNT_FEATURE_TRANSFORMERS,
+    CountComponent,
     POISSON_DEVIANCE,
     PREDICTION_FLOOR,
-    build_model2,
+    PROBABILITY_FEATURE_TRANSFORMERS,
+    ProbabilityComponent,
+    build_total_times_probability_model,
     cv,
     cv_groups,
-    dataclasses,
-    fit_and_score,
     mo,
     n_splits,
     n_startup_trials,
@@ -2226,25 +2370,31 @@ def _(
     partial,
     run_model2,
     seed,
-    suggest_model2,
-    suggest_model2_components,
+    suggest_total_times_probability_model,
     train_age_group,
     tune_model,
     val_age_group,
 ):
-    mo.stop(not run_model2.value, mo.md("Click the button to tune Model 2."))
-    # Model 2, run 1 of 16: the LightGBM total with the Poisson loss, exposure on;
+    mo.stop(
+        not run_model2.value,
+        mo.md("Click the button to tune the total times probability model."),
+    )
+    # The total times probability model, run 1 of 16: the LightGBM total with the
+    # Poisson loss, exposure on;
     # logistic probabilities.
     _total_family, _probability_family, _use_exposure = "lgbm_poisson", "logistic", True
     _study, _seconds = tune_model(
         partial(
-            suggest_model2,
+            suggest_total_times_probability_model,
             total_family=_total_family,
             probability_family=_probability_family,
             use_exposure=_use_exposure,
-            feature_transformer_dict=FEATURE_TRANSFORMERS,
+            total_feature_transformer_dict=COUNT_FEATURE_TRANSFORMERS[_total_family],
+            probability_feature_transformer_dict=PROBABILITY_FEATURE_TRANSFORMERS[
+                _probability_family
+            ],
             y_min=PREDICTION_FLOOR,
-            seed=seed,
+            random_state=seed,
         ),
         train_age_group.X,
         train_age_group.Y,
@@ -2257,20 +2407,25 @@ def _(
         n_startup_trials=n_startup_trials,
         n_jobs=n_splits,
     )
-    # The best components, rebuilt from the best trial's parameters, are the
-    # model scored and the record kept (D10-D12, D14).
-    _best = suggest_model2_components(
-        FixedTrial(_study.best_params),
-        total_family=_total_family,
-        probability_family=_probability_family,
+    # The best components, read from the best trial's parameters by their
+    # type, are the model scored and the record kept (D10-D12, D14, D25).
+    _total_component = CountComponent.from_params(
+        _study.best_params,
+        name="total",
+        family=_total_family,
         use_exposure=_use_exposure,
+        feature_transformer_dict=COUNT_FEATURE_TRANSFORMERS[_total_family],
     )
+    _probability_component = ProbabilityComponent.from_params(
+        _study.best_params,
+        name="probability",
+        family=_probability_family,
+        feature_transformer_dict=PROBABILITY_FEATURE_TRANSFORMERS[_probability_family],
+    )
+    _best_components = (_total_component, _probability_component)
     _, _score_table = fit_and_score(
-        build_model2(
-            *_best,
-            feature_transformer_dict=FEATURE_TRANSFORMERS,
-            y_min=PREDICTION_FLOOR,
-            seed=seed,
+        build_total_times_probability_model(
+            *_best_components, y_min=PREDICTION_FLOOR, random_state=seed
         ),
         train_age_group,
         val_age_group,
@@ -2283,7 +2438,7 @@ def _(
         "probability_family": _probability_family,
         "use_exposure": _use_exposure,
         "trials": _study.trials_dataframe(),
-        "components": [dataclasses.asdict(c) for c in _best],
+        "components": [component.to_dict() for component in _best_components],
         "cv_best": _study.best_value,
         "best_params": _study.best_params,
         "score_table": _score_table,
@@ -2297,15 +2452,15 @@ def _(
 @app.cell
 def _(
     COHORT_POISSON_DEVIANCE,
-    FEATURE_TRANSFORMERS,
-    FixedTrial,
+    COUNT_FEATURE_TRANSFORMERS,
+    CountComponent,
     POISSON_DEVIANCE,
     PREDICTION_FLOOR,
-    build_model2,
+    PROBABILITY_FEATURE_TRANSFORMERS,
+    ProbabilityComponent,
+    build_total_times_probability_model,
     cv,
     cv_groups,
-    dataclasses,
-    fit_and_score,
     mo,
     n_splits,
     n_startup_trials,
@@ -2313,25 +2468,31 @@ def _(
     partial,
     run_model2,
     seed,
-    suggest_model2,
-    suggest_model2_components,
+    suggest_total_times_probability_model,
     train_age_group,
     tune_model,
     val_age_group,
 ):
-    mo.stop(not run_model2.value, mo.md("Click the button to tune Model 2."))
-    # Model 2, run 2 of 16: the LightGBM total with the Poisson loss, exposure on;
+    mo.stop(
+        not run_model2.value,
+        mo.md("Click the button to tune the total times probability model."),
+    )
+    # The total times probability model, run 2 of 16: the LightGBM total with the
+    # Poisson loss, exposure on;
     # LightGBM probabilities.
     _total_family, _probability_family, _use_exposure = "lgbm_poisson", "lgbm", True
     _study, _seconds = tune_model(
         partial(
-            suggest_model2,
+            suggest_total_times_probability_model,
             total_family=_total_family,
             probability_family=_probability_family,
             use_exposure=_use_exposure,
-            feature_transformer_dict=FEATURE_TRANSFORMERS,
+            total_feature_transformer_dict=COUNT_FEATURE_TRANSFORMERS[_total_family],
+            probability_feature_transformer_dict=PROBABILITY_FEATURE_TRANSFORMERS[
+                _probability_family
+            ],
             y_min=PREDICTION_FLOOR,
-            seed=seed,
+            random_state=seed,
         ),
         train_age_group.X,
         train_age_group.Y,
@@ -2344,20 +2505,25 @@ def _(
         n_startup_trials=n_startup_trials,
         n_jobs=n_splits,
     )
-    # The best components, rebuilt from the best trial's parameters, are the
-    # model scored and the record kept (D10-D12, D14).
-    _best = suggest_model2_components(
-        FixedTrial(_study.best_params),
-        total_family=_total_family,
-        probability_family=_probability_family,
+    # The best components, read from the best trial's parameters by their
+    # type, are the model scored and the record kept (D10-D12, D14, D25).
+    _total_component = CountComponent.from_params(
+        _study.best_params,
+        name="total",
+        family=_total_family,
         use_exposure=_use_exposure,
+        feature_transformer_dict=COUNT_FEATURE_TRANSFORMERS[_total_family],
     )
+    _probability_component = ProbabilityComponent.from_params(
+        _study.best_params,
+        name="probability",
+        family=_probability_family,
+        feature_transformer_dict=PROBABILITY_FEATURE_TRANSFORMERS[_probability_family],
+    )
+    _best_components = (_total_component, _probability_component)
     _, _score_table = fit_and_score(
-        build_model2(
-            *_best,
-            feature_transformer_dict=FEATURE_TRANSFORMERS,
-            y_min=PREDICTION_FLOOR,
-            seed=seed,
+        build_total_times_probability_model(
+            *_best_components, y_min=PREDICTION_FLOOR, random_state=seed
         ),
         train_age_group,
         val_age_group,
@@ -2370,7 +2536,7 @@ def _(
         "probability_family": _probability_family,
         "use_exposure": _use_exposure,
         "trials": _study.trials_dataframe(),
-        "components": [dataclasses.asdict(c) for c in _best],
+        "components": [component.to_dict() for component in _best_components],
         "cv_best": _study.best_value,
         "best_params": _study.best_params,
         "score_table": _score_table,
@@ -2384,15 +2550,15 @@ def _(
 @app.cell
 def _(
     COHORT_POISSON_DEVIANCE,
-    FEATURE_TRANSFORMERS,
-    FixedTrial,
+    COUNT_FEATURE_TRANSFORMERS,
+    CountComponent,
     POISSON_DEVIANCE,
     PREDICTION_FLOOR,
-    build_model2,
+    PROBABILITY_FEATURE_TRANSFORMERS,
+    ProbabilityComponent,
+    build_total_times_probability_model,
     cv,
     cv_groups,
-    dataclasses,
-    fit_and_score,
     mo,
     n_splits,
     n_startup_trials,
@@ -2400,14 +2566,17 @@ def _(
     partial,
     run_model2,
     seed,
-    suggest_model2,
-    suggest_model2_components,
+    suggest_total_times_probability_model,
     train_age_group,
     tune_model,
     val_age_group,
 ):
-    mo.stop(not run_model2.value, mo.md("Click the button to tune Model 2."))
-    # Model 2, run 3 of 16: the LightGBM total with the Poisson loss, exposure off;
+    mo.stop(
+        not run_model2.value,
+        mo.md("Click the button to tune the total times probability model."),
+    )
+    # The total times probability model, run 3 of 16: the LightGBM total with the
+    # Poisson loss, exposure off;
     # logistic probabilities.
     _total_family, _probability_family, _use_exposure = (
         "lgbm_poisson",
@@ -2416,13 +2585,16 @@ def _(
     )
     _study, _seconds = tune_model(
         partial(
-            suggest_model2,
+            suggest_total_times_probability_model,
             total_family=_total_family,
             probability_family=_probability_family,
             use_exposure=_use_exposure,
-            feature_transformer_dict=FEATURE_TRANSFORMERS,
+            total_feature_transformer_dict=COUNT_FEATURE_TRANSFORMERS[_total_family],
+            probability_feature_transformer_dict=PROBABILITY_FEATURE_TRANSFORMERS[
+                _probability_family
+            ],
             y_min=PREDICTION_FLOOR,
-            seed=seed,
+            random_state=seed,
         ),
         train_age_group.X,
         train_age_group.Y,
@@ -2435,20 +2607,25 @@ def _(
         n_startup_trials=n_startup_trials,
         n_jobs=n_splits,
     )
-    # The best components, rebuilt from the best trial's parameters, are the
-    # model scored and the record kept (D10-D12, D14).
-    _best = suggest_model2_components(
-        FixedTrial(_study.best_params),
-        total_family=_total_family,
-        probability_family=_probability_family,
+    # The best components, read from the best trial's parameters by their
+    # type, are the model scored and the record kept (D10-D12, D14, D25).
+    _total_component = CountComponent.from_params(
+        _study.best_params,
+        name="total",
+        family=_total_family,
         use_exposure=_use_exposure,
+        feature_transformer_dict=COUNT_FEATURE_TRANSFORMERS[_total_family],
     )
+    _probability_component = ProbabilityComponent.from_params(
+        _study.best_params,
+        name="probability",
+        family=_probability_family,
+        feature_transformer_dict=PROBABILITY_FEATURE_TRANSFORMERS[_probability_family],
+    )
+    _best_components = (_total_component, _probability_component)
     _, _score_table = fit_and_score(
-        build_model2(
-            *_best,
-            feature_transformer_dict=FEATURE_TRANSFORMERS,
-            y_min=PREDICTION_FLOOR,
-            seed=seed,
+        build_total_times_probability_model(
+            *_best_components, y_min=PREDICTION_FLOOR, random_state=seed
         ),
         train_age_group,
         val_age_group,
@@ -2461,7 +2638,7 @@ def _(
         "probability_family": _probability_family,
         "use_exposure": _use_exposure,
         "trials": _study.trials_dataframe(),
-        "components": [dataclasses.asdict(c) for c in _best],
+        "components": [component.to_dict() for component in _best_components],
         "cv_best": _study.best_value,
         "best_params": _study.best_params,
         "score_table": _score_table,
@@ -2475,15 +2652,15 @@ def _(
 @app.cell
 def _(
     COHORT_POISSON_DEVIANCE,
-    FEATURE_TRANSFORMERS,
-    FixedTrial,
+    COUNT_FEATURE_TRANSFORMERS,
+    CountComponent,
     POISSON_DEVIANCE,
     PREDICTION_FLOOR,
-    build_model2,
+    PROBABILITY_FEATURE_TRANSFORMERS,
+    ProbabilityComponent,
+    build_total_times_probability_model,
     cv,
     cv_groups,
-    dataclasses,
-    fit_and_score,
     mo,
     n_splits,
     n_startup_trials,
@@ -2491,25 +2668,31 @@ def _(
     partial,
     run_model2,
     seed,
-    suggest_model2,
-    suggest_model2_components,
+    suggest_total_times_probability_model,
     train_age_group,
     tune_model,
     val_age_group,
 ):
-    mo.stop(not run_model2.value, mo.md("Click the button to tune Model 2."))
-    # Model 2, run 4 of 16: the LightGBM total with the Poisson loss, exposure off;
+    mo.stop(
+        not run_model2.value,
+        mo.md("Click the button to tune the total times probability model."),
+    )
+    # The total times probability model, run 4 of 16: the LightGBM total with the
+    # Poisson loss, exposure off;
     # LightGBM probabilities.
     _total_family, _probability_family, _use_exposure = "lgbm_poisson", "lgbm", False
     _study, _seconds = tune_model(
         partial(
-            suggest_model2,
+            suggest_total_times_probability_model,
             total_family=_total_family,
             probability_family=_probability_family,
             use_exposure=_use_exposure,
-            feature_transformer_dict=FEATURE_TRANSFORMERS,
+            total_feature_transformer_dict=COUNT_FEATURE_TRANSFORMERS[_total_family],
+            probability_feature_transformer_dict=PROBABILITY_FEATURE_TRANSFORMERS[
+                _probability_family
+            ],
             y_min=PREDICTION_FLOOR,
-            seed=seed,
+            random_state=seed,
         ),
         train_age_group.X,
         train_age_group.Y,
@@ -2522,20 +2705,25 @@ def _(
         n_startup_trials=n_startup_trials,
         n_jobs=n_splits,
     )
-    # The best components, rebuilt from the best trial's parameters, are the
-    # model scored and the record kept (D10-D12, D14).
-    _best = suggest_model2_components(
-        FixedTrial(_study.best_params),
-        total_family=_total_family,
-        probability_family=_probability_family,
+    # The best components, read from the best trial's parameters by their
+    # type, are the model scored and the record kept (D10-D12, D14, D25).
+    _total_component = CountComponent.from_params(
+        _study.best_params,
+        name="total",
+        family=_total_family,
         use_exposure=_use_exposure,
+        feature_transformer_dict=COUNT_FEATURE_TRANSFORMERS[_total_family],
     )
+    _probability_component = ProbabilityComponent.from_params(
+        _study.best_params,
+        name="probability",
+        family=_probability_family,
+        feature_transformer_dict=PROBABILITY_FEATURE_TRANSFORMERS[_probability_family],
+    )
+    _best_components = (_total_component, _probability_component)
     _, _score_table = fit_and_score(
-        build_model2(
-            *_best,
-            feature_transformer_dict=FEATURE_TRANSFORMERS,
-            y_min=PREDICTION_FLOOR,
-            seed=seed,
+        build_total_times_probability_model(
+            *_best_components, y_min=PREDICTION_FLOOR, random_state=seed
         ),
         train_age_group,
         val_age_group,
@@ -2548,7 +2736,7 @@ def _(
         "probability_family": _probability_family,
         "use_exposure": _use_exposure,
         "trials": _study.trials_dataframe(),
-        "components": [dataclasses.asdict(c) for c in _best],
+        "components": [component.to_dict() for component in _best_components],
         "cv_best": _study.best_value,
         "best_params": _study.best_params,
         "score_table": _score_table,
@@ -2562,15 +2750,15 @@ def _(
 @app.cell
 def _(
     COHORT_POISSON_DEVIANCE,
-    FEATURE_TRANSFORMERS,
-    FixedTrial,
+    COUNT_FEATURE_TRANSFORMERS,
+    CountComponent,
     POISSON_DEVIANCE,
     PREDICTION_FLOOR,
-    build_model2,
+    PROBABILITY_FEATURE_TRANSFORMERS,
+    ProbabilityComponent,
+    build_total_times_probability_model,
     cv,
     cv_groups,
-    dataclasses,
-    fit_and_score,
     mo,
     n_splits,
     n_startup_trials,
@@ -2578,14 +2766,17 @@ def _(
     partial,
     run_model2,
     seed,
-    suggest_model2,
-    suggest_model2_components,
+    suggest_total_times_probability_model,
     train_age_group,
     tune_model,
     val_age_group,
 ):
-    mo.stop(not run_model2.value, mo.md("Click the button to tune Model 2."))
-    # Model 2, run 5 of 16: the LightGBM total with the Gaussian loss, exposure on;
+    mo.stop(
+        not run_model2.value,
+        mo.md("Click the button to tune the total times probability model."),
+    )
+    # The total times probability model, run 5 of 16: the LightGBM total with the
+    # Gaussian loss, exposure on;
     # logistic probabilities.
     _total_family, _probability_family, _use_exposure = (
         "lgbm_gaussian",
@@ -2594,13 +2785,16 @@ def _(
     )
     _study, _seconds = tune_model(
         partial(
-            suggest_model2,
+            suggest_total_times_probability_model,
             total_family=_total_family,
             probability_family=_probability_family,
             use_exposure=_use_exposure,
-            feature_transformer_dict=FEATURE_TRANSFORMERS,
+            total_feature_transformer_dict=COUNT_FEATURE_TRANSFORMERS[_total_family],
+            probability_feature_transformer_dict=PROBABILITY_FEATURE_TRANSFORMERS[
+                _probability_family
+            ],
             y_min=PREDICTION_FLOOR,
-            seed=seed,
+            random_state=seed,
         ),
         train_age_group.X,
         train_age_group.Y,
@@ -2613,20 +2807,25 @@ def _(
         n_startup_trials=n_startup_trials,
         n_jobs=n_splits,
     )
-    # The best components, rebuilt from the best trial's parameters, are the
-    # model scored and the record kept (D10-D12, D14).
-    _best = suggest_model2_components(
-        FixedTrial(_study.best_params),
-        total_family=_total_family,
-        probability_family=_probability_family,
+    # The best components, read from the best trial's parameters by their
+    # type, are the model scored and the record kept (D10-D12, D14, D25).
+    _total_component = CountComponent.from_params(
+        _study.best_params,
+        name="total",
+        family=_total_family,
         use_exposure=_use_exposure,
+        feature_transformer_dict=COUNT_FEATURE_TRANSFORMERS[_total_family],
     )
+    _probability_component = ProbabilityComponent.from_params(
+        _study.best_params,
+        name="probability",
+        family=_probability_family,
+        feature_transformer_dict=PROBABILITY_FEATURE_TRANSFORMERS[_probability_family],
+    )
+    _best_components = (_total_component, _probability_component)
     _, _score_table = fit_and_score(
-        build_model2(
-            *_best,
-            feature_transformer_dict=FEATURE_TRANSFORMERS,
-            y_min=PREDICTION_FLOOR,
-            seed=seed,
+        build_total_times_probability_model(
+            *_best_components, y_min=PREDICTION_FLOOR, random_state=seed
         ),
         train_age_group,
         val_age_group,
@@ -2639,7 +2838,7 @@ def _(
         "probability_family": _probability_family,
         "use_exposure": _use_exposure,
         "trials": _study.trials_dataframe(),
-        "components": [dataclasses.asdict(c) for c in _best],
+        "components": [component.to_dict() for component in _best_components],
         "cv_best": _study.best_value,
         "best_params": _study.best_params,
         "score_table": _score_table,
@@ -2653,15 +2852,15 @@ def _(
 @app.cell
 def _(
     COHORT_POISSON_DEVIANCE,
-    FEATURE_TRANSFORMERS,
-    FixedTrial,
+    COUNT_FEATURE_TRANSFORMERS,
+    CountComponent,
     POISSON_DEVIANCE,
     PREDICTION_FLOOR,
-    build_model2,
+    PROBABILITY_FEATURE_TRANSFORMERS,
+    ProbabilityComponent,
+    build_total_times_probability_model,
     cv,
     cv_groups,
-    dataclasses,
-    fit_and_score,
     mo,
     n_splits,
     n_startup_trials,
@@ -2669,25 +2868,31 @@ def _(
     partial,
     run_model2,
     seed,
-    suggest_model2,
-    suggest_model2_components,
+    suggest_total_times_probability_model,
     train_age_group,
     tune_model,
     val_age_group,
 ):
-    mo.stop(not run_model2.value, mo.md("Click the button to tune Model 2."))
-    # Model 2, run 6 of 16: the LightGBM total with the Gaussian loss, exposure on;
+    mo.stop(
+        not run_model2.value,
+        mo.md("Click the button to tune the total times probability model."),
+    )
+    # The total times probability model, run 6 of 16: the LightGBM total with the
+    # Gaussian loss, exposure on;
     # LightGBM probabilities.
     _total_family, _probability_family, _use_exposure = "lgbm_gaussian", "lgbm", True
     _study, _seconds = tune_model(
         partial(
-            suggest_model2,
+            suggest_total_times_probability_model,
             total_family=_total_family,
             probability_family=_probability_family,
             use_exposure=_use_exposure,
-            feature_transformer_dict=FEATURE_TRANSFORMERS,
+            total_feature_transformer_dict=COUNT_FEATURE_TRANSFORMERS[_total_family],
+            probability_feature_transformer_dict=PROBABILITY_FEATURE_TRANSFORMERS[
+                _probability_family
+            ],
             y_min=PREDICTION_FLOOR,
-            seed=seed,
+            random_state=seed,
         ),
         train_age_group.X,
         train_age_group.Y,
@@ -2700,20 +2905,25 @@ def _(
         n_startup_trials=n_startup_trials,
         n_jobs=n_splits,
     )
-    # The best components, rebuilt from the best trial's parameters, are the
-    # model scored and the record kept (D10-D12, D14).
-    _best = suggest_model2_components(
-        FixedTrial(_study.best_params),
-        total_family=_total_family,
-        probability_family=_probability_family,
+    # The best components, read from the best trial's parameters by their
+    # type, are the model scored and the record kept (D10-D12, D14, D25).
+    _total_component = CountComponent.from_params(
+        _study.best_params,
+        name="total",
+        family=_total_family,
         use_exposure=_use_exposure,
+        feature_transformer_dict=COUNT_FEATURE_TRANSFORMERS[_total_family],
     )
+    _probability_component = ProbabilityComponent.from_params(
+        _study.best_params,
+        name="probability",
+        family=_probability_family,
+        feature_transformer_dict=PROBABILITY_FEATURE_TRANSFORMERS[_probability_family],
+    )
+    _best_components = (_total_component, _probability_component)
     _, _score_table = fit_and_score(
-        build_model2(
-            *_best,
-            feature_transformer_dict=FEATURE_TRANSFORMERS,
-            y_min=PREDICTION_FLOOR,
-            seed=seed,
+        build_total_times_probability_model(
+            *_best_components, y_min=PREDICTION_FLOOR, random_state=seed
         ),
         train_age_group,
         val_age_group,
@@ -2726,7 +2936,7 @@ def _(
         "probability_family": _probability_family,
         "use_exposure": _use_exposure,
         "trials": _study.trials_dataframe(),
-        "components": [dataclasses.asdict(c) for c in _best],
+        "components": [component.to_dict() for component in _best_components],
         "cv_best": _study.best_value,
         "best_params": _study.best_params,
         "score_table": _score_table,
@@ -2740,15 +2950,15 @@ def _(
 @app.cell
 def _(
     COHORT_POISSON_DEVIANCE,
-    FEATURE_TRANSFORMERS,
-    FixedTrial,
+    COUNT_FEATURE_TRANSFORMERS,
+    CountComponent,
     POISSON_DEVIANCE,
     PREDICTION_FLOOR,
-    build_model2,
+    PROBABILITY_FEATURE_TRANSFORMERS,
+    ProbabilityComponent,
+    build_total_times_probability_model,
     cv,
     cv_groups,
-    dataclasses,
-    fit_and_score,
     mo,
     n_splits,
     n_startup_trials,
@@ -2756,14 +2966,17 @@ def _(
     partial,
     run_model2,
     seed,
-    suggest_model2,
-    suggest_model2_components,
+    suggest_total_times_probability_model,
     train_age_group,
     tune_model,
     val_age_group,
 ):
-    mo.stop(not run_model2.value, mo.md("Click the button to tune Model 2."))
-    # Model 2, run 7 of 16: the LightGBM total with the Gaussian loss, exposure off;
+    mo.stop(
+        not run_model2.value,
+        mo.md("Click the button to tune the total times probability model."),
+    )
+    # The total times probability model, run 7 of 16: the LightGBM total with the
+    # Gaussian loss, exposure off;
     # logistic probabilities.
     _total_family, _probability_family, _use_exposure = (
         "lgbm_gaussian",
@@ -2772,13 +2985,16 @@ def _(
     )
     _study, _seconds = tune_model(
         partial(
-            suggest_model2,
+            suggest_total_times_probability_model,
             total_family=_total_family,
             probability_family=_probability_family,
             use_exposure=_use_exposure,
-            feature_transformer_dict=FEATURE_TRANSFORMERS,
+            total_feature_transformer_dict=COUNT_FEATURE_TRANSFORMERS[_total_family],
+            probability_feature_transformer_dict=PROBABILITY_FEATURE_TRANSFORMERS[
+                _probability_family
+            ],
             y_min=PREDICTION_FLOOR,
-            seed=seed,
+            random_state=seed,
         ),
         train_age_group.X,
         train_age_group.Y,
@@ -2791,20 +3007,25 @@ def _(
         n_startup_trials=n_startup_trials,
         n_jobs=n_splits,
     )
-    # The best components, rebuilt from the best trial's parameters, are the
-    # model scored and the record kept (D10-D12, D14).
-    _best = suggest_model2_components(
-        FixedTrial(_study.best_params),
-        total_family=_total_family,
-        probability_family=_probability_family,
+    # The best components, read from the best trial's parameters by their
+    # type, are the model scored and the record kept (D10-D12, D14, D25).
+    _total_component = CountComponent.from_params(
+        _study.best_params,
+        name="total",
+        family=_total_family,
         use_exposure=_use_exposure,
+        feature_transformer_dict=COUNT_FEATURE_TRANSFORMERS[_total_family],
     )
+    _probability_component = ProbabilityComponent.from_params(
+        _study.best_params,
+        name="probability",
+        family=_probability_family,
+        feature_transformer_dict=PROBABILITY_FEATURE_TRANSFORMERS[_probability_family],
+    )
+    _best_components = (_total_component, _probability_component)
     _, _score_table = fit_and_score(
-        build_model2(
-            *_best,
-            feature_transformer_dict=FEATURE_TRANSFORMERS,
-            y_min=PREDICTION_FLOOR,
-            seed=seed,
+        build_total_times_probability_model(
+            *_best_components, y_min=PREDICTION_FLOOR, random_state=seed
         ),
         train_age_group,
         val_age_group,
@@ -2817,7 +3038,7 @@ def _(
         "probability_family": _probability_family,
         "use_exposure": _use_exposure,
         "trials": _study.trials_dataframe(),
-        "components": [dataclasses.asdict(c) for c in _best],
+        "components": [component.to_dict() for component in _best_components],
         "cv_best": _study.best_value,
         "best_params": _study.best_params,
         "score_table": _score_table,
@@ -2831,15 +3052,15 @@ def _(
 @app.cell
 def _(
     COHORT_POISSON_DEVIANCE,
-    FEATURE_TRANSFORMERS,
-    FixedTrial,
+    COUNT_FEATURE_TRANSFORMERS,
+    CountComponent,
     POISSON_DEVIANCE,
     PREDICTION_FLOOR,
-    build_model2,
+    PROBABILITY_FEATURE_TRANSFORMERS,
+    ProbabilityComponent,
+    build_total_times_probability_model,
     cv,
     cv_groups,
-    dataclasses,
-    fit_and_score,
     mo,
     n_splits,
     n_startup_trials,
@@ -2847,25 +3068,31 @@ def _(
     partial,
     run_model2,
     seed,
-    suggest_model2,
-    suggest_model2_components,
+    suggest_total_times_probability_model,
     train_age_group,
     tune_model,
     val_age_group,
 ):
-    mo.stop(not run_model2.value, mo.md("Click the button to tune Model 2."))
-    # Model 2, run 8 of 16: the LightGBM total with the Gaussian loss, exposure off;
+    mo.stop(
+        not run_model2.value,
+        mo.md("Click the button to tune the total times probability model."),
+    )
+    # The total times probability model, run 8 of 16: the LightGBM total with the
+    # Gaussian loss, exposure off;
     # LightGBM probabilities.
     _total_family, _probability_family, _use_exposure = "lgbm_gaussian", "lgbm", False
     _study, _seconds = tune_model(
         partial(
-            suggest_model2,
+            suggest_total_times_probability_model,
             total_family=_total_family,
             probability_family=_probability_family,
             use_exposure=_use_exposure,
-            feature_transformer_dict=FEATURE_TRANSFORMERS,
+            total_feature_transformer_dict=COUNT_FEATURE_TRANSFORMERS[_total_family],
+            probability_feature_transformer_dict=PROBABILITY_FEATURE_TRANSFORMERS[
+                _probability_family
+            ],
             y_min=PREDICTION_FLOOR,
-            seed=seed,
+            random_state=seed,
         ),
         train_age_group.X,
         train_age_group.Y,
@@ -2878,20 +3105,25 @@ def _(
         n_startup_trials=n_startup_trials,
         n_jobs=n_splits,
     )
-    # The best components, rebuilt from the best trial's parameters, are the
-    # model scored and the record kept (D10-D12, D14).
-    _best = suggest_model2_components(
-        FixedTrial(_study.best_params),
-        total_family=_total_family,
-        probability_family=_probability_family,
+    # The best components, read from the best trial's parameters by their
+    # type, are the model scored and the record kept (D10-D12, D14, D25).
+    _total_component = CountComponent.from_params(
+        _study.best_params,
+        name="total",
+        family=_total_family,
         use_exposure=_use_exposure,
+        feature_transformer_dict=COUNT_FEATURE_TRANSFORMERS[_total_family],
     )
+    _probability_component = ProbabilityComponent.from_params(
+        _study.best_params,
+        name="probability",
+        family=_probability_family,
+        feature_transformer_dict=PROBABILITY_FEATURE_TRANSFORMERS[_probability_family],
+    )
+    _best_components = (_total_component, _probability_component)
     _, _score_table = fit_and_score(
-        build_model2(
-            *_best,
-            feature_transformer_dict=FEATURE_TRANSFORMERS,
-            y_min=PREDICTION_FLOOR,
-            seed=seed,
+        build_total_times_probability_model(
+            *_best_components, y_min=PREDICTION_FLOOR, random_state=seed
         ),
         train_age_group,
         val_age_group,
@@ -2904,7 +3136,7 @@ def _(
         "probability_family": _probability_family,
         "use_exposure": _use_exposure,
         "trials": _study.trials_dataframe(),
-        "components": [dataclasses.asdict(c) for c in _best],
+        "components": [component.to_dict() for component in _best_components],
         "cv_best": _study.best_value,
         "best_params": _study.best_params,
         "score_table": _score_table,
@@ -2918,15 +3150,15 @@ def _(
 @app.cell
 def _(
     COHORT_POISSON_DEVIANCE,
-    FEATURE_TRANSFORMERS,
-    FixedTrial,
+    COUNT_FEATURE_TRANSFORMERS,
+    CountComponent,
     POISSON_DEVIANCE,
     PREDICTION_FLOOR,
-    build_model2,
+    PROBABILITY_FEATURE_TRANSFORMERS,
+    ProbabilityComponent,
+    build_total_times_probability_model,
     cv,
     cv_groups,
-    dataclasses,
-    fit_and_score,
     mo,
     n_splits,
     n_startup_trials,
@@ -2934,25 +3166,31 @@ def _(
     partial,
     run_model2,
     seed,
-    suggest_model2,
-    suggest_model2_components,
+    suggest_total_times_probability_model,
     train_age_group,
     tune_model,
     val_age_group,
 ):
-    mo.stop(not run_model2.value, mo.md("Click the button to tune Model 2."))
-    # Model 2, run 9 of 16: the Poisson GLM total, exposure on;
+    mo.stop(
+        not run_model2.value,
+        mo.md("Click the button to tune the total times probability model."),
+    )
+    # The total times probability model, run 9 of 16: the Poisson GLM total, exposure
+    # on;
     # logistic probabilities.
     _total_family, _probability_family, _use_exposure = "poisson_glm", "logistic", True
     _study, _seconds = tune_model(
         partial(
-            suggest_model2,
+            suggest_total_times_probability_model,
             total_family=_total_family,
             probability_family=_probability_family,
             use_exposure=_use_exposure,
-            feature_transformer_dict=FEATURE_TRANSFORMERS,
+            total_feature_transformer_dict=COUNT_FEATURE_TRANSFORMERS[_total_family],
+            probability_feature_transformer_dict=PROBABILITY_FEATURE_TRANSFORMERS[
+                _probability_family
+            ],
             y_min=PREDICTION_FLOOR,
-            seed=seed,
+            random_state=seed,
         ),
         train_age_group.X,
         train_age_group.Y,
@@ -2965,20 +3203,25 @@ def _(
         n_startup_trials=n_startup_trials,
         n_jobs=n_splits,
     )
-    # The best components, rebuilt from the best trial's parameters, are the
-    # model scored and the record kept (D10-D12, D14).
-    _best = suggest_model2_components(
-        FixedTrial(_study.best_params),
-        total_family=_total_family,
-        probability_family=_probability_family,
+    # The best components, read from the best trial's parameters by their
+    # type, are the model scored and the record kept (D10-D12, D14, D25).
+    _total_component = CountComponent.from_params(
+        _study.best_params,
+        name="total",
+        family=_total_family,
         use_exposure=_use_exposure,
+        feature_transformer_dict=COUNT_FEATURE_TRANSFORMERS[_total_family],
     )
+    _probability_component = ProbabilityComponent.from_params(
+        _study.best_params,
+        name="probability",
+        family=_probability_family,
+        feature_transformer_dict=PROBABILITY_FEATURE_TRANSFORMERS[_probability_family],
+    )
+    _best_components = (_total_component, _probability_component)
     _, _score_table = fit_and_score(
-        build_model2(
-            *_best,
-            feature_transformer_dict=FEATURE_TRANSFORMERS,
-            y_min=PREDICTION_FLOOR,
-            seed=seed,
+        build_total_times_probability_model(
+            *_best_components, y_min=PREDICTION_FLOOR, random_state=seed
         ),
         train_age_group,
         val_age_group,
@@ -2991,7 +3234,7 @@ def _(
         "probability_family": _probability_family,
         "use_exposure": _use_exposure,
         "trials": _study.trials_dataframe(),
-        "components": [dataclasses.asdict(c) for c in _best],
+        "components": [component.to_dict() for component in _best_components],
         "cv_best": _study.best_value,
         "best_params": _study.best_params,
         "score_table": _score_table,
@@ -3005,15 +3248,15 @@ def _(
 @app.cell
 def _(
     COHORT_POISSON_DEVIANCE,
-    FEATURE_TRANSFORMERS,
-    FixedTrial,
+    COUNT_FEATURE_TRANSFORMERS,
+    CountComponent,
     POISSON_DEVIANCE,
     PREDICTION_FLOOR,
-    build_model2,
+    PROBABILITY_FEATURE_TRANSFORMERS,
+    ProbabilityComponent,
+    build_total_times_probability_model,
     cv,
     cv_groups,
-    dataclasses,
-    fit_and_score,
     mo,
     n_splits,
     n_startup_trials,
@@ -3021,25 +3264,31 @@ def _(
     partial,
     run_model2,
     seed,
-    suggest_model2,
-    suggest_model2_components,
+    suggest_total_times_probability_model,
     train_age_group,
     tune_model,
     val_age_group,
 ):
-    mo.stop(not run_model2.value, mo.md("Click the button to tune Model 2."))
-    # Model 2, run 10 of 16: the Poisson GLM total, exposure on;
+    mo.stop(
+        not run_model2.value,
+        mo.md("Click the button to tune the total times probability model."),
+    )
+    # The total times probability model, run 10 of 16: the Poisson GLM total, exposure
+    # on;
     # LightGBM probabilities.
     _total_family, _probability_family, _use_exposure = "poisson_glm", "lgbm", True
     _study, _seconds = tune_model(
         partial(
-            suggest_model2,
+            suggest_total_times_probability_model,
             total_family=_total_family,
             probability_family=_probability_family,
             use_exposure=_use_exposure,
-            feature_transformer_dict=FEATURE_TRANSFORMERS,
+            total_feature_transformer_dict=COUNT_FEATURE_TRANSFORMERS[_total_family],
+            probability_feature_transformer_dict=PROBABILITY_FEATURE_TRANSFORMERS[
+                _probability_family
+            ],
             y_min=PREDICTION_FLOOR,
-            seed=seed,
+            random_state=seed,
         ),
         train_age_group.X,
         train_age_group.Y,
@@ -3052,20 +3301,25 @@ def _(
         n_startup_trials=n_startup_trials,
         n_jobs=n_splits,
     )
-    # The best components, rebuilt from the best trial's parameters, are the
-    # model scored and the record kept (D10-D12, D14).
-    _best = suggest_model2_components(
-        FixedTrial(_study.best_params),
-        total_family=_total_family,
-        probability_family=_probability_family,
+    # The best components, read from the best trial's parameters by their
+    # type, are the model scored and the record kept (D10-D12, D14, D25).
+    _total_component = CountComponent.from_params(
+        _study.best_params,
+        name="total",
+        family=_total_family,
         use_exposure=_use_exposure,
+        feature_transformer_dict=COUNT_FEATURE_TRANSFORMERS[_total_family],
     )
+    _probability_component = ProbabilityComponent.from_params(
+        _study.best_params,
+        name="probability",
+        family=_probability_family,
+        feature_transformer_dict=PROBABILITY_FEATURE_TRANSFORMERS[_probability_family],
+    )
+    _best_components = (_total_component, _probability_component)
     _, _score_table = fit_and_score(
-        build_model2(
-            *_best,
-            feature_transformer_dict=FEATURE_TRANSFORMERS,
-            y_min=PREDICTION_FLOOR,
-            seed=seed,
+        build_total_times_probability_model(
+            *_best_components, y_min=PREDICTION_FLOOR, random_state=seed
         ),
         train_age_group,
         val_age_group,
@@ -3078,7 +3332,7 @@ def _(
         "probability_family": _probability_family,
         "use_exposure": _use_exposure,
         "trials": _study.trials_dataframe(),
-        "components": [dataclasses.asdict(c) for c in _best],
+        "components": [component.to_dict() for component in _best_components],
         "cv_best": _study.best_value,
         "best_params": _study.best_params,
         "score_table": _score_table,
@@ -3092,15 +3346,15 @@ def _(
 @app.cell
 def _(
     COHORT_POISSON_DEVIANCE,
-    FEATURE_TRANSFORMERS,
-    FixedTrial,
+    COUNT_FEATURE_TRANSFORMERS,
+    CountComponent,
     POISSON_DEVIANCE,
     PREDICTION_FLOOR,
-    build_model2,
+    PROBABILITY_FEATURE_TRANSFORMERS,
+    ProbabilityComponent,
+    build_total_times_probability_model,
     cv,
     cv_groups,
-    dataclasses,
-    fit_and_score,
     mo,
     n_splits,
     n_startup_trials,
@@ -3108,25 +3362,31 @@ def _(
     partial,
     run_model2,
     seed,
-    suggest_model2,
-    suggest_model2_components,
+    suggest_total_times_probability_model,
     train_age_group,
     tune_model,
     val_age_group,
 ):
-    mo.stop(not run_model2.value, mo.md("Click the button to tune Model 2."))
-    # Model 2, run 11 of 16: the Poisson GLM total, exposure off;
+    mo.stop(
+        not run_model2.value,
+        mo.md("Click the button to tune the total times probability model."),
+    )
+    # The total times probability model, run 11 of 16: the Poisson GLM total, exposure
+    # off;
     # logistic probabilities.
     _total_family, _probability_family, _use_exposure = "poisson_glm", "logistic", False
     _study, _seconds = tune_model(
         partial(
-            suggest_model2,
+            suggest_total_times_probability_model,
             total_family=_total_family,
             probability_family=_probability_family,
             use_exposure=_use_exposure,
-            feature_transformer_dict=FEATURE_TRANSFORMERS,
+            total_feature_transformer_dict=COUNT_FEATURE_TRANSFORMERS[_total_family],
+            probability_feature_transformer_dict=PROBABILITY_FEATURE_TRANSFORMERS[
+                _probability_family
+            ],
             y_min=PREDICTION_FLOOR,
-            seed=seed,
+            random_state=seed,
         ),
         train_age_group.X,
         train_age_group.Y,
@@ -3139,20 +3399,25 @@ def _(
         n_startup_trials=n_startup_trials,
         n_jobs=n_splits,
     )
-    # The best components, rebuilt from the best trial's parameters, are the
-    # model scored and the record kept (D10-D12, D14).
-    _best = suggest_model2_components(
-        FixedTrial(_study.best_params),
-        total_family=_total_family,
-        probability_family=_probability_family,
+    # The best components, read from the best trial's parameters by their
+    # type, are the model scored and the record kept (D10-D12, D14, D25).
+    _total_component = CountComponent.from_params(
+        _study.best_params,
+        name="total",
+        family=_total_family,
         use_exposure=_use_exposure,
+        feature_transformer_dict=COUNT_FEATURE_TRANSFORMERS[_total_family],
     )
+    _probability_component = ProbabilityComponent.from_params(
+        _study.best_params,
+        name="probability",
+        family=_probability_family,
+        feature_transformer_dict=PROBABILITY_FEATURE_TRANSFORMERS[_probability_family],
+    )
+    _best_components = (_total_component, _probability_component)
     _, _score_table = fit_and_score(
-        build_model2(
-            *_best,
-            feature_transformer_dict=FEATURE_TRANSFORMERS,
-            y_min=PREDICTION_FLOOR,
-            seed=seed,
+        build_total_times_probability_model(
+            *_best_components, y_min=PREDICTION_FLOOR, random_state=seed
         ),
         train_age_group,
         val_age_group,
@@ -3165,7 +3430,7 @@ def _(
         "probability_family": _probability_family,
         "use_exposure": _use_exposure,
         "trials": _study.trials_dataframe(),
-        "components": [dataclasses.asdict(c) for c in _best],
+        "components": [component.to_dict() for component in _best_components],
         "cv_best": _study.best_value,
         "best_params": _study.best_params,
         "score_table": _score_table,
@@ -3179,15 +3444,15 @@ def _(
 @app.cell
 def _(
     COHORT_POISSON_DEVIANCE,
-    FEATURE_TRANSFORMERS,
-    FixedTrial,
+    COUNT_FEATURE_TRANSFORMERS,
+    CountComponent,
     POISSON_DEVIANCE,
     PREDICTION_FLOOR,
-    build_model2,
+    PROBABILITY_FEATURE_TRANSFORMERS,
+    ProbabilityComponent,
+    build_total_times_probability_model,
     cv,
     cv_groups,
-    dataclasses,
-    fit_and_score,
     mo,
     n_splits,
     n_startup_trials,
@@ -3195,25 +3460,31 @@ def _(
     partial,
     run_model2,
     seed,
-    suggest_model2,
-    suggest_model2_components,
+    suggest_total_times_probability_model,
     train_age_group,
     tune_model,
     val_age_group,
 ):
-    mo.stop(not run_model2.value, mo.md("Click the button to tune Model 2."))
-    # Model 2, run 12 of 16: the Poisson GLM total, exposure off;
+    mo.stop(
+        not run_model2.value,
+        mo.md("Click the button to tune the total times probability model."),
+    )
+    # The total times probability model, run 12 of 16: the Poisson GLM total, exposure
+    # off;
     # LightGBM probabilities.
     _total_family, _probability_family, _use_exposure = "poisson_glm", "lgbm", False
     _study, _seconds = tune_model(
         partial(
-            suggest_model2,
+            suggest_total_times_probability_model,
             total_family=_total_family,
             probability_family=_probability_family,
             use_exposure=_use_exposure,
-            feature_transformer_dict=FEATURE_TRANSFORMERS,
+            total_feature_transformer_dict=COUNT_FEATURE_TRANSFORMERS[_total_family],
+            probability_feature_transformer_dict=PROBABILITY_FEATURE_TRANSFORMERS[
+                _probability_family
+            ],
             y_min=PREDICTION_FLOOR,
-            seed=seed,
+            random_state=seed,
         ),
         train_age_group.X,
         train_age_group.Y,
@@ -3226,20 +3497,25 @@ def _(
         n_startup_trials=n_startup_trials,
         n_jobs=n_splits,
     )
-    # The best components, rebuilt from the best trial's parameters, are the
-    # model scored and the record kept (D10-D12, D14).
-    _best = suggest_model2_components(
-        FixedTrial(_study.best_params),
-        total_family=_total_family,
-        probability_family=_probability_family,
+    # The best components, read from the best trial's parameters by their
+    # type, are the model scored and the record kept (D10-D12, D14, D25).
+    _total_component = CountComponent.from_params(
+        _study.best_params,
+        name="total",
+        family=_total_family,
         use_exposure=_use_exposure,
+        feature_transformer_dict=COUNT_FEATURE_TRANSFORMERS[_total_family],
     )
+    _probability_component = ProbabilityComponent.from_params(
+        _study.best_params,
+        name="probability",
+        family=_probability_family,
+        feature_transformer_dict=PROBABILITY_FEATURE_TRANSFORMERS[_probability_family],
+    )
+    _best_components = (_total_component, _probability_component)
     _, _score_table = fit_and_score(
-        build_model2(
-            *_best,
-            feature_transformer_dict=FEATURE_TRANSFORMERS,
-            y_min=PREDICTION_FLOOR,
-            seed=seed,
+        build_total_times_probability_model(
+            *_best_components, y_min=PREDICTION_FLOOR, random_state=seed
         ),
         train_age_group,
         val_age_group,
@@ -3252,7 +3528,7 @@ def _(
         "probability_family": _probability_family,
         "use_exposure": _use_exposure,
         "trials": _study.trials_dataframe(),
-        "components": [dataclasses.asdict(c) for c in _best],
+        "components": [component.to_dict() for component in _best_components],
         "cv_best": _study.best_value,
         "best_params": _study.best_params,
         "score_table": _score_table,
@@ -3266,15 +3542,15 @@ def _(
 @app.cell
 def _(
     COHORT_POISSON_DEVIANCE,
-    FEATURE_TRANSFORMERS,
-    FixedTrial,
+    COUNT_FEATURE_TRANSFORMERS,
+    CountComponent,
     POISSON_DEVIANCE,
     PREDICTION_FLOOR,
-    build_model2,
+    PROBABILITY_FEATURE_TRANSFORMERS,
+    ProbabilityComponent,
+    build_total_times_probability_model,
     cv,
     cv_groups,
-    dataclasses,
-    fit_and_score,
     mo,
     n_splits,
     n_startup_trials,
@@ -3282,25 +3558,31 @@ def _(
     partial,
     run_model2,
     seed,
-    suggest_model2,
-    suggest_model2_components,
+    suggest_total_times_probability_model,
     train_age_group,
     tune_model,
     val_age_group,
 ):
-    mo.stop(not run_model2.value, mo.md("Click the button to tune Model 2."))
-    # Model 2, run 13 of 16: the negative binomial GLM (NB2) total, exposure on;
+    mo.stop(
+        not run_model2.value,
+        mo.md("Click the button to tune the total times probability model."),
+    )
+    # The total times probability model, run 13 of 16: the negative binomial GLM (NB2)
+    # total, exposure on;
     # logistic probabilities.
     _total_family, _probability_family, _use_exposure = "nb2", "logistic", True
     _study, _seconds = tune_model(
         partial(
-            suggest_model2,
+            suggest_total_times_probability_model,
             total_family=_total_family,
             probability_family=_probability_family,
             use_exposure=_use_exposure,
-            feature_transformer_dict=FEATURE_TRANSFORMERS,
+            total_feature_transformer_dict=COUNT_FEATURE_TRANSFORMERS[_total_family],
+            probability_feature_transformer_dict=PROBABILITY_FEATURE_TRANSFORMERS[
+                _probability_family
+            ],
             y_min=PREDICTION_FLOOR,
-            seed=seed,
+            random_state=seed,
         ),
         train_age_group.X,
         train_age_group.Y,
@@ -3313,20 +3595,25 @@ def _(
         n_startup_trials=n_startup_trials,
         n_jobs=n_splits,
     )
-    # The best components, rebuilt from the best trial's parameters, are the
-    # model scored and the record kept (D10-D12, D14).
-    _best = suggest_model2_components(
-        FixedTrial(_study.best_params),
-        total_family=_total_family,
-        probability_family=_probability_family,
+    # The best components, read from the best trial's parameters by their
+    # type, are the model scored and the record kept (D10-D12, D14, D25).
+    _total_component = CountComponent.from_params(
+        _study.best_params,
+        name="total",
+        family=_total_family,
         use_exposure=_use_exposure,
+        feature_transformer_dict=COUNT_FEATURE_TRANSFORMERS[_total_family],
     )
+    _probability_component = ProbabilityComponent.from_params(
+        _study.best_params,
+        name="probability",
+        family=_probability_family,
+        feature_transformer_dict=PROBABILITY_FEATURE_TRANSFORMERS[_probability_family],
+    )
+    _best_components = (_total_component, _probability_component)
     _, _score_table = fit_and_score(
-        build_model2(
-            *_best,
-            feature_transformer_dict=FEATURE_TRANSFORMERS,
-            y_min=PREDICTION_FLOOR,
-            seed=seed,
+        build_total_times_probability_model(
+            *_best_components, y_min=PREDICTION_FLOOR, random_state=seed
         ),
         train_age_group,
         val_age_group,
@@ -3339,7 +3626,7 @@ def _(
         "probability_family": _probability_family,
         "use_exposure": _use_exposure,
         "trials": _study.trials_dataframe(),
-        "components": [dataclasses.asdict(c) for c in _best],
+        "components": [component.to_dict() for component in _best_components],
         "cv_best": _study.best_value,
         "best_params": _study.best_params,
         "score_table": _score_table,
@@ -3353,15 +3640,15 @@ def _(
 @app.cell
 def _(
     COHORT_POISSON_DEVIANCE,
-    FEATURE_TRANSFORMERS,
-    FixedTrial,
+    COUNT_FEATURE_TRANSFORMERS,
+    CountComponent,
     POISSON_DEVIANCE,
     PREDICTION_FLOOR,
-    build_model2,
+    PROBABILITY_FEATURE_TRANSFORMERS,
+    ProbabilityComponent,
+    build_total_times_probability_model,
     cv,
     cv_groups,
-    dataclasses,
-    fit_and_score,
     mo,
     n_splits,
     n_startup_trials,
@@ -3369,25 +3656,31 @@ def _(
     partial,
     run_model2,
     seed,
-    suggest_model2,
-    suggest_model2_components,
+    suggest_total_times_probability_model,
     train_age_group,
     tune_model,
     val_age_group,
 ):
-    mo.stop(not run_model2.value, mo.md("Click the button to tune Model 2."))
-    # Model 2, run 14 of 16: the negative binomial GLM (NB2) total, exposure on;
+    mo.stop(
+        not run_model2.value,
+        mo.md("Click the button to tune the total times probability model."),
+    )
+    # The total times probability model, run 14 of 16: the negative binomial GLM (NB2)
+    # total, exposure on;
     # LightGBM probabilities.
     _total_family, _probability_family, _use_exposure = "nb2", "lgbm", True
     _study, _seconds = tune_model(
         partial(
-            suggest_model2,
+            suggest_total_times_probability_model,
             total_family=_total_family,
             probability_family=_probability_family,
             use_exposure=_use_exposure,
-            feature_transformer_dict=FEATURE_TRANSFORMERS,
+            total_feature_transformer_dict=COUNT_FEATURE_TRANSFORMERS[_total_family],
+            probability_feature_transformer_dict=PROBABILITY_FEATURE_TRANSFORMERS[
+                _probability_family
+            ],
             y_min=PREDICTION_FLOOR,
-            seed=seed,
+            random_state=seed,
         ),
         train_age_group.X,
         train_age_group.Y,
@@ -3400,20 +3693,25 @@ def _(
         n_startup_trials=n_startup_trials,
         n_jobs=n_splits,
     )
-    # The best components, rebuilt from the best trial's parameters, are the
-    # model scored and the record kept (D10-D12, D14).
-    _best = suggest_model2_components(
-        FixedTrial(_study.best_params),
-        total_family=_total_family,
-        probability_family=_probability_family,
+    # The best components, read from the best trial's parameters by their
+    # type, are the model scored and the record kept (D10-D12, D14, D25).
+    _total_component = CountComponent.from_params(
+        _study.best_params,
+        name="total",
+        family=_total_family,
         use_exposure=_use_exposure,
+        feature_transformer_dict=COUNT_FEATURE_TRANSFORMERS[_total_family],
     )
+    _probability_component = ProbabilityComponent.from_params(
+        _study.best_params,
+        name="probability",
+        family=_probability_family,
+        feature_transformer_dict=PROBABILITY_FEATURE_TRANSFORMERS[_probability_family],
+    )
+    _best_components = (_total_component, _probability_component)
     _, _score_table = fit_and_score(
-        build_model2(
-            *_best,
-            feature_transformer_dict=FEATURE_TRANSFORMERS,
-            y_min=PREDICTION_FLOOR,
-            seed=seed,
+        build_total_times_probability_model(
+            *_best_components, y_min=PREDICTION_FLOOR, random_state=seed
         ),
         train_age_group,
         val_age_group,
@@ -3426,7 +3724,7 @@ def _(
         "probability_family": _probability_family,
         "use_exposure": _use_exposure,
         "trials": _study.trials_dataframe(),
-        "components": [dataclasses.asdict(c) for c in _best],
+        "components": [component.to_dict() for component in _best_components],
         "cv_best": _study.best_value,
         "best_params": _study.best_params,
         "score_table": _score_table,
@@ -3440,15 +3738,15 @@ def _(
 @app.cell
 def _(
     COHORT_POISSON_DEVIANCE,
-    FEATURE_TRANSFORMERS,
-    FixedTrial,
+    COUNT_FEATURE_TRANSFORMERS,
+    CountComponent,
     POISSON_DEVIANCE,
     PREDICTION_FLOOR,
-    build_model2,
+    PROBABILITY_FEATURE_TRANSFORMERS,
+    ProbabilityComponent,
+    build_total_times_probability_model,
     cv,
     cv_groups,
-    dataclasses,
-    fit_and_score,
     mo,
     n_splits,
     n_startup_trials,
@@ -3456,25 +3754,31 @@ def _(
     partial,
     run_model2,
     seed,
-    suggest_model2,
-    suggest_model2_components,
+    suggest_total_times_probability_model,
     train_age_group,
     tune_model,
     val_age_group,
 ):
-    mo.stop(not run_model2.value, mo.md("Click the button to tune Model 2."))
-    # Model 2, run 15 of 16: the negative binomial GLM (NB2) total, exposure off;
+    mo.stop(
+        not run_model2.value,
+        mo.md("Click the button to tune the total times probability model."),
+    )
+    # The total times probability model, run 15 of 16: the negative binomial GLM (NB2)
+    # total, exposure off;
     # logistic probabilities.
     _total_family, _probability_family, _use_exposure = "nb2", "logistic", False
     _study, _seconds = tune_model(
         partial(
-            suggest_model2,
+            suggest_total_times_probability_model,
             total_family=_total_family,
             probability_family=_probability_family,
             use_exposure=_use_exposure,
-            feature_transformer_dict=FEATURE_TRANSFORMERS,
+            total_feature_transformer_dict=COUNT_FEATURE_TRANSFORMERS[_total_family],
+            probability_feature_transformer_dict=PROBABILITY_FEATURE_TRANSFORMERS[
+                _probability_family
+            ],
             y_min=PREDICTION_FLOOR,
-            seed=seed,
+            random_state=seed,
         ),
         train_age_group.X,
         train_age_group.Y,
@@ -3487,20 +3791,25 @@ def _(
         n_startup_trials=n_startup_trials,
         n_jobs=n_splits,
     )
-    # The best components, rebuilt from the best trial's parameters, are the
-    # model scored and the record kept (D10-D12, D14).
-    _best = suggest_model2_components(
-        FixedTrial(_study.best_params),
-        total_family=_total_family,
-        probability_family=_probability_family,
+    # The best components, read from the best trial's parameters by their
+    # type, are the model scored and the record kept (D10-D12, D14, D25).
+    _total_component = CountComponent.from_params(
+        _study.best_params,
+        name="total",
+        family=_total_family,
         use_exposure=_use_exposure,
+        feature_transformer_dict=COUNT_FEATURE_TRANSFORMERS[_total_family],
     )
+    _probability_component = ProbabilityComponent.from_params(
+        _study.best_params,
+        name="probability",
+        family=_probability_family,
+        feature_transformer_dict=PROBABILITY_FEATURE_TRANSFORMERS[_probability_family],
+    )
+    _best_components = (_total_component, _probability_component)
     _, _score_table = fit_and_score(
-        build_model2(
-            *_best,
-            feature_transformer_dict=FEATURE_TRANSFORMERS,
-            y_min=PREDICTION_FLOOR,
-            seed=seed,
+        build_total_times_probability_model(
+            *_best_components, y_min=PREDICTION_FLOOR, random_state=seed
         ),
         train_age_group,
         val_age_group,
@@ -3513,7 +3822,7 @@ def _(
         "probability_family": _probability_family,
         "use_exposure": _use_exposure,
         "trials": _study.trials_dataframe(),
-        "components": [dataclasses.asdict(c) for c in _best],
+        "components": [component.to_dict() for component in _best_components],
         "cv_best": _study.best_value,
         "best_params": _study.best_params,
         "score_table": _score_table,
@@ -3527,15 +3836,15 @@ def _(
 @app.cell
 def _(
     COHORT_POISSON_DEVIANCE,
-    FEATURE_TRANSFORMERS,
-    FixedTrial,
+    COUNT_FEATURE_TRANSFORMERS,
+    CountComponent,
     POISSON_DEVIANCE,
     PREDICTION_FLOOR,
-    build_model2,
+    PROBABILITY_FEATURE_TRANSFORMERS,
+    ProbabilityComponent,
+    build_total_times_probability_model,
     cv,
     cv_groups,
-    dataclasses,
-    fit_and_score,
     mo,
     n_splits,
     n_startup_trials,
@@ -3543,25 +3852,31 @@ def _(
     partial,
     run_model2,
     seed,
-    suggest_model2,
-    suggest_model2_components,
+    suggest_total_times_probability_model,
     train_age_group,
     tune_model,
     val_age_group,
 ):
-    mo.stop(not run_model2.value, mo.md("Click the button to tune Model 2."))
-    # Model 2, run 16 of 16: the negative binomial GLM (NB2) total, exposure off;
+    mo.stop(
+        not run_model2.value,
+        mo.md("Click the button to tune the total times probability model."),
+    )
+    # The total times probability model, run 16 of 16: the negative binomial GLM (NB2)
+    # total, exposure off;
     # LightGBM probabilities.
     _total_family, _probability_family, _use_exposure = "nb2", "lgbm", False
     _study, _seconds = tune_model(
         partial(
-            suggest_model2,
+            suggest_total_times_probability_model,
             total_family=_total_family,
             probability_family=_probability_family,
             use_exposure=_use_exposure,
-            feature_transformer_dict=FEATURE_TRANSFORMERS,
+            total_feature_transformer_dict=COUNT_FEATURE_TRANSFORMERS[_total_family],
+            probability_feature_transformer_dict=PROBABILITY_FEATURE_TRANSFORMERS[
+                _probability_family
+            ],
             y_min=PREDICTION_FLOOR,
-            seed=seed,
+            random_state=seed,
         ),
         train_age_group.X,
         train_age_group.Y,
@@ -3574,20 +3889,25 @@ def _(
         n_startup_trials=n_startup_trials,
         n_jobs=n_splits,
     )
-    # The best components, rebuilt from the best trial's parameters, are the
-    # model scored and the record kept (D10-D12, D14).
-    _best = suggest_model2_components(
-        FixedTrial(_study.best_params),
-        total_family=_total_family,
-        probability_family=_probability_family,
+    # The best components, read from the best trial's parameters by their
+    # type, are the model scored and the record kept (D10-D12, D14, D25).
+    _total_component = CountComponent.from_params(
+        _study.best_params,
+        name="total",
+        family=_total_family,
         use_exposure=_use_exposure,
+        feature_transformer_dict=COUNT_FEATURE_TRANSFORMERS[_total_family],
     )
+    _probability_component = ProbabilityComponent.from_params(
+        _study.best_params,
+        name="probability",
+        family=_probability_family,
+        feature_transformer_dict=PROBABILITY_FEATURE_TRANSFORMERS[_probability_family],
+    )
+    _best_components = (_total_component, _probability_component)
     _, _score_table = fit_and_score(
-        build_model2(
-            *_best,
-            feature_transformer_dict=FEATURE_TRANSFORMERS,
-            y_min=PREDICTION_FLOOR,
-            seed=seed,
+        build_total_times_probability_model(
+            *_best_components, y_min=PREDICTION_FLOOR, random_state=seed
         ),
         train_age_group,
         val_age_group,
@@ -3600,7 +3920,7 @@ def _(
         "probability_family": _probability_family,
         "use_exposure": _use_exposure,
         "trials": _study.trials_dataframe(),
-        "components": [dataclasses.asdict(c) for c in _best],
+        "components": [component.to_dict() for component in _best_components],
         "cv_best": _study.best_value,
         "best_params": _study.best_params,
         "score_table": _score_table,
@@ -3613,7 +3933,8 @@ def _(
 
 @app.cell
 def _(
-    CountSearchSpace,
+    COUNT_FEATURE_TRANSFORMERS,
+    PROBABILITY_FEATURE_TRANSFORMERS,
     ProbabilitySearchSpace,
     model2_lgbm_gaussian_lgbm_exposure,
     model2_lgbm_gaussian_lgbm_no_exposure,
@@ -3675,13 +3996,11 @@ def _(
         # The completed trials per categorical choice, every candidate listed, so
         # one never tried shows 0 (D15).
         _candidates = {
-            "params_total__feature_transformer": (
-                CountSearchSpace.FEATURE_TRANSFORMER_NAMES[_run["total_family"]]
+            "params_total__feature_transformer": list(
+                COUNT_FEATURE_TRANSFORMERS[_run["total_family"]]
             ),
-            "params_probability__feature_transformer": (
-                ProbabilitySearchSpace.FEATURE_TRANSFORMER_NAMES[
-                    _run["probability_family"]
-                ]
+            "params_probability__feature_transformer": list(
+                PROBABILITY_FEATURE_TRANSFORMERS[_run["probability_family"]]
             ),
             "params_probability__calibration_method": (
                 ProbabilitySearchSpace.CALIBRATION_METHODS
@@ -3716,7 +4035,7 @@ def _(mo, model2_arms_df, model2_df):
     mo.vstack(
         [
             mo.md(
-                "**Model 2: cohort Poisson deviance** (family: the total's + the "
+                "**The total times probability model: cohort Poisson deviance** (family: the total's + the "
                 "probabilities'; cv_best: the run's value; n_complete / n_failed: "
                 "its trials)"
             ),
@@ -3725,6 +4044,7 @@ def _(mo, model2_arms_df, model2_df):
             mo.md(f"```text\n{model2_arms_df.to_string(index=False)}\n```"),
         ]
     )
+    return
 
 
 @app.cell
@@ -3748,7 +4068,7 @@ def _(mo, model1_df, model2_df, pd):
             mo.md(f"```text\n{best_df.round(4).to_string(index=False)}\n```"),
         ]
     )
-    return (best_df,)
+    return
 
 
 @app.cell
@@ -3787,61 +4107,79 @@ def _(
 @app.cell
 def _(
     COHORTS,
-    FEATURE_TRANSFORMERS,
-    FixedTrial,
+    COUNT_FEATURE_TRANSFORMERS,
+    CountComponent,
     MODEL1_RUNS,
-    build_model1,
+    build_independent_cohorts_model,
     mo,
     run_inspection,
-    suggest_model1_components,
     train_age_group,
 ):
     mo.stop(
         not run_inspection.value, mo.md("Click the button to inspect the best runs.")
     )
-    # Model 1's best run on validation (best_df's rule), its model rebuilt from
-    # the best trial's parameters and refit on the training part.
+    # The independent cohorts model's best run on validation (best_df's rule),
+    # its model rebuilt from the best trial's parameters by the component
+    # types and refit on the
+    # training part.
     best_run1 = min(MODEL1_RUNS, key=lambda run: run["score_table"][-1]["val"])
-    best_model1 = build_model1(
-        suggest_model1_components(
-            FixedTrial(best_run1["best_params"]),
-            family=best_run1["family"],
-            use_exposure=best_run1["use_exposure"],
-            cohorts=COHORTS,
+    best_model1 = build_independent_cohorts_model(
+        tuple(
+            CountComponent.from_params(
+                best_run1["best_params"],
+                name=cohort,
+                family=best_run1["family"],
+                use_exposure=best_run1["use_exposure"],
+                feature_transformer_dict=COUNT_FEATURE_TRANSFORMERS[
+                    best_run1["family"]
+                ],
+            )
+            for cohort in COHORTS
         ),
-        feature_transformer_dict=FEATURE_TRANSFORMERS,
         y_min=best_run1["y_min"],
-        seed=best_run1["seed"],
+        random_state=best_run1["seed"],
     ).fit(train_age_group.X, train_age_group.Y, exposure=train_age_group.exposure)
     return best_model1, best_run1
 
 
 @app.cell
 def _(
-    FEATURE_TRANSFORMERS,
-    FixedTrial,
+    COUNT_FEATURE_TRANSFORMERS,
+    CountComponent,
     MODEL2_RUNS,
-    build_model2,
+    PROBABILITY_FEATURE_TRANSFORMERS,
+    ProbabilityComponent,
+    build_total_times_probability_model,
     mo,
     run_inspection,
-    suggest_model2_components,
     train_age_group,
 ):
     mo.stop(
         not run_inspection.value, mo.md("Click the button to inspect the best runs.")
     )
-    # Model 2's best run on validation, rebuilt and refit the same way.
+    # The total times probability model's best run on validation, rebuilt and
+    # refit the same way.
     best_run2 = min(MODEL2_RUNS, key=lambda run: run["score_table"][-1]["val"])
-    best_model2 = build_model2(
-        *suggest_model2_components(
-            FixedTrial(best_run2["best_params"]),
-            total_family=best_run2["total_family"],
-            probability_family=best_run2["probability_family"],
+    best_model2 = build_total_times_probability_model(
+        CountComponent.from_params(
+            best_run2["best_params"],
+            name="total",
+            family=best_run2["total_family"],
             use_exposure=best_run2["use_exposure"],
+            feature_transformer_dict=COUNT_FEATURE_TRANSFORMERS[
+                best_run2["total_family"]
+            ],
         ),
-        feature_transformer_dict=FEATURE_TRANSFORMERS,
+        ProbabilityComponent.from_params(
+            best_run2["best_params"],
+            name="probability",
+            family=best_run2["probability_family"],
+            feature_transformer_dict=PROBABILITY_FEATURE_TRANSFORMERS[
+                best_run2["probability_family"]
+            ],
+        ),
         y_min=best_run2["y_min"],
-        seed=best_run2["seed"],
+        random_state=best_run2["seed"],
     ).fit(train_age_group.X, train_age_group.Y, exposure=train_age_group.exposure)
     return best_model2, best_run2
 
@@ -4035,19 +4373,28 @@ def _(best_run1, best_run2, mo, model1_intervals, model2_intervals, pd):
         [
             mo.md(
                 "**The best runs' metrics** (score: the split's rows; mean, lower, "
-                "upper: the bootstrap over neighborhoods). Model 1: "
-                f"`{best_run1['family']}`, exposure {best_run1['use_exposure']}; "
-                f"Model 2: `{best_run2['total_family']}+{best_run2['probability_family']}`, "
+                "upper: the bootstrap over neighborhoods). model1, the "
+                f"independent cohorts model: `{best_run1['family']}`, exposure "
+                f"{best_run1['use_exposure']}; model2, the total times probability "
+                f"model: `{best_run2['total_family']}+{best_run2['probability_family']}`, "
                 f"exposure {best_run2['use_exposure']}."
             ),
             mo.md(f"```text\n{intervals_df.round(4).to_string(index=False)}\n```"),
         ]
     )
-    return (intervals_df,)
+    return
 
 
 @app.cell
-def _(mo, model1_permutation, model1_shap, model2_permutation, model2_shap, np, pd):
+def _(
+    mo,
+    model1_permutation,
+    model1_shap,
+    model2_permutation,
+    model2_shap,
+    np,
+    pd,
+):
     # The two importances side by side, per model and raw column: the permutation
     # importance on validation (its rank decides) and on training, and the mean
     # |SHAP| over the explained rows and the cohorts (D18).
@@ -4091,7 +4438,7 @@ def _(mo, model1_permutation, model1_shap, model2_permutation, model2_shap, np, 
             mo.md(f"```text\n{importance_df.round(4).to_string(index=False)}\n```"),
         ]
     )
-    return (importance_df,)
+    return
 
 
 if __name__ == "__main__":

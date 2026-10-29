@@ -7,6 +7,8 @@ following it.
 
 from __future__ import annotations
 
+import json
+
 import numpy as np
 import pandas as pd
 import pytest
@@ -343,3 +345,42 @@ def test_a_later_frame_that_poisons_the_matrix_is_rejected_too() -> None:
     ).fit(pd.DataFrame({"count": [1.0, 2.0, 3.0]}))
     with pytest.raises(ValueError, match="non-finite"):
         transformer.transform(pd.DataFrame({"count": [1.0, 0.0, 3.0]}))
+
+
+# --- The declaration as data -------------------------------------------------
+
+
+def test_to_dict_is_the_declaration_as_json_data() -> None:
+    # A run record keeps the component's transformer by this dict: each plan
+    # with its kinds, parameters and columns, the products, the remainder.
+    transformer = FeatureTransformer(
+        column_plans=(
+            _pair("passthrough", "ses"),
+            _pair(
+                "room_share",
+                "3_rooms_share",
+                "4_rooms_share",
+                transforms=(Center(), DomainScale(scale=0.1)),
+            ),
+        ),
+        interactions=(Interaction(left="3_rooms_share", right="ses"),),
+    )
+    declaration = transformer.to_dict()
+    json.dumps(declaration)  # plain data, no object
+    assert declaration == {
+        "column_plans": [
+            {"plan": {"name": "passthrough", "transforms": []}, "columns": ["ses"]},
+            {
+                "plan": {
+                    "name": "room_share",
+                    "transforms": [
+                        {"kind": "center"},
+                        {"kind": "domain_scale", "scale": 0.1},
+                    ],
+                },
+                "columns": ["3_rooms_share", "4_rooms_share"],
+            },
+        ],
+        "interactions": [{"left": "3_rooms_share", "right": "ses"}],
+        "remainder": "drop",
+    }
