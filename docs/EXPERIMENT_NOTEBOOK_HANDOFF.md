@@ -131,7 +131,9 @@ design and commits):
   each; the run cells set `_best_components` explicitly; the readers and
   `total_times_probability_search_spaces` removed; NOTEBOOK_TUNING_PLAN.md §0 D25.1–D25.4; the
   notebook test 17/17, Check C the 24 baselines, the shared probe 2.1812).
-  **Uncommitted:** T3, the redesign, D24 and D25 (one commit), then the docs (a second). **Next: T4a.**
+  T3, the redesign, D24, D25 and the docs committed together as `15932d7` (2026-10-29). **Next: T4a.1**,
+  planned with T4a.2–T4a.3, T4b and T5 in [NOTEBOOK_T4_HANDOFF.md](NOTEBOOK_T4_HANDOFF.md) (2026-10-29),
+  the handoff the implementing session reads first and updates.
 - **The commits of the task:**
 
   | Sub-task | Commit |
@@ -369,6 +371,10 @@ The standing rules are in [NOTEBOOK_TUNING_PLAN.md](NOTEBOOK_TUNING_PLAN.md) §1
   for.
 
 ## 6. The prompt for the next session
+
+**Since 2026-10-29 the prompt is the one in [NOTEBOOK_T4_HANDOFF.md](NOTEBOOK_T4_HANDOFF.md)**
+(T4a.1 next); the prompt below was answered by the planning session that wrote that file and is
+kept for the record.
 
 ```text
 Read docs/EXPERIMENT_NOTEBOOK_HANDOFF.md in full, then docs/NOTEBOOK_TUNING_PLAN.md §0 (D1–D25,
