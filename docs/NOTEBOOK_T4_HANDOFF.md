@@ -7,24 +7,29 @@ relying on them, since the user edits between turns.
 
 **Status (2026-10-29):** written and approved by the user after the reading of 2026-10-29 (the
 planning session verified the state and measured the baselines of §1; it edited nothing else).
-**T4a.1 done 2026-10-29** on the branch `refactor/hyperparameter-tuning-package` (from `e2a4f78`;
-its PR, on refactoring the package, goes into `feat/experiment-notebook`), awaiting the user's
-commit; the notebook md5 unchanged `425b6cf3ff396a478ad08756c2211338`. **Next: T4a.2.** The implementing session updates this line, ticks the sub-tasks of §2, and
-records each sub-task's commit and the notebook's md5 in §1 as it goes; this file is the handoff
-for any session that continues the work.
+**T4a.1 committed `5c0908a` (2026-10-29)** on the branch `refactor/hyperparameter-tuning-package`
+(from `e2a4f78`, pushed), whose draft PR #17 "refactor(tuning): rebuild the hyperparameter_tuning
+package from the experiment notebook" goes into `feat/experiment-notebook` and covers T4a.1–T5, one
+commit per sub-task; the notebook md5 unchanged `425b6cf3ff396a478ad08756c2211338`. The user
+paused there. **Next: T4a.2.** The implementing session updates this line, ticks the sub-tasks of
+§2, and records each sub-task's commit and the notebook's md5 in §1 as it goes; this file is the
+handoff for any session that continues the work.
 
 **The prompt for the implementing session:**
 
 ```text
 Read docs/NOTEBOOK_T4_HANDOFF.md in full, then the documents its reading order lists. Verify
-its §1 state first (HEAD, git status, the notebook md5); if anything differs, stop and show me
-the diff. Then T4a.1 in plan mode: re-verify its facts with read-only probes, write the steps
-and the commit message in the chat, and wait for my approval before editing. One sub-task per
-approval; I commit myself.
+its §1 state first (branch refactor/hyperparameter-tuning-package, HEAD my commit of the
+handoff update right after 5c0908a, git status clean, the notebook md5); if anything differs,
+stop and show me the diff. Then T4a.2 in plan
+mode: re-verify its facts with read-only probes, write the steps and the commit message in the
+chat, and wait for my approval before editing. One sub-task per approval; I commit myself. At
+each stop also give me the updated lines of draft PR #17's body.
 ```
 
 **Repository:** `/Users/galkampel/Desktop/Projects/age-group-prediction`, branch
-`feat/experiment-notebook`. The source-of-truth documents, in reading order:
+`refactor/hyperparameter-tuning-package` (stacked on `feat/experiment-notebook`, draft PR #17).
+The source-of-truth documents, in reading order:
 1. `docs/EXPERIMENT_NOTEBOOK_HANDOFF.md` (all of it: §2 the state and the 24 Check C baselines,
    §3 the decisions, §4 how to work, §6 the prompt this plan answers);
 2. `docs/NOTEBOOK_TUNING_PLAN.md` §0 (D1–D25; D21 and D25 above all), §1 (rules, Checks A/B/C),
@@ -67,27 +72,37 @@ approval; I commit myself.
 - Tools: `.venv/bin/python` 3.13.9, `.venv/bin/ruff` 0.16.4, `.venv/bin/pytest`, `.venv/bin/mypy`,
   `.venv/bin/marimo`; `uv` at `~/.local/bin/uv` (`uv run --frozen mypy`). optuna 4.9.0, joblib
   1.5.3, lightgbm 4.7.0, scikit-learn 1.9.0, pandas 3.0.5.
+- **The pull request** is draft #17 from `refactor/hyperparameter-tuning-package` into
+  `feat/experiment-notebook` (the user opened it after T4a.1). At each stop also give the
+  updated lines of its body (the sub-task's checkbox ticked with its commit, the verification
+  results) for the user to paste. Never push or edit the PR yourself.
+- `uv run --frozen mypy` re-syncs the project's editable install in `.venv` (no dependency
+  changes; harmless). Use mypy's default cache: a cold cache in the scratchpad took over 6 min
+  under load.
 
-## 1. State verified 2026-10-29 *(re-verify first)*
+## 1. State verified 2026-10-29, after T4a.1 *(re-verify first)*
 
 ```sh
 cd /Users/galkampel/Desktop/Projects/age-group-prediction
-git branch --show-current          # feat/experiment-notebook
-git log -3 --oneline               # 15932d7 refactor(notebook): D25 ...; de94ac8 ...; 10d6e83 ...
-                                   # (since committed: e2a4f78, this handoff, docs only)
+git branch --show-current          # refactor/hyperparameter-tuning-package
+git log -3 --oneline               # <the user's commit of this handoff update>; 5c0908a refactor(tuning): T4a.1 ...; e2a4f78 docs(notebook): the T4 handoff ...
 git status --short                 # clean
 md5 -q notebooks/02_experiments.py # 425b6cf3ff396a478ad08756c2211338
 ```
 
-- HEAD `15932d7` is one commit after `de94ac8` and holds the notebook, src, tests and docs of
-  T3, D23, D24, D25 together (the handoff expected two commits; the user squashed them). The
-  md5 and the clean tree match the handoff, so nothing differs.
-- Baselines measured at HEAD: `uv run --frozen mypy` clean, 27 source files;
-  `ruff check notebooks/02_experiments.py` 14 findings; `ruff format --diff` the hunks
-  `@@ -158,9 +158,7 @@` and `@@ -213,8 +211,10 @@` only; the notebook test
-  `tests/characterization/test_experiments_notebook.py` 17 tests; the five old test files
-  collect 141 tests; `pytest -m "not slow" --collect-only` 1366 collected (22 deselected).
-- The old package `src/age_group_prediction/hyperparameter_tuning/` holds `__init__.py`,
+- `e2a4f78` (this handoff, docs only) follows `15932d7`, which holds T3, D23, D24, D25 in one
+  commit; `5c0908a` is T4a.1. The branch is pushed; draft PR #17 into `feat/experiment-notebook`.
+- Baselines after T4a.1 (measured): `uv run --frozen mypy` clean, **22** source files;
+  `pytest -m "not slow"` **1226 passed, 1 skipped, 1 xfailed, 19 deselected** (1228 collected;
+  the 141 removed tests were 138 non-slow and 3 slow; the six MLflow `UserWarning` hints from
+  `test_gate8_tracking.py` pre-exist); the notebook test **12 passed** (the file holds 12 tests;
+  the "17" written earlier here and in the plans was a miscount, T4a.3 corrects the plans).
+- Baselines at `15932d7`, the notebook unchanged since: `ruff check notebooks/02_experiments.py`
+  14 findings; `ruff format --diff` the hunks `@@ -158,9 +158,7 @@` and `@@ -213,8 +211,10 @@`
+  only.
+- *(Before T4a.1, kept for the record:)* mypy 27 files; the five old test files 141 tests;
+  `pytest -m "not slow" --collect-only` 1366 collected (22 deselected).
+- *(Before T4a.1)* The old package `src/age_group_prediction/hyperparameter_tuning/` holds `__init__.py`,
   `aggregation.py`, `evaluator.py`, `parameters.py`, `study.py` (+ `__pycache__`). Its
   `aggregation.py` differs from `src/age_group_prediction/aggregation.py` only by one docstring
   word ("(the default)") and the `_config` import; `tests/unit/test_hyperparameter_tuning_aggregation.py`
@@ -143,10 +158,14 @@ package). `optuna` stays in `pyproject.toml`.
 **Done when:**
 - `grep -rn "hyperparameter_tuning\|HYPERPARAMETER_TUNING" src tests` prints nothing;
 - `uv run --frozen mypy` → `Success: no issues found in 22 source files`;
-- `.venv/bin/pytest -m "not slow" -q -p no:cacheprovider` (background, logged) → 1225 collected,
-  all passed (1366 − 141), no warning turned error;
-- `.venv/bin/pytest tests/characterization/test_experiments_notebook.py -q` → 17 passed;
+- `.venv/bin/pytest -m "not slow" -q -p no:cacheprovider` (background, logged) → all passed,
+  no warning turned error;
+- `.venv/bin/pytest tests/characterization/test_experiments_notebook.py -q` → 12 passed;
 - `git status` shows only the deletions and the three edits; the notebook md5 unchanged.
+
+**Result (2026-10-29), committed `5c0908a`:** the grep empty; mypy 22 files; the non-slow suite
+1226 passed, 1 skipped, 1 xfailed, 19 deselected in 121 s; the notebook test 12 passed; md5
+unchanged. The handoff's expected 1225 and 17 were miscounts (see §1).
 
 **Commit message (the user commits):**
 ```
@@ -215,16 +234,20 @@ the tuning; the new guide comes with T5.
    `> **2026-10-29:** the `hyperparameter_tuning` package this document names was removed (NOTEBOOK_TUNING_PLAN.md D17, T4a); T4b rebuilds it from the notebook's section 5.`
 2. `docs/NOTEBOOK_TUNING_PLAN.md`: tick `### [x] T4a Delete the old package`; append to the
    status line (line 3): "T4a done 2026-10-29 (T4a.1 the code, T4a.2 the current guides, T4a.3
-   the finished plans; the non-slow suite 1225, mypy 22 files, the notebook unchanged, Check C
+   the finished plans; the non-slow suite 1226 passed, mypy 22 files, the notebook unchanged, Check C
    the 24 baselines). Next: T4b.1."
-3. `docs/EXPERIMENT_NOTEBOOK_HANDOFF.md` §2: the "**Uncommitted:** … **Next: T4a.**" sentence
-   becomes the commits of T4a.1–T4a.3 (hashes if the user has committed; otherwise "awaiting the
+3. `docs/EXPERIMENT_NOTEBOOK_HANDOFF.md` §2: the "… committed together as `15932d7` … **Next:
+   T4a.1**, planned with …" sentence becomes the commits of T4a.1–T4a.3 (T4a.1 `5c0908a`, on
+   `refactor/hyperparameter-tuning-package`, draft PR #17) (hashes if the user has committed; otherwise "awaiting the
    user's commit") and "**Next: T4b.1.**"; add the three rows to the commits table.
 4. `docs/NOTEBOOK_COMPONENT_REDESIGN_PLAN.md` status: "**Next: T4a**" → "**Next: T4b.1**".
+4a. The notebook test's count is 12, not 17 (miscounted at D25): correct "(17 tests)" in
+   `NOTEBOOK_TUNING_PLAN.md` D25.4 (line ~645) and its status line ("the notebook test 17/17"),
+   and "notebook test 17/17" in `EXPERIMENT_NOTEBOOK_HANDOFF.md` §2 (line ~133), each to 12.
 5. Run the notebook checks on the unchanged notebook (they prove nothing it imports left with
    the package):
    - **Check A:** `.venv/bin/pytest tests/characterization/test_experiments_notebook.py -q` →
-     17 passed; `.venv/bin/ruff check notebooks/02_experiments.py | tail -2` → 14 findings;
+     12 passed; `.venv/bin/ruff check notebooks/02_experiments.py | tail -2` → 14 findings;
      `.venv/bin/ruff format --diff notebooks/02_experiments.py | grep '^@@'` → the two hunks;
      `.venv/bin/marimo check notebooks/02_experiments.py` → the two known empty-cell issues.
    - **Check C** (background, logged): the recipe of §4 below, the 24 baselines of §5.
@@ -314,7 +337,7 @@ E12, D2/D3 and its status line; the dataclass-vs-TypedDict table into the handof
 
 **Check A**
 ```sh
-.venv/bin/pytest tests/characterization/test_experiments_notebook.py -q    # 17 passed
+.venv/bin/pytest tests/characterization/test_experiments_notebook.py -q    # 12 passed
 .venv/bin/ruff check notebooks/02_experiments.py | tail -2                   # 14 findings (re-count after T4b.3)
 .venv/bin/ruff format --diff notebooks/02_experiments.py | grep '^@@'        # -158 and -213 only
 .venv/bin/marimo check notebooks/02_experiments.py                           # the two known empty-cell issues
