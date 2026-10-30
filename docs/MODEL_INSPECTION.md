@@ -11,7 +11,7 @@
 > [bootstrap plan](MODEL_INSPECTION_PLAN.md) (I1–I2, I7, I12–I13) and the
 > [importance plan](FEATURE_IMPORTANCE_PLAN.md) (I3–I6, I8–I11).
 
-Every code block below was run as written on 2026-10-13 (shap 0.53.0,
+Every code block below was run as written on 2026-10-30 (shap 0.53.0,
 scikit-learn 1.9.0, LightGBM 4.7.0); the numbers are its output. The blocks
 build on each other in order.
 
@@ -57,14 +57,14 @@ from age_group_prediction.modeling import (
     CohortProbabilityModel, CountModel, IndependentCohortModels, TotalTimesProbabilityModel,
 )
 from age_group_prediction.preprocessing import ExposureTransformer, ShareTransformer
-from age_group_prediction.scoring import Metric, cohort_log_loss, cohort_poisson_deviance
+from age_group_prediction.scoring import Metric, mean_poisson_deviance_loss, multinomial_log_loss
 from age_group_prediction.splitting import Splitter
 from age_group_prediction.utils import take_rows
 from student_simulator import StudentPopulationSimulator, load_simulation_config
 
 # The metrics, built here: the notebook does the same (the scoring module holds no constants).
-COHORT_POISSON_DEVIANCE = Metric("cohort_poisson_deviance", cohort_poisson_deviance)
-COHORT_LOG_LOSS = Metric("cohort_log_loss", cohort_log_loss)
+COHORT_POISSON_DEVIANCE = Metric("cohort_poisson_deviance", mean_poisson_deviance_loss)
+COHORT_LOG_LOSS = Metric("cohort_log_loss", multinomial_log_loss)
 POISSON_DEVIANCE = Metric("poisson_deviance", mean_poisson_deviance)
 
 base = load_simulation_config("configs/simulation.yml")
@@ -74,7 +74,7 @@ config = base.with_overrides({
 })
 table = ShareTransformer(
     ("3_rooms", "4_rooms", "5_rooms", "6_rooms"), reference_column="3_rooms"
-).fit_transform(StudentPopulationSimulator(config).run())
+).fit_transform(StudentPopulationSimulator.from_config(config).simulate().dataset)
 cohorts = ["n_kindergarten", "n_elementary", "n_highschool"]
 numeric = ("4_rooms_share", "5_rooms_share", "6_rooms_share", "ses",
            "avg_household_size", "median_age", "n_daycares_500m", "n_apartments")
@@ -456,10 +456,12 @@ print(sorted(path.name for path in out.iterdir()))
   whole background: subsample `X` (a few hundred rows) and `background` (a few
   dozen), count the raw columns before choosing the method, and use `n_jobs`
   only when a run is long.
-- **One column per metric.** scikit-learn's `mean_poisson_deviance`,
-  `root_mean_squared_error` and `mean_absolute_error` score one target column;
-  `cohort_log_loss` ignores the total; `cohort_poisson_deviance` scores the
-  whole count matrix.
+- **Which cells a metric scores.** scikit-learn's `mean_poisson_deviance`,
+  `root_mean_squared_error` and `mean_absolute_error` score one target column.
+  `scoring`'s count metrics (`mean_poisson_deviance_loss` and the others) pool
+  every cell of the count matrix, or score one cohort with `cohort=`, a column
+  name of `y_true`. `multinomial_log_loss` ignores the total; with `cohort=` it
+  scores that cohort against the rest of its sample.
 - **Correlated columns** split permutation importance between them and can
   hide a column the model needs; read permutation and mean |SHAP| together.
 

@@ -318,9 +318,11 @@ classes of the old stack.
 | `NegativeBinomialRegressor` | `dispersion=None` ($\alpha$ estimated, or fixed by a float), `alpha=0.0` (L1 on $\beta$, needs a fixed dispersion), `max_iter=500` | `X`, the counts `y`, `exposure=None` (raw) | `intercept_`, `coef_`, `dispersion_` ($\alpha$), `n_features_in_`, `feature_names_in_` | $E\cdot\exp(b + X\beta)$, or $\exp(b + X\beta)$ without an exposure |
 | `IndependentCohortModels` | `cohort_models` (a mapping cohort → `BaseAgeGroupModel`); nested: `cohort_models__<cohort>__<param>`, `cohort_models__<cohort>` | the raw table, a DataFrame of cohort counts, `exposure=` for every cohort | `cohort_models_` | a DataFrame, one column per cohort in `y`'s order, indexed like `X` |
 
-Every model has `evaluate(y_true, y_pred, metric)` with a `Metric` wrapping a
-scoring function (scikit-learn's `mean_poisson_deviance`, `root_mean_squared_error`,
-`mean_absolute_error`, or a custom one). Build LightGBM with `n_jobs=1`
+Every model has `evaluate(y_true, y_pred, metric, *, cohort=None)` with a `Metric`
+wrapping a scoring function: scikit-learn's `mean_poisson_deviance`,
+`root_mean_squared_error`, `mean_absolute_error`, one of `scoring`'s functions, which
+also score the cohort matrix or, with `cohort=` (a column name of `y_true`), one cohort of
+it, or a custom one. Build LightGBM with `n_jobs=1`
 while the old stack's tests still import torch: more OpenMP threads crash alongside it
 on macOS. LightGBM ignores `subsample` unless `subsample_freq >= 1` is set too.
 

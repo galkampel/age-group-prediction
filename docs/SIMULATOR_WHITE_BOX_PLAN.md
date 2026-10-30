@@ -348,6 +348,9 @@ overrides and the seed reach the simulator.
   example 44 s, the split block seconds) and confirm the printed numbers
   are unchanged; if any differ, stop and report (it means the draw order
   changed).
+  *Done for `docs/MODEL_INSPECTION.md` §2 in sub-task 1.2 of
+  [NOTEBOOK_METRICS_LOOP_EDA_PLAN.md](NOTEBOOK_METRICS_LOOP_EDA_PLAN.md)
+  (2026-10-30): every block reran with the same numbers.*
 - `MODULE_REFERENCE.md`: the `pipeline.py` row describes `SimulationResult`,
   `aggregate_to_buildings`, `from_config`, `simulate`.
 - A short section in whichever doc describes the simulator (check

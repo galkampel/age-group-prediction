@@ -10,7 +10,7 @@
 > [notebook tuning plan](NOTEBOOK_TUNING_PLAN.md), above all D21 (what lives in the package),
 > D25 (components read back from `best_params`) and D26 (the tuner).
 
-Every code block below was run as written on 2026-10-29 (optuna 4.9.0, joblib 1.5.3,
+Every code block below was run as written on 2026-10-30 (optuna 4.9.0, joblib 1.5.3,
 LightGBM 4.7.0, scikit-learn 1.9.0); the numbers are its output. The blocks build on each
 other in order.
 
@@ -58,7 +58,7 @@ from age_group_prediction.hyperparameter_tuning import (
     build_independent_cohorts_model, build_total_times_probability_model, fit_and_score,
 )
 from age_group_prediction.preprocessing import ExposureTransformer, ShareTransformer
-from age_group_prediction.scoring import Metric, cohort_poisson_deviance
+from age_group_prediction.scoring import Metric, mean_poisson_deviance_loss
 from age_group_prediction.splitting import Splitter
 from age_group_prediction.utils import AgeGroupDataset
 from student_simulator import (
@@ -148,7 +148,7 @@ glm_candidates = {
 
 # The study's design, shared by every run: the metric scores each fold and
 # gives the direction; 5 folds fitted in 5 processes.
-COHORT_POISSON_DEVIANCE = Metric("cohort_poisson_deviance", cohort_poisson_deviance)
+COHORT_POISSON_DEVIANCE = Metric("cohort_poisson_deviance", mean_poisson_deviance_loss)
 tuner = CrossValidationTuner(
     cv=splitter.cv(n_splits=5, random_state=42),
     metric=COHORT_POISSON_DEVIANCE,

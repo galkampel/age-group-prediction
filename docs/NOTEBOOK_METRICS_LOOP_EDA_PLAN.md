@@ -1,6 +1,6 @@
 # Plan: the metrics in `scoring`, the runs in a loop, the objective EDA
 
-**Status (2026-10-30):** PR 1 on `refactor/scoring-metrics`: 1.1 done, revised at the user's notes (`cohort=`, `y_proba=`, samples; then the notes on the helpers: `utils.check_paired_arrays` checks, `utils.column_position` finds a cohort's column, each metric selects it, no repeated-name guard; suite 1346 passed; Check C the 24 baselines), committed as `185285e`; next 1.2.
+**Status (2026-10-30):** PR 1 on `refactor/scoring-metrics`: 1.1 done, revised at the user's notes (`cohort=`, `y_proba=`, samples; then the notes on the helpers: `utils.check_paired_arrays` checks, `utils.column_position` finds a cohort's column, each metric selects it, no repeated-name guard; suite 1346 passed; Check C the 24 baselines), committed as `185285e`. 1.2 done (docs only; the three guides' blocks rerun as written with the same numbers; MODEL_INSPECTION.md's stale simulator line fixed with `from_config`, the user's choice); next 1.3.
 
 The user's notes of 2026-10-30 on the experiment notebook. They replace the order of
 [EXPERIMENT_NOTEBOOK_HANDOFF.md](EXPERIMENT_NOTEBOOK_HANDOFF.md) §6: MLflow and E11's final
@@ -177,7 +177,7 @@ to collect, and the notebook fails to import.
   their tests fail.
 - **Commit:** `refactor(scoring): every metric on the sample matrix or one cohort by name; MAE, RMSE, WMAPE and bias added`
 
-### [ ] 1.2 The docs of the renamed functions
+### [x] 1.2 The docs of the renamed functions
 
 - **Change:** the new names in MODEL_INSPECTION.md, HYPERPARAMETER_TUNING.md,
   TOTAL_TIMES_PROBABILITY_MODEL.md (code blocks and prose) and MODULE_REFERENCE.md's `scoring.py`
@@ -188,6 +188,25 @@ to collect, and the notebook fails to import.
   `Metric` labels; the rerun blocks print the numbers the docs show.
 - **Verify:** 1.1's Check C `intervals_df` is the reference for 1.3 (saved in the scratchpad).
 - **Commit:** `docs(scoring): the guides take multinomial_log_loss and mean_poisson_deviance_loss`
+- **Done 2026-10-30.** The user's choices at the plan: MODEL_INSPECTION.md's stale
+  `StudentPopulationSimulator(config).run()` (a `TypeError` today) becomes the simulator plan's
+  Stop 4 form, `StudentPopulationSimulator.from_config(config).simulate().dataset`, and Stop 4
+  notes it; `cohort=` is documented in prose and signatures, and the blocks keep scikit-learn's
+  per-column scoring (a `cohort=` example arrives with 2.4–2.5's `fit_and_score`).
+  - Changed: MODEL_INSPECTION.md (import, the two metrics, the simulator line, the run date,
+    §6's hazard on which cells a metric scores), HYPERPARAMETER_TUNING.md (import, the metric,
+    the run date), TOTAL_TIMES_PROBABILITY_MODEL.md (prose ×4, the block, `evaluate`'s
+    signature, the rerun note), MODULE_REFERENCE.md (the `scoring.py`, `utils.py` and
+    `modeling/base.py` rows), INDEPENDENT_COHORT_MODELS.md §4 (`evaluate`'s signature and
+    `scoring`'s functions), SIMULATOR_WHITE_BOX_PLAN.md (Stop 4's note).
+  - Rerun as written under `-W error` and `PYTHONWARNINGS=error`: MODEL_INSPECTION.md 5/5
+    blocks and HYPERPARAMETER_TUNING.md 8/8 print the docs' output; TOTAL_TIMES's §6 block
+    (with a prelude: the seed-0 population by `from_config(...).simulate(rng=default_rng(0))`,
+    FEATURE_TRANSFORMATIONS §8.0–8.3's transformers) gives 196 / 49 buildings, 1.855 / 1.958 /
+    2.250, total 3.587, composition 1.084, α 0.0876. Mutation: a copy with one old name
+    restored fails with `ImportError`.
+  - The old names remain only in finished plans, the handoffs and as `Metric` labels
+    (`"cohort_log_loss"`, `"cohort_poisson_deviance"`, MODEL_INSPECTION's column label).
 
 ### [ ] 1.3 The notebook's metrics from `scoring`
 
