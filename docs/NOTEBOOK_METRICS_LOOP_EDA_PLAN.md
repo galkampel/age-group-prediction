@@ -1,6 +1,6 @@
 # Plan: the metrics in `scoring`, the runs in a loop, the objective EDA
 
-**Status (2026-10-30):** PR 1 on `refactor/scoring-metrics`: 1.1 done, revised at the user's notes (`cohort=`, `y_proba=`, samples; then the notes on the helpers: `utils.check_paired_arrays` checks, `utils.column_position` finds a cohort's column, each metric selects it, no repeated-name guard; suite 1346 passed; Check C the 24 baselines), committed as `185285e`. 1.2 done (docs only; the three guides' blocks rerun as written with the same numbers; MODEL_INSPECTION.md's stale simulator line fixed with `from_config`, the user's choice); next 1.3.
+**Status (2026-10-30):** PR 1 on `refactor/scoring-metrics`: 1.1 done, revised at the user's notes (`cohort=`, `y_proba=`, samples; then the notes on the helpers: `utils.check_paired_arrays` checks, `utils.column_position` finds a cohort's column, each metric selects it, no repeated-name guard; suite 1346 passed; Check C the 24 baselines), committed as `185285e`. 1.2 done (docs only; the three guides' blocks rerun as written with the same numbers; MODEL_INSPECTION.md's stale simulator line fixed with `from_config`, the user's choice), committed as `96c950b`. 1.3 done (the notebook's six inspection metrics from `scoring`, D² dropped; Check C the 24 baselines and the intervals equal, WMAPE and bias but for their last bit); PR 1 complete after the review subagent; next PR 2 (2.1) after the user's merge.
 
 The user's notes of 2026-10-30 on the experiment notebook. They replace the order of
 [EXPERIMENT_NOTEBOOK_HANDOFF.md](EXPERIMENT_NOTEBOOK_HANDOFF.md) §6: MLflow and E11's final
@@ -56,7 +56,8 @@ The standing rules are those of [EXPERIMENT_NOTEBOOK_PLAN.md](EXPERIMENT_NOTEBOO
   - bias: `mean(ŷ − y)`, signed;
   - Poisson deviance: the mean over the cells.
 
-  Pooled is what the notebook's `on_cells` computes today, so the numbers do not change. Pooled
+  Pooled is what the notebook's `on_cells` computed, so the numbers do not change (WMAPE and
+  bias only in their last bit: they sum in memory order, `on_cells` in row order; 1.3). Pooled
   RMSE differs from the mean of the per-cohort RMSEs; MAE and the deviance are the same either way.
 - **M2. D² Poisson is dropped.** On one evaluation set it is `1 − D / D_null`, where `D_null`
   depends on `y` alone: a monotone transform of the deviance, so it ranks models the same way.
@@ -208,7 +209,7 @@ to collect, and the notebook fails to import.
   - The old names remain only in finished plans, the handoffs and as `Metric` labels
     (`"cohort_log_loss"`, `"cohort_poisson_deviance"`, MODEL_INSPECTION's column label).
 
-### [ ] 1.3 The notebook's metrics from `scoring`
+### [x] 1.3 The notebook's metrics from `scoring`
 
 - **Change:**
   - the import cell takes the new functions and drops `d2_tweedie_score`, `partial` and sklearn's
@@ -221,6 +222,25 @@ to collect, and the notebook fails to import.
   the same computation).
 - **Before the stop:** the PR's review subagent.
 - **Commit:** `refactor(notebook): the inspection metrics from scoring; D² Poisson dropped`
+- **Done 2026-10-30.**
+  - **A fact found at the plan:** WMAPE and bias cannot equal the reference exactly. On 3000
+    bootstrap resamples of DataFrames, MAE and RMSE were equal bit for bit, WMAPE differed in
+    1043 and bias in 2107, by at most 3.5e-16 relative / 1.1e-16 absolute. `np.asarray` of a
+    DataFrame is column-major; the old `on_cells` ravelled to row order before summing, while
+    `wmape_loss` and `mean_bias_error` sum the 2-D array in memory order. The user's choice:
+    compare at a tolerance (rtol = atol = 1e-12) and leave `scoring` as it is.
+  - **The user's choice on the texts:** section 5's markdown drops the D² clause and says six
+    metrics; the inspection button's text and the bootstrap cell's comment say six.
+  - **Changed:** the import cell (`partial`, `d2_tweedie_score`, `mean_absolute_error`,
+    `root_mean_squared_error` out; the four `scoring` functions in), the metrics cell
+    (`on_cells`, `wmape`, `bias` and D² out; `INSPECTION_METRICS` the six `scoring` metrics,
+    labels unchanged), the three texts.
+  - **Checks:** Check A: the notebook test 12 passed; ruff the 14; the format diff the two
+    hunks (`@@ -158`, `@@ -208`); `marimo check` the one empty cell. Check B: the six metrics,
+    each its `scoring` function; the dropped names gone. Check C (75 s): the 24 baselines;
+    `intervals_df` 24 rows; deviance, log loss, MAE and RMSE equal the reference exactly, WMAPE
+    and bias within 1e-12 (largest gap 1.1e-16). Mutation: `"wmape"` mapped to
+    `mean_absolute_error_loss` fails the comparison (gap 3.1).
 
 ## 4. PR 2: the runs in a loop, scored on every metric
 

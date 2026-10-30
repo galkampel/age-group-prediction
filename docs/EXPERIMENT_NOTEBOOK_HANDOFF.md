@@ -1,13 +1,14 @@
 # Handoff: the experiment notebook, after the tuning rebuild
 
 **For:** the session that continues [NOTEBOOK_METRICS_LOOP_EDA_PLAN.md](NOTEBOOK_METRICS_LOOP_EDA_PLAN.md)
-(three PRs: the metrics in `scoring`, the runs in a loop, the objective EDA). It starts with the
-sub-task 1.3; sub-task 1.1 is committed (`185285e`) and 1.2 is done (§2). MLflow and E11's final evaluation are
+(three PRs: the metrics in `scoring`, the runs in a loop, the objective EDA). PR 1 is complete
+(1.1 `185285e`, 1.2 `96c950b`, 1.3 done; §2); the next session starts PR 2 (2.1) after the user
+merges PR 1. MLflow and E11's final evaluation are
 deferred (§6).
 
 **Written:** 2026-10-29, after T5 of [NOTEBOOK_TUNING_PLAN.md](NOTEBOOK_TUNING_PLAN.md);
 **updated** 2026-10-30 after sub-task 1.1 of the metrics plan, after the user's notes on its
-helpers, and after sub-task 1.2 (§2, §5, §6). The detailed history of
+helpers, after sub-task 1.2, and after sub-task 1.3 (§1, §2, §5, §6). The detailed history of
 the tuning work is in that plan (§0 D1–D26, §2–§6 the sub-tasks), in
 [NOTEBOOK_T4_HANDOFF.md](NOTEBOOK_T4_HANDOFF.md) (T4–T5) and in git; the decisions of the current
 work are M1–M9 of the metrics plan. Re-verify every fact here against the code of the day.
@@ -38,7 +39,7 @@ and the design was reshaped at the user's reviews (D23–D25). The old package w
    (family → `{name: FeatureTransformer}`).
 5. **Tuning and inspection:**
    - the metrics cell (`COHORT_POISSON_DEVIANCE`, `POISSON_DEVIANCE`, `COHORT_LOG_LOSS`, the
-     seven `INSPECTION_METRICS`), `COHORTS`, `PREDICTION_FLOOR`;
+     six `INSPECTION_METRICS`, all `scoring` functions), `COHORTS`, `PREDICTION_FLOOR`;
    - the `tuner` cell: `CrossValidationTuner(cv=cv, metric=COHORT_POISSON_DEVIANCE,
      n_trials=n_trials, n_startup_trials=n_startup_trials, n_jobs=n_splits)`;
    - behind the "Tune …" buttons, 8 Model 1 run cells (`tuner.tune_independent_cohorts_model`)
@@ -47,7 +48,7 @@ and the design was reshaped at the user's reviews (D23–D25). The old package w
    - the tables: `MODEL1_RUNS` / `model1_df` / `model1_arms_df`, `MODEL2_RUNS` / `model2_df` /
      `model2_arms_df`, and `best_df` (each model's best run on validation);
    - behind "Inspect the best runs": each model's best run rebuilt from its `best_params`,
-     refit on training, the bootstrap of the seven metrics on training and validation
+     refit on training, the bootstrap of the six metrics on training and validation
      (`intervals_df`), the permutation importance and exact SHAP (`importance_df`).
 
 **A run record** (one dict per run cell; the input of the MLflow runs): the settings
@@ -70,13 +71,21 @@ used yet; the old `tracking/` package belongs to the old stack.
 - **Branches:** `feat/experiment-notebook` (from `main`, no PR into `main` yet; it holds T1–T5 and
   PR #17's squash `a748cd4`) and, from it, **`refactor/scoring-metrics`** (PR 1 of the metrics
   plan; the user opens it as a draft into `feat/experiment-notebook`). The user merges.
-- **HEAD of `refactor/scoring-metrics`:** `e481814` (this handoff after 1.1's commit), after
-  `185285e` (`refactor(scoring): every metric on the sample matrix or one cohort by name; MAE,
-  RMSE, WMAPE and bias added`, sub-task 1.1), `0b391f8`, `492f171` (the user's notebook cleanup)
-  and `ff6087c` (the metrics plan). The tree holds sub-task 1.2's docs (below), which the user
-  commits as `docs(scoring): the guides take multinomial_log_loss and
-  mean_poisson_deviance_loss`.
-- **Done: sub-task 1.2** (docs only; the metrics plan's 1.2 lists the files and the checks).
+- **HEAD of `refactor/scoring-metrics`:** `96c950b` (`docs(scoring): the guides take
+  multinomial_log_loss and mean_poisson_deviance_loss`, sub-task 1.2), after `e481814` (this
+  handoff after 1.1's commit), `185285e` (`refactor(scoring): every metric on the sample matrix
+  or one cohort by name; MAE, RMSE, WMAPE and bias added`, sub-task 1.1), `0b391f8`, `492f171`
+  (the user's notebook cleanup) and `ff6087c` (the metrics plan). The tree holds sub-task 1.3
+  (below), which the user commits as `refactor(notebook): the inspection metrics from scoring;
+  D² Poisson dropped`.
+- **Done: sub-task 1.3** (the notebook and these docs; the metrics plan's 1.3 lists the checks).
+  `INSPECTION_METRICS` holds the six `scoring` metrics, labels unchanged; `on_cells`, `wmape`,
+  `bias`, D² and their imports are gone; section 5's markdown, the inspection button's text and
+  a comment say six (the user's choice). Check C: the 24 baselines; the intervals equal 1.2's
+  reference, WMAPE and bias within 1e-12 (the user's choice: they sum a DataFrame's
+  column-major array in memory order, the old code in row order; the gap is at most 1.1e-16).
+- **Committed: sub-task 1.2** (`96c950b`; docs only; the metrics plan's 1.2 lists the files and
+  the checks).
   The guides take the new names; `cohort=` is in MODULE_REFERENCE.md's rows, MODEL_INSPECTION.md
   §6 and `evaluate`'s signature (TOTAL_TIMES, INDEPENDENT_COHORT_MODELS); MODEL_INSPECTION.md's
   stale `StudentPopulationSimulator(config).run()` became `from_config(config).simulate().dataset`
@@ -125,7 +134,8 @@ used yet; the old `tracking/` package belongs to the old stack.
   no child in `y_true` now scores; a zero probability for a cohort that has children is clipped to
   a large finite loss (36.04 in a probe) instead of `inf`; no child at all raises scikit-learn's
   `ValueError` instead of returning `nan`.
-- **Notebook md5:** `d3fe1197a66230e5aed51efd7caaf276` (as committed in `185285e`).
+- **Notebook md5:** `b3287cd0e24b9b489b1b9f63fc7cbac0` (1.3's tree; `d3fe1197a66230e5aed51efd7caaf276` as committed in
+  `185285e` and `96c950b`).
 - **Checks on 1.1's tree** (2026-10-30, before the commit):
   - the non-slow suite: 1346 passed, 1 skipped, 1 xfailed, 19 deselected (HEAD's baseline on a
     `git archive` copy: 1299 passed);
@@ -319,10 +329,8 @@ terms (`check_paired_arrays`, `column_position`).
 
 The order is [NOTEBOOK_METRICS_LOOP_EDA_PLAN.md](NOTEBOOK_METRICS_LOOP_EDA_PLAN.md)'s, one
 sub-task per approval:
-1. **PR 1:** 1.1 is committed (`185285e`); 1.2 is done (docs). Next, 1.3: the notebook's
-   metrics from `scoring`, D² out; the six intervals must equal the reference saved by 1.2's
-   Check C (§2). Section 5's markdown names D²: the user's text, show the diff and ask. Then the
-   PR's review subagent before 1.3's stop.
+1. **PR 1** (`refactor/scoring-metrics`): complete (1.1 `185285e`, 1.2 `96c950b`, 1.3). The
+   user commits 1.3, opens the draft PR into `feat/experiment-notebook` and merges it.
 2. **PR 2** (`refactor/notebook-run-loop`): the sharing-flags test, the runs in a loop, and
    `fit_and_score(model, train, val, *, metrics)` scoring every metric per cohort (`cohort=`) and
    for the composite.
@@ -340,15 +348,14 @@ validates one at a time.
 
 ```text
 Read docs/EXPERIMENT_NOTEBOOK_HANDOFF.md in full, then docs/NOTEBOOK_METRICS_LOOP_EDA_PLAN.md in
-full, src/age_group_prediction/scoring.py and the notebook's import and metrics cells. Verify the
-state of the handoff's §2 first: branch refactor/scoring-metrics, HEAD my commit of sub-task 1.2
-(docs(scoring): the guides take ...) after e481814, a clean tree, the notebook md5
-d3fe1197a66230e5aed51efd7caaf276. If anything differs, stop and show me the diff. Then plan
-sub-task 1.3 in plan mode: regenerate the intervals reference by Check C before the edit,
-re-verify the facts with read-only probes, show me the diff of section 5's markdown (my text),
-give a recommendation with evidence and the trade-off for any design question, write the steps
-and the commit message in the chat, and wait for my approval before editing. Then each later
-sub-task of the plan in order, one per approval; I commit myself (never commit, no
-Co-Authored-By line, no "Generated with Claude Code" in PR text, never git
-checkout/stash/reset/mv).
+full (§4, PR 2), src/age_group_prediction/hyperparameter_tuning/components.py and builders.py,
+and tests/unit/test_hyperparameter_tuning_builders.py. Verify the state first: PR 1
+(refactor/scoring-metrics, its last commit my commit of sub-task 1.3) merged into
+feat/experiment-notebook, my new branch refactor/notebook-run-loop from it, a clean tree, the
+notebook md5 b3287cd0e24b9b489b1b9f63fc7cbac0. If anything differs, stop and show me the diff. Then plan
+sub-task 2.1 in plan mode: re-verify the facts with read-only probes, give a recommendation with
+evidence and the trade-off for any design question, write the steps and the commit message in
+the chat, and wait for my approval before editing. Then each later sub-task of the plan in
+order, one per approval; I commit myself (never commit, no Co-Authored-By line, no "Generated
+with Claude Code" in PR text, never git checkout/stash/reset/mv).
 ```
