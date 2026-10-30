@@ -182,11 +182,6 @@ def _(ExposureTransformer, df):
 
 
 @app.cell
-def _():
-    return
-
-
-@app.cell
 def _(DATA_SETTINGS, X, config, df, groups, hashlib, json, mo, pd):
     def flatten(mapping: dict, prefix: str = "") -> dict:
         """``{"a": {"b": 1}}`` to ``{"a.b": 1}``: MLflow parameters are flat."""
@@ -765,7 +760,6 @@ def _():
         mean_absolute_error,
         mean_poisson_deviance,
         np,
-        optuna,
         partial,
         root_mean_squared_error,
     )
