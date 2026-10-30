@@ -1,14 +1,14 @@
 # Handoff: the experiment notebook, after the tuning rebuild
 
 **For:** the session that continues [NOTEBOOK_METRICS_LOOP_EDA_PLAN.md](NOTEBOOK_METRICS_LOOP_EDA_PLAN.md)
-(three PRs: the metrics in `scoring`, the runs in a loop, the objective EDA). PR 1 is complete
-(1.1 `185285e`, 1.2 `96c950b`, 1.3 `0e9d0a1`, 1.4 done; §2); the next session starts PR 2 (2.1)
-after the user merges PR 1. MLflow and E11's final evaluation are
-deferred (§6).
+(three PRs: the metrics in `scoring`, the runs in a loop, the objective EDA). PR 1 is merged
+(#18), and the experiment-notebook line is merged into `main` (#19, §2). The next session starts
+PR 2 at sub-task 2.1, on `refactor/notebook-run-loop` from `main`. MLflow and E11's final
+evaluation are deferred (§6).
 
 **Written:** 2026-10-29, after T5 of [NOTEBOOK_TUNING_PLAN.md](NOTEBOOK_TUNING_PLAN.md);
 **updated** 2026-10-30 after sub-task 1.1 of the metrics plan, after the user's notes on its
-helpers, and after sub-tasks 1.2, 1.3 and 1.4 (§1, §2, §5, §6). The detailed history of
+helpers, after sub-tasks 1.2, 1.3 and 1.4, and after the merges of #18 and #19 (§2, §6). The detailed history of
 the tuning work is in that plan (§0 D1–D26, §2–§6 the sub-tasks), in
 [NOTEBOOK_T4_HANDOFF.md](NOTEBOOK_T4_HANDOFF.md) (T4–T5) and in git; the decisions of the current
 work are M1–M9 of the metrics plan. Re-verify every fact here against the code of the day.
@@ -66,107 +66,59 @@ tuner, `fit_and_score`, aggregation), [`inspection`](MODEL_INSPECTION.md) (`Boot
 `feature_engineering` ([FEATURE_TRANSFORMATIONS.md](FEATURE_TRANSFORMATIONS.md)). MLflow is not
 used yet; the old `tracking/` package belongs to the old stack.
 
-## 2. State (2026-10-30)
+## 2. State (2026-10-30, end of day)
 
-- **Branches:** `feat/experiment-notebook` (from `main`, no PR into `main` yet; it holds T1–T5 and
-  PR #17's squash `a748cd4`) and, from it, **`refactor/scoring-metrics`** (PR 1 of the metrics
-  plan; the user opens it as a draft into `feat/experiment-notebook`). The user merges.
-- **HEAD of `refactor/scoring-metrics`:** `0e9d0a1` (`refactor(notebook): the inspection
-  metrics from scoring; D² Poisson dropped`, sub-task 1.3), after `96c950b` (`docs(scoring): the
-  guides take multinomial_log_loss and mean_poisson_deviance_loss`, sub-task 1.2), `e481814`
-  (this handoff after 1.1's commit), `185285e` (`refactor(scoring): every metric on the sample
-  matrix or one cohort by name; MAE, RMSE, WMAPE and bias added`, sub-task 1.1), `0b391f8`,
-  `492f171` (the user's notebook cleanup) and `ff6087c` (the metrics plan). The tree holds
-  sub-task 1.4 (below), which the user commits as `fix(scoring): every metric rejects
-  non-finite values, the log loss a lone cohort also with cohort=; two docstrings corrected`.
-- **Done: sub-task 1.4** (`src`, tests, docs; the metrics plan's 1.4 lists the findings and the
-  checks). PR 1's review subagent found no bug; the user had its three nits fixed: every metric
-  rejects a NaN or an infinity (`utils.check_paired_arrays`), the log loss rejects a single
-  cohort also with `cohort=`, two docstrings corrected. Suite 1373 passed (1346 + 27); mypy
-  clean; three mutations caught. The user also amended 2.4: one `POISSON_DEVIANCE` on
-  `mean_poisson_deviance_loss`, `LOG_LOSS`, no `COHORT_` prefixes.
-- **Committed: sub-task 1.3** (`0e9d0a1`; the notebook and docs; the metrics plan's 1.3 lists
-  the checks).
-  `INSPECTION_METRICS` holds the six `scoring` metrics, labels unchanged; `on_cells`, `wmape`,
-  `bias`, D² and their imports are gone; section 5's markdown, the inspection button's text and
-  a comment say six (the user's choice). Check C: the 24 baselines; the intervals equal 1.2's
-  reference, WMAPE and bias within 1e-12 (the user's choice: they sum a DataFrame's
-  column-major array in memory order, the old code in row order; the gap is at most 1.1e-16).
-- **Committed: sub-task 1.2** (`96c950b`; docs only; the metrics plan's 1.2 lists the files and
-  the checks).
-  The guides take the new names; `cohort=` is in MODULE_REFERENCE.md's rows, MODEL_INSPECTION.md
-  §6 and `evaluate`'s signature (TOTAL_TIMES, INDEPENDENT_COHORT_MODELS); MODEL_INSPECTION.md's
-  stale `StudentPopulationSimulator(config).run()` became `from_config(config).simulate().dataset`
-  (the user's choice; the simulator plan's Stop 4 notes it). The three guides' blocks rerun as
-  written with the same numbers. Check C on 1.2's tree: the 24 baselines (74 s); its
-  `intervals_df` (pickled in that session's scratchpad as `intervals_ref_1_2.pkl`) is 1.3's
-  reference; a new session regenerates it by Check C before 1.3's edit.
-- **Committed: sub-task 1.1 of the metrics plan** (`185285e`, 14 files), validated by the user
-  and revised at their notes:
-  - `src/age_group_prediction/scoring.py`:
-    - `multinomial_log_loss` (was `cohort_log_loss`; scikit-learn's `log_loss` called with
-      `y_true=`, `y_proba=`, `labels=range(n_cohorts)`) and `mean_poisson_deviance_loss` (was
-      `cohort_poisson_deviance`);
-    - new: `mean_absolute_error_loss`, `root_mean_squared_error_loss`, `wmape_loss`,
-      `mean_bias_error`;
-    - every function takes `(y_true, y_pred, *, cohort: str | None = None)`, with `cohort` a
-      column name of `y_true` (M9), and pools every cell;
-    - no helper of its own: each metric calls `check_paired_arrays(y_true, y_pred)`, then with
-      `cohort` finds `position = column_position(y_true, cohort)` and selects it (a count metric
-      `counts[:, position]`, the log loss `np.column_stack([cohort, rest])`);
-    - `Metric.__call__(..., *, cohort=None)` passes the cohort on only when given; "samples", not
-      "buildings" (M1).
-  - `src/age_group_prediction/utils.py`: public `check_paired_arrays(y_true, y_pred)` (float
-    arrays of one shape, else `ValueError`) and `column_position(table, column)` (a DataFrame's
-    column position; an array raises `TypeError`, a missing name pandas' `KeyError`).
-  - `src/age_group_prediction/modeling/base.py`: `evaluate(..., *, cohort=None)`.
-  - `tests/unit/test_scoring.py` (rewritten), `tests/unit/test_modeling_base.py` (one test) and
-    `tests/unit/test_utils.py` (the two helpers).
-  - The code callers, function references only (the `Metric` labels `"cohort_log_loss"` and
-    `"cohort_poisson_deviance"` are unchanged): `test_hyperparameter_tuning_cross_validation.py`,
-    `test_hyperparameter_tuning_evaluation.py`, `test_inspection_bootstrap.py`,
-    `test_inspection_permutation.py`, `test_modeling_cohort_probability.py`, and the notebook's
-    import and metrics cells.
-  - `docs/NOTEBOOK_METRICS_LOOP_EDA_PLAN.md` (M1, M3, M4, M9, 1.1 ticked, 2.4 settled).
-- **The user's notes on 1.1's helpers (2026-10-30), settled:**
-  - `Metric.__call__` keeps its `cohort is None` branch: a two-argument function (sklearn's,
-    the tests' lambdas and recorders) raises `TypeError` on an always-passed `cohort=None`.
-  - The shape check is needed: after `ravel` a transposed prediction scores silently (MAE 1.44),
-    and the log loss silently scores a 4×3 prediction against 3×3 counts. It runs inside each
-    metric, as scikit-learn's metrics validate their own inputs.
-  - No repeated-name guard: the cohort names are unique by construction (`Y = df[targets]`).
-    `cohort` is a `str`, not a `Literal`: the names are data (`COHORTS = list(Y.columns)`).
-  - `_cohort_cells` removed; the helpers public in `utils.py` (the user prefers no private
-    helpers), named after scikit-learn's `check_*` validators and generic column lookup.
-- **Behaviour changes in 1.1** (from the user's switch to scikit-learn's `log_loss`): a cohort with
-  no child in `y_true` now scores; a zero probability for a cohort that has children is clipped to
-  a large finite loss (36.04 in a probe) instead of `inf`; no child at all raises scikit-learn's
-  `ValueError` instead of returning `nan`.
-- **Notebook md5:** `b3287cd0e24b9b489b1b9f63fc7cbac0` (1.3's tree; `d3fe1197a66230e5aed51efd7caaf276` as committed in
-  `185285e` and `96c950b`).
-- **Checks on 1.1's tree** (2026-10-30, before the commit):
-  - the non-slow suite: 1346 passed, 1 skipped, 1 xfailed, 19 deselected (HEAD's baseline on a
-    `git archive` copy: 1299 passed);
-  - mypy (`.venv/bin/mypy` with no arguments: `pyproject.toml`'s 29 files): no issues;
-  - `ruff check notebooks/02_experiments.py`: 14 findings, all pre-existing (12 marimo `return`s
-    PLR1711, B018 at 129, RUF059 `test_age_group` at 347; the lines shifted when the user removed
-    an empty cell);
-  - `ruff format --diff`: only the user's two hunks, now `@@ -158` and `@@ -208`;
-  - `marimo check`: 1 issue (the remaining empty cell, line 635);
-  - the notebook checks (ruff, format, `marimo check`) were last run before the helper notes;
-    the notebook has not changed since (same md5);
-  - mutations, each caught: dropping `labels=`; RMSE without `ravel`; dropping the 2-D check;
-    the count metrics ignoring `cohort`; the pair built from another column; `Metric` dropping
-    `cohort`; after the notes, on a copy (§4's trap): `column_position` returning 0, the shape
-    check or the `isinstance` check dropped, MAE skipping its slice, the log loss's pair from
-    column 0;
-  - Check C (below): the 24 baselines, 117 s, under `PYTHONWARNINGS=error`. `intervals_df`'s six
-    metrics other than D² are the reference for sub-task 1.3; they were identical in the
-    session's three runs (its scratchpad's `check_c3.log`): regenerate them by Check C on
-    `185285e` (or 1.2's tree: 1.2 changes only docs) before 1.3's edit.
+- **Branches:** `main` at `3db1aa8` (`Merge pull request #19 from galkampel/feat/experiment-notebook`,
+  a merge commit, so every commit the docs cite by hash is on `main`) and, from it,
+  **`refactor/notebook-run-loop`** (PR 2 of the metrics plan; the user opens it as a draft into
+  `main`). `feat/experiment-notebook` and `refactor/scoring-metrics` are deleted, locally and on
+  GitHub. The user commits, pushes and merges.
+- **The merges:** #17 (the tuning package rebuilt) squashed as `a748cd4` and #18 (PR 1 of the
+  metrics plan) squashed as `b1d8dbd`, both into `feat/experiment-notebook`; #19 merged it into
+  `main` as `3db1aa8`. PR 1's sub-task commits (`185285e` 1.1, `96c950b` 1.2, `0e9d0a1` 1.3,
+  `13a9681` 1.4) live inside `b1d8dbd`; GitHub keeps them under #18.
+- **What PR 1 left in place** (the metrics plan's 1.1–1.4 hold the details and the checks):
+  - `scoring`: `multinomial_log_loss`, `mean_poisson_deviance_loss`, `mean_absolute_error_loss`,
+    `root_mean_squared_error_loss`, `wmape_loss`, `mean_bias_error`, each `(y_true, y_pred, *,
+    cohort: str | None = None)`; finite inputs of one shape, paired by position; the count
+    metrics pool every cell; `cohort=`, a column name of `y_true`, scores one cohort (the log
+    loss one-vs-rest, M3; it needs at least two cohorts). `Metric.__call__` and
+    `BaseAgeGroupModel.evaluate` pass `cohort` on only when given.
+  - `utils`: public `check_paired_arrays` (finite float arrays of one shape) and
+    `column_position` (a DataFrame column's position by name).
+  - The notebook: `INSPECTION_METRICS` is the six `scoring` metrics, labels unchanged
+    (`cohort_poisson_deviance`, `cohort_log_loss`, `mae`, `rmse`, `wmape`, `bias`); D² is gone.
+    The metrics cell still defines `COHORT_POISSON_DEVIANCE`, `POISSON_DEVIANCE` (scikit-learn's
+    `mean_poisson_deviance`, `fit_and_score`'s `cohort_metric=`) and `COHORT_LOG_LOSS`.
+  - WMAPE and bias differ from the old notebook code in their last bit (≤ 1.1e-16): they sum a
+    DataFrame's column-major array in memory order, the old `on_cells` in row order. The user
+    chose a tolerance over changing `scoring`.
+  - The guides take the new names and run as written; MODEL_INSPECTION.md's simulator line uses
+    `from_config(...).simulate().dataset` (the simulator plan's Stop 4 notes it).
+  - **2.4 amended by the user:** one `POISSON_DEVIANCE = Metric("poisson_deviance",
+    mean_poisson_deviance_loss)` serves the tuner, the cohort rows and the composite;
+    `COHORT_LOG_LOSS` becomes `LOG_LOSS`; no `COHORT_` prefixes; the labels change, the numbers
+    do not.
+- **Settled at PR 1 (do not re-ask):** `Metric.__call__` keeps its `cohort is None` branch (a
+  two-argument function would raise on an always-passed `cohort=None`); the shape check runs
+  inside each metric; no repeated-name guard (the cohort names are unique by construction);
+  `cohort` is a `str`, not a `Literal`; no private helpers, shared ones public in `utils.py`.
+- **Behaviour changes of PR 1** (scikit-learn's `log_loss`): a cohort with no child in `y_true`
+  scores; a zero probability for a cohort that has children gives a large finite loss (36.04 in
+  a probe), not `inf`; no child at all raises; a NaN or an infinity raises in every metric.
+- **Notebook md5:** `b3287cd0e24b9b489b1b9f63fc7cbac0` (`main`).
+- **Checks on `main`'s tree** (identical to PR 1's last tested tree):
+  - the non-slow suite: 1373 passed, 1 skipped, 1 xfailed, 19 deselected (6 warnings: MLflow's
+    integer-schema hint in the old stack's `test_gate8_tracking.py`);
+  - mypy (`.venv/bin/mypy` with no arguments: 29 files): no issues;
+  - Check A: the notebook test 12 passed; `ruff check notebooks/02_experiments.py` 14 findings,
+    all pre-existing (12 marimo `return`s PLR1711, B018 at 129, RUF059 `test_age_group` at 347);
+    `ruff format --diff` only the user's two hunks, `@@ -158` and `@@ -208`; `marimo check` 1
+    issue (the remaining empty cell, line 637);
+  - Check C: the 24 baselines below (75–80 s).
 - **Check C baselines** (the regression check: the clicked run on a copy with `n_trials = 3` and
   `share_hyperparams = False`, both flags off, under `PYTHONWARNINGS=error`; `cv_best`). Every
-  change since T1.6 has reproduced them to the fourth decimal, 1.1 included.
+  change since T1.6 has reproduced them to the fourth decimal, PR 1 included.
 
   | Model 1 | exposure on | exposure off |
   |---|---|---|
@@ -337,14 +289,14 @@ terms (`check_paired_arrays`, `column_position`).
 
 The order is [NOTEBOOK_METRICS_LOOP_EDA_PLAN.md](NOTEBOOK_METRICS_LOOP_EDA_PLAN.md)'s, one
 sub-task per approval:
-1. **PR 1** (`refactor/scoring-metrics`): complete (1.1 `185285e`, 1.2 `96c950b`, 1.3
-   `0e9d0a1`, 1.4). The user commits 1.4, opens the draft PR into `feat/experiment-notebook` and
-   merges it.
-2. **PR 2** (`refactor/notebook-run-loop`): the sharing-flags test, the runs in a loop, and
-   `fit_and_score(model, train, val, *, metrics)` scoring every metric per cohort (`cohort=`) and
-   for the composite.
-3. **PR 3** (`feat/objective-eda`): the objective EDA (cross-entropy, Poisson deviance, RMSE on
-   one run per model).
+1. **PR 1** (`refactor/scoring-metrics`): merged as #18 (`b1d8dbd`), and with the
+   experiment-notebook line into `main` as #19 (`3db1aa8`).
+2. **PR 2** (`refactor/notebook-run-loop`, from `main`, a draft into `main`): the sharing-flags
+   test (2.1), the runs in a loop (2.2–2.3), and `fit_and_score(model, train, val, *, metrics)`
+   scoring every metric per cohort (`cohort=`) and for the composite, with the user's 2.4
+   amendment (one `POISSON_DEVIANCE`, `LOG_LOSS`, no `COHORT_` prefixes; §2).
+3. **PR 3** (`feat/objective-eda`, from `main` after PR 2 is merged): the objective EDA
+   (cross-entropy, Poisson deviance, RMSE on one run per model).
 4. **Deferred:** the MLflow runs (the D1e guard first: with `MLFLOW_TRACKING_URI` unset, MLflow 3.16
    writes to the repo's canonical `mlflow.db` and its artifacts to `./mlruns`), D4's comparison
    table, and E11's final evaluation.
@@ -358,13 +310,13 @@ validates one at a time.
 ```text
 Read docs/EXPERIMENT_NOTEBOOK_HANDOFF.md in full, then docs/NOTEBOOK_METRICS_LOOP_EDA_PLAN.md in
 full (§4, PR 2), src/age_group_prediction/hyperparameter_tuning/components.py and builders.py,
-and tests/unit/test_hyperparameter_tuning_builders.py. Verify the state first: PR 1
-(refactor/scoring-metrics, its last commit my commit of sub-task 1.4) merged into
-feat/experiment-notebook, my new branch refactor/notebook-run-loop from it, a clean tree, the
-notebook md5 b3287cd0e24b9b489b1b9f63fc7cbac0. If anything differs, stop and show me the diff. Then plan
-sub-task 2.1 in plan mode: re-verify the facts with read-only probes, give a recommendation with
-evidence and the trade-off for any design question, write the steps and the commit message in
-the chat, and wait for my approval before editing. Then each later sub-task of the plan in
-order, one per approval; I commit myself (never commit, no Co-Authored-By line, no "Generated
-with Claude Code" in PR text, never git checkout/stash/reset/mv).
+and tests/unit/test_hyperparameter_tuning_builders.py. Verify the state of the handoff's §2
+first: branch refactor/notebook-run-loop from main (3db1aa8, the merge of #19), HEAD my commit
+of this handoff on top of it, a clean tree, the notebook md5 b3287cd0e24b9b489b1b9f63fc7cbac0.
+If anything differs, stop and show me the diff. Then plan sub-task 2.1 in plan mode: re-verify
+the facts with read-only probes, give a recommendation with evidence and the trade-off for any
+design question, write the steps and the commit message in the chat, and wait for my approval
+before editing. Then each later sub-task of the plan in order, one per approval; I commit
+myself (never commit, no Co-Authored-By line, no "Generated with Claude Code" in PR text,
+never git checkout/stash/reset/mv).
 ```

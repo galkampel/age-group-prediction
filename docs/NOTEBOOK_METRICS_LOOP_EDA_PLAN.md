@@ -1,6 +1,6 @@
 # Plan: the metrics in `scoring`, the runs in a loop, the objective EDA
 
-**Status (2026-10-30):** PR 1 on `refactor/scoring-metrics`: 1.1 done, revised at the user's notes (`cohort=`, `y_proba=`, samples; then the notes on the helpers: `utils.check_paired_arrays` checks, `utils.column_position` finds a cohort's column, each metric selects it, no repeated-name guard; suite 1346 passed; Check C the 24 baselines), committed as `185285e`. 1.2 done (docs only; the three guides' blocks rerun as written with the same numbers; MODEL_INSPECTION.md's stale simulator line fixed with `from_config`, the user's choice), committed as `96c950b`. 1.3 done (the notebook's six inspection metrics from `scoring`, D² dropped; Check C the 24 baselines and the intervals equal, WMAPE and bias but for their last bit); committed as `0e9d0a1`. 1.4 done (the review's fixes in `scoring`: non-finite values and a lone cohort rejected, two docstrings; suite 1373 passed); PR 1 complete; next PR 2 (2.1) after the user's merge.
+**Status (2026-10-30):** PR 1 on `refactor/scoring-metrics`: 1.1 done, revised at the user's notes (`cohort=`, `y_proba=`, samples; then the notes on the helpers: `utils.check_paired_arrays` checks, `utils.column_position` finds a cohort's column, each metric selects it, no repeated-name guard; suite 1346 passed; Check C the 24 baselines), committed as `185285e`. 1.2 done (docs only; the three guides' blocks rerun as written with the same numbers; MODEL_INSPECTION.md's stale simulator line fixed with `from_config`, the user's choice), committed as `96c950b`. 1.3 done (the notebook's six inspection metrics from `scoring`, D² dropped; Check C the 24 baselines and the intervals equal, WMAPE and bias but for their last bit); committed as `0e9d0a1`. 1.4 done (the review's fixes in `scoring`: non-finite values and a lone cohort rejected, two docstrings; suite 1373 passed); PR 1 merged as #18 (`b1d8dbd`) into `feat/experiment-notebook`, and that branch into `main` as #19 (`3db1aa8`). Next: PR 2 on `refactor/notebook-run-loop` from `main`, starting at 2.1.
 
 The user's notes of 2026-10-30 on the experiment notebook. They replace the order of
 [EXPERIMENT_NOTEBOOK_HANDOFF.md](EXPERIMENT_NOTEBOOK_HANDOFF.md) §6: MLflow and E11's final
@@ -29,8 +29,9 @@ evaluation wait for a later stage (§6 below).
 The standing rules are those of [EXPERIMENT_NOTEBOOK_PLAN.md](EXPERIMENT_NOTEBOOK_PLAN.md) §3 and
 [NOTEBOOK_TUNING_PLAN.md](NOTEBOOK_TUNING_PLAN.md) §1, with Checks A–C as the handoff §4 states them.
 
-- **PRs:** three, in order. Each branches from `feat/experiment-notebook` after the previous one
-  is merged into it, as PR #17 did. The user creates the branches, commits, pushes, opens the draft
+- **PRs:** three, in order. PR 1 branched from `feat/experiment-notebook` and was merged into it
+  (#18), and that branch into `main` (#19). PRs 2 and 3 each branch from `main` after the previous
+  one is merged into it. The user creates the branches, commits, pushes, opens the draft
   PRs and merges.
 - **Sub-tasks:** one per approval. Each starts in plan mode (re-verify the facts, a short summary
   in the chat, AskUserQuestion for a design question) and ends with:
@@ -277,7 +278,7 @@ Its findings, each reproduced:
 
 ## 4. PR 2: the runs in a loop, scored on every metric
 
-Branch `refactor/notebook-run-loop`, from `feat/experiment-notebook` after PR 1 is merged.
+Branch `refactor/notebook-run-loop`, from `main` after PR 1 (#18) and #19 are merged.
 
 ### [ ] 2.1 A test that a shared choice reaches every fitted cohort model
 
@@ -355,7 +356,7 @@ Branch `refactor/notebook-run-loop`, from `feat/experiment-notebook` after PR 1 
 
 ## 5. PR 3: the objective EDA
 
-Branch `feat/objective-eda`, from `feat/experiment-notebook` after PR 2 is merged.
+Branch `feat/objective-eda`, from `main` after PR 2 is merged.
 
 ### [ ] 3.1 The EDA cells
 
