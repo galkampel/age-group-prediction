@@ -31,7 +31,7 @@ def _(mo):
 
     The accepted findings from this notebook feed the modeling, selection,
     guarded held-out evaluation, and MLflow workflow in
-    `notebooks/02_model_fitting.py`.
+    `notebooks/02_experiments.py`.
     """)
     return
 
@@ -86,7 +86,7 @@ def _(mo):
 @app.cell
 def _(load_simulation_config, mo):
     project_root = mo.notebook_dir().parent
-    config_path = project_root / "configs" / "simulation.toml"
+    config_path = project_root / "configs" / "simulation.yml"
     base_eda_config = load_simulation_config(config_path)
     # Override the number of neighborhoods and buildings per neighborhood for EDA purposes
     eda_config = base_eda_config.model_copy(
@@ -128,10 +128,11 @@ def _(mo):
 
 @app.cell
 def _(StudentPopulationSimulator, config_path, eda_config, mo):
-    eda_simulator = StudentPopulationSimulator(eda_config)
-    eda_final_df = eda_simulator.run()
-    eda_result = eda_simulator.last_result
-    assert eda_result is not None
+    eda_final_df = StudentPopulationSimulator.from_config(eda_config).simulate().dataset
+    # The dataset leaves out the total; the EDA reports it as the cohorts' sum.
+    eda_final_df["n_children_total"] = eda_final_df[
+        ["n_kindergarten", "n_elementary", "n_highschool"]
+    ].sum(axis=1)
     buildings_per_neighborhood = (
         eda_final_df["neighborhood_id"]
         .value_counts()

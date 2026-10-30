@@ -12,7 +12,7 @@ from tests.unit.helpers import make_neighborhood_simulator, with_overrides
 
 
 def _config_path() -> Path:
-    return Path(__file__).resolve().parents[2] / "configs" / "simulation.toml"
+    return Path(__file__).resolve().parents[2] / "configs" / "simulation.yml"
 
 
 def _config(seed: int = 42, n_neighborhoods: int = 7):
@@ -22,10 +22,10 @@ def _config(seed: int = 42, n_neighborhoods: int = 7):
     )
 
 
-def test_neighborhood_generate_contract_and_bounds() -> None:
+def test_sample_neighborhoods_contract_and_bounds() -> None:
     cfg = _config(seed=42, n_neighborhoods=9)
     simulator = make_neighborhood_simulator(cfg)
-    neighborhoods = simulator.generate(
+    neighborhoods = simulator.sample_neighborhoods(
         cfg.simulation.n_neighborhoods,
         rng=np.random.default_rng(42),
     )
@@ -65,23 +65,23 @@ def test_neighborhood_rng_convention_for_component_calls() -> None:
     cfg = _config(seed=999, n_neighborhoods=6)
 
     simulator = make_neighborhood_simulator(cfg)
-    none_a = simulator.generate(
+    none_a = simulator.sample_neighborhoods(
         cfg.simulation.n_neighborhoods
     )
-    none_b = simulator.generate(
+    none_b = simulator.sample_neighborhoods(
         cfg.simulation.n_neighborhoods
     )
     pd.testing.assert_frame_equal(none_a, none_b)
 
-    seed_a = simulator.generate(
+    seed_a = simulator.sample_neighborhoods(
         cfg.simulation.n_neighborhoods,
         rng=np.random.default_rng(123),
     )
-    seed_b = simulator.generate(
+    seed_b = simulator.sample_neighborhoods(
         cfg.simulation.n_neighborhoods,
         rng=np.random.default_rng(123),
     )
-    seed_c = simulator.generate(
+    seed_c = simulator.sample_neighborhoods(
         cfg.simulation.n_neighborhoods,
         rng=np.random.default_rng(124),
     )
@@ -90,10 +90,10 @@ def test_neighborhood_rng_convention_for_component_calls() -> None:
     assert not seed_a.equals(seed_c)
 
 
-def test_neighborhood_generation_has_no_latent_effect_columns() -> None:
+def test_sample_neighborhoods_has_no_latent_effect_columns() -> None:
     cfg = _config(seed=42, n_neighborhoods=4)
     simulator = make_neighborhood_simulator(cfg)
-    neighborhoods = simulator.generate(
+    neighborhoods = simulator.sample_neighborhoods(
         cfg.simulation.n_neighborhoods,
         rng=np.random.default_rng(42),
     )
@@ -106,8 +106,8 @@ def test_neighborhood_generation_has_no_latent_effect_columns() -> None:
     assert forbidden.isdisjoint(set(neighborhoods.columns))
 
 
-def test_neighborhood_generate_rejects_non_positive_count() -> None:
+def test_sample_neighborhoods_rejects_non_positive_count() -> None:
     cfg = _config()
 
     with pytest.raises(ValueError, match="greater than zero"):
-        make_neighborhood_simulator(cfg).generate(0)
+        make_neighborhood_simulator(cfg).sample_neighborhoods(0)

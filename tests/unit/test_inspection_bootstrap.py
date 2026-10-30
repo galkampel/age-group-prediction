@@ -12,9 +12,11 @@ from numpy.typing import ArrayLike
 from pydantic import ValidationError
 from sklearn.linear_model import LogisticRegression
 
-from age_group_prediction.inspection import BootstrapEvaluator, BootstrapResult
+from age_group_prediction.inspection import BootstrapEvaluator
 from age_group_prediction.modeling import BaseAgeGroupModel, CohortProbabilityModel
-from age_group_prediction.scoring import COHORT_LOG_LOSS, Metric
+from age_group_prediction.scoring import Direction, Metric, multinomial_log_loss
+
+COHORT_LOG_LOSS = Metric("cohort_log_loss", multinomial_log_loss)
 
 # y is the row id, and the spy model predicts it too, so a metric can tell
 # which rows a replicate drew and whether y and the predictions stay paired.
@@ -60,13 +62,70 @@ def _evaluate(
     recorder: _RecordingMetric,
     groups: np.ndarray | None = None,
     *,
-    greater_is_better: bool = False,
+    direction: Direction = "minimize",
     **settings: Any,
-) -> BootstrapResult:
-    metric = Metric("mean_id", recorder, greater_is_better=greater_is_better)
-    kwargs: dict[str, Any] = {"metric": metric, "n_resamples": 50, "random_state": 0}
+) -> pd.Series:
+    """The one-metric row of the recorder's bootstrap: ``score``, ``mean``, ``lower``, ``upper``."""
+    metric = Metric("mean_id", recorder, direction=direction)
+    kwargs: dict[str, Any] = {"n_resamples": 50, "random_state": 0}
     evaluator = BootstrapEvaluator(**(kwargs | settings))
-    return evaluator.evaluate(_SpyModel(), X, Y, groups)
+    return evaluator.evaluate(_SpyModel(), X, Y, groups, metrics=[metric]).loc[
+        "mean_id"
+    ]
+
+
+def _two_metrics() -> list[Metric]:
+    return [Metric("mean_id", _RecordingMetric()), Metric("twice", _RecordingMetric())]
+
+
+def test_every_metric_scores_the_same_replicates() -> None:
+    # Catches the replicates being drawn per metric: the intervals of one call
+    # must be paired, so both recorders see the same rows in the same order.
+    first, second = _RecordingMetric(), _RecordingMetric()
+    evaluator = BootstrapEvaluator(20, random_state=0)
+    result = evaluator.evaluate(
+        _SpyModel(), X, Y, GROUPS, metrics=[Metric("a", first), Metric("b", second)]
+    )
+    # The last call of each recorder scores the unresampled rows.
+    assert len(first.replicates) == len(second.replicates) == 21
+    assert all(
+        np.array_equal(ids_a, ids_b)
+        for ids_a, ids_b in zip(first.replicates[:-1], second.replicates[:-1])
+    )
+    assert list(result.index) == ["a", "b"]
+    assert result.index.name == "metric"
+
+
+def test_score_is_the_metric_on_the_unresampled_rows() -> None:
+    # Catches the score column holding a replicate's value, or the metrics'
+    # rows in another order than given.
+    result = BootstrapEvaluator(10).evaluate(
+        _SpyModel(),
+        X,
+        Y,
+        metrics=[
+            Metric("mean_id", lambda y_true, y_pred: float(np.mean(y_true))),
+            Metric("max_id", lambda y_true, y_pred: float(np.max(y_true))),
+        ],
+    )
+    assert list(result.columns) == ["score", "mean", "lower", "upper"]
+    assert result.loc["mean_id", "score"] == pytest.approx(Y.mean())
+    assert result.loc["max_id", "score"] == pytest.approx(Y.max())
+    assert list(result.index) == ["mean_id", "max_id"]
+
+
+@pytest.mark.parametrize(
+    ("metrics", "match"),
+    [
+        ([], "at least one Metric"),
+        ([Metric("m", len), Metric("m", len)], "must be distinct"),
+    ],
+    ids=["empty", "duplicate-names"],
+)
+def test_empty_or_duplicate_metrics_raise(metrics: list[Metric], match: str) -> None:
+    # Catches an empty frame, or two rows under one label, returned silently.
+    with pytest.raises(ValueError, match=match):
+        BootstrapEvaluator(10).evaluate(_SpyModel(), X, Y, metrics=metrics)
 
 
 def test_groups_are_drawn_whole() -> None:
@@ -93,7 +152,7 @@ def test_rows_are_drawn_with_replacement() -> None:
     result = _evaluate(recorder)
     assert all(len(ids) == len(X) for ids in recorder.replicates)
     assert any(len(set(ids.tolist())) < len(X) for ids in recorder.replicates)
-    assert result.lower < result.upper
+    assert result["lower"] < result["upper"]
 
 
 def test_predictions_stay_paired_with_targets() -> None:
@@ -107,8 +166,8 @@ def test_predictions_stay_paired_with_targets() -> None:
 def test_same_seed_gives_identical_results() -> None:
     # Catches an unseeded generator, or a seed that is ignored.
     first, second, other = _RecordingMetric(), _RecordingMetric(), _RecordingMetric()
-    assert _evaluate(first, GROUPS) == _evaluate(second, GROUPS)
-    assert _evaluate(other, GROUPS, random_state=1) != _evaluate(first, GROUPS)
+    assert _evaluate(first, GROUPS).equals(_evaluate(second, GROUPS))
+    assert not _evaluate(other, GROUPS, random_state=1).equals(_evaluate(first, GROUPS))
 
 
 def test_bounds_are_the_percentiles_of_the_replicates() -> None:
@@ -116,31 +175,32 @@ def test_bounds_are_the_percentiles_of_the_replicates() -> None:
     # something other than the replicate scores.
     recorder = _RecordingMetric()
     result = _evaluate(recorder, alpha=0.2, n_resamples=200)
-    scores = np.array(recorder.scores)
+    # The last call scores the unresampled rows, not a replicate.
+    scores = np.array(recorder.scores[:-1])
     assert len(scores) == 200
-    assert result.mean == pytest.approx(scores.mean())
-    assert result.lower == pytest.approx(np.quantile(scores, 0.1))
-    assert result.upper == pytest.approx(np.quantile(scores, 0.9))
-    assert result.lower <= result.mean <= result.upper
+    assert result["mean"] == pytest.approx(scores.mean())
+    assert result["lower"] == pytest.approx(np.quantile(scores, 0.1))
+    assert result["upper"] == pytest.approx(np.quantile(scores, 0.9))
+    assert result["lower"] <= result["mean"] <= result["upper"]
 
 
 def test_predict_is_called_once_with_the_exposure() -> None:
     # Catches predicting per replicate, which is costly and, for a model with
     # an exposure, needs the exposure resampled with the rows.
     model = _SpyModel()
-    evaluator = BootstrapEvaluator(Metric("mean_id", _RecordingMetric()), 20)
-    evaluator.evaluate(model, X, Y, GROUPS, exposure=EXPOSURE)
+    evaluator = BootstrapEvaluator(20)
+    evaluator.evaluate(model, X, Y, GROUPS, exposure=EXPOSURE, metrics=_two_metrics())
     assert len(model.predict_exposures) == 1
     assert model.predict_exposures[0] is EXPOSURE
 
 
-def test_greater_is_better_metric_is_reported_raw() -> None:
+def test_a_metric_to_maximize_is_reported_raw() -> None:
     # Catches the tuner's sign flip being applied here: the interval is in the
     # metric's own units.
     recorder = _RecordingMetric()
-    result = _evaluate(recorder, greater_is_better=True)
-    assert result.mean == pytest.approx(np.mean(recorder.scores))
-    assert result.mean > 0
+    result = _evaluate(recorder, direction="maximize")
+    assert result["mean"] == pytest.approx(np.mean(recorder.scores[:-1]))
+    assert result["mean"] > 0
 
 
 def test_non_finite_replicate_raises() -> None:
@@ -150,9 +210,11 @@ def test_non_finite_replicate_raises() -> None:
     metric = Metric(
         "one_nan", lambda y_true, y_pred: float("nan") if next(calls) == 3 else 1.0
     )
-    evaluator = BootstrapEvaluator(metric, 10)
-    with pytest.raises(ValueError, match="1 of 10 replicate scores are not finite"):
-        evaluator.evaluate(_SpyModel(), X, Y)
+    evaluator = BootstrapEvaluator(10)
+    with pytest.raises(ValueError, match=r"not finite \(one_nan: 1 of 10\)"):
+        evaluator.evaluate(
+            _SpyModel(), X, Y, metrics=[Metric("mean_id", _RecordingMetric()), metric]
+        )
 
 
 @pytest.mark.parametrize(
@@ -163,17 +225,19 @@ def test_non_finite_replicate_raises() -> None:
 def test_length_mismatch_raises(y: np.ndarray, groups: np.ndarray | None) -> None:
     # Catches a y or groups of another length: a longer y would be silently
     # mispaired with the predictions, shorter groups would drop rows.
-    evaluator = BootstrapEvaluator(Metric("mean_id", _RecordingMetric()), 10)
+    evaluator = BootstrapEvaluator(10)
     with pytest.raises(ValueError, match="inconsistent numbers of samples"):
-        evaluator.evaluate(_SpyModel(), X, y, groups)
+        evaluator.evaluate(_SpyModel(), X, y, groups, metrics=_two_metrics()[:1])
 
 
 def test_fewer_than_two_groups_raises() -> None:
     # Catches a single group passing silently: every replicate is then the
     # whole set and the interval has zero width.
-    evaluator = BootstrapEvaluator(Metric("mean_id", _RecordingMetric()), 10)
+    evaluator = BootstrapEvaluator(10)
     with pytest.raises(ValueError, match="1 distinct value"):
-        evaluator.evaluate(_SpyModel(), X, Y, np.zeros(len(X), dtype=int))
+        evaluator.evaluate(
+            _SpyModel(), X, Y, np.zeros(len(X), dtype=int), metrics=_two_metrics()[:1]
+        )
 
 
 @pytest.mark.parametrize(
@@ -182,7 +246,6 @@ def test_fewer_than_two_groups_raises() -> None:
         {"n_resamples": 0},
         {"alpha": 0.0},
         {"alpha": 1.0},
-        {"metric": {"name": "m", "function": len}},
         {"random_stat": 0},
         {"n_resamples": True},
     ],
@@ -190,7 +253,6 @@ def test_fewer_than_two_groups_raises() -> None:
         "no-resamples",
         "alpha-0",
         "alpha-1",
-        "metric-dict",
         "misspelt-keyword",
         "bool-resamples",
     ],
@@ -198,9 +260,8 @@ def test_fewer_than_two_groups_raises() -> None:
 def test_invalid_settings_raise(settings: dict[str, Any]) -> None:
     # Catches settings that would fail only after the predictions, or give a
     # degenerate interval. Pydantic's default ignores extras and reads True as 1.
-    kwargs: dict[str, Any] = {"metric": Metric("mean_id", _RecordingMetric())}
     with pytest.raises(ValidationError):
-        BootstrapEvaluator(**(kwargs | {"n_resamples": 10} | settings))
+        BootstrapEvaluator(**({"n_resamples": 10} | settings))
 
 
 def test_cohort_model_with_cohort_log_loss() -> None:
@@ -220,7 +281,10 @@ def test_cohort_model_with_cohort_log_loss() -> None:
     model = CohortProbabilityModel(estimator=LogisticRegression()).fit(
         X_cohort, y_cohort
     )
-    evaluator = BootstrapEvaluator(COHORT_LOG_LOSS, 100, random_state=0)
-    result = evaluator.evaluate(model, X_cohort, y_cohort, groups)
+    evaluator = BootstrapEvaluator(100, random_state=0)
+    result = evaluator.evaluate(
+        model, X_cohort, y_cohort, groups, metrics=[COHORT_LOG_LOSS]
+    ).loc["cohort_log_loss"]
     full = model.evaluate(y_cohort, model.predict(X_cohort), COHORT_LOG_LOSS)
-    assert result.lower < full < result.upper
+    assert result["score"] == pytest.approx(full)
+    assert result["lower"] < full < result["upper"]

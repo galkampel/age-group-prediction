@@ -20,11 +20,11 @@ __all__ = [
     "CalibrationMethod",
     "Classifier",
     "CohortProbabilityModel",
-    "ReplicationType",
+    "ReplicationMethod",
 ]
 
 # How the cohort counts become categorical rows (see CohortProbabilityModel).
-type ReplicationType = Literal["per_child", "weighted"]
+type ReplicationMethod = Literal["per_child", "weighted"]
 # scikit-learn's CalibratedClassifierCV methods.
 type CalibrationMethod = Literal["temperature", "sigmoid", "isotonic"]
 
@@ -49,7 +49,7 @@ class CohortProbabilityModel(BaseAgeGroupModel):
     given, otherwise the finished design matrix; ``y`` is a DataFrame of
     cohort counts (one column per cohort, at least two, every cohort with a
     child); an exposure is ignored. ``fit`` builds the categorical rows itself
-    (:meth:`multinomial_to_categorical`), by ``replication``: ``"weighted"``,
+    (:meth:`multinomial_to_categorical`), by ``replication_method``: ``"weighted"``,
     one row per sample and cohort with a child, ``sample_weight`` = the count;
     ``"per_child"``, one row per child and no ``sample_weight``, the way to use
     a classifier without it (the counts must be of an integer dtype). A row's
@@ -67,21 +67,21 @@ class CohortProbabilityModel(BaseAgeGroupModel):
         self,
         *,
         estimator: Classifier,
-        replication: ReplicationType = "weighted",
+        replication_method: ReplicationMethod = "weighted",
         calibration_method: CalibrationMethod | None = None,
         calibration_cv: int = 5,
         feature_transformer: FeatureTransformer | None = None,
     ) -> None:
         # Stored verbatim: set_params assigns attributes without re-entering here.
         self.estimator = estimator
-        self.replication = replication
+        self.replication_method = replication_method
         self.calibration_method = calibration_method
         self.calibration_cv = calibration_cv
         self.feature_transformer = feature_transformer
 
     @staticmethod
     def multinomial_to_categorical(
-        y: pd.DataFrame, replication: ReplicationType
+        y: pd.DataFrame, replication_method: ReplicationMethod
     ) -> tuple[np.ndarray, np.ndarray, np.ndarray | None]:
         """The sample positions in ``y``, cohort positions (the labels) and weights of the categorical rows.
 
@@ -91,9 +91,9 @@ class CohortProbabilityModel(BaseAgeGroupModel):
         counts = y.to_numpy()
         sample_positions, cohort_positions = np.nonzero(counts)
         cell_counts = counts[sample_positions, cohort_positions]
-        if replication == "weighted":
+        if replication_method == "weighted":
             return sample_positions, cohort_positions, cell_counts
-        elif replication == "per_child":
+        elif replication_method == "per_child":
             return (
                 np.repeat(sample_positions, cell_counts),
                 np.repeat(cohort_positions, cell_counts),
@@ -101,7 +101,8 @@ class CohortProbabilityModel(BaseAgeGroupModel):
             )
         else:
             raise ValueError(
-                f"replication must be 'weighted' or 'per_child', got {replication!r}"
+                "replication_method must be 'weighted' or 'per_child', "
+                f"got {replication_method!r}"
             )
 
     @staticmethod
@@ -140,7 +141,7 @@ class CohortProbabilityModel(BaseAgeGroupModel):
         # On the samples: the categorical rows would weight its statistics by children.
         feature_transformer, X = self._fit_features(X, y)
         sample_positions, cohort_positions, weights = self.multinomial_to_categorical(
-            y, self.replication
+            y, self.replication_method
         )
         X_categorical = take_rows(X, sample_positions)
         # A copy, so the caller's template stays unfitted across folds.
@@ -156,14 +157,14 @@ class CohortProbabilityModel(BaseAgeGroupModel):
                 cv=PredefinedSplit(sample_folds[sample_positions]),
                 ensemble=False,
             )
-        if self.replication == "weighted":
+        if self.replication_method == "weighted":
             estimator.fit(X_categorical, cohort_positions, sample_weight=weights)
-        elif self.replication == "per_child":
+        elif self.replication_method == "per_child":
             # No keyword: a classifier without sample_weight fits too.
             estimator.fit(X_categorical, cohort_positions)
         else:
             # Unreachable: multinomial_to_categorical raised for it.
-            raise ValueError(f"unknown replication {self.replication!r}")
+            raise ValueError(f"unknown replication_method {self.replication_method!r}")
         # Set together, only once fitting succeeded.
         self.estimator_ = estimator
         self.cohorts_: list[object] = list(y.columns)

@@ -11,8 +11,8 @@ from sklearn.base import clone
 
 from age_group_prediction.feature_engineering import (
     Center,
-    ColumnPlan,
     FeatureTransformer,
+    Plan,
 )
 from age_group_prediction.modeling import (
     CountModel,
@@ -28,9 +28,7 @@ def _lightgbm() -> LGBMRegressor:
 
 
 def _features(column: str) -> FeatureTransformer:
-    return FeatureTransformer(
-        (ColumnPlan(name=column, columns=(column,), transforms=(Center(),)),)
-    )
+    return FeatureTransformer(((Plan(name=column, transforms=(Center(),)), [column]),))
 
 
 def _table(n_rows: int = 200) -> tuple[pd.DataFrame, pd.DataFrame, pd.Series]:
@@ -179,3 +177,74 @@ def test_predictions_are_placed_by_position_not_by_their_own_index() -> None:
     predictions = model.fit(X, y[["n_elementary"]]).predict(X)
 
     assert not predictions["n_elementary"].isna().any()
+
+
+def test_nested_names_reach_each_cohorts_model() -> None:
+    # A name not forwarded into the mapping, or forwarded to another cohort's
+    # model, would leave a study tuning a model it never changes.
+    model = IndependentCohortModels(_cohort_models())
+
+    model.set_params(
+        cohort_models__n_kindergarten__estimator__learning_rate=0.01,
+        cohort_models__n_highschool__estimator__learning_rate=0.3,
+        cohort_models__n_elementary__use_exposure=True,
+    )
+
+    params = model.get_params(deep=True)
+    assert params["cohort_models__n_kindergarten__estimator__learning_rate"] == 0.01
+    assert params["cohort_models__n_highschool__estimator__learning_rate"] == 0.3
+    assert model.cohort_models["n_elementary"].use_exposure is True
+    assert params["cohort_models__n_elementary__estimator__learning_rate"] == 0.1
+
+
+def test_set_params_on_a_clone_leaves_the_template_untouched() -> None:
+    # The tuner sets each trial's parameters on a clone; a clone that shared
+    # the template's models would carry one trial's values into the next.
+    template = IndependentCohortModels(_cohort_models())
+
+    clone(template).set_params(
+        cohort_models__n_kindergarten__estimator__learning_rate=0.01
+    )
+
+    assert (
+        template.get_params()["cohort_models__n_kindergarten__estimator__learning_rate"]
+        == 0.1
+    )
+
+
+def test_the_whole_mapping_is_replaced_before_nested_names() -> None:
+    # In key order, the nested name would land on the old model and the new
+    # mapping would then drop it silently.
+    model = IndependentCohortModels(_cohort_models())
+    new_models = _cohort_models()
+
+    model.set_params(
+        cohort_models__n_kindergarten__estimator__learning_rate=0.01,
+        cohort_models=new_models,
+    )
+
+    assert model.cohort_models is new_models
+    assert new_models["n_kindergarten"].get_params()["estimator__learning_rate"] == 0.01
+
+
+def test_a_whole_cohort_model_can_be_replaced() -> None:
+    # A cohort key without a sub-name is one model, not a parameter of the
+    # mapping; the caller's mapping is left as given.
+    given = _cohort_models()
+    model = IndependentCohortModels(given)
+    replacement = CountModel(estimator=_lightgbm())
+
+    model.set_params(cohort_models__n_elementary=replacement)
+
+    assert model.cohort_models["n_elementary"] is replacement
+    assert given["n_elementary"] is not replacement
+    assert model.cohort_models.keys() == given.keys()
+
+
+def test_a_misspelt_cohort_raises() -> None:
+    # Skipped silently, a misspelt cohort would leave its model untuned for a
+    # whole study.
+    model = IndependentCohortModels(_cohort_models())
+
+    with pytest.raises(KeyError, match="n_kindergarden"):
+        model.set_params(cohort_models__n_kindergarden__estimator__learning_rate=0.01)

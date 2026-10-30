@@ -13,7 +13,7 @@ from .cohort_probability import (
     CalibrationMethod,
     Classifier,
     CohortProbabilityModel,
-    ReplicationType,
+    ReplicationMethod,
 )
 from .count_model import CountModel, ExposureRegressor, Regressor
 from .independent_cohorts import CohortModels, IndependentCohortModels
@@ -31,6 +31,6 @@ __all__ = [
     "IndependentCohortModels",
     "NegativeBinomialRegressor",
     "Regressor",
-    "ReplicationType",
+    "ReplicationMethod",
     "TotalTimesProbabilityModel",
 ]

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 from typing import Self
 
 import numpy as np
@@ -14,6 +15,7 @@ from sklearn.base import BaseEstimator, clone
 from sklearn.ensemble import HistGradientBoostingRegressor
 from sklearn.exceptions import NotFittedError
 from sklearn.linear_model import LinearRegression, PoissonRegressor
+from sklearn.metrics import mean_poisson_deviance
 from sklearn.utils.validation import check_is_fitted
 from statsmodels.discrete.discrete_model import NegativeBinomial
 from statsmodels.tools import add_constant
@@ -24,6 +26,9 @@ from age_group_prediction.modeling import (
     NegativeBinomialRegressor,
     Regressor,
 )
+from age_group_prediction.scoring import Metric
+
+POISSON_DEVIANCE = Metric("poisson_deviance", mean_poisson_deviance)
 
 
 def _data(rows: int = 300) -> tuple[pd.DataFrame, pd.Series, np.ndarray]:
@@ -304,17 +309,57 @@ def test_the_gaussian_weighted_rate_is_least_squares_of_the_count() -> None:
     # [exposure, exposure * x] with weights 1 / exposure
     # (docs/INDEPENDENT_COHORT_MODELS.md §2.1 (b)). Catches a Gaussian path
     # that fits another model, e.g. without the weight.
-    model = CountModel(estimator=LinearRegression(), use_exposure=True).fit(
-        X, Y, exposure=EXPOSURE
-    )
+    model = CountModel(
+        estimator=LinearRegression(), use_exposure=True, y_min=np.finfo(float).eps
+    ).fit(X, Y, exposure=EXPOSURE)
     design = np.column_stack([EXPOSURE, EXPOSURE[:, None] * X.to_numpy()])
     count_model = LinearRegression(fit_intercept=False).fit(
         design, Y, sample_weight=1 / EXPOSURE
     )
 
+    # y_min floors the mean (3 of these 300 least-squares counts are negative).
     np.testing.assert_allclose(
-        model.predict(X, exposure=EXPOSURE), count_model.predict(design), rtol=1e-8
+        model.predict(X, exposure=EXPOSURE),
+        np.maximum(count_model.predict(design), np.finfo(float).eps),
+        rtol=1e-8,
     )
+
+
+def test_a_negative_gaussian_prediction_breaking_the_deviance_is_caught() -> None:
+    # A Gaussian loss extrapolates below zero; unfloored, scikit-learn's
+    # Poisson deviance raises on it and stops a whole tuning study (measured,
+    # docs/INDEPENDENT_COHORT_MODELS.md). A floor of 0 would still raise.
+    X_line = pd.DataFrame({"ses": [0.0, 1.0, 2.0, 3.0]})
+    y_line = pd.Series([1.0, 2.0, 3.0, 4.0])  # y = 1 + ses
+    X_below = pd.DataFrame({"ses": [-3.0]})
+    assert LinearRegression().fit(X_line, y_line).predict(X_below)[0] < 0
+
+    model = CountModel(estimator=LinearRegression(), y_min=np.finfo(float).eps).fit(
+        X_line, y_line
+    )
+    prediction = model.predict(X_below)
+
+    assert 0 < prediction[0] <= np.finfo(float).eps
+    # A count of 5: at np.finfo(float).tiny the deviance overflows under -W error.
+    assert math.isfinite(model.evaluate([5.0], prediction, POISSON_DEVIANCE))
+
+
+def test_without_y_min_the_prediction_is_not_floored() -> None:
+    # The floor is the caller's choice: a default that floored would hide a
+    # negative prediction from a caller who did not ask for one.
+    X_line = pd.DataFrame({"ses": [0.0, 1.0, 2.0, 3.0]})
+    y_line = pd.Series([1.0, 2.0, 3.0, 4.0])  # y = 1 + ses
+
+    model = CountModel(estimator=LinearRegression()).fit(X_line, y_line)
+
+    np.testing.assert_allclose(model.predict(pd.DataFrame({"ses": [-3.0]})), [-2.0])
+
+
+@pytest.mark.parametrize("y_min", [0.0, -1.0, np.inf, np.nan])
+def test_a_floor_that_is_not_finite_and_positive_is_refused(y_min: float) -> None:
+    # A floor of 0 still breaks the deviance; a negative or infinite one is a typo.
+    with pytest.raises(ValueError, match="y_min"):
+        CountModel(estimator=LinearRegression(), y_min=y_min).fit(X, Y)
 
 
 def test_predict_follows_how_the_model_was_fitted() -> None:

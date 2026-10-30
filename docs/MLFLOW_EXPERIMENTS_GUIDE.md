@@ -69,25 +69,18 @@ if 5000 is occupied.
 
 ### From The Notebook
 
-Open [notebooks/02_model_fitting.py](../notebooks/02_model_fitting.py) with the
+Open [notebooks/02_experiments.py](../notebooks/02_experiments.py) with the
 scratch environment configured before starting the kernel:
 
 ```bash
 PYTHONPATH=src uv run --group notebook --group tracking \
-  marimo edit notebooks/02_model_fitting.py
+  marimo edit notebooks/02_experiments.py
 ```
 
-Step-by-step instructions, including expected run time, are in the
-[README](../README.md#run-the-modeling-notebook). The notebook does
-setup without fitting. The scratch variables redirect only MLflow: setup always
-loads the repository's persisted `artifacts/lockbox/split_manifest.json`
-(creating it if absent) and replays it in memory to obtain the training
-partition, without displaying or evaluating any holdout row. Click **Run cross-validation** to execute the canonical
-three-approach comparison and log it. The notebook passes
-`capture_artifacts=True`, which tracking requires.
-
-Do not click the final-evaluation controls during a tutorial. They replay the
-canonical persisted manifest and open the one-time lockbox.
+Step-by-step instructions are in the
+[README](../README.md#run-the-modeling-notebook). The setup cells build the
+population, the split and the feature variants without fitting; every run cell
+is behind a button. The notebook refuses to start on the canonical store.
 
 ### From Python: Bounded Scratch Example
 
@@ -136,7 +129,7 @@ config = replace(
 )
 
 source_df = StudentPopulationSimulator(
-    load_simulation_config("configs/simulation.toml")
+    load_simulation_config("configs/simulation.yml")
 ).run()
 neighborhoods = sorted(source_df["neighborhood_id"].unique())[:8]
 scratch_source = source_df[source_df["neighborhood_id"].isin(neighborhoods)]

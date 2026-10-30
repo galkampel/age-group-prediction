@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from collections import Counter
+from collections import Counter, defaultdict
 from collections.abc import Mapping
-from typing import Self
+from typing import Any, Self
 
 import numpy as np
 import pandas as pd
@@ -24,9 +24,11 @@ class IndependentCohortModels(BaseAgeGroupModel):
     """Fit one model per cohort on its own column of ``y``, and predict them all.
 
     Each cohort's model has its own features and hyperparameters. Nested
-    ``set_params`` names do not reach into the mapping: tune each model on its
-    own and replace the mapping with ``set_params(cohort_models=...)``, before
-    ``fit``, which fits copies.
+    ``set_params`` names reach them: ``cohort_models__<cohort>__<param>`` sets
+    one model's parameter (``cohort_models__n_kindergarten__estimator__alpha``),
+    ``cohort_models__<cohort>`` replaces one model and ``cohort_models`` the
+    mapping, so one study tunes every cohort on the composite's score. A cohort
+    name must not contain ``__``. Set before ``fit``, which fits copies.
 
     The same ``exposure`` goes to every cohort; a model without an exposure
     offset ignores it. Rows are paired by position, as in
@@ -39,6 +41,44 @@ class IndependentCohortModels(BaseAgeGroupModel):
     def __init__(self, cohort_models: CohortModels) -> None:
         # Stored verbatim: set_params assigns attributes without re-entering here.
         self.cohort_models = cohort_models
+
+    def get_params(self, deep: bool = True) -> dict[str, Any]:
+        """The parameters; with ``deep``, each cohort's model and its own parameters too."""
+        params: dict[str, Any] = super().get_params(deep=deep)
+        # sklearn descends only into a value that has get_params; a dict has none.
+        if deep:
+            for cohort, model in self.cohort_models.items():
+                params[f"cohort_models__{cohort}"] = model
+                params.update(
+                    (f"cohort_models__{cohort}__{name}", value)
+                    for name, value in model.get_params(deep=True).items()
+                )
+        return params
+
+    def set_params(self, **params: Any) -> Self:
+        """Set parameters, nested ``cohort_models__…`` names included; see the class docstring."""
+        # The mapping first, then a cohort's model, then its nested names
+        # (sklearn's order for its own nested names): a name set on an old
+        # model would otherwise be overwritten by the new mapping silently.
+        if "cohort_models" in params:
+            self.cohort_models = params.pop("cohort_models")
+        replaced: dict[str, BaseAgeGroupModel] = {}
+        nested: defaultdict[str, dict[str, Any]] = defaultdict(dict)
+        for key in [key for key in params if key.startswith("cohort_models__")]:
+            cohort, delim, name = key.removeprefix("cohort_models__").partition("__")
+            if delim:
+                nested[cohort][name] = params.pop(key)
+            else:
+                replaced[cohort] = params.pop(key)
+        if replaced:
+            # A new dict: the caller's mapping is left as given.
+            self.cohort_models = {**self.cohort_models, **replaced}
+        for cohort, sub_params in nested.items():
+            # A misspelt cohort raises KeyError; a misspelt name, sklearn's
+            # "Invalid parameter" naming that cohort's model.
+            self.cohort_models[cohort].set_params(**sub_params)
+        super().set_params(**params)
+        return self
 
     def fit(
         self,

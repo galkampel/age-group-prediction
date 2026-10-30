@@ -9,253 +9,158 @@ from .apartment import ApartmentSimulator
 from .building import BuildingSimulator
 from .config import Config
 from .neighborhood import NeighborhoodSimulator
-from .outcomes import CohortCompositionSimulator, TotalChildrenSimulator
-
-
-_FINAL_BUILDING_COLUMNS: tuple[str, ...] = (
-    "building_id",
-    "neighborhood_id",
-    "ses",
-    "avg_household_size",
-    "median_age",
-    "n_daycares_500m",
-    "school_status",
-    "3_rooms",
-    "4_rooms",
-    "5_rooms",
-    "6_rooms",
-    "n_apartments",
-    "n_kindergarten",
-    "n_elementary",
-    "n_highschool",
-    "n_children_total",
-)
-_ROOM_COUNT_COLUMNS: tuple[str, ...] = (
-    "3_rooms",
-    "4_rooms",
-    "5_rooms",
-    "6_rooms",
-)
-_COHORT_COUNT_COLUMNS: tuple[str, ...] = (
-    "n_kindergarten",
-    "n_elementary",
-    "n_highschool",
-)
-_OUTCOME_COUNT_COLUMNS: tuple[str, ...] = (
-    "n_children_total",
-    *_COHORT_COUNT_COLUMNS,
-)
-_NEIGHBORHOOD_CONTEXT_COLUMNS: tuple[str, ...] = (
-    "ses",
-    "avg_household_size",
-    "median_age",
-    "n_daycares_500m",
-    "school_status",
+from .outcomes import (
+    COHORT_COLUMNS,
+    CohortCompositionSimulator,
+    TotalChildrenSimulator,
 )
 
 
 @dataclass(frozen=True)
 class SimulationResult:
-    """Named tables from one full simulation run for research workflows.
+    """The dataset of one simulated population and the latent effects behind it.
 
-    Random effects support test-only coefficient recovery and never become
-    columns in generated tables or the final building-level output.
+    ``dataset`` has one row per building: its neighborhood context, room
+    counts and the three cohort counts (the building's total is their sum,
+    so it is not a column). The effects are one frame per owner level
+    (lme4's ``ranef`` layout), indexed by the owner id so they join to
+    ``dataset``: ``building_effects`` (``building_id``; columns
+    ``total_count``, ``cohort``) and ``neighborhood_effects``
+    (``neighborhood_id``; column ``total_count``). They exist for
+    coefficient-recovery checks and are never columns of ``dataset``. A
+    building without apartments has no effect row.
     """
 
-    neighborhoods: pd.DataFrame
-    buildings: pd.DataFrame
-    apartments: pd.DataFrame
-    final_df: pd.DataFrame
-    latent_effects: dict[str, pd.Series] = field(repr=False)
+    dataset: pd.DataFrame
+    building_effects: pd.DataFrame = field(repr=False)
+    neighborhood_effects: pd.DataFrame = field(repr=False)
 
 
-def _copy_result(result: SimulationResult) -> SimulationResult:
-    """Return a deep copy that callers may inspect and mutate safely."""
-    return SimulationResult(
-        neighborhoods=result.neighborhoods.copy(deep=True),
-        buildings=result.buildings.copy(deep=True),
-        apartments=result.apartments.copy(deep=True),
-        final_df=result.final_df.copy(deep=True),
-        latent_effects={
-            name: effect.copy(deep=True)
-            for name, effect in result.latent_effects.items()
-        },
-    )
-
-
-def _to_building_level(
-    apartments: pd.DataFrame,
-    buildings: pd.DataFrame,
-    neighborhoods: pd.DataFrame,
+def aggregate_to_buildings(
+    apartments_df: pd.DataFrame,
+    buildings_df: pd.DataFrame,
+    neighborhoods_df: pd.DataFrame,
 ) -> pd.DataFrame:
-    """Build one row per building with context and aggregated outcomes."""
-    grouped = (
-        apartments.groupby("building_id", as_index=False)
-        .agg(
-            apartment_rows=("apartment_id", "size"),
-            n_kindergarten=("n_kindergarten", "sum"),
-            n_elementary=("n_elementary", "sum"),
-            n_highschool=("n_highschool", "sum"),
-            n_children_total=("n_children_total", "sum"),
-        )
-        .sort_values("building_id")
-        .reset_index(drop=True)
-    )
-    merged = buildings.merge(
-        grouped,
-        on="building_id",
-        how="left",
-        validate="one_to_one",
-    )
-    count_columns = ("apartment_rows", *_OUTCOME_COUNT_COLUMNS)
-    for column in count_columns:
-        merged[column] = merged[column].fillna(0).astype(int)
+    """Sum the apartments' child counts into one row per building.
 
-    if (merged["apartment_rows"] != merged["n_apartments"]).any():
-        raise ValueError("apartment row counts do not match n_apartments")
-    room_totals = merged[list(_ROOM_COUNT_COLUMNS)].sum(axis=1)
-    if (room_totals != merged["n_apartments"]).any():
-        raise ValueError("room totals do not equal n_apartments")
-    cohort_sum = merged[list(_COHORT_COUNT_COLUMNS)].sum(axis=1)
-    if not np.array_equal(
-        cohort_sum.to_numpy(),
-        merged["n_children_total"].to_numpy(),
-    ):
-        raise ValueError("cohort totals do not equal n_children_total")
-
-    with_neighborhood = merged.merge(
-        neighborhoods[
-            [
-                "neighborhood_id",
-                *_NEIGHBORHOOD_CONTEXT_COLUMNS,
-            ]
-        ],
-        on="neighborhood_id",
-        how="left",
-        validate="many_to_one",
+    Columns: `building_id`, the neighborhood columns, the building's room
+    counts and `n_apartments`, then the cohort counts. The total is their sum
+    and is left out. The accounting identities (room counts and apartment rows
+    against `n_apartments`, cohorts against each apartment's total) are
+    properties of the components and are tested there.
+    """
+    apartment_sums = (
+        apartments_df.groupby("building_id")[list(COHORT_COLUMNS)]
+        .sum()
+        # A building without apartments has no group; its counts are zero.
+        .reindex(buildings_df["building_id"], fill_value=0)
     )
-    if (
-        with_neighborhood[list(_NEIGHBORHOOD_CONTEXT_COLUMNS)]
-        .isna()
-        .any()
-        .any()
-    ):
-        raise ValueError("building rows are missing neighborhood context")
-    if not with_neighborhood["building_id"].is_unique:
-        raise ValueError(
-            "building aggregation must produce one row per building"
-        )
-
-    with_neighborhood["n_apartments"] = with_neighborhood["apartment_rows"]
-    out = with_neighborhood.drop(columns=["apartment_rows"])
-    out = out.loc[:, _FINAL_BUILDING_COLUMNS]
-    return out.set_index("building_id", drop=False).sort_index().reset_index(
-        drop=True
+    df = buildings_df.merge(
+        neighborhoods_df, on="neighborhood_id", how="left", validate="many_to_one"
+    ).merge(apartment_sums, on="building_id", validate="one_to_one")
+    rooms_and_n_apartments = buildings_df.columns.drop(
+        ["building_id", "neighborhood_id"]
     )
+    return df[
+        [
+            "building_id",
+            *neighborhoods_df.columns,
+            *rooms_and_n_apartments,
+            *apartment_sums.columns,
+        ]
+    ]
 
 
 class StudentPopulationSimulator:
-    """Generate a complete student population with one shared run-level RNG."""
+    """The flow from neighborhoods to the dataset, one generator for every draw."""
 
-    def __init__(self, config: Config) -> None:
-        """Store the complete typed generation configuration."""
-        self.config = config
-        self._last_result: SimulationResult | None = None
-
-    def run(
+    def __init__(
         self,
-        rng: np.random.Generator | None = None,
-    ) -> pd.DataFrame:
-        """Generate one population run and return its building-level table.
+        neighborhood_simulator: NeighborhoodSimulator,
+        building_simulator: BuildingSimulator,
+        apartment_simulator: ApartmentSimulator,
+        total_children_simulator: TotalChildrenSimulator,
+        cohort_composition_simulator: CohortCompositionSimulator,
+        *,
+        n_neighborhoods: int,
+        seed: int,
+    ) -> None:
+        self.neighborhood_simulator = neighborhood_simulator
+        self.building_simulator = building_simulator
+        self.apartment_simulator = apartment_simulator
+        self.total_children_simulator = total_children_simulator
+        self.cohort_composition_simulator = cohort_composition_simulator
+        self.n_neighborhoods = n_neighborhoods
+        self.seed = seed
 
-        1. Generate neighborhoods, buildings, and apartments with one RNG.
-        2. Add total child counts, then rebuild apartment context for cohorts.
-        3. Allocate cohorts, aggregate apartments to buildings, and retain
-           details.
+    @classmethod
+    def from_config(cls, config: Config) -> StudentPopulationSimulator:
+        """Build the five components, the size and the seed from one config."""
+        simulation = config.simulation
+        return cls(
+            NeighborhoodSimulator(simulation, config.neighborhood),
+            BuildingSimulator(simulation, config.building, config.transforms),
+            ApartmentSimulator(simulation, config.building.room_mix),
+            TotalChildrenSimulator(
+                simulation, config.total_children, config.transforms
+            ),
+            CohortCompositionSimulator(
+                simulation, config.cohort, config.transforms, config.total_children
+            ),
+            n_neighborhoods=simulation.n_neighborhoods,
+            seed=simulation.seed,
+        )
+
+    def simulate(self, rng: np.random.Generator | None = None) -> SimulationResult:
+        """Sample one population, every stage drawing from one generator.
 
         Args:
-            rng: Optional shared generator. When omitted, a fresh generator is
-                created from the configured simulation seed.
+            rng: Optional generator. When omitted, a fresh generator is created
+                from `seed`, so repeated calls return the same population.
         """
-        generator = (
-            np.random.default_rng(self.config.simulation.seed)
-            if rng is None
-            else rng
+        generator = np.random.default_rng(self.seed) if rng is None else rng
+        # 1. Context: one row per neighborhood, then the buildings inside them,
+        #    then one row per apartment with its room count.
+        neighborhoods_df = self.neighborhood_simulator.sample_neighborhoods(
+            self.n_neighborhoods, generator
         )
-        neighborhoods = NeighborhoodSimulator(
-            self.config.simulation,
-            self.config.neighborhood,
-        ).generate(
-            self.config.simulation.n_neighborhoods,
-            rng=generator,
+        buildings_df = self.building_simulator.sample_buildings(
+            neighborhoods_df, generator
         )
-        buildings = BuildingSimulator(
-            self.config.simulation,
-            self.config.building,
-            self.config.transforms,
-        ).generate(
-            neighborhoods,
-            rng=generator,
+        apartments_df = self.apartment_simulator.expand_apartments(
+            buildings_df, generator
         )
-        apartments = ApartmentSimulator(
-            self.config.simulation,
-            self.config.building.room_mix,
-        ).generate(
-            buildings,
-            rng=generator,
+        # 2. Outcomes per apartment: the total first, then its split into
+        #    cohorts. Both stages read the apartment joined to its building and
+        #    neighborhood, and each returns that frame with its counts added.
+        apartment_context = ApartmentSimulator.join_context(
+            apartments_df, buildings_df, neighborhoods_df
         )
-        context = ApartmentSimulator.with_context(
-            apartments,
-            buildings,
-            neighborhoods,
+        apartments_with_totals, total_effects = (
+            self.total_children_simulator.sample_total_children(
+                apartment_context, generator
+            )
         )
-        total_children = TotalChildrenSimulator(
-            self.config.simulation,
-            self.config.total_children,
-            self.config.transforms,
+        apartments_with_cohorts, cohort_effects = (
+            self.cohort_composition_simulator.sample_cohorts(
+                apartments_with_totals, generator
+            )
         )
-        generated_totals = total_children.generate(context, rng=generator)
-        apartments_with_totals = apartments.copy(deep=True)
-        apartments_with_totals["n_children_total"] = generated_totals[
-            "n_children_total"
-        ].to_numpy()
-        cohort_context = ApartmentSimulator.with_context(
-            apartments_with_totals,
-            buildings,
-            neighborhoods,
+        # 3. The dataset: apartments summed into their buildings.
+        dataset = aggregate_to_buildings(
+            apartments_with_cohorts, buildings_df, neighborhoods_df
         )
-        generated_cohorts = CohortCompositionSimulator(
-            self.config.simulation,
-            self.config.cohort,
-            self.config.transforms,
-            self.config.total_children,
-        ).generate(
-            cohort_context,
-            rng=generator,
+        building_effects = pd.DataFrame(
+            {
+                "total_count": total_effects["building_total_count_effect"],
+                "cohort": cohort_effects["building_cohort_effect"],
+            }
         )
-        apartments_with_cohorts = apartments_with_totals.copy(deep=True)
-        for column in _COHORT_COUNT_COLUMNS:
-            apartments_with_cohorts[column] = generated_cohorts[
-                column
-            ].to_numpy()
-        final_df = _to_building_level(
-            apartments_with_cohorts,
-            buildings,
-            neighborhoods,
+        neighborhood_effects = total_effects[
+            "neighborhood_total_count_effect"
+        ].to_frame("total_count")
+        return SimulationResult(
+            dataset=dataset,
+            building_effects=building_effects,
+            neighborhood_effects=neighborhood_effects,
         )
-        result = SimulationResult(
-            neighborhoods=neighborhoods.copy(deep=True),
-            buildings=buildings.copy(deep=True),
-            apartments=apartments_with_cohorts.copy(deep=True),
-            final_df=final_df.copy(deep=True),
-            latent_effects=total_children.latent_effects(),
-        )
-        self._last_result = result
-        return result.final_df.copy(deep=True)
-
-    @property
-    def last_result(self) -> SimulationResult | None:
-        """Return safely copied artifacts from the latest successful run."""
-        if self._last_result is None:
-            return None
-        return _copy_result(self._last_result)

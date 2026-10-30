@@ -11,7 +11,7 @@
 > [bootstrap plan](MODEL_INSPECTION_PLAN.md) (I1–I2, I7, I12–I13) and the
 > [importance plan](FEATURE_IMPORTANCE_PLAN.md) (I3–I6, I8–I11).
 
-Every code block below was run as written on 2026-10-13 (shap 0.53.0,
+Every code block below was run as written on 2026-10-30 (shap 0.53.0,
 scikit-learn 1.9.0, LightGBM 4.7.0); the numbers are its output. The blocks
 build on each other in order.
 
@@ -19,7 +19,7 @@ build on each other in order.
 
 | part | answers | class |
 |---|---|---|
-| bootstrap | how sure is the validation score? | `BootstrapEvaluator(metric, n_resamples, alpha=0.05, random_state=None)` → `BootstrapResult(mean, lower, upper)` |
+| bootstrap | how sure is the validation score? | `BootstrapEvaluator(n_resamples, alpha=0.05, random_state=None).evaluate(..., metrics=[...])` → a DataFrame, one row per metric: `score`, `mean`, `lower`, `upper` |
 | permutation importance | which columns does the score depend on? | `PermutationImportance(metric, n_repeats, random_state=None)` → a DataFrame per column |
 | SHAP | how does each column move each row's prediction? | `ShapExplainer(method, max_evals=None, random_state=None, n_jobs=1)` → a `shap.Explanation` |
 
@@ -49,36 +49,45 @@ import numpy as np
 import pandas as pd
 from lightgbm import LGBMRegressor
 from sklearn.linear_model import LogisticRegression, PoissonRegressor
+from sklearn.metrics import mean_poisson_deviance
 
-from age_group_prediction.feature_engineering import ColumnPlan, FeatureTransformer, OneHot, Standardize
+from age_group_prediction.feature_engineering import FeatureTransformer, OneHot, Plan, Standardize
 from age_group_prediction.inspection import BootstrapEvaluator, PermutationImportance, ShapExplainer
 from age_group_prediction.modeling import (
     CohortProbabilityModel, CountModel, IndependentCohortModels, TotalTimesProbabilityModel,
 )
 from age_group_prediction.preprocessing import ExposureTransformer, ShareTransformer
-from age_group_prediction.scoring import COHORT_LOG_LOSS, COHORT_POISSON_DEVIANCE, POISSON_DEVIANCE
+from age_group_prediction.scoring import Metric, mean_poisson_deviance_loss, multinomial_log_loss
 from age_group_prediction.splitting import Splitter
 from age_group_prediction.utils import take_rows
 from student_simulator import StudentPopulationSimulator, load_simulation_config
 
-base = load_simulation_config("configs/simulation.toml")
-config = base.model_copy(update={
-    "simulation": base.simulation.model_copy(update={"n_neighborhoods": 150}),
-    "building": base.building.model_copy(update={"buildings_per_neighborhood_rate": 9.0}),
+# The metrics, built here: the notebook does the same (the scoring module holds no constants).
+COHORT_POISSON_DEVIANCE = Metric("cohort_poisson_deviance", mean_poisson_deviance_loss)
+COHORT_LOG_LOSS = Metric("cohort_log_loss", multinomial_log_loss)
+POISSON_DEVIANCE = Metric("poisson_deviance", mean_poisson_deviance)
+
+base = load_simulation_config("configs/simulation.yml")
+config = base.with_overrides({
+    "simulation": {"n_neighborhoods": 150},
+    "building": {"buildings_per_neighborhood_rate": 9.0},
 })
 table = ShareTransformer(
     ("3_rooms", "4_rooms", "5_rooms", "6_rooms"), reference_column="3_rooms"
-).fit_transform(StudentPopulationSimulator(config).run())
+).fit_transform(StudentPopulationSimulator.from_config(config).simulate().dataset)
 cohorts = ["n_kindergarten", "n_elementary", "n_highschool"]
 numeric = ("4_rooms_share", "5_rooms_share", "6_rooms_share", "ses",
            "avg_household_size", "median_age", "n_daycares_500m", "n_apartments")
-school = ColumnPlan(
-    name="school", columns=("school_status",),
-    transforms=(OneHot(categories=("none", "existing", "planned"), reference_category="none"),),
+school = (
+    Plan(
+        name="one_hot",
+        transforms=(OneHot(categories=("none", "existing", "planned"), reference_category="none"),),
+    ),
+    ["school_status"],
 )
-tree = FeatureTransformer(plans=(ColumnPlan(name="numeric", columns=numeric), school))
+tree = FeatureTransformer(column_plans=((Plan(name="passthrough"), list(numeric)), school))
 linear = FeatureTransformer(
-    plans=(ColumnPlan(name="numeric", columns=numeric, transforms=(Standardize(),)), school)
+    column_plans=((Plan(name="standardize", transforms=(Standardize(),)), list(numeric)), school)
 )
 X, Y = table[[*numeric, "school_status"]], table[cohorts]
 exposure = ExposureTransformer("n_apartments").fit_transform(table)
@@ -119,12 +128,16 @@ print(len(X_train), len(X_val), groups_val.nunique())
 ### The bootstrap
 
 ```python
-bootstrap = BootstrapEvaluator(COHORT_POISSON_DEVIANCE, 500, random_state=0)
+bootstrap = BootstrapEvaluator(500, random_state=0)
+metrics = [COHORT_POISSON_DEVIANCE]
 for name, model in models.items():
-    rows = bootstrap.evaluate(model, X_val, Y_val, exposure=exposure_val)
-    by_group = bootstrap.evaluate(model, X_val, Y_val, groups_val, exposure=exposure_val)
-    print(f"{name}  rows: {rows.mean:.3f} [{rows.lower:.3f}, {rows.upper:.3f}]"
-          f"  neighborhoods: {by_group.mean:.3f} [{by_group.lower:.3f}, {by_group.upper:.3f}]")
+    rows = bootstrap.evaluate(model, X_val, Y_val, exposure=exposure_val, metrics=metrics)
+    by_group = bootstrap.evaluate(
+        model, X_val, Y_val, groups_val, exposure=exposure_val, metrics=metrics
+    )
+    rows, by_group = rows.iloc[0], by_group.iloc[0]
+    print(f"{name}  rows: {rows['mean']:.3f} [{rows['lower']:.3f}, {rows['upper']:.3f}]"
+          f"  neighborhoods: {by_group['mean']:.3f} [{by_group['lower']:.3f}, {by_group['upper']:.3f}]")
 ```
 
 ```text
@@ -282,12 +295,15 @@ processes).
 
 ## 3. The Bootstrap
 
-`BootstrapEvaluator.evaluate(model, X, y, groups=None, *, exposure=None)`
+`BootstrapEvaluator.evaluate(model, X, y, groups=None, *, exposure=None, metrics)`
 predicts `X` **once**, then draws `n_resamples` replicates of the evaluation
-rows with replacement and recomputes the metric on each. `mean` is the mean
-of the replicate scores, `lower` and `upper` their `alpha/2` and
-`1 - alpha/2` quantiles (`np.quantile`, so the 95 % interval at the default
-`alpha=0.05`). The interval is **conditional on the fitted model**: nothing is
+rows with replacement and recomputes every metric on each. The evaluator
+holds the resampling design only; the metrics are named per call, as
+`cross_validate`'s `scoring`, and all of them score the same replicates, so
+their intervals are paired. The result has one row per metric name: `score`
+is the metric on the unresampled rows, `mean` the mean of the replicate
+scores, `lower` and `upper` their `alpha/2` and `1 - alpha/2` quantiles
+(`np.quantile`, so the 95 % interval at the default `alpha=0.05`). The interval is **conditional on the fitted model**: nothing is
 refit, so it measures how much the score depends on which rows were held out,
 not how much the model would change on other training data.
 
@@ -304,9 +320,9 @@ neighborhoods, as above, it is usable. With one group every replicate would
 be the whole set and the interval would have zero width, so fewer than two
 distinct groups raise `ValueError`.
 
-**Ratio metrics.** `COHORT_LOG_LOSS` is a ratio of sums recomputed on each
+**Ratio metrics.** The cohort log loss is a ratio of sums recomputed on each
 replicate, as it should be; a replicate with no children at all is 0/0, and a
-non-finite replicate score raises `ValueError` naming how many, rather than
+non-finite replicate score raises `ValueError` naming the metric and how many, rather than
 returning NaN bounds silently.
 
 ## 4. Permutation Importance
@@ -336,8 +352,8 @@ simulator's columns are correlated by construction. There are no column
 blocks; compare with mean |SHAP|, which credits a used column regardless.
 
 **Per component.** The fitted children of Model 2 are public, so the recipe
-above runs the total's `CountModel` on `POISSON_DEVIANCE` of `y.sum(axis=1)`
-with the exposure, and the `CohortProbabilityModel` on `COHORT_LOG_LOSS` of
+above runs the total's `CountModel` on the Poisson deviance of `y.sum(axis=1)`
+with the exposure, and the `CohortProbabilityModel` on the cohort log loss of
 the count matrix (it normalizes the rows, so the total does not enter). For
 Model 1 the composite restricted to one output column is the cohort's own
 model, so there is nothing more to split.
@@ -440,9 +456,12 @@ print(sorted(path.name for path in out.iterdir()))
   whole background: subsample `X` (a few hundred rows) and `background` (a few
   dozen), count the raw columns before choosing the method, and use `n_jobs`
   only when a run is long.
-- **One column per metric.** `POISSON_DEVIANCE`, `RMSE` and `MAE` score one
-  target column; `COHORT_LOG_LOSS` ignores the total; `COHORT_POISSON_DEVIANCE`
-  scores the whole count matrix.
+- **Which cells a metric scores.** scikit-learn's `mean_poisson_deviance`,
+  `root_mean_squared_error` and `mean_absolute_error` score one target column.
+  `scoring`'s count metrics (`mean_poisson_deviance_loss` and the others) pool
+  every cell of the count matrix, or score one cohort with `cohort=`, a column
+  name of `y_true`. `multinomial_log_loss` ignores the total; with `cohort=` it
+  scores that cohort against the rest of its sample.
 - **Correlated columns** split permutation importance between them and can
   hide a column the model needs; read permutation and mean |SHAP| together.
 

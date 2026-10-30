@@ -15,12 +15,12 @@
     ]
   },
   "config": {
-    "content_sha256": "e8602db9daf38a14abd5efb41a2f7aec5250c3877d4d047df64a7f3b2b378745",
+    "content_sha256": "3a32ece116f29e10461c2fd778eac94d6c0837b550b25dec5b36023c252c663f",
     "overrides": {
       "buildings_per_neighborhood_rate": 9.0,
       "n_neighborhoods": 150
     },
-    "path": "configs/simulation.toml",
+    "path": "configs/simulation.yml",
     "seed": 42
   },
   "final_dataframe": {

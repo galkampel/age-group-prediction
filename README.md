@@ -33,10 +33,11 @@ building-level DataFrame:
   explains how Model A and Model B tune with seeded Optuna studies nested
   inside each training fold, what is tuned, and where the evidence is logged
   (the Bayesian model uses fixed priors and NUTS profiles instead).
-- [Hyperparameter tuning package](docs/HYPERPARAMETER_TUNING.md): the
-  `hyperparameter_tuning` package that tunes the rebuilt `modeling` models
-  (parameters, a cross-validation evaluator, fold aggregation, an Optuna
-  study), with a worked example run as written.
+- [Hyperparameter tuning of the rebuilt models](docs/HYPERPARAMETER_TUNING.md):
+  the `hyperparameter_tuning` package, plain Optuna over both rebuilt models:
+  components drawn per trial, the composite built from them, a
+  `CrossValidationTuner`; section 5 of `notebooks/02_experiments.py` runs it
+  (decisions in the [plan](docs/NOTEBOOK_TUNING_PLAN.md)).
 - [Model inspection](docs/MODEL_INSPECTION.md): the `inspection` package for
   the rebuilt models: bootstrap intervals of a metric, permutation importance
   per raw column and SHAP values of the predicted rate or count, with a
@@ -69,7 +70,7 @@ table and retains named intermediate tables for research inspection through
 ```python
 from student_simulator import StudentPopulationSimulator, load_simulation_config
 
-config = load_simulation_config("configs/simulation.toml")
+config = load_simulation_config("configs/simulation.yml")
 simulator = StudentPopulationSimulator(config)
 final_df = simulator.run()
 details = simulator.last_result
@@ -125,9 +126,12 @@ The research source is a pair of version-controlled marimo notebooks:
 
 - `notebooks/01_eda.py` implements the complete EDA checklist and findings
 	handoff;
-- `notebooks/02_model_fitting.py` runs the accepted cross-validation,
-  selection, and guarded final-evaluation workflow (steps 2–9 of the
-  [modeling pipeline](#modeling-pipeline)).
+- `notebooks/02_experiments.py` runs the experiments: one MLflow run per
+  setting (composite model × estimator family × feature variant × exposure),
+  tuned by cross-validation on the training part, compared on the validation
+  part, and one final test-part run (see
+  [docs/EXPERIMENT_NOTEBOOK_PLAN.md](docs/EXPERIMENT_NOTEBOOK_PLAN.md) until
+  `docs/EXPERIMENTS.md` exists in D5).
 
 The Jupyter-to-marimo cutover is complete. `research.ipynb` has been removed;
 marimo `.py` notebooks are the sole research source.
@@ -157,7 +161,7 @@ marimo `.py` notebooks are the sole research source.
 
    ```bash
    uv run --env-file .env --group notebook --group tracking \
-     marimo edit notebooks/02_model_fitting.py
+     marimo edit notebooks/02_experiments.py
    ```
 
    marimo prints a local URL and opens it. Add `--headless` to skip opening a
@@ -169,29 +173,20 @@ marimo `.py` notebooks are the sole research source.
    extension, select `.venv/bin/python` and launch VS Code from a shell where
    the same variables are set.
 
-4. Read the setup cells. They build the canonical population (150
-   neighborhoods), the modeling table, the candidate registry, and training
-   folds. They also load the persisted `artifacts/lockbox/split_manifest.json`
-   (creating it if absent) and replay it in memory without displaying or
-   evaluating any holdout row. Nothing is fitted yet.
+4. Read the setup cells: the synthetic population (150 neighborhoods, 1529
+   buildings), the train/validation/test split, the feature variants and the
+   MLflow experiment from `.env`. Nothing is fitted.
 
-5. Click **Run cross-validation** to fit and log the three-approach comparison
-   to the scratch store. In the canonical run, fold fitting alone took about 12
-   minutes (about 10 for the Bayesian model); evaluation, bootstrap intervals,
-   importance, and logging add more. Inspect the result from the repository
-   root with
-   `uv run --env-file .env --group tracking mlflow ui --backend-store-uri sqlite:///.mlflow-local/mlflow.db`.
+5. Each run cell sits behind its own **Run** button (added from D2 on).
 
-6. **Do not use the final-evaluation checkbox or button.** The canonical
-   one-time lockbox evaluation has already run. The duplicate guard only sees
-   runs in the current MLflow store, so in a scratch store it cannot detect the
-   canonical run and would evaluate the holdout again. See
-   [final evaluation, Section 11](docs/FINAL_EVALUATION.md#11-pitfalls).
+6. The final cell evaluates the test part once; it refuses to run twice in one
+   experiment (D4).
 
-`uv run --env-file .env notebooks/02_model_fitting.py` runs the notebook as a
-script: setup only, with both buttons unclicked. marimo's runtime
-configuration also loads `.env` by default when it finds `pyproject.toml`, so
-never put canonical MLflow settings in `.env`.
+`uv run --env-file .env notebooks/02_experiments.py` runs the notebook as a
+script: setup only, no run is opened; it refuses to start when
+`MLFLOW_TRACKING_URI` is unset or points at the repo root's `mlflow.db`.
+marimo's runtime configuration also loads `.env` by default when it finds
+`pyproject.toml`, so never put canonical MLflow settings in `.env`.
 
 ### Run The Tests
 
@@ -509,16 +504,8 @@ before that fix, so its bundled code needs `import lightgbm` before
 `final_model_uri` is on its child run. See
 [final evaluation, Section 9](docs/FINAL_EVALUATION.md#9-pyfunc-serving-contract).
 
-**Notebook controls.** `notebooks/02_model_fitting.py` is a thin marimo
-client: its modeling steps call only `age_group_prediction` package APIs,
-never a model's own `fit`/`predict`/`evaluate` (its last cell uses the MLflow
-client only to display run links). A plain script run
-(`uv run notebooks/02_model_fitting.py`) performs setup only — building the
-canonical population and modeling table, creating or loading the persisted
-manifest and replaying it in memory to obtain the training partition,
-building the candidate registry and validation folds — and never displays or
-evaluates a holdout row, starts cross-validation, fits the full Bayesian
-model, or opens an MLflow run. Cross-validation and the final action each need an
-explicit `mo.ui.run_button` click; the final action additionally requires a
-confirmation checkbox, since it is one-time and cannot be undone for a given
-manifest.
+**Notebook controls.** The old model-fitting notebook was deleted on
+2026-10-14 with the move to the rebuilt models. `notebooks/02_experiments.py`
+(see [Run The Modeling Notebook](#run-the-modeling-notebook)) replaces it for
+the rebuilt models; the lockbox and final-evaluation path described in this
+section belonged to the old stack and has no counterpart there.

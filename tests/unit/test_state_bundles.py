@@ -39,15 +39,22 @@ from age_group_prediction.state_bundle import (
     verify_training_frame,
 )
 from age_group_prediction.tuning import TrialRecord, TuningResult
-from student_simulator import StudentPopulationSimulator, load_simulation_config
+from student_simulator import (
+    COHORT_COLUMNS,
+    StudentPopulationSimulator,
+    load_simulation_config,
+)
 
 
 @pytest.fixture(scope="module")
 def modeling_df() -> pd.DataFrame:
     """Return the modeling table built from the stage-1 simulation config."""
-    config_path = Path(__file__).resolve().parents[2] / "configs" / "simulation.toml"
+    config_path = Path(__file__).resolve().parents[2] / "configs" / "simulation.yml"
     config = load_simulation_config(config_path)
-    return build_modeling_table(StudentPopulationSimulator(config).run())
+    dataset = StudentPopulationSimulator.from_config(config).simulate().dataset
+    # build_modeling_table (old stack) reads the total, which the dataset leaves out.
+    dataset["n_children_total"] = dataset[list(COHORT_COLUMNS)].sum(axis=1)
+    return build_modeling_table(dataset)
 
 
 # Every predeclared candidate spec, including the opt-in daycare curve, plus the

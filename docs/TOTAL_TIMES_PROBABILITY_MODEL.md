@@ -76,7 +76,7 @@ population PR #11's unpenalized torch Poisson did); NB2 is unpenalized.
 
 ## 3. `CohortProbabilityModel`
 
-`estimator` is any scikit-learn multi-class classifier (required); `replication` builds
+`estimator` is any scikit-learn multi-class classifier (required); `replication_method` builds
 the categorical rows (§3.1); `calibration_method` / `calibration_cv` calibrate inside the
 model (§3.4); `feature_transformer` as in `CountModel`. `fit(X, y)` takes the raw count
 table; `predict` returns the probabilities, a DataFrame with `y`'s columns.
@@ -84,7 +84,7 @@ table; `predict` returns the probabilities, a DataFrame with `y`'s columns.
 ### 3.1 The categorical rows
 
 **What.** `fit` turns the count table into categorical rows itself
-(`multinomial_to_categorical(y, replication)`): `"weighted"` (default), one row per
+(`multinomial_to_categorical(y, replication_method)`): `"weighted"` (default), one row per
 (building, cohort) with a child, `sample_weight` = the count; `"per_child"`, one row per
 child, no `sample_weight`. A row's label is its cohort's **column position** in `y`.
 
@@ -106,7 +106,7 @@ $$
 = \sum_b \sum_{\text{child } i \text{ of } b} \log p_{k(i)}(w_b).
 $$
 
-It is also what `COHORT_LOG_LOSS` scores (per child; "equals scikit-learn's `log_loss`
+It is also what `multinomial_log_loss` scores (per child; "equals scikit-learn's `log_loss`
 on one row per child"). A weight of $C_{b,k}/Y_b$ instead (one unit per building, the
 Dirichlet build's weighting) gives $\sum_b\sum_k s_{b,k}\log p_k(w_b)$: not the
 multinomial likelihood, and a different estimator (coefficients differ by 0.059).
@@ -115,7 +115,7 @@ multinomial likelihood, and a different estimator (coefficients differ by 0.059)
 are the same fit. For an estimator that counts or resamples **rows** they are different
 procedures: `min_samples_leaf` / `min_child_samples` count rows, not weights, and a
 bootstrap draws rows (§3.3). Measured on the simulator (five populations, held-out
-`COHORT_LOG_LOSS`, per child / weighted; the per-seed difference; fit seconds): LR 1.0783
+`multinomial_log_loss`, per child / weighted; the per-seed difference; fit seconds): LR 1.0783
 / 1.0783 (0; 0.005 / 0.003 s); HGB 1.0899 / 1.0869 (−0.001 to +0.010; 3.7 / 1.3); LightGBM
 1.0884 / 1.0850 (−0.002 to +0.006; 0.12 / 0.04); RF 300 trees 1.0822 / 1.0817 (−0.001 to
 +0.005; 0.38 / 0.19). Within noise, so the default is the cheaper `"weighted"`;
@@ -228,7 +228,7 @@ randomness then comes from `max_features`), or a bootstrap-by-building aggregato
 `CohortProbabilityModel`, a ten-line class taking `groups` by `has_fit_parameter` as the
 NB2 exposure does, added only then. What to tune meanwhile: the forest's
 `min_samples_leaf` and `max_features`, LightGBM's `subsample` / `subsample_freq` and
-`min_child_samples`, and `replication` as a setting (`probability_model__replication`).
+`min_child_samples`, and `replication_method` as a setting (`probability_model__replication_method`).
 The folds that **must** be grouped are the calibration folds (by building, §3.4) and the
 tuner's (by neighborhood, `Splitter`).
 
@@ -286,7 +286,7 @@ one (LR, LightGBM, HGB: logits) and `predict_proba` otherwise (RF, KNN). The wei
 both the fold fits and the calibrator (`beta_` 0.9655 with the counts as weights vs
 0.9615 without).
 
-**Check** (held-out `COHORT_LOG_LOSS`, ten populations, grouped 80/20, four standardized
+**Check** (held-out `multinomial_log_loss`, ten populations, grouped 80/20, four standardized
 features, test buildings with a child; mean ± sd; sub-task 4):
 
 | Estimator | None | temperature | sigmoid | isotonic |
@@ -334,7 +334,7 @@ numpy broadcast `* total[:, None]` is along the rows (a bare `* total` would ali
 the **columns**: an error at 60 rows, silent when rows equal cohorts); it is the same as
 `mul(total, axis=0)` and faster (31 vs 56 µs on 245 rows). Nested names reach both halves
 (`total_model__estimator__alpha`, `total_model__use_exposure`,
-`probability_model__estimator__C`, `probability_model__replication`,
+`probability_model__estimator__C`, `probability_model__replication_method`,
 `probability_model__calibration_method`); the templates stay unfitted, so a refit equals
 a fresh fit (the contract test). **Check.** The rows of every smoke-run prediction equal
 the total model's prediction (asserted on all 240 fits).
@@ -347,11 +347,11 @@ classes of the old stack. `CountModel` and `NegativeBinomialRegressor`:
 
 | Class | Settings (defaults) | `fit` takes | Fitted state | `predict` returns |
 |---|---|---|---|---|
-| `CohortProbabilityModel` | `estimator` (required: a `Classifier`); `replication="weighted"` or `"per_child"`; `calibration_method=None`, `"temperature"`, `"sigmoid"` or `"isotonic"`; `calibration_cv=5`; `feature_transformer=None` | the raw table with `feature_transformer`, otherwise the design matrix; a DataFrame of cohort counts (≥ 2 columns, every cohort with a child, counts non-negative and finite, integer under `"per_child"`); an exposure is ignored | `estimator_` (the fitted classifier, or the `CalibratedClassifierCV` around it), `cohorts_` (`y`'s columns), `feature_transformer_` | the probabilities, a DataFrame with `y`'s columns, indexed like `X`, rows summing to 1 |
+| `CohortProbabilityModel` | `estimator` (required: a `Classifier`); `replication_method="weighted"` or `"per_child"`; `calibration_method=None`, `"temperature"`, `"sigmoid"` or `"isotonic"`; `calibration_cv=5`; `feature_transformer=None` | the raw table with `feature_transformer`, otherwise the design matrix; a DataFrame of cohort counts (≥ 2 columns, every cohort with a child, counts non-negative and finite, integer under `"per_child"`); an exposure is ignored | `estimator_` (the fitted classifier, or the `CalibratedClassifierCV` around it), `cohorts_` (`y`'s columns), `feature_transformer_` | the probabilities, a DataFrame with `y`'s columns, indexed like `X`, rows summing to 1 |
 | `TotalTimesProbabilityModel` | `total_model` (a `BaseAgeGroupModel`, e.g. `CountModel`), `probability_model` (a `CohortProbabilityModel`) | the raw table, the cohort counts, `exposure=` for both models | `total_model_`, `probability_model_` | `total × probabilities`, a DataFrame with `y`'s columns at fit, indexed like `X`, each row summing to the predicted total |
 
 Every model keeps `fit(X, y, exposure=None)`, `predict(X, exposure=None)` and
-`evaluate(y_true, y_pred, metric)`. Type aliases: `Classifier`, `ReplicationType`,
+`evaluate(y_true, y_pred, metric, *, cohort=None)`. Type aliases: `Classifier`, `ReplicationMethod`,
 `CalibrationMethod`.
 
 ## 6. Data Flow
@@ -368,16 +368,19 @@ Every model keeps `fit(X, y, exposure=None)`, `predict(X, exposure=None)` and
 from lightgbm import LGBMClassifier, LGBMRegressor
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.linear_model import LogisticRegression, PoissonRegressor
+from sklearn.metrics import mean_poisson_deviance
 
 from age_group_prediction.modeling import (
     CohortProbabilityModel, CountModel, NegativeBinomialRegressor, TotalTimesProbabilityModel,
 )
 from age_group_prediction.preprocessing import ExposureTransformer, ShareTransformer
-from age_group_prediction.scoring import COHORT_LOG_LOSS, POISSON_DEVIANCE
+from age_group_prediction.scoring import Metric, multinomial_log_loss
 from age_group_prediction.splitting import Splitter
 from age_group_prediction.utils import take_rows
 
 COHORTS = ["n_kindergarten", "n_elementary", "n_highschool"]
+POISSON_DEVIANCE = Metric("poisson_deviance", mean_poisson_deviance)
+COHORT_LOG_LOSS = Metric("cohort_log_loss", multinomial_log_loss)
 
 # 1. On the full table: raw_table is the simulator's or the real data
 table = ShareTransformer(
@@ -417,10 +420,11 @@ scores["composition"] = model.evaluate(Y_test, predictions, COHORT_LOG_LOSS)  # 
 alpha = model.total_model_.estimator_.dispersion_  # NB2's fitted α
 ```
 
-Run as written on the simulator's seed-0 population (2026-10-08, under `-W error`): 196
-training and 49 test buildings; `scores` 1.855 (kindergarten), 1.958 (elementary), 2.250
-(high school), total 3.587, composition 1.084; $\alpha$ 0.0876;
-`predictions.sum(axis=1)` equals the total model's prediction.
+Run as written on the simulator's seed-0 population (2026-10-08, under `-W error`; rerun
+on 2026-10-30 with the renamed `multinomial_log_loss`, the same numbers): 196 training and
+49 test buildings; `scores` 1.855 (kindergarten), 1.958 (elementary), 2.250 (high school),
+total 3.587, composition 1.084; $\alpha$ 0.0876; `predictions.sum(axis=1)` equals the total
+model's prediction.
 
 ## 7. Errors
 
@@ -429,7 +433,7 @@ training and 49 test buildings; `scores` 1.855 (kindergarten), 1.958 (elementary
 | the total model's | [Independent cohort models §6](INDEPENDENT_COHORT_MODELS.md#6-errors): the exposure checks, `TypeError` for an estimator taking neither argument, NB2's `RuntimeError` |
 | `ValueError` "inconsistent numbers of samples" | `X` and `y` of different lengths at `CohortProbabilityModel.fit` |
 | `ValueError` "no child is observed in cohorts" | a cohort column of `y` sums to 0 |
-| `ValueError` "replication must be" | an unknown `replication` |
+| `ValueError` "replication_method must be" | an unknown `replication_method` |
 | `ValueError` "probabilities do not sum to 1" | a one-vs-all objective without a calibration method (§3.2) |
 | `ValueError` "Only 2 class/es in training fold" | a calibration fold lacking a cohort, for a classifier with `decision_function` (§3.4) |
 | `InvalidParameterError` / `ValueError` from scikit-learn | an unknown `calibration_method`; `calibration_cv` of 1, 0 or negative |
@@ -461,7 +465,7 @@ Left to the libraries or to preprocessing: count values, the exposure's values
 The smoke run (ten simulated populations, grouped 80/20 by neighborhood, class defaults,
 untuned; Model 1 = `IndependentCohortModels` of LightGBM `CountModel`s on the §8.1
 features, Model 2 on `total_base` / `cohort_probability_base`; held-out Poisson deviance
-and `COHORT_LOG_LOSS`, mean ± SD). The full tables, the paired differences and the recipe:
+and `multinomial_log_loss`, mean ± SD). The full tables, the paired differences and the recipe:
 [plan, sub-task 6](TOTAL_TIMES_PROBABILITY_MODEL_PLAN.md).
 
 | Model | `n_kindergarten` | `n_elementary` | `n_highschool` | total | cohort log loss |

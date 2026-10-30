@@ -17,6 +17,12 @@ from .features import (
     stable_row_normalize,
 )
 
+LatentEffects = dict[str, pd.Series]
+"""Effect name -> one value per owner id (the Series index)."""
+
+COHORT_COLUMNS: tuple[str, ...] = ("n_kindergarten", "n_elementary", "n_highschool")
+"""The cohort count columns, in the order of the cohort probabilities."""
+
 
 def _sample_random_effect(
     entity_ids: pd.Series,
@@ -53,14 +59,17 @@ class TotalChildrenSimulator:
         self._default_seed = simulation.seed
         self._settings = settings
         self._transforms = transforms
-        self._latent_effects: dict[str, pd.Series] = {}
 
-    def generate(
+    def sample_total_children(
         self,
         apartment_context: pd.DataFrame,
         rng: np.random.Generator | None = None,
-    ) -> pd.DataFrame:
+    ) -> tuple[pd.DataFrame, LatentEffects]:
         """Sample total child counts for a joined apartment context.
+
+        Draws, in order: one Gaussian effect per building, one per
+        neighborhood, then an NB2 count per apartment from the room, SES,
+        household-size, daycare, school and median-age terms plus both effects.
 
         Args:
             apartment_context: Apartment rows joined to building and
@@ -70,8 +79,10 @@ class TotalChildrenSimulator:
                 created from the configured simulation seed.
 
         Returns:
-            A copy of `apartment_context` with `n_children_total` added. Latent
-            effects remain private and are never returned as columns.
+            A copy of `apartment_context` with `n_children_total` added, and the
+            effects `building_total_count_effect` (indexed by `building_id`)
+            and `neighborhood_total_count_effect` (by `neighborhood_id`). The
+            effects are never columns.
         """
         generator = (
             np.random.default_rng(self._default_seed) if rng is None else rng
@@ -104,11 +115,10 @@ class TotalChildrenSimulator:
 
         out = apartment_context.copy(deep=True)
         out["n_children_total"] = self._sample_nb2(generator, mu).astype(int)
-        self._latent_effects = {
+        return out, {
             "building_total_count_effect": building_effect,
             "neighborhood_total_count_effect": neighborhood_effect,
         }
-        return out
 
     def compute_log_mu(
         self,
@@ -166,25 +176,6 @@ class TotalChildrenSimulator:
             features["rooms_centered"] * features["household_size_scaled"]
         )
         return design.loc[:, list(self._feature_coefficients())]
-
-    def latent_effects(self) -> dict[str, pd.Series]:
-        """Return named copies of effects from the latest generation call.
-
-        This supports the temporary pipeline recovery adapter while keeping
-        latent values out of generated DataFrame columns. Named effects avoid
-        positional coupling when an effect is added or removed.
-
-        Raises:
-            RuntimeError: If called before `generate` creates effects.
-        """
-        if not self._latent_effects:
-            raise RuntimeError(
-                "latent effects are unavailable before generate()"
-            )
-        return {
-            name: effect.copy()
-            for name, effect in self._latent_effects.items()
-        }
 
     def _build_features(self, apartment_context: pd.DataFrame) -> pd.DataFrame:
         """Apply configured transforms used by the expected-count formula."""
@@ -259,12 +250,16 @@ class CohortCompositionSimulator:
         self._transforms = transforms
         self._total_children = total_children
 
-    def generate(
+    def sample_cohorts(
         self,
         apartment_context: pd.DataFrame,
         rng: np.random.Generator | None = None,
-    ) -> pd.DataFrame:
+    ) -> tuple[pd.DataFrame, LatentEffects]:
         """Sample cohort counts that sum to each apartment's child total.
+
+        Draws, in order: one Gaussian effect per building, then per apartment a
+        multinomial split of `n_children_total` with probabilities from the
+        lifecycle score (rooms, daycares, median age, household size, effect).
 
         Args:
             apartment_context: Apartment rows joined to building and
@@ -274,7 +269,8 @@ class CohortCompositionSimulator:
 
         Returns:
             A copy of `apartment_context` with kindergarten, elementary, and
-            high-school counts. The latent building effect is not returned.
+            high-school counts, and the effect `building_cohort_effect`
+            (indexed by `building_id`), which is never a column.
         """
         generator = (
             np.random.default_rng(self._default_seed) if rng is None else rng
@@ -304,10 +300,8 @@ class CohortCompositionSimulator:
             )
 
         out = apartment_context.copy(deep=True)
-        out["n_kindergarten"] = draws[:, 0]
-        out["n_elementary"] = draws[:, 1]
-        out["n_highschool"] = draws[:, 2]
-        return out
+        out[list(COHORT_COLUMNS)] = draws
+        return out, {"building_cohort_effect": building_effect}
 
     def compute_theta(
         self,

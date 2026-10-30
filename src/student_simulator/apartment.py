@@ -18,15 +18,17 @@ class ApartmentSimulator:
         self._default_seed = simulation.seed
         self._supported_rooms = room_mix.supported_rooms
 
-    def generate(
+    def expand_apartments(
         self,
-        buildings: pd.DataFrame,
+        buildings_df: pd.DataFrame,
         rng: np.random.Generator | None = None,
     ) -> pd.DataFrame:
         """Expand wide building room counts into canonical apartment rows.
 
+        Draws one permutation per building, which orders its apartments.
+
         Args:
-            buildings: One row per building with `{room}_rooms` columns and
+            buildings_df: One row per building with `{room}_rooms` columns and
                 `building_id`.
             rng: Optional shared generator. When omitted, a fresh generator is
                 created from the configured simulation seed.
@@ -40,7 +42,7 @@ class ApartmentSimulator:
 
         apartment_rows: list[dict[str, int | str]] = []
         apartment_id_counter = 1
-        for _, building in buildings.iterrows():
+        for _, building in buildings_df.iterrows():
             rooms = self._expand_building_rooms(building)
             if rooms:
                 rooms_array = np.asarray(rooms, dtype=int)
@@ -62,40 +64,31 @@ class ApartmentSimulator:
         return pd.DataFrame(apartment_rows)
 
     @staticmethod
-    def with_context(
-        apartments: pd.DataFrame,
-        buildings: pd.DataFrame,
-        neighborhoods: pd.DataFrame,
+    def join_context(
+        apartments_df: pd.DataFrame,
+        buildings_df: pd.DataFrame,
+        neighborhoods_df: pd.DataFrame,
     ) -> pd.DataFrame:
         """Join apartments with building and neighborhood context columns.
 
         This method uses explicit merge keys and cardinality validation to keep
         relationship assumptions observable.
         """
-        merged = apartments.merge(
-            buildings[["building_id", "neighborhood_id"]],
+        merged = apartments_df.merge(
+            buildings_df[["building_id", "neighborhood_id"]],
             on="building_id",
             how="left",
             validate="many_to_one",
         )
         return merged.merge(
-            neighborhoods[
-                [
-                    "neighborhood_id",
-                    "ses",
-                    "avg_household_size",
-                    "median_age",
-                    "n_daycares_500m",
-                    "school_status",
-                ]
-            ],
+            neighborhoods_df,
             on="neighborhood_id",
             how="left",
             validate="many_to_one",
         )
 
     @staticmethod
-    def to_cohort_long(apartments: pd.DataFrame) -> pd.DataFrame:
+    def to_cohort_long(apartments_df: pd.DataFrame) -> pd.DataFrame:
         """Return long-format apartment cohort counts for analysis workflows.
 
         Raises:
@@ -110,7 +103,7 @@ class ApartmentSimulator:
             "n_elementary",
             "n_highschool",
         }
-        missing = sorted(required - set(apartments.columns))
+        missing = sorted(required - set(apartments_df.columns))
         if missing:
             missing_columns = ", ".join(missing)
             raise ValueError(
@@ -123,7 +116,7 @@ class ApartmentSimulator:
             "n_elementary": "elementary",
             "n_highschool": "highschool",
         }
-        long_df = apartments.melt(
+        long_df = apartments_df.melt(
             id_vars=["apartment_id", "building_id", "rooms", "n_children_total"],
             value_vars=list(cohort_map.keys()),
             var_name="cohort_target",

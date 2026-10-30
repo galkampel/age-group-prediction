@@ -20,9 +20,9 @@ implementation details conflict, the model specification controls behavior.
     (PR #11; see the [plan](MULTI_COHORT_MODELS_PLAN.md)) and rebuilt again on
     library estimators as `TotalTimesProbabilityModel`, without torch (PR #13;
     see the [plan](TOTAL_TIMES_PROBABILITY_MODEL_PLAN.md));
-  - the `hyperparameter_tuning` package is complete (PR #5; the
-    [user guide](HYPERPARAMETER_TUNING.md); decisions and design in its
-    [plan](HYPERPARAMETER_TUNING_PLAN.md));
+  - the `hyperparameter_tuning` package, rebuilt from the experiment notebook's
+    section 5, which imports it (PR #17; the [user guide](HYPERPARAMETER_TUNING.md);
+    decisions in the [plan](NOTEBOOK_TUNING_PLAN.md));
   - the `splitting` package (built and tested, not yet wired);
   - the `inspection` package is complete (PRs #14 and C; the
     [user guide](MODEL_INSPECTION.md); decisions in the
@@ -41,7 +41,7 @@ implementation details conflict, the model specification controls behavior.
 |---|---|
 | [Modeling guide](MODELING_GUIDE.md) | User guide to the simulator-to-model pipeline, public APIs, configuration, evidence, and invariants |
 | [MLflow experiments guide](MLFLOW_EXPERIMENTS_GUIDE.md) | User guide to scratch tracking, run layout, metrics, search, final-run semantics, and model loading |
-| [Hyperparameter tuning](HYPERPARAMETER_TUNING.md) | User guide to the `hyperparameter_tuning` package: parameters, the cross-validation evaluator, fold aggregation and the corrected standard error, the study and its records, pruning, reproducibility, making a model tunable, hazards; the worked example run as written |
+| [Hyperparameter tuning](HYPERPARAMETER_TUNING.md) | User guide to the `hyperparameter_tuning` package: the params records, components and search spaces per family, the two composites built from a trial's draws (the sharing flags), `CrossValidationTuner` (parallel folds, one named tune method per model), aggregation, the refit from `best_params` and the run record, reproducibility, hazards; a worked example on both rebuilt models run as written |
 | [Model inspection](MODEL_INSPECTION.md) | User guide to the `inspection` package: the bootstrap interval of a metric (rows or whole neighborhoods), permutation importance per raw column (held-out and training rows, per component), SHAP values of the rate or the count (exact or permutation, codes for string columns, the plots), hazards; the worked example on both rebuilt models run as written |
 
 ## Model And Component References
@@ -71,10 +71,14 @@ implementation details conflict, the model specification controls behavior.
 | [Model re-implementation plan](MODEL_REIMPLEMENTATION_PLAN.md) | Decisions and step-by-step record for the scikit-learn-style `modeling` package |
 | [Multi-cohort models plan](MULTI_COHORT_MODELS_PLAN.md) | Decisions, steps and evidence for `IndependentCohortModels` (Model A's cohorts in one object; PR #10) and the rebuilt Model B in `modeling` (PR #11), with the smoke run comparing them |
 | [Total times probability model plan](TOTAL_TIMES_PROBABILITY_MODEL_PLAN.md) | Model B rebuilt again on library estimators (PR #13): `CountModel` with NB2 as `NegativeBinomialRegressor`, `CohortProbabilityModel` on any classifier with calibration inside, `TotalTimesProbabilityModel`; decisions P1–P15, measured evidence, the sub-task records and the smoke run |
-| [Hyperparameter tuning plan](HYPERPARAMETER_TUNING_PLAN.md) | Implemented (PR #5): decisions D1–D20, the design with its measured evidence and the test table of the `hyperparameter_tuning` package; the user guide is above |
 | [Direct cohort generalization plan](DIRECT_COHORT_GENERALIZATION_PLAN.md) | Any regressor in `DirectCohortModel` (the exposure as a weighted rate, with the derivation), the `feature_transformer` inside each model in place of `ModelPipeline`, and the tuning evaluator on the raw table |
-| [Experiment notebook plan](EXPERIMENT_NOTEBOOK_PLAN.md) | The MLflow experiment notebook and the work before it, as four PRs: the tuning study (A), the three-way split and the cohort count metric (B), feature importance (C), the notebook with the data and MLflow (D); decisions E1–E12, sub-tasks with done-when lists |
+| [Experiment notebook plan](EXPERIMENT_NOTEBOOK_PLAN.md) | The MLflow experiment notebook and the work before it, as four PRs: the tuning study (A), the three-way split and the cohort count metric (B), feature importance (C), the notebook with the data and MLflow (D); decisions E1–E12, sub-tasks with done-when lists. PRs A–C done; in D the tuning was re-planned and done (the notebook tuning plan), the MLflow runs, the comparison and E11's final evaluation are open |
+| [Experiment notebook handoff](EXPERIMENT_NOTEBOOK_HANDOFF.md) | Where the notebook stands after the tuning rebuild (2026-10-29): what exists, the state and checks with the 24 regression baselines and the 400-trial results, the decisions D1–D26 in brief with the dataclass-vs-TypedDict table, how to work, open items, and the prompt for the next items (MLflow runs, the comparison table, E11's final evaluation) |
+| [Notebook tuning plan](NOTEBOOK_TUNING_PLAN.md) | The tuning re-implemented in the experiment notebook with plain Optuna, then moved into the new `hyperparameter_tuning` package: decisions D1–D26 with their measured evidence, the sub-tasks T1–T5, the checks and the 24 regression baselines |
+| [Notebook component redesign plan](NOTEBOOK_COMPONENT_REDESIGN_PLAN.md) | The history of D23–D24 (components holding the transformer, the builders named after the models, the sharing flags); its code blocks are superseded by the package |
+| [T4 handoff](NOTEBOOK_T4_HANDOFF.md) | The old package deleted (T4a), the new one built and imported by the notebook (T4b), the docs (T5): each sub-task's steps, result and commit, the checks and the 24 baselines |
 | [Model inspection plan](MODEL_INSPECTION_PLAN.md) | Implemented (PR #14): decisions I1–I2, I7, I12–I13 and the test record of `BootstrapEvaluator`; the user guide is above |
+| [Simulator white-box plan](SIMULATOR_WHITE_BOX_PLAN.md) | The `student_simulator` refactor: components constructed outside and handed in, `simulate()` whose body is the flow, a `SimulationResult` with the dataset and the latent effects per owner; Stops 1–3 done, Stop 4 (docs) and a cleanup stop remain |
 | [Feature importance plan](FEATURE_IMPORTANCE_PLAN.md) | Implemented (PR C): decisions I3–I6, I8–I11 with their measured evidence (shap's maskers, exact vs permutation, the row-wise exposure) and the test records of `PermutationImportance` and `ShapExplainer`; the user guide is above |
 
 ## Extensions Beyond The Simplified Model (Not Implemented)

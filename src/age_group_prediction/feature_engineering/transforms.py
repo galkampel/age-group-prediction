@@ -45,7 +45,7 @@ class _TransformBase(BaseModel):
     # The sign of the output. "always": negative somewhere (or all zero) whatever
     # the data, as for a mean-zero column. "as_input": negative only where the
     # input is. "depends_on_data": either, so only the data can tell. "never".
-    # ColumnPlan reads it to reject a log that cannot succeed.
+    # Plan reads it to reject a log that cannot succeed.
     negative_output: ClassVar[
         Literal["always", "as_input", "depends_on_data", "never"]
     ] = "as_input"

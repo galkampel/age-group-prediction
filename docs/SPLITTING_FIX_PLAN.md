@@ -1,5 +1,7 @@
 # fix(splitting): readability and a groups=None bug
 
+> **2026-10-29:** the `hyperparameter_tuning` package this document names was removed with its docs ([NOTEBOOK_TUNING_PLAN.md](NOTEBOOK_TUNING_PLAN.md) D17, T4a); T4b rebuilds it from the experiment notebook's section 5.
+
 ## Context
 
 Branch `fix/splitting` (off `feat/hyperparameter-tuning`; draft PR will target it). Probing the `splitting/` package found:

@@ -13,9 +13,9 @@ from pydantic import ValidationError
 from sklearn.linear_model import LogisticRegression, PoissonRegressor
 
 from age_group_prediction.feature_engineering import (
-    ColumnPlan,
     FeatureTransformer,
     OneHot,
+    Plan,
     Standardize,
 )
 from age_group_prediction.inspection import PermutationImportance
@@ -26,7 +26,9 @@ from age_group_prediction.modeling import (
     TotalTimesProbabilityModel,
 )
 from age_group_prediction.preprocessing import ExposureTransformer
-from age_group_prediction.scoring import COHORT_POISSON_DEVIANCE, Metric
+from age_group_prediction.scoring import Direction, Metric, mean_poisson_deviance_loss
+
+COHORT_POISSON_DEVIANCE = Metric("cohort_poisson_deviance", mean_poisson_deviance_loss)
 from student_simulator import StudentPopulationSimulator, load_simulation_config
 
 # A shuffled index that is not 0..n-1, so code pairing rows by label fails.
@@ -71,9 +73,9 @@ class _RecordingMetric:
 
 
 def _compute(
-    recorder: _RecordingMetric, *, greater_is_better: bool = False, **settings: Any
+    recorder: _RecordingMetric, *, direction: Direction = "minimize", **settings: Any
 ) -> tuple[_SpyModel, pd.DataFrame]:
-    metric = Metric("mae", recorder, greater_is_better=greater_is_better)
+    metric = Metric("mae", recorder, direction=direction)
     kwargs: dict[str, Any] = {
         "metric": metric,
         "n_repeats": N_REPEATS,
@@ -98,7 +100,7 @@ def test_a_positive_importance_means_the_column_helps_under_both_directions() ->
     # the used column as positive.
     _, loss_result = _compute(_RecordingMetric())
     recorder = _RecordingMetric()
-    gain = Metric("gain", lambda t, p: -recorder(t, p), greater_is_better=True)
+    gain = Metric("gain", lambda t, p: -recorder(t, p), direction="maximize")
     gain_result = PermutationImportance(
         gain, N_REPEATS, random_state=0
     ).compute_importances(_SpyModel(), X, Y, exposure=EXPOSURE)
@@ -173,27 +175,29 @@ def test_invalid_settings_raise(settings: dict[str, Any]) -> None:
 def test_total_times_probability_model_with_a_string_column() -> None:
     # Catches a scorer that turns X into an array (the string column and the
     # transformer would break) or that mishandles a DataFrame y.
-    path = Path(__file__).resolve().parents[2] / "configs" / "simulation.toml"
+    path = Path(__file__).resolve().parents[2] / "configs" / "simulation.yml"
     config = load_simulation_config(path)
     config = config.model_copy(
         update={
             "simulation": config.simulation.model_copy(update={"n_neighborhoods": 20})
         }
     )
-    table = StudentPopulationSimulator(config).run()
+    table = StudentPopulationSimulator.from_config(config).simulate().dataset
     numeric = ("ses", "avg_household_size", "median_age", "n_daycares_500m")
     features = FeatureTransformer(
-        plans=(
-            ColumnPlan(name="numeric", columns=numeric, transforms=(Standardize(),)),
-            ColumnPlan(
-                name="school",
-                columns=("school_status",),
-                transforms=(
-                    OneHot(
-                        categories=("none", "existing", "planned"),
-                        reference_category="none",
+        column_plans=(
+            (Plan(name="numeric", transforms=(Standardize(),)), list(numeric)),
+            (
+                Plan(
+                    name="school",
+                    transforms=(
+                        OneHot(
+                            categories=("none", "existing", "planned"),
+                            reference_category="none",
+                        ),
                     ),
                 ),
+                ["school_status"],
             ),
         )
     )

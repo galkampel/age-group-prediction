@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 from typing import Literal, Mapping
-import tomllib
 
+import yaml
 from pydantic import (
     BaseModel,
     ConfigDict,
@@ -213,7 +213,7 @@ class ValidationSettings(_Settings):
 
 
 class Config(_Settings):
-    """Complete generation configuration loaded from the stage TOML file."""
+    """Complete generation configuration loaded from the stage YAML file."""
 
     simulation: SimulationSettings
     transforms: TransformSettings = Field(validation_alias="features")
@@ -248,6 +248,30 @@ class Config(_Settings):
             )
         return self
 
+    def with_overrides(self, overrides: Mapping[str, Mapping[str, object]]) -> Config:
+        """A copy with ``overrides`` (section -> field -> value) applied and validated.
+
+        Unlike ``model_copy(update=...)``, which skips validation, every value
+        is coerced to its field's type (``9`` to ``9.0`` for a float) and every
+        section and cross-section check runs again; a bad value raises
+        ``ConfigError``. The transform settings may be named ``transforms``,
+        the attribute, or ``features``, the file's key; errors use the latter.
+        """
+        raw = self.model_dump()
+        # The dump names the section by its attribute; validation reads the
+        # file's key. Renamed before merging, so an override under either name
+        # lands in the one section validation reads.
+        raw["features"] = raw.pop("transforms")
+        for section, fields in overrides.items():
+            key = "features" if section == "transforms" else section
+            # An unknown section or field is left to extra="forbid".
+            raw[key] = {**raw.get(key, {}), **fields}
+        try:
+            return Config.model_validate(raw)
+        except ValidationError as error:
+            _raise_config_error(error)
+            raise AssertionError("unreachable")
+
 
 def _validate_min_max(minimum: float, maximum: float, path: str) -> None:
     """Require a coherent inclusive numeric range."""
@@ -279,10 +303,14 @@ def _validate_probability_map(
         )
 
 
-def _load_toml(path: str | Path) -> dict[str, object]:
-    """Load TOML into the raw mapping accepted by the typed models."""
-    with Path(path).open("rb") as file_obj:
-        return tomllib.load(file_obj)
+def _load_yaml(path: str | Path) -> object:
+    """Load YAML into the raw data the typed models validate.
+
+    An empty file loads as ``None`` and fails validation like any other
+    non-mapping, so nothing is checked here.
+    """
+    with Path(path).open(encoding="utf-8") as file_obj:
+        return yaml.safe_load(file_obj)
 
 
 def _raise_config_error(error: ValidationError) -> None:
@@ -296,21 +324,10 @@ def _raise_config_error(error: ValidationError) -> None:
 
 
 def load_simulation_config(path: str | Path) -> Config:
-    """Load strict immutable generation settings from a stage TOML file."""
-    raw = _load_toml(path)
+    """Load strict immutable generation settings from a stage YAML file."""
+    raw = _load_yaml(path)
     try:
         return Config.model_validate(raw)
     except ValidationError as error:
         _raise_config_error(error)
         raise AssertionError("unreachable")
-
-
-def load_validation_config(path: str | Path) -> ValidationSettings:
-    """Load strict test-only calibration and recovery thresholds."""
-    raw = _load_toml(path)
-    try:
-        return ValidationSettings.model_validate(raw["validation"])
-    except (KeyError, ValidationError) as error:
-        if isinstance(error, ValidationError):
-            _raise_config_error(error)
-        raise ConfigError("missing key: config.validation") from error

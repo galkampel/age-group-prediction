@@ -670,7 +670,7 @@ acceptance.
 
 The full profile has been run once on simulator data and both stages passed
 the strict policy. The dataset was built with
-`StudentPopulationSimulator(load_simulation_config("configs/simulation.toml")).run()`
+`StudentPopulationSimulator(load_simulation_config("configs/simulation.yml")).run()`
 (simulator seed 42, 60 neighborhoods), then `build_modeling_table(...)`, then
 `split_known_neighborhood_buildings(..., rng=np.random.default_rng(42))`. That
 gives 251 buildings split into 192 for training and 59 for testing, with a

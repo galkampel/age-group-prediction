@@ -1,26 +1,43 @@
 # Plan: the experiment notebook (tuning, splitting, importance, MLflow)
 
+> **2026-10-29:** the `hyperparameter_tuning` package this document names was removed with its docs ([NOTEBOOK_TUNING_PLAN.md](NOTEBOOK_TUNING_PLAN.md) D17, T4a); T4b rebuilds it from the experiment notebook's section 5.
+
 **Written for:** the model that implements each PR, and the user who validates
 it. Self-contained: everything an implementer needs is here or linked. Re-verify
 every fact against the code of the day before relying on it (file paths, line
 counts, test counts drift).
 
-**Status (2026-10-13):** PR A done: the tuning study (A0–A5), an independent
+**Status (2026-10-14):** PR A done: the tuning study (A0–A5), an independent
 validation ([HYPERPARAMETER_TUNING_VALIDATION.md](HYPERPARAMETER_TUNING_VALIDATION.md):
 ACCEPT WITH NOTES, findings processed), PR #5 squash-merged into `main` as
 `ba2aa11` (A6). PR B done: `COHORT_POISSON_DEVIANCE` (B1) and the three-way
 split pattern (B2: tested for every method, `SPLITTING.md` §3, no new code;
-`split_method` stays a setting), PR #15 squash-merged into `main` as `660611d`;
-non-slow suite 1257 passed, 1 skipped, 1 xfailed on `main`. PR C in progress
-on `feat/feature-importance`: C1 (`PermutationImportance`) done 2026-10-13,
-C2 (`ShapExplainer`) and C3 (the smoke run and the
-[model inspection guide](MODEL_INSPECTION.md)) done 2026-10-13; **PR C is
-complete**, non-slow suite 1299 passed, 1 skipped, 1 xfailed. **Next:** open
-PR C against `main`, then PR D (§9).
+`split_method` stays a setting), PR #15 squash-merged into `main` as `660611d`.
+PR C done: `PermutationImportance` (C1), `ShapExplainer` (C2), the smoke run and
+[MODEL_INSPECTION.md](MODEL_INSPECTION.md) (C3); PR #16 squash-merged into
+`main` as `49301d0` (2026-10-13); non-slow suite 1299 passed, 1 skipped,
+1 xfailed, re-verified 2026-10-14. PR D in progress on
+`feat/experiment-notebook`: D1a and D1b committed (`2b13970`); the simulator
+refactor ([SIMULATOR_WHITE_BOX_PLAN.md](SIMULATOR_WHITE_BOX_PLAN.md)) Stops 1–3
+committed (`6b90805`, `59d15d6`, `e66b97d`), which moved the notebook to
+`notebooks/02_experiments.py` and rewrote its data cell; D1c (the split,
+`split_method = "random"` for now) committed (`537158a`); D1d (13 feature
+variants) committed (`98640ba`). **Next: step 3,
+tuning Model 1 and Model 2 by CV on the training part**, in the
+user's order of work recorded in
+[EXPERIMENT_NOTEBOOK_HANDOFF.md](EXPERIMENT_NOTEBOOK_HANDOFF.md) (split,
+feature configurations, tuning, inspection check, MLflow runs).
 
-**Branch state:** `feat/feature-importance` from `main` at `660611d`; C1
-committed as `9448c5e`, C2 as `e2c6137`; C3 (the bootstrap's two-groups
-check, the guide, the index docs and the plan docs) awaits the user's commit.
+**Status (2026-10-29):** step 3 (tuning) was re-planned on 2026-10-18 as
+[NOTEBOOK_TUNING_PLAN.md](NOTEBOOK_TUNING_PLAN.md) and is done (T1–T5): section 5 of the
+notebook tunes both models in 24 run cells and inspects each model's best run, through the new
+`hyperparameter_tuning` package (PR #17; the guide
+[HYPERPARAMETER_TUNING.md](HYPERPARAMETER_TUNING.md)). Still open here: the MLflow runs (the
+logging of D2–D3, E9, E10), D4 (the comparison table and E11's final run) and D5. **Next:**
+[EXPERIMENT_NOTEBOOK_HANDOFF.md](EXPERIMENT_NOTEBOOK_HANDOFF.md) §6.
+
+**Branch state:** `feat/experiment-notebook` from `main` at `49301d0`, HEAD
+`98640ba`; non-slow suite 1295 passed, 1 skipped, 1 xfailed.
 
 ## Contents
 
@@ -40,7 +57,7 @@ check, the guide, the index docs and the plan docs) awaits the user's commit.
 
 ## 1. Goal
 
-A marimo notebook, `notebooks/03_experiments.py`, that runs one MLflow
+A marimo notebook, `notebooks/02_experiments.py`, that runs one MLflow
 experiment (`age-group-prediction`, or the scratch name from `.env`) on a
 synthetic population. **Each cell is one run, and one run is one setting:**
 
@@ -80,7 +97,7 @@ Verified 2026-10-11 on `feat/hyperparameter-tuning`. Paths are under
 - `CountModel(*, estimator, use_exposure=False, feature_transformer=None)`:
   one count target. An estimator taking `exposure` (NB2) gets it raw; one taking
   `sample_weight` (Poisson GLM, LightGBM) fits the weighted rate.
-- `CohortProbabilityModel(*, estimator, replication="weighted",
+- `CohortProbabilityModel(*, estimator, replication_method="weighted",
   calibration_method=None, calibration_cv=5, feature_transformer=None)`:
   `y` is the (buildings × cohorts) count DataFrame; `predict` returns
   probabilities, rows summing to 1.
@@ -141,16 +158,19 @@ building: `building_id`, `neighborhood_id`, `ses`, `avg_household_size`,
 `median_age`, `n_daycares_500m`, `school_status`, `3_rooms`…`6_rooms`,
 `n_apartments`, `n_kindergarten`, `n_elementary`, `n_highschool`,
 `n_children_total`. `Config` is a frozen pydantic model loaded by
-`load_simulation_config("configs/simulation.toml")` (seed 42, 60
-neighborhoods); `notebooks/02_model_fitting.py` lines ~128–142 show the
-`model_copy(update=...)` override to 150 neighborhoods × 9 buildings.
+`load_simulation_config("configs/simulation.yml")` (seed 42, 60
+neighborhoods); the notebook overrides it with `base.with_overrides({"simulation":
+{"n_neighborhoods": 150}, "building": {"buildings_per_neighborhood_rate": 9.0}})`,
+validated, unlike `model_copy` (150 neighborhoods × 9 buildings, 1529 rows).
 `preprocessing.ExposureTransformer("n_apartments").fit_transform(table)` gives
 the validated exposure; `preprocessing.ShareTransformer` the room shares.
 
 **Feature declarations.** `tree` (§8.1), `total_base` (§8.2),
-`cohort_probability_base` (§8.3) and the §8.5 candidates exist **only as code
-blocks** in [FEATURE_TRANSFORMATIONS.md](FEATURE_TRANSFORMATIONS.md) §8; nothing
-in `src/` defines them.
+`cohort_probability_base` (§8.3; the notebook names the two identical bases
+`glm_base`, D1d) and the §8.5 candidates exist **only as code blocks** in [FEATURE_TRANSFORMATIONS.md](FEATURE_TRANSFORMATIONS.md) §8; nothing
+in `src/` defines them. **Decision 2026-10-14:** they stay written out in the
+notebook; no module in `src/` (the user's call: explicit in the notebook, a
+module only if a second client appears).
 
 **MLflow.** `mlflow>=3.16,<4` is the optional dependency group `tracking`.
 `tracking/` and `experiment/` are the **old stack**: they import `models/` and
@@ -159,13 +179,16 @@ in `src/` defines them.
 deletes them. `hashing.py` is old-stack too. The repo root's `mlflow.db` and
 `mlartifacts/` are the canonical store and **must never be written**; the
 scratch store is `.mlflow-local/` via `.env` (template `.env.example`;
-[MLFLOW_EXPERIMENTS_GUIDE.md](MLFLOW_EXPERIMENTS_GUIDE.md) §1–§3). Importing the
-package root `age_group_prediction` loads the old stack (torch, pyro): **the
-notebook and the new modules import submodules** (`from
-age_group_prediction.modeling import ...`).
+[MLFLOW_EXPERIMENTS_GUIDE.md](MLFLOW_EXPERIMENTS_GUIDE.md) §1–§3). Importing **any**
+module of `age_group_prediction` runs the package root's `__init__`, which
+imports the old stack (torch, pyro: 2.7 s, 42 package modules, measured
+2026-10-14 with `import age_group_prediction.preprocessing`); importing
+submodules does not avoid it. The notebook imports submodules for clarity only;
+the cost goes with roadmap step 5 (the old stack's deletion).
 
 **Notebooks** are marimo `.py` files (`notebooks/01_eda.py`,
-`notebooks/02_model_fitting.py`; the latter is the old stack's client). Run
+`notebooks/02_experiments.py`; the old stack's client `02_model_fitting.py` was
+deleted in D1a). Run
 with `uv run --env-file .env --group notebook --group tracking marimo edit
 notebooks/<name>.py` from the repo root.
 
@@ -302,6 +325,11 @@ registry keyed on "the" prediction; keep `Metric` as is).
 - In MLflow (E9): one **parent run per setting**, one **nested child run per
   study** (per cohort, or per component).
 
+> **2026-10-29:** superseded by the notebook tuning plan's D6 and D12: one joint study per
+> family combination and exposure, on the composite's cohort Poisson deviance, the components
+> drawn per trial; not one study per cohort or component. The MLflow nesting of the last
+> bullet is open again (E9's note).
+
 **E5. Exposure on/off is a setting (two runs), not a `CategoricalParameter`.**
 A boolean parameter would be legal (no conditional parameters, D9 of the tuning
 plan), but: `use_exposure` changes the target (weighted rate vs count), so the
@@ -311,18 +339,22 @@ which is a feature-variant change anyway; and Model 1 cannot express it as a
 parameter at all (E2 of §2). Two runs with the same seeds and folds, compared on
 validation.
 
+> **2026-10-29:** confirmed by the notebook tuning plan's D6: every count family runs with
+> the exposure on and off; the GLMs are about 0.6 worse with it off, and all 24 runs are kept
+> (D20).
+
 **E6. The three-way split needs no new class.** Positions, as everything else:
 
 ```python
 splitter = Splitter(split_method)                    # a setting: see B2
 train_val_index, test_index = splitter.train_test_indices(
-    table, groups, test_size=0.2, random_state=split_seed)
+    table, groups, test_size=0.2, random_state=seed)
 groups_train_val = take_rows(groups, train_val_index)
 train_sub, val_sub = splitter.train_test_indices(
     take_rows(table, train_val_index), groups_train_val,
-    test_size=0.25, random_state=split_seed)         # 0.25 of 80 % = 20 % of all
+    test_size=0.25, random_state=seed)               # 0.25 of 80 % = 20 % of all
 train_index, val_index = train_val_index[train_sub], train_val_index[val_sub]
-cv = splitter.cv(n_splits=5, random_state=cv_seed)   # given take_rows(groups, train_index)
+cv = splitter.cv(n_splits=5, random_state=seed)      # given take_rows(groups, train_index)
 ```
 
 The second call runs on the remainder, with the remainder's groups, and the
@@ -355,7 +387,8 @@ importance is mean |SHAP|. With `method="exact"` (I10) the cost is
 `2^columns` model evaluations per row, measured at 0.7 s per 50 rows of
 Model 2 with 50 background rows, so a few hundred validation rows and a few
 dozen **training** background rows take seconds; the sizes are chosen in
-PR D from the measured cost and logged as parameters with their seeds.
+PR D from the measured cost and logged as parameters; both subsamples are
+drawn with `np.random.default_rng(seed)` (E12).
 Leak-free: the feature transformer is fitted inside `fit`, never on the
 explained rows.
 
@@ -363,12 +396,18 @@ explained rows.
 
 | kind | content |
 |---|---|
-| params | setting: `composite`, `family_total` / `family_cohort` / `family_probability`, `feature_variant`, `use_exposure`; the simulator `Config` flattened from `model_dump()` (dotted keys) and a data hash (SHA-256 of the table's CSV bytes, own 3-line helper; `hashing.py` is old-stack); `split_method`, `split_seed`, `cv_seed`, `study_seed`, `estimator_seed`, `test_size`, `val_size`, `n_train` / `n_val` / `n_test`; the search space (parameter name → bounds); `n_trials`, `n_splits`, `aggregation` |
+| params | setting: `composite`, `family_total` / `family_cohort` / `family_probability`, `feature_variant`, `use_exposure`; the simulator `Config` flattened from `model_dump()` (dotted keys) and a config hash (SHA-256 of the sorted, flattened `config_params` as JSON: the data's version, by its recipe: a change to the simulator's code under the same config keeps the hash; `hashing.py` is old-stack); `split_method`, `seed`, `test_size`, `val_size`, `n_train` / `n_val` / `n_test`; the search space (parameter name → bounds); `n_trials`, `n_splits`, `aggregation` |
 | metrics | E3's validation set (`val/<metric>` mean, `val/<metric>/lower`, `.../upper`); per child study `cv/best_value`, `cv/best_std_error` (nested runs), from `TuningResult.best_value` and the best record's `std_error`, in the metric's own sign (A3); `best_value` is the aggregation's value (the CV mean under `WeightedMean`, mean + z·SE under `UpperBound`), so `aggregation` is logged as a param beside it |
 | artifacts | `trials.csv` (one row per `TrialRecord`), `best_params.json`, `model.joblib` (the refit model), `importance/permutation_val.csv`, `importance/permutation_train.csv`, `importance/shap_values.csv` (mean |SHAP| per column and cohort), plots `importance/permutation_val.png` (bar with error bars), `importance/shap_bar.png`, `importance/shap_beeswarm_<cohort>.png`, `features.txt` (`repr` of the feature transformers) |
 | tags | `setting` (a short name, the cell's title), `final=true` on the one test run |
 
 Test metrics (`test/<metric>`) appear **only** in the final run (E11).
+
+> **2026-10-29:** to be revisited in the MLflow plan. Each run cell's record (the notebook
+> tuning plan's D14) already holds the settings, `trials_dataframe()`, the components'
+> `to_dict()`, `best_params`, `cv_best`, the score table, the seconds, the seed and `y_min`.
+> There is no `TuningResult` or `TrialRecord`, no `feature_variant` (the transformer is
+> searched per component) and no nested study per cohort.
 
 **E10. MLflow helper: start inline, extract functions, no class.** The first
 run cell uses `mlflow.start_run` and plain `log_params` / `log_metrics` /
@@ -388,12 +427,31 @@ and scored once on `test_index` with the E3 bootstrap set; logged in a run
 tagged `final=true`. The validation scores remain the selection evidence; the
 test score is reported, never used to choose.
 
-**E12. Seeds.** Four named seeds, all logged: `split_seed` (both
-`train_test_indices` calls), `cv_seed` (`Splitter.cv`), `study_seed` (one per
-study: `study_seed + i` for the i-th cohort / component), `estimator_seed`
-(`random_state` of every estimator that takes one). The study runs its trials
-one after the other with a fixed `n_trials`, so a seeded sampler reproduces
-it (A4b dropped `n_jobs`, timeouts and `is_reproducible`: no client used them).
+> **2026-10-29:** the winner is rebuilt from its `best_params` with
+> `CountComponent.from_params` / `ProbabilityComponent.from_params` and `build_*_model`
+> ([HYPERPARAMETER_TUNING.md §8](HYPERPARAMETER_TUNING.md#8-the-refit-and-the-run-record)),
+> not `evaluator.build_model(best_params)`; the rest of E11 stands.
+
+**E12. Seed.** One `seed` (42), logged, for every random component: both
+`train_test_indices` calls, `Splitter.cv`, the Optuna sampler (study i, per
+cohort or component, gets `seed + i`, otherwise the studies would share their
+random startup trials), the `random_state` of every estimator that takes one,
+the bootstrap, `PermutationImportance` and the E8 subsamples (`ShapExplainer`
+takes a seed only with `method="permutation"`; the exact method is
+deterministic and refuses one). Every consumer builds its own generator from
+the integer: the sklearn splitters and LightGBM keep separate state, and the
+project's own classes each call `np.random.default_rng(seed)`, so the same
+integer means the same stream in each, never shared state. A distinct seed per
+component would only serve varying one of them alone, which can be done in
+place when needed (user's call 2026-10-14, replacing the four named seeds). The study runs its trials one
+after the other with a fixed `n_trials`, so a seeded sampler reproduces it
+(A4b dropped `n_jobs`, timeouts and `is_reproducible`: no client used them).
+The synthetic population's own seed is the simulator config's
+(`configs/simulation.yml`, 42), shown and overridable in the notebook's data
+settings.
+
+> **2026-10-29:** as built, run *i* in the cells' order gets `study_seed=seed + i`, and every
+> estimator `random_state=seed`; the rest stands.
 
 ---
 
@@ -404,7 +462,7 @@ it (A4b dropped `n_jobs`, timeouts and `is_reproducible`: no client used them).
 | A | `feat/hyperparameter-tuning` (existing draft PR #5) | `HyperparameterStudy`, `TrialRecord`, `TuningResult`; `docs/HYPERPARAMETER_TUNING.md`; **PR #5 merged into `main`** | — |
 | B | `feat/split-and-cohort-deviance` (from `main` after A) | `COHORT_POISSON_DEVIANCE`; the three-way split pattern, tested and documented | A merged (so B branches from a `main` that has the models) |
 | C | `feat/feature-importance` (from `main` after B) | `PermutationImportance`, `ShapExplainer`; `docs/MODEL_INSPECTION.md`; closes the inspection plan | B (validation rows for the smoke run; the primary metric) |
-| D | `feat/experiment-notebook` (from `main` after C) | feature declarations as code; `notebooks/03_experiments.py`; `mlflow_runs.py`; `docs/EXPERIMENTS.md` | A, B, C |
+| D | `feat/experiment-notebook` (from `main` after C) | `notebooks/02_experiments.py` (data, split, feature variants, runs, comparison, final run); `mlflow_runs.py` if two cells repeat logging; `docs/EXPERIMENTS.md`; `02_model_fitting.py` deleted | A, B, C |
 
 Each PR is small enough to review in one sitting except A, which is the tail of
 an existing plan. Every PR ends with its docs; no handoff doc is kept at a
@@ -478,10 +536,10 @@ user's choice 2026-10-11; design decided in A3's plan mode).
 - Re-check the penalty ranges flagged in
   [FEATURE_TRANSFORMATIONS.md §8.7](FEATURE_TRANSFORMATIONS.md) item 7
   (the held-out optimum sat at the edge of `total_l2_penalty=1.0` and
-  `probability_c=0.01`): widen the ranges used in D4 to
+  `probability_c=0.01`): widen the ranges used in D3 to
   `alpha ∈ [1e-4, 10]` (log) and `C ∈ [1e-3, 100]` (log), and record it there.
 
-**Done when:** the slow test passes; the ranges are written in this plan's D4
+**Done when:** the slow test passes; the ranges are written in this plan's D3
 and the feature doc's §8.7.
 
 ### [x] A4b. External review and simplification
@@ -498,7 +556,7 @@ the tuning plan. No package changes have been chosen or applied.
   the scratch import path and restore scratch files by copy and `cmp`.
   Do not mutate repository `src` during this review. Temporary scripts are
   optional: the review document includes durable reproduction recipes.
-- Address the empty search space required by D4's one-trial NB2 run and the
+- Address the empty search space required by D3's one-trial NB2 run and the
   test gaps: hard-coding the sampler seed or returning the wrong `best_score`
   both survived 141 package tests. Reuse existing tests; do not add a test for
   a field removed by a chosen simplification.
@@ -595,7 +653,7 @@ the prediction raveled column-major) fail their tests.
 ### [x] B2. The split pattern (E6)
 
 - **Method: not fixed (user, 2026-10-13: "check on each setup").**
-  `split_method` is a setting, set at the top of the notebook (D2) and logged
+  `split_method` is a setting, set at the top of the notebook (D1a) and logged
   (E9); PR D decides which method the comparison reports. Evidence for that
   choice is in `SPLITTING.md` §3 (sizes per method) and §5 (how to choose).
 - Tests in `tests/unit/test_splitters.py` ("The three-way split"), on groups of
@@ -609,9 +667,9 @@ the prediction raveled column-major) fail their tests.
   and the doc states both: the missing position mapping (up to 4 of 16 rows
   overlap the test part) and, under `random` only, the whole table given to the
   second call (it re-splits every row; the group-aware methods raise on the
-  length mismatch). One client (D2), which displays the three sizes.
+  length mismatch). One client (D1c), which displays the three sizes.
 - `SPLITTING.md` §3 "Train, validation and test": the block run as written for
-  each method, and its sizes on the canonical table (`split_seed = 42`):
+  each method, and its sizes on the canonical table (`seed = 42`):
   `random` 917 / 306 / 306, `stratified_by_group` 915 / 307 / 307, `grouped`
   908 / 311 / 310 (30 test neighborhoods; `test_size` counts groups).
 
@@ -708,54 +766,126 @@ models) costs 90 s per 200 rows (27 s with `n_jobs=4`); Model 2 4 s.
 ## 9. PR D: the notebook, the data and MLflow
 
 Branch `feat/experiment-notebook` from `main`. The notebook is a marimo file,
-`notebooks/03_experiments.py`, run as in §2 ("Notebooks"). Each run cell is
-guarded by a `mo.ui.run_button()` like `02_model_fitting.py`, so opening the
+`notebooks/02_experiments.py`, run as in §2 ("Notebooks"). Each run cell is
+guarded by a `mo.ui.run_button()` (as the deleted `02_model_fitting.py` was), so opening the
 notebook fits nothing. Docs in `docs/EXPERIMENTS.md`.
 
-### [ ] D1. The feature declarations as code
+### [ ] D1. The notebook skeleton
 
-- New module `src/age_group_prediction/feature_engineering/declarations.py`
-  (decide the name with the user; alternative: `modeling/features.py`)
-  exporting `ROOM_SHARES`, `SCHOOL`, `tree`, `total_base`,
-  `cohort_probability_base`, and the §8.5 candidates as functions returning a
-  fresh `FeatureTransformer` each (`total_ses_quadratic()`,
-  `total_daycare_log1p()`, ...), copied verbatim from
-  [FEATURE_TRANSFORMATIONS.md §8](FEATURE_TRANSFORMATIONS.md). Functions, not
-  module constants, for the variants with state: a `FeatureTransformer` is
-  cloned by the models anyway, so constants would also be safe; choose
-  constants for the three bases and functions for the variants, and say why in
-  the module docstring. Add the module to the mypy `files` list. Expect one
-  typing gap (found in A4): the doc writes `ColumnPlan(columns="school_status")`,
-  which runs (a "before" validator wraps a string) but `ColumnPlan.columns` is
-  typed `tuple[str, ...]`, so mypy rejects it. Either write tuples or widen the
-  annotation (`str | tuple[str, ...]` with the validator); decide with the user.
-- Tests: each declaration fits and transforms the simulator table at 20
-  neighborhoods without error and yields finite columns; the doc blocks of §8
-  now `import` from the module instead of redefining (edit the doc).
+`notebooks/02_experiments.py` is written in five stops, D1a–D1e, so that each
+notebook section is verified before the next is written. Each stop ends with
+the §3 routine (ruff, `marimo check`, the test file under `-W error`, the
+stop's mutation, the non-slow suite), a file-by-file summary and a suggested
+commit; the next section is written only after approval (the §3 rule "one
+sub-task per stop" applies per stop). The test file grows one test per stop.
+At every stop the notebook can be run as a script and opened in `marimo edit`.
+The feature declarations are written out in the notebook (C6); there is no
+declarations module (decision 2026-10-14, §2).
 
-**Done when:** `FEATURE_TRANSFORMATIONS.md` §8 imports the declarations and its
-blocks run as written; the tests pass.
+- [x] **D1a. Plan doc, deletion, settings.**
+  - Written: this plan doc; delete `notebooks/02_model_fitting.py` and its
+    characterization test and rewire README, `.env.example` and the MLflow
+    guide; the notebook's title cell ("Age Group Prediction", no intro text for
+    now), section 1) Data generation with its settings cell, section 2)
+    Experiment settings; the test file with its helper.
+  - The settings and their defaults (the test's source), in two groups.
+    Data settings: `config_path = configs/simulation.toml`,
+    `n_neighborhoods = 150`, `buildings_per_neighborhood_rate = 9.0`,
+    `simulation_seed` = the config's 42 unless overridden. Experiment
+    settings: `seed = 42` (E12), `split_method = "random"` (user's call
+    2026-10-15 at D1c, "for now"; B2 left the choice to PR D. `grouped` is
+    the honest one for a population whose buildings share their
+    neighborhood's draws, SPLITTING.md §5, and stays one setting away),
+    `test_size = 0.2`, `val_size = 0.2` (E6), `n_splits = 5` (E6),
+    `n_trials = 30`, `n_resamples = 1000` (D2).
+  - Done when: `uv run --env-file .env notebooks/02_experiments.py` exits 0
+    and prints the two settings lines; the old notebook is gone; `grep
+    02_model_fitting` shows only the "deleted" notes.
+  - Test: `test_a_setting_missing_or_changed_in_a_settings_mapping_is_caught`
+    (both printed lines, `data_settings` and `experiment_settings`, hold every
+    key at the default above). Mutation: drop `seed` from
+    `EXPERIMENT_SETTINGS`, so the line lacks it and the test fails (every run
+    logs the settings, so a seed left out of them is a seed left out of MLflow).
+- [x] **D1b. C4 data.**
+  - Written: the data cell (150 neighborhoods × 9, shares, exposure, groups,
+    `data_hash`, `config_params`), now part of section 1) Data generation,
+    written in the same stop as D1a.
+  - Done when: the script prints `data rows=1529 neighborhoods=150
+    data_hash=e1dd694935d0...` (it was `c92d4213...` until the dataset
+    dropped `n_children_total`); `marimo edit` shows the data settings, the three
+    facts, the count of `config_params` and the head of `X`.
+  - Tests: `test_an_override_not_reaching_the_simulator_is_caught` (rows
+    1529, neighborhoods 150, hash equal to the one the test recomputes from
+    the config with the same two overrides) and
+    `test_a_seed_override_not_reaching_the_simulator_is_caught` (a copy of the
+    notebook with `simulation_seed = 7` prints seed 7 and another hash).
+    Mutations: drop the `buildings_per_neighborhood_rate` override, so rows
+    differ from 1529 and the first fails; drop the seed override from the
+    `model_copy` update, so the second fails.
+  - *Superseded 2026-10-16:* `data_hash` became `config_hash` (E9). The script
+    prints `config_hash=dd15b2407967...`, the first test recomputes the config
+    hash, and the seed test also asserts 1561 rows at seed 7: the hash shows
+    only that the seed reached the config, the rows that it reached the
+    simulator.
+- [x] **D1c. C5 split.**
+  - Written: section 3) with the split cell (SPLITTING.md §3 with the
+    settings, by position: the second call's positions are mapped back with
+    `train_val_index[...]` and every part, `X_`/`Y_`/`exposure_`/`groups_`/
+    `building_id_` for train, val, test, is taken with `.iloc`, user's
+    rewrite 2026-10-15) and a `cv` cell (`cv` and `cv_groups`, the groups
+    `cv.split` takes, `None` under `random` since `KFold` raises under
+    `-W error` when given groups). No overlap check and no display table
+    (user's review, 2026-10-15).
+  - Done when: the script prints `split n_train=917 n_val=306 n_test=306`
+    (§3's `random` row).
+  - Test: `test_a_dropped_position_mapping_in_the_split_is_caught` (the
+    exact sizes). Measured 2026-10-15: a second share of 0.2 gives
+    978 / 245 / 306; the whole table in the second call, silent under
+    `random`, gives 1146 / 383 / 306; the second call's positions used as
+    table labels keep the sizes (250 rows in two parts), which the sizes do
+    not catch (user's call). Mutation (done): the second share written as
+    `val_size`, the test fails on 978 / 245.
+- [x] **D1d. C6 feature variants.**
+  - Written: section 4): a shared-plans cell (§8.0, §8.2's six plans named
+    once, §8.5.1's `ses_sq`, §8.5.2's `daycare_sat` and §8.5.4's
+    `daycare_centered`) and a variants cell (`FEATURE_VARIANTS`, 13
+    declarations, each listing its plans explicitly). Committed as
+    `98640ba`; the user removed the check cell that fitted each variant on
+    `X_train` and printed its columns.
+  - The 12 variants (user's review 2026-10-15; renamed the same day, one
+    `glm_base` replacing the identical `total_base` and
+    `cohort_probability_base`, `total__*` → `count__*` for the count models,
+    `composition__*` → `probability__*` for the probability model): `tree`
+    and `tree__ses_quadratic` (§8.1); `glm_base` and §8.5's candidates 2-4;
+    §8.5's candidates 5-6; and §6's second choice and §6.5's pair per stage:
+    `count__room_share_x_ses`, `count__room_share_x_household_size_and_ses`,
+    `probability__room_share_x_daycare`,
+    `probability__room_share_x_median_age_and_daycare`. The daycare operand
+    is centered (§8.5.4): each product correlates −0.04 to 0.06 with its room
+    share on the training part, 0.85 to 0.86 uncentered.
+  - Done when: the notebook runs as a script; the declarations match §8 and
+    §6 (reviewed by an independent build, 2026-10-15).
+  - Exposure rule, verified 2026-10-15: only the two tree variants keep
+    `n_apartments` (feature and offset, §3.3); every GLM variant lacks it
+    (§4.4). They drop it only because no plan lists it (`remainder="drop"`);
+    `FeatureTransformer` does not enforce the rule, and a plan listing it
+    fits silently (`glm_base` with 10 columns).
+  - No test: with the check cell removed, nothing prints the columns. The
+    counts (10/11/9/10/9/12/12/15/9/12/12/15) and the `n_apartments`
+    rule were verified by probe and review on 2026-10-15 only; a GLM
+    variant listing `n_apartments` would now fit unnoticed until step 3
+    fits models on the variants.
+- [ ] **D1e. C7 MLflow guard.**
+  - Written: the MLflow cell (scratch store only, `set_experiment`, refusal
+    on the canonical store).
+  - Done when: with `.env`, the script prints `experiment=...
+    tracking_uri=sqlite:///.mlflow-local/mlflow.db` and no run is in the UI;
+    with `MLFLOW_TRACKING_URI=sqlite:///mlflow.db` it refuses.
+  - Tests: `..._opens_no_run`, `..._refuses_the_canonical_store` (3 cases),
+    `test_no_model_is_fitted_outside_a_run_button`. Mutations: delete the
+    `raise`; add `mlflow.start_run()`; add an unguarded `.fit(`.
 
-### [ ] D2. The data cell and the split cell
-
-- Data cell: `load_simulation_config`, the 150 × 9 override as in
-  `02_model_fitting.py`, `StudentPopulationSimulator(config).run()`;
-  `exposure = ExposureTransformer("n_apartments").fit_transform(table)`;
-  `groups = table["neighborhood_id"]`; `Y = table[cohort_columns]`;
-  `data_hash`, `config_params = flatten(config.model_dump())` (a 5-line helper
-  in the notebook; move to `mlflow_runs.py` in D4 if a second user appears).
-- Split cell: the E6 block with `split_method` (B2); the four seeds (E12) in one
-  cell at the top, displayed; `n_train` / `n_val` / `n_test` displayed.
-- MLflow cell: `mlflow.set_experiment(os.environ["MLFLOW_EXPERIMENT_NAME"])`
-  from `.env`; refuse to run when `MLFLOW_TRACKING_URI` is unset or points at
-  the repo root's `mlflow.db` (one `if` with a clear message: the canonical
-  store must never be written).
-
-**Done when:** the notebook runs as a script (`uv run --env-file .env
-notebooks/03_experiments.py`) without fitting anything and prints the sizes
-and the hash.
-
-### [ ] D3. The first run: Model 1 × LightGBM × `tree` × exposure on
+### [ ] D2. The first run: Model 1 × LightGBM × `tree` × exposure on
 
 One cell, inline MLflow calls (E10):
 
@@ -763,10 +893,10 @@ One cell, inline MLflow calls (E10):
    params.
 2. For each cohort, `with mlflow.start_run(nested=True, run_name=cohort)`:
    `CVHyperparameterEvaluator(CountModel(estimator=LGBMRegressor(objective="poisson",
-   subsample_freq=1, n_jobs=1, verbosity=-1, random_state=estimator_seed),
-   use_exposure=True, feature_transformer=tree), parameters, cv=cv,
+   subsample_freq=1, n_jobs=1, verbosity=-1, random_state=seed),
+   use_exposure=True, feature_transformer=FEATURE_VARIANTS["tree"]), parameters, cv=cv,
    metric=POISSON_DEVIANCE)`, parameters as the tuning plan's §5 list;
-   `HyperparameterStudy(seed=study_seed + i, n_trials=30).optimize(lambda
+   `HyperparameterStudy(seed=seed + i, n_trials=30).optimize(lambda
    trial: evaluator.evaluate(trial, X_train, Y_train[cohort], groups_train,
    exposure=exposure_train))`; log `cv/best_value`, `cv/best_std_error`,
    `trials.csv`, `best_params.json`.
@@ -774,14 +904,19 @@ One cell, inline MLflow calls (E10):
    the validation part, log the E3 metrics with `BootstrapEvaluator`
    (`n_resamples=1000`, `groups=groups_val`), `model.joblib`.
 4. Importance: `PermutationImportance(metric=COHORT_POISSON_DEVIANCE,
-   n_repeats=10, random_state=estimator_seed)` on validation and on train;
+   n_repeats=10, random_state=seed)` on validation and on train;
    `ShapExplainer` on the E8 subsample; log the CSVs and the plots.
 
 **Done when:** the run appears in the scratch MLflow UI with every E9 item;
 the cell's wall time is recorded in the doc (budget: 3 cohorts × 30 trials × 5
 folds LightGBM fits ≈ a few minutes).
 
-### [ ] D4. The remaining runs and the helper module
+> **2026-10-29:** the tuning of D2 and D3 is done by the notebook tuning plan's T1–T2 (24 run
+> cells; the candidate transformers are searched per component, so D3's item 5 is superseded).
+> What remains of both is the MLflow logging (E9, E10), planned from the run records; the
+> checkboxes stay open.
+
+### [ ] D3. The remaining runs and the helper module
 
 - Write the second cell (Model 2: Poisson total × LR probability, `total_base`
   / `cohort_probability_base`, exposure on), then extract what the two cells
@@ -814,7 +949,7 @@ folds LightGBM fits ≈ a few minutes).
 **Done when:** every cell runs on the scratch store; the helper's tests pass;
 no two cells repeat a block of more than ~5 lines of logging.
 
-### [ ] D5. The comparison table and the final run (E11)
+### [ ] D4. The comparison table and the final run (E11)
 
 - Comparison cell: `mlflow.search_runs(experiment_names=[...],
   filter_string="tags.mlflow.parentRunId = ''")` → a table of
@@ -822,8 +957,8 @@ no two cells repeat a block of more than ~5 lines of logging.
   per setting, sorted by the primary metric; a one-line statement of the
   winner. No automatic selection in code beyond the sort: the user reads the
   table (the intervals overlap for close settings).
-- Final cell, behind its own button and a confirmation checkbox like
-  `02_model_fitting.py`: rebuild the winner from its `best_params.json`
+- Final cell, behind its own button and a confirmation checkbox (as the
+  deleted `02_model_fitting.py` had): rebuild the winner from its `best_params.json`
   artifact(s), fit on `train_index ∪ val_index`, score on `test_index` with
   the E3 bootstrap set, log as a run tagged `final=true` with the winner's
   parent run id as a param. Refuse to run twice in the same experiment (search
@@ -833,17 +968,17 @@ no two cells repeat a block of more than ~5 lines of logging.
 **Done when:** the table shows every setting; the final run exists once and
 holds `test/*` metrics only there.
 
-### [ ] D6. Docs and close
+### [ ] D5. Docs and close
 
 - `docs/EXPERIMENTS.md`: how to run (env, commands, time budget), the three-way
   split and seeds, what a run logs (the E9 table), how to add a setting (a cell
   template), how the final run is guarded, the Bayesian model's future place
   (E3b).
 - `docs/README.md` (user guides + this plan under Active Plans → mark
-  complete), `MODULE_REFERENCE.md` (`mlflow_runs.py`, `declarations.py`), root
+  complete), `MODULE_REFERENCE.md` (`mlflow_runs.py`), root
   `README.md` (run the new notebook), roadmap in
-  `MODEL_REIMPLEMENTATION_PLAN.md` §5 (a line for the notebook; step 5 can now
-  also delete `02_model_fitting.py`'s dependency once the old stack goes).
+  `MODEL_REIMPLEMENTATION_PLAN.md` §5 (a line for the notebook; step 5 no
+  longer has a notebook client to rewire).
 - This plan's status line → "complete".
 
 **Done when:** the doc's commands run as written; links resolve.
@@ -858,8 +993,8 @@ holds `test/*` metrics only there.
   fixed candidates over a search because NUTS per fold is slow). Nothing in
   A–D blocks it; see E3b's rule.
 - **Roadmap step 5** (delete the old stack, rewire or delete `experiment/`,
-  `tracking/`, `02_model_fitting.py`). The new notebook never imports the old
-  stack, so the deletion can follow D independently.
+  `tracking/`; `02_model_fitting.py` was deleted in D1). The new notebook never
+  imports the old stack, so the deletion can follow D independently.
 - **Out-of-fold predictions** from the evaluator, column-block permutation
   importance, Optuna visualizations as artifacts: only if a run shows the need.
 
@@ -874,6 +1009,7 @@ holds `test/*` metrics only there.
 | types | `uv run mypy`, then `uv run mypy src/age_group_prediction/<package> <changed tests>` |
 | lint | `uv run ruff check <files>` and `uv run ruff format <files>` |
 | probes (read-only) | `PYTHONPATH=src .venv/bin/python -c "..."` |
-| the notebook | `uv run --env-file .env --group notebook --group tracking marimo edit notebooks/03_experiments.py` |
+| the notebook | `uv run --env-file .env --group notebook --group tracking marimo edit notebooks/02_experiments.py` |
+| the notebook as a script | `uv run --env-file .env notebooks/02_experiments.py` |
 | the MLflow UI (scratch) | `uv run --env-file .env --group tracking mlflow ui --backend-store-uri sqlite:///.mlflow-local/mlflow.db --port 5000` |
 | after a `pyproject.toml` edit | `uv run --frozen ...`; the user runs `uv lock` and `uv sync` |

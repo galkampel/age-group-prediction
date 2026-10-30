@@ -44,7 +44,7 @@ behavior.
 ```python
 from student_simulator import StudentPopulationSimulator, load_simulation_config
 
-simulation_config = load_simulation_config("configs/simulation.toml")
+simulation_config = load_simulation_config("configs/simulation.yml")
 simulator = StudentPopulationSimulator(simulation_config)
 source_df = simulator.run()
 ```
@@ -52,7 +52,7 @@ source_df = simulator.run()
 The output has one row per building. It includes identifiers, prediction-time
 features, room counts, and the targets `n_kindergarten`, `n_elementary`,
 `n_highschool`, and `n_children_total`. The simulator configuration is
-controlled by [configs/simulation.toml](../configs/simulation.toml), not
+controlled by [configs/simulation.yml](../configs/simulation.yml), not
 `modeling.toml`.
 
 **Guarantees and pitfalls.** Treat simulator internals and latent random
@@ -485,7 +485,9 @@ and [DATA_AND_SPLITTING.md](DATA_AND_SPLITTING.md#4-splitmanifest).
 
 ## 15. Use The Notebook As A Thin Client
 
-[notebooks/02_model_fitting.py](../notebooks/02_model_fitting.py) orchestrates
+*`02_model_fitting.py` was deleted on 2026-10-14; `notebooks/02_experiments.py` replaces it. The text below describes the deleted client of the old stack.*
+
+`notebooks/02_model_fitting.py` orchestrated
 the package APIs and displays evidence; it does not implement model logic.
 Running it as a plain Python script performs setup only: it loads the persisted
 `artifacts/lockbox/split_manifest.json` (creating it if absent) and replays it
@@ -495,11 +497,11 @@ button. Final evaluation requires both the confirmation checkbox **I understand
 this opens the one-time test holdout and cannot be undone for this manifest.**
 and **Run final evaluation (opens lockbox)**.
 
-To open it, follow
-[Run The Modeling Notebook](../README.md#run-the-modeling-notebook) in the
-README.
+It can no longer be opened; the README's
+[Run The Modeling Notebook](../README.md#run-the-modeling-notebook) now opens
+`02_experiments.py`, which has none of these controls.
 
-Use the notebook for the canonical research workflow and package APIs for
+The old notebook was for the canonical research workflow and package APIs for
 automation. Do not call model-specific fit/predict methods from new notebook
 cells, reconstruct candidates by hand, read the holdout before the pretest
 freeze, or add an unguarded final-evaluation path.

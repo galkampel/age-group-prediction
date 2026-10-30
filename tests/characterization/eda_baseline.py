@@ -16,7 +16,7 @@ from student_simulator import (
 )
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
-CONFIG_PATH = PROJECT_ROOT / "configs" / "simulation.toml"
+CONFIG_PATH = PROJECT_ROOT / "configs" / "simulation.yml"
 BASELINE_PATH = (
     Path(__file__).with_name("fixtures") / "eda_jupyter_baseline.json"
 )
@@ -148,8 +148,9 @@ def capture_eda_baseline() -> dict[str, Any]:
             ),
         }
     )
-    simulator = StudentPopulationSimulator(eda_config)
-    final_df = simulator.run()
+    final_df = StudentPopulationSimulator.from_config(eda_config).simulate().dataset
+    # The dataset leaves out the total; the EDA reports it as the cohorts' sum.
+    final_df["n_children_total"] = final_df[list(COHORT_COLUMNS)].sum(axis=1)
     canonical_final_df = _canonicalize_string_columns(final_df)
 
     buildings_per_neighborhood = (

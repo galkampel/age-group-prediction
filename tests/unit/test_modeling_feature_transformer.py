@@ -15,8 +15,8 @@ from sklearn.utils.validation import check_is_fitted
 
 from age_group_prediction.feature_engineering import (
     Center,
-    ColumnPlan,
     FeatureTransformer,
+    Plan,
 )
 from age_group_prediction.modeling import (
     BaseAgeGroupModel,
@@ -27,9 +27,7 @@ from age_group_prediction.modeling import (
 # Centered x only. The table also holds columns the transformer drops, and x
 # has a mean far from 0: on x alone a skipped transformer would go unseen,
 # since trees ignore a shift and an intercept absorbs it.
-FEATURES = FeatureTransformer(
-    (ColumnPlan(name="x", columns=("x",), transforms=(Center(),)),)
-)
+FEATURES = FeatureTransformer(((Plan(name="x", transforms=(Center(),)), ["x"]),))
 
 
 def _table(n_rows: int = 200) -> tuple[pd.DataFrame, pd.Series, pd.DataFrame]:

@@ -39,17 +39,24 @@ from age_group_prediction import (
 )
 from age_group_prediction.hashing import column_schema_hash, table_hash
 from age_group_prediction.preprocessing import ShareTransformer
-from student_simulator import StudentPopulationSimulator, load_simulation_config
+from student_simulator import (
+    COHORT_COLUMNS,
+    StudentPopulationSimulator,
+    load_simulation_config,
+)
 
 
 def _config_path() -> Path:
-    return Path(__file__).resolve().parents[2] / "configs" / "simulation.toml"
+    return Path(__file__).resolve().parents[2] / "configs" / "simulation.yml"
 
 
 @pytest.fixture(scope="module")
 def source_df() -> pd.DataFrame:
     config = load_simulation_config(_config_path())
-    return StudentPopulationSimulator(config).run()
+    dataset = StudentPopulationSimulator.from_config(config).simulate().dataset
+    # build_modeling_table (old stack) reads the total, which the dataset leaves out.
+    dataset["n_children_total"] = dataset[list(COHORT_COLUMNS)].sum(axis=1)
+    return dataset
 
 
 @pytest.fixture(scope="module")

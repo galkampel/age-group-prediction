@@ -16,7 +16,7 @@ from tests.unit.helpers import make_cohort_simulator, make_total_children_simula
 
 
 def _config_path() -> Path:
-    return Path(__file__).resolve().parents[2] / "configs" / "simulation.toml"
+    return Path(__file__).resolve().parents[2] / "configs" / "simulation.yml"
 
 
 def _sample_tables() -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
@@ -54,7 +54,7 @@ def test_total_children_design_columns_match_config_keys_order() -> None:
     config = load_simulation_config(_config_path())
     simulator = make_total_children_simulator(config)
     apartments, buildings, neighborhoods = _sample_tables()
-    context = ApartmentSimulator.with_context(apartments, buildings, neighborhoods)
+    context = ApartmentSimulator.join_context(apartments, buildings, neighborhoods)
 
     design = simulator.build_design_matrix(context)
 
@@ -77,7 +77,7 @@ def test_total_children_school_dummies_mutually_exclusive() -> None:
     config = load_simulation_config(_config_path())
     simulator = make_total_children_simulator(config)
     apartments, buildings, neighborhoods = _sample_tables()
-    context = ApartmentSimulator.with_context(apartments, buildings, neighborhoods)
+    context = ApartmentSimulator.join_context(apartments, buildings, neighborhoods)
 
     design = simulator.build_design_matrix(context)
     both = design["school_existing"] + design["school_planned"]
@@ -89,7 +89,7 @@ def test_cohort_lifecycle_features_have_semantic_columns() -> None:
     config = load_simulation_config(_config_path())
     simulator = make_cohort_simulator(config)
     apartments, buildings, neighborhoods = _sample_tables()
-    context = ApartmentSimulator.with_context(apartments, buildings, neighborhoods)
+    context = ApartmentSimulator.join_context(apartments, buildings, neighborhoods)
 
     features = simulator._build_lifecycle_features(context)
     assert list(features.columns) == [
@@ -128,7 +128,7 @@ def test_cohort_positive_interaction_active_only_in_positive_quadrant() -> None:
         }
     )
 
-    context = ApartmentSimulator.with_context(apartments, buildings, neighborhoods)
+    context = ApartmentSimulator.join_context(apartments, buildings, neighborhoods)
     features = simulator._build_lifecycle_features(context)
     values = features["rooms_median_age_positive_interaction"].to_numpy()
     assert np.array_equal(values[:3], np.array([0.0, 0.0, 0.0]))
@@ -141,7 +141,7 @@ def test_design_matrices_exclude_research_truth_columns() -> None:
     cohort_simulator = make_cohort_simulator(config)
     apartments, buildings, neighborhoods = _sample_tables()
 
-    context = ApartmentSimulator.with_context(apartments, buildings, neighborhoods)
+    context = ApartmentSimulator.join_context(apartments, buildings, neighborhoods)
     total_design = total_simulator.build_design_matrix(context)
     cohort_features = cohort_simulator._build_lifecycle_features(context)
 
@@ -154,7 +154,7 @@ def test_design_matrices_exclude_research_truth_columns() -> None:
 def test_cohort_lifecycle_features_follow_configured_transform_flow() -> None:
     config = load_simulation_config(_config_path())
     apartments, buildings, neighborhoods = _sample_tables()
-    context = ApartmentSimulator.with_context(apartments, buildings, neighborhoods)
+    context = ApartmentSimulator.join_context(apartments, buildings, neighborhoods)
 
     features = make_cohort_simulator(config)._build_lifecycle_features(context)
 

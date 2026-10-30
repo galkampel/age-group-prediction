@@ -14,8 +14,17 @@ from .config import (
     load_simulation_config,
 )
 from .neighborhood import NeighborhoodSimulator
-from .outcomes import CohortCompositionSimulator, TotalChildrenSimulator
-from .pipeline import SimulationResult, StudentPopulationSimulator
+from .outcomes import (
+    COHORT_COLUMNS,
+    CohortCompositionSimulator,
+    LatentEffects,
+    TotalChildrenSimulator,
+)
+from .pipeline import (
+    SimulationResult,
+    StudentPopulationSimulator,
+    aggregate_to_buildings,
+)
 from .features import (
     center_rooms,
     daycare_saturation,
@@ -29,6 +38,7 @@ from .features import (
 )
 
 __all__ = [
+    "COHORT_COLUMNS",
     "ApartmentSimulator",
     "BuildingSimulator",
     "BuildingSettings",
@@ -36,6 +46,7 @@ __all__ = [
     "CohortCompositionSimulator",
     "CohortSettings",
     "ConfigError",
+    "LatentEffects",
     "NeighborhoodSimulator",
     "NeighborhoodSettings",
     "RoomMixSettings",
@@ -44,6 +55,7 @@ __all__ = [
     "StudentPopulationSimulator",
     "TotalChildrenSimulator",
     "TotalChildrenSettings",
+    "aggregate_to_buildings",
     "TransformSettings",
     "ValidationSettings",
     "center_rooms",

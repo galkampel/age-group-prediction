@@ -16,7 +16,7 @@ from tests.unit.helpers import make_building_simulator, with_overrides
 
 
 def _config_path() -> Path:
-    return Path(__file__).resolve().parents[2] / "configs" / "simulation.toml"
+    return Path(__file__).resolve().parents[2] / "configs" / "simulation.yml"
 
 
 def _config(seed: int = 42):
@@ -34,9 +34,9 @@ def _neighborhoods() -> pd.DataFrame:
     )
 
 
-def test_building_generate_contract_and_accounting() -> None:
+def test_sample_buildings_contract_and_accounting() -> None:
     config = _config()
-    buildings = make_building_simulator(config).generate(
+    buildings = make_building_simulator(config).sample_buildings(
         _neighborhoods(),
         rng=np.random.default_rng(42),
     )
@@ -75,17 +75,17 @@ def test_building_rng_convention_for_component_calls() -> None:
     config = _config(seed=999)
     simulator = make_building_simulator(config)
 
-    none_a = simulator.generate(_neighborhoods())
-    none_b = simulator.generate(_neighborhoods())
+    none_a = simulator.sample_buildings(_neighborhoods())
+    none_b = simulator.sample_buildings(_neighborhoods())
     pd.testing.assert_frame_equal(none_a, none_b)
 
-    seed_a = simulator.generate(
+    seed_a = simulator.sample_buildings(
         _neighborhoods(), rng=np.random.default_rng(123)
     )
-    seed_b = simulator.generate(
+    seed_b = simulator.sample_buildings(
         _neighborhoods(), rng=np.random.default_rng(123)
     )
-    seed_c = simulator.generate(
+    seed_c = simulator.sample_buildings(
         _neighborhoods(), rng=np.random.default_rng(124)
     )
     pd.testing.assert_frame_equal(seed_a, seed_b)
@@ -102,7 +102,7 @@ def test_building_exact_overrides_are_respected() -> None:
         },
     )
 
-    buildings = make_building_simulator(config).generate(_neighborhoods())
+    buildings = make_building_simulator(config).sample_buildings(_neighborhoods())
 
     assert len(buildings) == 4
     assert buildings["n_apartments"].tolist() == [12, 13, 14, 15]
@@ -119,4 +119,4 @@ def test_building_apartment_override_length_mismatch_raises() -> None:
     )
 
     with pytest.raises(ConfigError, match="apartments_per_building"):
-        make_building_simulator(config).generate(_neighborhoods())
+        make_building_simulator(config).sample_buildings(_neighborhoods())

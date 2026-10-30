@@ -5,23 +5,28 @@ from pathlib import Path
 import pandas as pd
 import pytest
 
-from student_simulator import ApartmentSimulator, StudentPopulationSimulator, load_simulation_config
+from student_simulator import (
+    ApartmentSimulator,
+    SimulationResult,
+    StudentPopulationSimulator,
+    load_simulation_config,
+)
 
 from tests.unit.helpers import make_apartment_simulator, with_overrides
 
 
 def _config_path() -> Path:
-    return Path(__file__).resolve().parents[2] / "configs" / "simulation.toml"
+    return Path(__file__).resolve().parents[2] / "configs" / "simulation.yml"
 
 
-def _small_simulator(seed: int = 42) -> StudentPopulationSimulator:
+def _small_population(seed: int = 42) -> SimulationResult:
     config = load_simulation_config(_config_path())
     config = with_overrides(
         config,
         simulation={"seed": seed, "n_neighborhoods": 5},
         building={"buildings_per_neighborhood_rate": 1.0},
     )
-    return StudentPopulationSimulator(config)
+    return StudentPopulationSimulator.from_config(config).simulate()
 
 
 def _small_component(seed: int = 42) -> ApartmentSimulator:
@@ -30,50 +35,18 @@ def _small_component(seed: int = 42) -> ApartmentSimulator:
     return make_apartment_simulator(config)
 
 
-def _small_result(seed: int = 42):
-    simulator = _small_simulator(seed)
-    simulator.run()
-    result = simulator.last_result
-    assert result is not None
-    return result
+def test_latent_effects_never_become_dataset_columns() -> None:
+    population = _small_population()
 
-
-def test_run_keeps_apartments_and_latent_effects_separate() -> None:
-    result = _small_result()
-
-    assert set(result.latent_effects) == {
-        "building_total_count_effect",
-        "neighborhood_total_count_effect",
+    effect_columns = {
+        *population.building_effects.columns,
+        *population.neighborhood_effects.columns,
     }
-    assert not any("effect" in column for column in result.apartments)
+    assert effect_columns
+    assert effect_columns.isdisjoint(population.dataset.columns)
 
 
-def test_apartments_exactly_expand_wide_building_room_counts() -> None:
-    result = _small_result()
-    neighborhoods = result.neighborhoods
-    buildings = result.buildings
-    apartments = result.apartments
-
-    assert buildings["building_id"].is_unique
-    assert apartments["apartment_id"].is_unique
-    assert buildings["neighborhood_id"].isin(
-        neighborhoods["neighborhood_id"]
-    ).all()
-    assert apartments["building_id"].isin(buildings["building_id"]).all()
-
-    actual_counts = apartments.groupby(["building_id", "rooms"]).size()
-    for _, building in buildings.iterrows():
-        for room in (3, 4, 5, 6):
-            assert actual_counts.get(
-                (building["building_id"], room), 0
-            ) == building[f"{room}_rooms"]
-
-    expected_total = int(buildings["n_apartments"].sum())
-    assert len(apartments) == expected_total
-    assert pd.api.types.is_integer_dtype(apartments["rooms"])
-
-
-def test_apartment_component_generate_matches_building_room_counts() -> None:
+def test_expand_apartments_matches_building_room_counts() -> None:
     buildings = pd.DataFrame(
         {
             "building_id": ["B_000001", "B_000002"],
@@ -87,7 +60,7 @@ def test_apartment_component_generate_matches_building_room_counts() -> None:
     )
     simulator = _small_component(seed=101)
 
-    apartments = simulator.generate(buildings)
+    apartments = simulator.expand_apartments(buildings)
 
     assert apartments["apartment_id"].is_unique
     assert apartments["building_id"].isin(buildings["building_id"]).all()
@@ -99,7 +72,7 @@ def test_apartment_component_generate_matches_building_room_counts() -> None:
             assert actual_counts.get((building["building_id"], room), 0) == building[f"{room}_rooms"]
 
 
-def test_apartment_component_with_context_adds_expected_columns() -> None:
+def test_join_context_adds_expected_columns() -> None:
     apartments = pd.DataFrame(
         {
             "apartment_id": ["A_00000001", "A_00000002"],
@@ -124,7 +97,7 @@ def test_apartment_component_with_context_adds_expected_columns() -> None:
         }
     )
 
-    out = ApartmentSimulator.with_context(apartments, buildings, neighborhoods)
+    out = ApartmentSimulator.join_context(apartments, buildings, neighborhoods)
 
     assert list(out.columns) == [
         "apartment_id",
@@ -141,7 +114,7 @@ def test_apartment_component_with_context_adds_expected_columns() -> None:
     assert out["neighborhood_id"].tolist() == ["N_001", "N_002"]
 
 
-def test_apartment_component_with_context_enforces_many_to_one_cardinality() -> None:
+def test_join_context_enforces_many_to_one_cardinality() -> None:
     apartments = pd.DataFrame(
         {
             "apartment_id": ["A_00000001"],
@@ -167,7 +140,7 @@ def test_apartment_component_with_context_enforces_many_to_one_cardinality() -> 
     )
 
     with pytest.raises(pd.errors.MergeError):
-        ApartmentSimulator.with_context(apartments, duplicate_buildings, neighborhoods)
+        ApartmentSimulator.join_context(apartments, duplicate_buildings, neighborhoods)
 
 
 def test_apartment_component_to_cohort_long_preserves_rowwise_totals() -> None:
