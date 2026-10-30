@@ -13,13 +13,13 @@ from age_group_prediction.hyperparameter_tuning import (
     build_independent_cohorts_model,
     fit_and_score,
 )
-from age_group_prediction.scoring import Metric, cohort_poisson_deviance
+from age_group_prediction.scoring import Metric, mean_poisson_deviance_loss
 from age_group_prediction.utils import AgeGroupDataset
 
 SES_ONLY = FeatureTransformer(column_plans=((Plan(name="passthrough"), ["ses"]),))
 COHORTS = ("n_kindergarten", "n_elementary", "n_highschool")
 METRIC = Metric(
-    "cohort_poisson_deviance", cohort_poisson_deviance, direction="minimize"
+    "cohort_poisson_deviance", mean_poisson_deviance_loss, direction="minimize"
 )
 
 
@@ -64,7 +64,7 @@ def test_the_refit_scores_each_cohort_then_the_composite_on_both_parts() -> None
     assert score_table[0]["val"] == mean_poisson_deviance(
         val.Y["n_kindergarten"], y_pred_val["n_kindergarten"]
     )
-    assert score_table[-1]["val"] == cohort_poisson_deviance(val.Y, y_pred_val)
-    assert score_table[-1]["train"] == cohort_poisson_deviance(
+    assert score_table[-1]["val"] == mean_poisson_deviance_loss(val.Y, y_pred_val)
+    assert score_table[-1]["train"] == mean_poisson_deviance_loss(
         train.Y, model.predict(train.X, exposure=train.exposure)
     )

@@ -17,7 +17,7 @@ from age_group_prediction.feature_engineering import (
     Plan,
 )
 from age_group_prediction.modeling import BaseAgeGroupModel
-from age_group_prediction.scoring import Metric
+from age_group_prediction.scoring import Metric, mean_absolute_error_loss
 
 
 class _Model(BaseAgeGroupModel):
@@ -46,6 +46,17 @@ def test_evaluate_applies_a_custom_metric_to_y_true_and_y_pred() -> None:
     assert score == 2.0
     # The numpy scalar the metric returns is cast to a plain float.
     assert type(score) is float
+
+
+def test_evaluate_passes_the_cohort_to_the_metric() -> None:
+    # A score table's cohort rows: evaluate must not drop the cohort, which
+    # would score the whole matrix under the cohort's name.
+    y_true = pd.DataFrame({"n_kindergarten": [1.0, 4.0], "n_elementary": [2.0, 2.0]})
+    y_pred = pd.DataFrame({"n_kindergarten": [1.5, 2.0], "n_elementary": [2.0, 3.0]})
+    metric = Metric("mae", mean_absolute_error_loss)
+
+    assert _Model().evaluate(y_true, y_pred, metric, cohort="n_elementary") == 0.5
+    assert _Model().evaluate(y_true, y_pred, metric) == 0.875
 
 
 class _FeatureModel(BaseAgeGroupModel):

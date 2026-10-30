@@ -736,8 +736,8 @@ def _():
     )
     from age_group_prediction.scoring import (
         Metric,
-        cohort_log_loss,
-        cohort_poisson_deviance,
+        mean_poisson_deviance_loss,
+        multinomial_log_loss,
     )
 
     # Optuna logs every trial at INFO; the studies run in this process.
@@ -753,12 +753,12 @@ def _():
         ShapExplainer,
         build_independent_cohorts_model,
         build_total_times_probability_model,
-        cohort_log_loss,
-        cohort_poisson_deviance,
         d2_tweedie_score,
         fit_and_score,
         mean_absolute_error,
         mean_poisson_deviance,
+        mean_poisson_deviance_loss,
+        multinomial_log_loss,
         np,
         partial,
         root_mean_squared_error,
@@ -768,11 +768,11 @@ def _():
 @app.cell
 def _(
     Metric,
-    cohort_log_loss,
-    cohort_poisson_deviance,
     d2_tweedie_score,
     mean_absolute_error,
     mean_poisson_deviance,
+    mean_poisson_deviance_loss,
+    multinomial_log_loss,
     np,
     partial,
     root_mean_squared_error,
@@ -780,12 +780,14 @@ def _(
     # The study's objective and the tables' per-cohort score, with the direction
     # Optuna is given; a loss, so "minimize".
     COHORT_POISSON_DEVIANCE = Metric(
-        "cohort_poisson_deviance", cohort_poisson_deviance, direction="minimize"
+        "cohort_poisson_deviance", mean_poisson_deviance_loss, direction="minimize"
     )
     POISSON_DEVIANCE = Metric(
         "poisson_deviance", mean_poisson_deviance, direction="minimize"
     )
-    COHORT_LOG_LOSS = Metric("cohort_log_loss", cohort_log_loss, direction="minimize")
+    COHORT_LOG_LOSS = Metric(
+        "cohort_log_loss", multinomial_log_loss, direction="minimize"
+    )
 
     def on_cells(function):
         """``function`` on the flattened (building, cohort) cells of both matrices."""

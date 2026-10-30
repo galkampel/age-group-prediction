@@ -83,11 +83,13 @@ used yet; the old `tracking/` package belongs to the old stack.
       `mean_bias_error`;
     - every function takes `(y_true, y_pred, *, cohort: str | None = None)`, with `cohort` a
       column name of `y_true` (M9), and pools every cell;
-    - the helpers `_paired_arrays`, `_cohort_position` and `_cohort_cells`;
+    - the helpers, public in `utils.py`: `check_paired_arrays` (the shape check) and
+      `column_position` (the column of a name); each metric selects its cohort;
     - `Metric.__call__(..., *, cohort=None)` passes the cohort on only when given; "samples", not
       "buildings" (M1).
   - `src/age_group_prediction/modeling/base.py`: `evaluate(..., *, cohort=None)`.
-  - `tests/unit/test_scoring.py` (rewritten) and `tests/unit/test_modeling_base.py` (one test).
+  - `tests/unit/test_scoring.py` (rewritten), `tests/unit/test_modeling_base.py` (one test) and
+    `tests/unit/test_utils.py` (the two helpers).
   - The code callers, function references only (the `Metric` labels `"cohort_log_loss"` and
     `"cohort_poisson_deviance"` are unchanged): `test_hyperparameter_tuning_cross_validation.py`,
     `test_hyperparameter_tuning_evaluation.py`, `test_inspection_bootstrap.py`,
@@ -102,7 +104,7 @@ used yet; the old `tracking/` package belongs to the old stack.
   `ValueError` instead of returning `nan`.
 - **Notebook md5:** `d3fe1197a66230e5aed51efd7caaf276` (the uncommitted renames).
 - **Checks on the uncommitted tree** (2026-10-30):
-  - the non-slow suite: 1344 passed, 1 skipped, 1 xfailed, 19 deselected (HEAD's baseline on a
+  - the non-slow suite: 1346 passed, 1 skipped, 1 xfailed, 19 deselected (HEAD's baseline on a
     `git archive` copy: 1299 passed);
   - mypy: no issues in 29 source files;
   - `ruff check notebooks/02_experiments.py`: 14 findings, all pre-existing (12 marimo `return`s

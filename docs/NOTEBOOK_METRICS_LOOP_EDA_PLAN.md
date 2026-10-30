@@ -1,6 +1,6 @@
 # Plan: the metrics in `scoring`, the runs in a loop, the objective EDA
 
-**Status (2026-10-30):** written; awaiting the user's review. No sub-task started.
+**Status (2026-10-30):** PR 1 on `refactor/scoring-metrics`: 1.1 done, revised at the user's notes (`cohort=`, `y_proba=`, samples; then the notes on the helpers: `utils.check_paired_arrays` checks, `utils.column_position` finds a cohort's column, each metric selects it, no repeated-name guard; suite 1346 passed; Check C the 24 baselines), awaiting the user's commit; next 1.2.
 
 The user's notes of 2026-10-30 on the experiment notebook. They replace the order of
 [EXPERIMENT_NOTEBOOK_HANDOFF.md](EXPERIMENT_NOTEBOOK_HANDOFF.md) §6: MLflow and E11's final
@@ -46,9 +46,10 @@ The standing rules are those of [EXPERIMENT_NOTEBOOK_PLAN.md](EXPERIMENT_NOTEBOO
 
 ## 2. Decisions
 
-- **M1. One rule for every metric.** `y_true` and `y_pred` have the same shape: `(n,)` (one cohort,
-  or the total) or `(n, K)` (the cohort matrix). A shape mismatch raises. The metrics are computed
-  over all cells pooled:
+- **M1. One rule for every metric.** `y_true` and `y_pred` have the same shape: `(n_samples,)` (a
+  single target, such as the total) or `(n_samples, n_cohorts)` (the cohort matrix). A shape
+  mismatch raises. "Samples", scikit-learn's term, not "buildings": the granularity of a row may
+  change (the user's note). The metrics are computed over all cells pooled:
   - MAE: `mean|e|`;
   - RMSE: `sqrt(mean e²)`;
   - WMAPE: `Σ|e| / Σy`;
@@ -59,8 +60,9 @@ The standing rules are those of [EXPERIMENT_NOTEBOOK_PLAN.md](EXPERIMENT_NOTEBOO
   RMSE differs from the mean of the per-cohort RMSEs; MAE and the deviance are the same either way.
 - **M2. D² Poisson is dropped.** On one evaluation set it is `1 − D / D_null`, where `D_null`
   depends on `y` alone: a monotone transform of the deviance, so it ranks models the same way.
-- **M3. The log loss of one cohort is one-vs-rest** (the user's proposal). Cohort k is scored
-  against the rest of its row: counts `[n_k, N − n_k]`, predictions `[ŷ_k, Σŷ − ŷ_k]`.
+- **M3. The log loss of one cohort is one-vs-rest** (the user's proposal). With `cohort=`, cohort k
+  is scored against the sum of the others in its sample: counts `[n_k, N − n_k]`, predictions
+  `[ŷ_k, Σŷ − ŷ_k]`.
   - The multinomial log loss on that two-column pair equals the binary cross-entropy
     `−Σ[n_k log p_k + (N − n_k) log(1 − p_k)] / ΣN`. It also equals the binomial negative
     log-likelihood of the cohort's marginal, minus its constant (probed to 6 decimals, §7). So it
@@ -69,10 +71,12 @@ The standing rules are those of [EXPERIMENT_NOTEBOOK_PLAN.md](EXPERIMENT_NOTEBOO
     0.956. Cohort rows compare with each other, not with the composite row.
   - Like the composite loss, it ignores the total.
   - A single column always scores 0, so `multinomial_log_loss` raises on 1-D or one-column input.
+  - scikit-learn's `log_loss` is called with keywords, `y_true=` and `y_proba=` (the user's note:
+    1.9 deprecated `y_pred` for `y_proba`, removed in 1.11; 1.9.0 is pinned, no upgrade needed).
 - **M4. Names** follow the user's `_loss` pattern: `multinomial_log_loss` and
   `mean_poisson_deviance_loss` (the user's), plus `mean_absolute_error_loss`,
-  `root_mean_squared_error_loss`, `wmape_loss` and `mean_bias_error`. The user may rename them at
-  1.1. `Metric` is not changed.
+  `root_mean_squared_error_loss`, `wmape_loss` and `mean_bias_error`. Each is
+  `(y_true, y_pred, *, cohort: str | None = None)` (M9).
 - **M5. The loop is built before the EDA (recommended).** The user's order (EDA first, then all
   runs in a loop) is the order of the clicks; it does not have to be the order of implementation.
   - Built after the EDA, the 24 run cells would be edited three times before being replaced: the
@@ -90,47 +94,100 @@ The standing rules are those of [EXPERIMENT_NOTEBOOK_PLAN.md](EXPERIMENT_NOTEBOO
   records already made in the cell are lost.
 - **M8. The EDA compares objectives on paired searches.** The three studies of a model share their
   `study_seed`, so the 20 random startup trials are the same draws.
+- **M9. A metric scores one cohort through `cohort=`** (the user's design, 2026-10-30). Every metric
+  takes the whole `y_true` / `y_pred` and an optional `cohort`, and restricts itself: a count
+  metric pools that cohort's column; the log loss scores the `[cohort, rest]` pair (M3). One metric
+  list then serves a score table's cohort rows and its composite row (2.4).
+  - **By name, not by position** (the user's experiment names its cohorts). scikit-learn's column
+    selectors do the same (`ColumnTransformer`: "strings can reference DataFrame columns by
+    name"). The name is looked up in `y_true`'s columns and `y_pred` is read at that position, so
+    pairing by position stands. An array `y_true` raises `TypeError`, a missing name pandas'
+    `KeyError`. A repeated name is not checked: the cohort names are unique by construction
+    (`Y = df[targets]`, the simulator's distinct names), and data is validated where it is made.
+  - **`str`, not a `Literal`:** the names are data (the notebook's `COHORTS = list(Y.columns)`), and
+    `scoring` serves any target matrix.
+  - **`Metric.__call__` and `BaseAgeGroupModel.evaluate` take `cohort` too.** `Metric` passes it on
+    only when given, so a two-argument function (scikit-learn's, a lambda) still scores the whole
+    of `y` and raises `TypeError` if asked for a cohort.
+  - The cohort rows do not add up to the composite: RMSE and WMAPE pool, and the log loss's rows
+    are binomial.
 
 ## 3. PR 1: the metrics in `scoring`
 
 Branch `refactor/scoring-metrics`, created from `feat/experiment-notebook` with the user's
-uncommitted `scoring.py` and notebook edits, which carry over to the new branch.
+uncommitted `scoring.py` edit, which carried over. The plan (`ff6087c`) and the user's notebook
+cleanup (`492f171`: an empty cell and an unused `optuna` return) are its first commits.
 
-### [ ] 1.1 The metric functions
+### [x] 1.1 The metric functions, and the code that calls them
+
+The user's choice at 1.1's stop (2026-10-30): the code callers are renamed in 1.1, so its commit is
+green; 1.2 is the docs. The rename breaks every importer of the old names: two test modules fail
+to collect, and the notebook fails to import.
 
 - **Change:** `src/age_group_prediction/scoring.py`, starting from the user's edit:
   - `__all__` and the imports (ruff's F822 ×2, F401 `xlogy`, I001);
-  - `np.asarray` before the shape check, so list inputs work;
-  - `labels=range(K)` in `log_loss`, so a cohort with no child in `y_true` scores instead of
-    raising;
-  - the four new functions (M1, M4); the log loss raises on one column (M3).
+  - one shape check for every function (`check_paired_arrays`), with `np.asarray` first, so
+    list inputs work. With `cohort=`, `column_position` finds the column and each metric selects
+    it: a count metric takes the column, the log loss stacks `[cohort, rest]` (the user's notes:
+    no `_cohort_cells`). Both helpers are public in `utils.py`, beside `take_rows` (the user's
+    note: not private), as scikit-learn's public validators live in `sklearn.utils`. The check
+    runs inside each metric function, as scikit-learn's metrics validate their own inputs: a
+    check in `Metric.__call__` would miss the direct calls;
+  - `log_loss(y_true=..., y_proba=..., labels=range(n_cohorts))`, so a cohort with no child in
+    `y_true` scores instead of raising (M3);
+  - the four new functions (M1, M4). The log loss raises on 1-D input itself; on one column,
+    scikit-learn's `log_loss` raises ("at least two labels");
+  - `cohort=` on every function, `Metric.__call__` and `BaseAgeGroupModel.evaluate`
+    (`src/age_group_prediction/modeling/base.py`) (M9);
+  - "samples" in the docstrings, messages and names (M1).
+- **Behaviour changes, from the user's switch to scikit-learn's `log_loss`:**
+  - a zero probability for a cohort that has children is clipped: a large finite loss (36.04 in
+    the probe), where the old `xlogy` version gave `inf`;
+  - no child at all raises scikit-learn's `ValueError`, where the old version gave `nan`.
+  The bootstrap still fails loudly either way.
+- **The code callers,** function references only. The `Metric` labels (`"cohort_log_loss"`,
+  `"cohort_poisson_deviance"`) are unchanged, so every table reads the same:
+  - `tests/unit/test_hyperparameter_tuning_cross_validation.py`,
+    `test_hyperparameter_tuning_evaluation.py`, `test_inspection_bootstrap.py`,
+    `test_inspection_permutation.py`, `test_modeling_cohort_probability.py`;
+  - the notebook's import and metrics cells (the names sorted, as ruff's I001 and marimo expect).
 - **Tests** (`tests/unit/test_scoring.py`):
-  - each metric on 1-D and on 2-D equals a hand-computed value;
-  - 2-D equals the same metric on the raveled cells;
-  - a mismatched shape raises (non-square data);
-  - lists work;
-  - an absent cohort scores a finite value;
-  - the log loss rejects one column;
-  - the two-column pair equals the binary formula (M3).
-- **Done when:** the tests pass under `-W error`; mypy and ruff are clean on `scoring.py`.
-- **Verify, mutations:** drop `labels=`, and the absent-cohort test fails; drop the `ravel` in RMSE,
-  and the 2-D test fails; drop the one-column check, and its test fails.
-- **Commit:** `refactor(scoring): every metric on one cohort or the cohort matrix; MAE, RMSE, WMAPE and bias added`
-
-### [ ] 1.2 The callers of the renamed functions
-
-- **Change:** the old names give way to the new ones in:
-  - `tests/unit/test_inspection_bootstrap.py` and `test_modeling_cohort_probability.py`;
-  - the doc blocks of MODEL_INSPECTION.md and HYPERPARAMETER_TUNING.md (the HYPERPARAMETER_TUNING
-    blocks are rerun as written, and their printed numbers must not change);
-  - the notebook's import and metrics cells: the two names only.
+  - each count metric on the cohort matrix pools every cell, and scores one cohort (1-D);
+  - the cohort deviance is the mean of the cohort deviances; the cohort RMSE is not the mean of the
+    cohort RMSEs;
+  - a transposed, flattened or one-column prediction is rejected by every count metric;
+  - DataFrames and lists pair by position;
+  - an over-prediction has a positive bias;
+  - the log loss: the mean per child; a sample without children adds nothing; a cohort without
+    a child scores; counts score as proportions; `cohort=` gives the binomial log loss of the
+    cohort's share (M3); one cohort alone is rejected;
+  - `cohort=` (M9): a count metric scores that cohort's column, read at its position in `y_pred`;
+    a name `y_true` does not hold, or an array `y_true`, is rejected by all six;
+    `Metric` passes the cohort on only when given; `evaluate` passes it to the metric
+    (`tests/unit/test_modeling_base.py`).
 - **Done when:**
+  - the tests pass under `-W error`; mypy and ruff are clean on the changed files;
   - the non-slow suite is green;
-  - `grep` finds the old names only in finished plans' history;
-  - Check A and Check B pass.
-- **Verify:** Check C at 3 trials with the inspection gives the 24 baselines. Its `intervals_df` is
-  saved to the scratchpad as the reference for 1.3.
-- **Commit:** `refactor(scoring): the callers take multinomial_log_loss and mean_poisson_deviance_loss`
+  - Check A passes (the notebook's 14 ruff findings, the two format hunks, `marimo check`'s one
+    empty cell);
+  - Check C gives the 24 baselines.
+- **Verify, mutations:** drop `labels=`, and the absent-cohort test fails; drop the `ravel` in RMSE,
+  and the pooling tests fail; drop the 2-D check, and the one-cohort test fails; the count
+  metrics ignore `cohort`, the pair is built from another column, or `Metric` drops `cohort`, and
+  their tests fail.
+- **Commit:** `refactor(scoring): every metric on the sample matrix or one cohort by name; MAE, RMSE, WMAPE and bias added`
+
+### [ ] 1.2 The docs of the renamed functions
+
+- **Change:** the new names in MODEL_INSPECTION.md, HYPERPARAMETER_TUNING.md,
+  TOTAL_TIMES_PROBABILITY_MODEL.md (code blocks and prose) and MODULE_REFERENCE.md's `scoring.py`
+  row (its functions, the one-cohort-or-matrix rule, and its dependency on `utils`), and its
+  `utils.py` row (`check_paired_arrays`, `column_position`). The blocks that import the renamed
+  functions are rerun as written, and their printed numbers must not change.
+- **Done when:** `grep` finds the old function names only in finished plans' history and as
+  `Metric` labels; the rerun blocks print the numbers the docs show.
+- **Verify:** 1.1's Check C `intervals_df` is the reference for 1.3 (saved in the scratchpad).
+- **Commit:** `docs(scoring): the guides take multinomial_log_loss and mean_poisson_deviance_loss`
 
 ### [ ] 1.3 The notebook's metrics from `scoring`
 
@@ -141,7 +198,7 @@ uncommitted `scoring.py` and notebook edits, which carry over to the new branch.
   - section 5's markdown no longer names D². That is the user's text: show the diff and ask.
 - **Done when:** Check A passes, against the 14 ruff findings and the two format hunks; Check B
   passes.
-- **Verify:** Check C. The six metrics of `intervals_df` equal 1.2's reference exactly (M1:
+- **Verify:** Check C. The six metrics of `intervals_df` equal 1.1's reference exactly (M1:
   the same computation).
 - **Before the stop:** the PR's review subagent.
 - **Commit:** `refactor(notebook): the inspection metrics from scoring; D² Poisson dropped`
@@ -191,16 +248,15 @@ Branch `refactor/notebook-run-loop`, from `feat/experiment-notebook` after PR 1 
 ### [ ] 2.4 `fit_and_score` with several metrics
 
 - **Change:**
-  - `fit_and_score(model, train, val, *, cohort_metrics, metrics)`: one fit, then one row per
-    (cohort, metric) and per (composite, metric), each `{cohort, metric, train, val}`; with tests;
+  - `fit_and_score(model, train, val, *, metrics)`: one fit, then one row per (cohort, metric),
+    scored with `cohort=<name>` (M9), and per (composite, metric), each `{cohort, metric, train,
+    val}`; with tests. `POISSON_DEVIANCE` goes: `COHORT_POISSON_DEVIANCE` with a cohort is that
+    cohort's deviance;
   - the two loop cells pass every metric;
   - the tables cells, `best_df` and the inspection's best-run rule read the primary metric's
     composite row, not `score_table[-1]`.
-- **Design question, asked at planning:** how a cohort row gets the log loss's one-vs-rest pair
-  (M3) while the other metrics get the cohort's column:
-  - (a) a third list, `cohort_pair_metrics`, scored on each cohort's `[cohort, rest]` pair;
-  - (b) the per-cohort log loss left out of `fit_and_score` and computed in the notebook's table;
-  - (c) a field on `Metric` (this changes `Metric`, which the user kept as is).
+- **Design question, settled 2026-10-30 by M9:** every metric restricts itself through `cohort=`,
+  so one list serves both kinds of row.
 - **Done when:** the suite passes; mypy passes, including the package path and the changed tests;
   Check A and Check B pass.
 - **Verify:** Check C. The primary metric's 24 values are unchanged, and every other metric
