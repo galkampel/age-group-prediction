@@ -69,9 +69,19 @@ class BaseAgeGroupModel(BaseEstimator, ABC):
         An array for one target; a DataFrame with ``y``'s columns for several.
         """
 
-    def evaluate(self, y_true: ArrayLike, y_pred: ArrayLike, metric: Metric) -> float:
-        """Score ``y_pred`` against ``y_true`` with one metric."""
-        return metric(y_true, y_pred)
+    def evaluate(
+        self,
+        y_true: ArrayLike,
+        y_pred: ArrayLike,
+        metric: Metric,
+        *,
+        cohort: str | None = None,
+    ) -> float:
+        """Score ``y_pred`` against ``y_true`` with one metric.
+
+        With ``cohort``, a column name of ``y_true``, on that cohort alone.
+        """
+        return metric(y_true, y_pred, cohort=cohort)
 
     def _fit_features(
         self, X: pd.DataFrame, y: pd.Series | pd.DataFrame

@@ -182,11 +182,6 @@ def _(ExposureTransformer, df):
 
 
 @app.cell
-def _():
-    return
-
-
-@app.cell
 def _(DATA_SETTINGS, X, config, df, groups, hashlib, json, mo, pd):
     def flatten(mapping: dict, prefix: str = "") -> dict:
         """``{"a": {"b": 1}}`` to ``{"a.b": 1}``: MLflow parameters are flat."""
@@ -694,11 +689,10 @@ def _(mo):
     model is rebuilt from the best trial's parameters, refit on the training
     part and judged on the training rows and the validation rows (the test
     part waits for the final refit on training + validation). A bootstrap
-    that resamples whole neighborhoods gives the interval of seven metrics,
+    that resamples whole neighborhoods gives the interval of six metrics,
     all paired on the same replicates: the cohort Poisson deviance (the
     primary metric, the tuning's objective); the cohort log loss (the
-    proportions between cohorts only, so it never selects); D² Poisson (the
-    share of the deviance explained, 1 is perfect); MAE and RMSE per
+    proportions between cohorts only, so it never selects); MAE and RMSE per
     (building, cohort) cell; WMAPE (the absolute error as a share of the
     children); and the bias (mean predicted minus true count, signed, so 0
     is best). The permutation importance of the primary metric on validation
@@ -714,16 +708,9 @@ def _(mo):
 
 @app.cell
 def _():
-    from functools import partial
-
     import numpy as np
     import optuna
-    from sklearn.metrics import (
-        d2_tweedie_score,
-        mean_absolute_error,
-        mean_poisson_deviance,
-        root_mean_squared_error,
-    )
+    from sklearn.metrics import mean_poisson_deviance
 
     from age_group_prediction.hyperparameter_tuning import (
         CountComponent,
@@ -741,8 +728,12 @@ def _():
     )
     from age_group_prediction.scoring import (
         Metric,
-        cohort_log_loss,
-        cohort_poisson_deviance,
+        mean_absolute_error_loss,
+        mean_bias_error,
+        mean_poisson_deviance_loss,
+        multinomial_log_loss,
+        root_mean_squared_error_loss,
+        wmape_loss,
     )
 
     # Optuna logs every trial at INFO; the studies run in this process.
@@ -758,68 +749,51 @@ def _():
         ShapExplainer,
         build_independent_cohorts_model,
         build_total_times_probability_model,
-        cohort_log_loss,
-        cohort_poisson_deviance,
-        d2_tweedie_score,
         fit_and_score,
-        mean_absolute_error,
+        mean_absolute_error_loss,
+        mean_bias_error,
         mean_poisson_deviance,
+        mean_poisson_deviance_loss,
+        multinomial_log_loss,
         np,
-        optuna,
-        partial,
-        root_mean_squared_error,
+        root_mean_squared_error_loss,
+        wmape_loss,
     )
 
 
 @app.cell
 def _(
     Metric,
-    cohort_log_loss,
-    cohort_poisson_deviance,
-    d2_tweedie_score,
-    mean_absolute_error,
+    mean_absolute_error_loss,
+    mean_bias_error,
     mean_poisson_deviance,
-    np,
-    partial,
-    root_mean_squared_error,
+    mean_poisson_deviance_loss,
+    multinomial_log_loss,
+    root_mean_squared_error_loss,
+    wmape_loss,
 ):
     # The study's objective and the tables' per-cohort score, with the direction
     # Optuna is given; a loss, so "minimize".
     COHORT_POISSON_DEVIANCE = Metric(
-        "cohort_poisson_deviance", cohort_poisson_deviance, direction="minimize"
+        "cohort_poisson_deviance", mean_poisson_deviance_loss, direction="minimize"
     )
     POISSON_DEVIANCE = Metric(
         "poisson_deviance", mean_poisson_deviance, direction="minimize"
     )
-    COHORT_LOG_LOSS = Metric("cohort_log_loss", cohort_log_loss, direction="minimize")
+    COHORT_LOG_LOSS = Metric(
+        "cohort_log_loss", multinomial_log_loss, direction="minimize"
+    )
 
-    def on_cells(function):
-        """``function`` on the flattened (building, cohort) cells of both matrices."""
-        return lambda y_true, y_pred: function(
-            np.asarray(y_true, dtype=float).ravel(),
-            np.asarray(y_pred, dtype=float).ravel(),
-        )
-
-    def wmape(y_true, y_pred):
-        return float(np.abs(y_true - y_pred).sum() / np.abs(y_true).sum())
-
-    def bias(y_true, y_pred):
-        return float(np.mean(y_pred - y_true))
-
-    # The bootstrap of the best runs, the primary metric first. Bias is signed,
-    # so its direction is nominal: only the permutation importance reads one.
+    # The bootstrap of the best runs, the primary metric first; the count
+    # metrics pool the (building, cohort) cells. Bias is signed, so its
+    # direction is nominal: only the permutation importance reads one.
     INSPECTION_METRICS = (
         COHORT_POISSON_DEVIANCE,
         COHORT_LOG_LOSS,
-        Metric(
-            "d2_poisson",
-            on_cells(partial(d2_tweedie_score, power=1)),
-            direction="maximize",
-        ),
-        Metric("mae", on_cells(mean_absolute_error), direction="minimize"),
-        Metric("rmse", on_cells(root_mean_squared_error), direction="minimize"),
-        Metric("wmape", on_cells(wmape), direction="minimize"),
-        Metric("bias", on_cells(bias), direction="minimize"),
+        Metric("mae", mean_absolute_error_loss, direction="minimize"),
+        Metric("rmse", root_mean_squared_error_loss, direction="minimize"),
+        Metric("wmape", wmape_loss, direction="minimize"),
+        Metric("bias", mean_bias_error, direction="minimize"),
     )
     return COHORT_POISSON_DEVIANCE, INSPECTION_METRICS, POISSON_DEVIANCE
 
@@ -3122,7 +3096,7 @@ def _(mo):
     run_inspection = mo.ui.run_button(label="Inspect the best runs")
     mo.md(
         f"{run_inspection} each model's best run: refit on the training part, the "
-        "bootstrap of seven metrics, the permutation importance and SHAP (about two "
+        "bootstrap of six metrics, the permutation importance and SHAP (about two "
         "minutes)."
     )
     return (run_inspection,)
@@ -3246,7 +3220,7 @@ def _(
     mo.stop(
         not run_inspection.value, mo.md("Click the button to inspect the best runs.")
     )
-    # The seven metrics' intervals on the training rows and on the validation
+    # The six metrics' intervals on the training rows and on the validation
     # rows, resampling whole neighborhoods; every metric scores the same replicates.
     _evaluator = BootstrapEvaluator(n_resamples, random_state=seed)
     model1_intervals = pd.concat(

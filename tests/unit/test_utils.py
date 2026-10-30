@@ -4,8 +4,9 @@ from __future__ import annotations
 
 import numpy as np
 import pandas as pd
+import pytest
 
-from age_group_prediction.utils import take_rows
+from age_group_prediction.utils import check_paired_arrays, column_position, take_rows
 
 INDEX = np.array([2, 0])
 
@@ -25,3 +26,38 @@ def test_take_rows_ignores_the_pandas_labels() -> None:
     assert take_rows(frame, INDEX)["x"].tolist() == [30, 10]
     assert take_rows(series, INDEX).tolist() == [30, 10]
     assert take_rows(series, INDEX).index.tolist() == [0, 2]
+
+
+def test_check_paired_arrays_returns_float_arrays_of_one_shape() -> None:
+    # Lists convert; a transposed prediction has as many cells as y_true, so
+    # once raveled it would be scored mispaired, silently.
+    y_true, y_pred = check_paired_arrays([[1, 2], [3, 4]], [[1.5, 2.5], [3.5, 4.5]])
+
+    assert y_true.dtype == y_pred.dtype == np.float64
+    assert y_true.shape == y_pred.shape == (2, 2)
+    with pytest.raises(ValueError, match="same shape"):
+        check_paired_arrays(np.zeros((3, 2)), np.zeros((2, 3)))
+
+
+@pytest.mark.parametrize("value", [np.nan, np.inf, -np.inf], ids=["nan", "inf", "-inf"])
+def test_check_paired_arrays_rejects_a_non_finite_value_in_either_array(
+    value: float,
+) -> None:
+    # A NaN or an infinity in a sum gives a NaN or inf score, silently.
+    finite, non_finite = np.ones(3), np.array([1.0, value, 1.0])
+
+    with pytest.raises(ValueError, match="must be finite"):
+        check_paired_arrays(non_finite, finite)
+    with pytest.raises(ValueError, match="must be finite"):
+        check_paired_arrays(finite, non_finite)
+
+
+def test_column_position_finds_a_column_name_of_a_dataframe() -> None:
+    # A misspelt name, and an array without names to look the column up in.
+    table = pd.DataFrame(np.zeros((2, 3)), columns=["k", "e", "h"])
+
+    assert column_position(table, "h") == 2
+    with pytest.raises(KeyError, match="n_elementary"):
+        column_position(table, "n_elementary")
+    with pytest.raises(TypeError, match="DataFrame"):
+        column_position(table.to_numpy(), "h")

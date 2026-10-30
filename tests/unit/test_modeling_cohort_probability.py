@@ -29,7 +29,7 @@ from age_group_prediction.modeling import (
     CohortProbabilityModel,
     ReplicationMethod,
 )
-from age_group_prediction.scoring import cohort_log_loss
+from age_group_prediction.scoring import multinomial_log_loss
 
 # Not in sorted order, so a mapping by position from the sorted classes_
 # ("el", "hs", "kg") would permute the cohorts.
@@ -379,9 +379,9 @@ def test_the_model_beats_the_marginal_shares_on_new_buildings() -> None:
     model = CohortProbabilityModel(estimator=_logistic()).fit(X_fit, Y_fit)
     marginal = np.tile(Y_fit.sum() / Y_fit.to_numpy().sum(), (len(X_new), 1))
 
-    model_loss = cohort_log_loss(Y_new.to_numpy(), model.predict(X_new).to_numpy())
+    model_loss = multinomial_log_loss(Y_new.to_numpy(), model.predict(X_new).to_numpy())
 
-    assert model_loss < 0.95 * cohort_log_loss(Y_new.to_numpy(), marginal)
+    assert model_loss < 0.95 * multinomial_log_loss(Y_new.to_numpy(), marginal)
 
 
 def test_probabilities_that_do_not_sum_to_one_raise() -> None:

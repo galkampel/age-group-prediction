@@ -26,7 +26,7 @@ from age_group_prediction.hyperparameter_tuning import (
     build_total_times_probability_model,
 )
 from age_group_prediction.modeling import IndependentCohortModels
-from age_group_prediction.scoring import Metric, cohort_poisson_deviance
+from age_group_prediction.scoring import Metric, mean_poisson_deviance_loss
 from age_group_prediction.splitting import Splitter
 
 PASSTHROUGH = Plan(name="passthrough")
@@ -38,7 +38,7 @@ TRANSFORMERS = {
 }
 COHORTS = ("n_kindergarten", "n_elementary", "n_highschool")
 METRIC = Metric(
-    "cohort_poisson_deviance", cohort_poisson_deviance, direction="minimize"
+    "cohort_poisson_deviance", mean_poisson_deviance_loss, direction="minimize"
 )
 CV = Splitter("random").cv(n_splits=3, random_state=0)
 TUNER = CrossValidationTuner(cv=CV, metric=METRIC, n_trials=3, n_startup_trials=2)
@@ -181,7 +181,7 @@ def test_a_trial_whose_fit_raises_runtime_error_fails_and_the_study_goes_on() ->
     def fails_once(y_true: pd.DataFrame, y_pred: pd.DataFrame) -> float:
         if next(calls) == CV.get_n_splits():
             raise RuntimeError("the fit did not converge")
-        return cohort_poisson_deviance(y_true, y_pred)
+        return mean_poisson_deviance_loss(y_true, y_pred)
 
     tuner = dataclasses.replace(TUNER, metric=Metric("fails_once", fails_once))
     study, seconds = tuner.tune_independent_cohorts_model(
@@ -228,7 +228,7 @@ def test_the_study_takes_the_metrics_direction_and_the_sampler_its_settings(
     X, Y, exposure = _table()
     tuner = dataclasses.replace(
         TUNER,
-        metric=Metric("cohort_poisson_deviance", cohort_poisson_deviance, direction),  # type: ignore[arg-type]
+        metric=Metric("cohort_poisson_deviance", mean_poisson_deviance_loss, direction),  # type: ignore[arg-type]
         n_trials=2,
         n_startup_trials=5,
     )
