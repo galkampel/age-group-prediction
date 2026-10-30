@@ -2,13 +2,13 @@
 
 **For:** the session that continues [NOTEBOOK_METRICS_LOOP_EDA_PLAN.md](NOTEBOOK_METRICS_LOOP_EDA_PLAN.md)
 (three PRs: the metrics in `scoring`, the runs in a loop, the objective EDA). PR 1 is complete
-(1.1 `185285e`, 1.2 `96c950b`, 1.3 done; §2); the next session starts PR 2 (2.1) after the user
-merges PR 1. MLflow and E11's final evaluation are
+(1.1 `185285e`, 1.2 `96c950b`, 1.3 `0e9d0a1`, 1.4 done; §2); the next session starts PR 2 (2.1)
+after the user merges PR 1. MLflow and E11's final evaluation are
 deferred (§6).
 
 **Written:** 2026-10-29, after T5 of [NOTEBOOK_TUNING_PLAN.md](NOTEBOOK_TUNING_PLAN.md);
 **updated** 2026-10-30 after sub-task 1.1 of the metrics plan, after the user's notes on its
-helpers, after sub-task 1.2, and after sub-task 1.3 (§1, §2, §5, §6). The detailed history of
+helpers, and after sub-tasks 1.2, 1.3 and 1.4 (§1, §2, §5, §6). The detailed history of
 the tuning work is in that plan (§0 D1–D26, §2–§6 the sub-tasks), in
 [NOTEBOOK_T4_HANDOFF.md](NOTEBOOK_T4_HANDOFF.md) (T4–T5) and in git; the decisions of the current
 work are M1–M9 of the metrics plan. Re-verify every fact here against the code of the day.
@@ -71,14 +71,22 @@ used yet; the old `tracking/` package belongs to the old stack.
 - **Branches:** `feat/experiment-notebook` (from `main`, no PR into `main` yet; it holds T1–T5 and
   PR #17's squash `a748cd4`) and, from it, **`refactor/scoring-metrics`** (PR 1 of the metrics
   plan; the user opens it as a draft into `feat/experiment-notebook`). The user merges.
-- **HEAD of `refactor/scoring-metrics`:** `96c950b` (`docs(scoring): the guides take
-  multinomial_log_loss and mean_poisson_deviance_loss`, sub-task 1.2), after `e481814` (this
-  handoff after 1.1's commit), `185285e` (`refactor(scoring): every metric on the sample matrix
-  or one cohort by name; MAE, RMSE, WMAPE and bias added`, sub-task 1.1), `0b391f8`, `492f171`
-  (the user's notebook cleanup) and `ff6087c` (the metrics plan). The tree holds sub-task 1.3
-  (below), which the user commits as `refactor(notebook): the inspection metrics from scoring;
-  D² Poisson dropped`.
-- **Done: sub-task 1.3** (the notebook and these docs; the metrics plan's 1.3 lists the checks).
+- **HEAD of `refactor/scoring-metrics`:** `0e9d0a1` (`refactor(notebook): the inspection
+  metrics from scoring; D² Poisson dropped`, sub-task 1.3), after `96c950b` (`docs(scoring): the
+  guides take multinomial_log_loss and mean_poisson_deviance_loss`, sub-task 1.2), `e481814`
+  (this handoff after 1.1's commit), `185285e` (`refactor(scoring): every metric on the sample
+  matrix or one cohort by name; MAE, RMSE, WMAPE and bias added`, sub-task 1.1), `0b391f8`,
+  `492f171` (the user's notebook cleanup) and `ff6087c` (the metrics plan). The tree holds
+  sub-task 1.4 (below), which the user commits as `fix(scoring): every metric rejects
+  non-finite values, the log loss a lone cohort also with cohort=; two docstrings corrected`.
+- **Done: sub-task 1.4** (`src`, tests, docs; the metrics plan's 1.4 lists the findings and the
+  checks). PR 1's review subagent found no bug; the user had its three nits fixed: every metric
+  rejects a NaN or an infinity (`utils.check_paired_arrays`), the log loss rejects a single
+  cohort also with `cohort=`, two docstrings corrected. Suite 1373 passed (1346 + 27); mypy
+  clean; three mutations caught. The user also amended 2.4: one `POISSON_DEVIANCE` on
+  `mean_poisson_deviance_loss`, `LOG_LOSS`, no `COHORT_` prefixes.
+- **Committed: sub-task 1.3** (`0e9d0a1`; the notebook and docs; the metrics plan's 1.3 lists
+  the checks).
   `INSPECTION_METRICS` holds the six `scoring` metrics, labels unchanged; `on_cells`, `wmape`,
   `bias`, D² and their imports are gone; section 5's markdown, the inspection button's text and
   a comment say six (the user's choice). Check C: the 24 baselines; the intervals equal 1.2's
@@ -329,8 +337,9 @@ terms (`check_paired_arrays`, `column_position`).
 
 The order is [NOTEBOOK_METRICS_LOOP_EDA_PLAN.md](NOTEBOOK_METRICS_LOOP_EDA_PLAN.md)'s, one
 sub-task per approval:
-1. **PR 1** (`refactor/scoring-metrics`): complete (1.1 `185285e`, 1.2 `96c950b`, 1.3). The
-   user commits 1.3, opens the draft PR into `feat/experiment-notebook` and merges it.
+1. **PR 1** (`refactor/scoring-metrics`): complete (1.1 `185285e`, 1.2 `96c950b`, 1.3
+   `0e9d0a1`, 1.4). The user commits 1.4, opens the draft PR into `feat/experiment-notebook` and
+   merges it.
 2. **PR 2** (`refactor/notebook-run-loop`): the sharing-flags test, the runs in a loop, and
    `fit_and_score(model, train, val, *, metrics)` scoring every metric per cohort (`cohort=`) and
    for the composite.
@@ -350,7 +359,7 @@ validates one at a time.
 Read docs/EXPERIMENT_NOTEBOOK_HANDOFF.md in full, then docs/NOTEBOOK_METRICS_LOOP_EDA_PLAN.md in
 full (§4, PR 2), src/age_group_prediction/hyperparameter_tuning/components.py and builders.py,
 and tests/unit/test_hyperparameter_tuning_builders.py. Verify the state first: PR 1
-(refactor/scoring-metrics, its last commit my commit of sub-task 1.3) merged into
+(refactor/scoring-metrics, its last commit my commit of sub-task 1.4) merged into
 feat/experiment-notebook, my new branch refactor/notebook-run-loop from it, a clean tree, the
 notebook md5 b3287cd0e24b9b489b1b9f63fc7cbac0. If anything differs, stop and show me the diff. Then plan
 sub-task 2.1 in plan mode: re-verify the facts with read-only probes, give a recommendation with

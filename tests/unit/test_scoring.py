@@ -156,11 +156,16 @@ def test_a_prediction_of_another_shape_is_rejected(y_pred: np.ndarray) -> None:
 
 def test_one_cohort_alone_is_rejected() -> None:
     # One cohort normalizes to probability 1 and would score 0 whatever the
-    # prediction: a single column (scikit-learn's check) or a 1-D cohort.
-    with pytest.raises(ValueError, match="at least two labels"):
+    # prediction: a single column, a 1-D cohort, or a single column scored with
+    # cohort= (its rest column is all zeros, so the cohort's share is 1).
+    with pytest.raises(ValueError, match="at least two cohorts"):
         multinomial_log_loss(COUNTS[:, :1], PROBABILITIES[:, :1])
     with pytest.raises(ValueError, match="with cohort="):
         multinomial_log_loss(COUNTS[:, 0], PROBABILITIES[:, 0])
+    with pytest.raises(ValueError, match="at least two cohorts"):
+        multinomial_log_loss(
+            pd.DataFrame(COUNTS[:, :1], columns=["a"]), PROBABILITIES[:, :1], cohort="a"
+        )
 
 
 # --- the count metrics ------------------------------------------------
@@ -253,6 +258,21 @@ def test_a_cohort_y_true_does_not_name_is_rejected(
         function(COHORT_FRAME, EXPECTED_FRAME, cohort="n_elementary")
     with pytest.raises(TypeError, match="DataFrame"):
         function(COHORT_COUNTS, EXPECTED_COUNTS, cohort="h")
+
+
+@pytest.mark.parametrize("function", ALL_METRICS, ids=ALL_METRIC_IDS)
+@pytest.mark.parametrize("value", [np.nan, np.inf], ids=["nan", "inf"])
+@pytest.mark.parametrize("side", ["y_true", "y_pred"])
+def test_a_non_finite_value_is_rejected(
+    function: Callable[..., float], value: float, side: str
+) -> None:
+    # Catches a NaN or an infinity passed through a sum as a NaN or inf score
+    # (WMAPE and bias would), in either input.
+    y_true, y_pred = COHORT_COUNTS.copy(), EXPECTED_COUNTS.copy()
+    (y_true if side == "y_true" else y_pred)[0, 0] = value
+
+    with pytest.raises(ValueError, match="must be finite"):
+        function(y_true, y_pred)
 
 
 def test_the_cohort_deviance_is_the_mean_of_the_cohort_deviances() -> None:

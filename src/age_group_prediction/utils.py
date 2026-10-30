@@ -28,7 +28,7 @@ type Exposure = pd.Series | np.ndarray  # a model's raw exposure, one per row
 def check_paired_arrays(
     y_true: ArrayLike, y_pred: ArrayLike
 ) -> tuple[np.ndarray, np.ndarray]:
-    """``y_true`` and ``y_pred`` as float arrays of one shape, paired by position."""
+    """``y_true`` and ``y_pred`` as finite float arrays of one shape, paired by position."""
     y_true_array = np.asarray(y_true, dtype=float)
     y_pred_array = np.asarray(y_pred, dtype=float)
     # numpy would broadcast one column over every other, and a transposed or
@@ -38,6 +38,10 @@ def check_paired_arrays(
             "y_true and y_pred must have the same shape, (n_samples,) or "
             f"(n_samples, n_outputs), got {y_true_array.shape} and {y_pred_array.shape}"
         )
+    # A NaN or an infinity would pass through a sum as a NaN or inf score, as
+    # scikit-learn's check_array rejects them.
+    if not (np.isfinite(y_true_array).all() and np.isfinite(y_pred_array).all()):
+        raise ValueError("y_true and y_pred must be finite, got a NaN or an infinity")
     return y_true_array, y_pred_array
 
 

@@ -1,6 +1,6 @@
 # Plan: the metrics in `scoring`, the runs in a loop, the objective EDA
 
-**Status (2026-10-30):** PR 1 on `refactor/scoring-metrics`: 1.1 done, revised at the user's notes (`cohort=`, `y_proba=`, samples; then the notes on the helpers: `utils.check_paired_arrays` checks, `utils.column_position` finds a cohort's column, each metric selects it, no repeated-name guard; suite 1346 passed; Check C the 24 baselines), committed as `185285e`. 1.2 done (docs only; the three guides' blocks rerun as written with the same numbers; MODEL_INSPECTION.md's stale simulator line fixed with `from_config`, the user's choice), committed as `96c950b`. 1.3 done (the notebook's six inspection metrics from `scoring`, D² dropped; Check C the 24 baselines and the intervals equal, WMAPE and bias but for their last bit); PR 1 complete after the review subagent; next PR 2 (2.1) after the user's merge.
+**Status (2026-10-30):** PR 1 on `refactor/scoring-metrics`: 1.1 done, revised at the user's notes (`cohort=`, `y_proba=`, samples; then the notes on the helpers: `utils.check_paired_arrays` checks, `utils.column_position` finds a cohort's column, each metric selects it, no repeated-name guard; suite 1346 passed; Check C the 24 baselines), committed as `185285e`. 1.2 done (docs only; the three guides' blocks rerun as written with the same numbers; MODEL_INSPECTION.md's stale simulator line fixed with `from_config`, the user's choice), committed as `96c950b`. 1.3 done (the notebook's six inspection metrics from `scoring`, D² dropped; Check C the 24 baselines and the intervals equal, WMAPE and bias but for their last bit); committed as `0e9d0a1`. 1.4 done (the review's fixes in `scoring`: non-finite values and a lone cohort rejected, two docstrings; suite 1373 passed); PR 1 complete; next PR 2 (2.1) after the user's merge.
 
 The user's notes of 2026-10-30 on the experiment notebook. They replace the order of
 [EXPERIMENT_NOTEBOOK_HANDOFF.md](EXPERIMENT_NOTEBOOK_HANDOFF.md) §6: MLflow and E11's final
@@ -242,6 +242,39 @@ to collect, and the notebook fails to import.
     and bias within 1e-12 (largest gap 1.1e-16). Mutation: `"wmape"` mapped to
     `mean_absolute_error_loss` fails the comparison (gap 3.1).
 
+### [x] 1.4 The review's fixes in `scoring`
+
+Added on 2026-10-30 at the user's choice, after PR 1's review subagent (run before 1.3's stop).
+Its findings, each reproduced:
+- `wmape_loss` and `mean_bias_error` passed a NaN or an infinity through (nan, ±inf), while the
+  other four raised scikit-learn's `ValueError`;
+- `multinomial_log_loss` on a single-column frame with `cohort=` scored ≈ 0 (2.2e-16) whatever
+  the prediction (the rest column is all zeros), where the same call without `cohort=` raised;
+- the module docstring said every function takes a single target (the log loss rejects one);
+  `wmape_loss`'s docstring said `Σ y` where the code divides by `Σ|y|`;
+- not changed: a `y_pred` frame with reordered columns is mispaired, which is the documented
+  pairing by position (N19), pinned by the tests.
+
+- **Change:**
+  - `utils.check_paired_arrays` rejects a non-finite value in either array (`ValueError`), as
+    scikit-learn's `check_array` does by default, so all six metrics behave alike;
+  - `multinomial_log_loss` checks for a matrix of at least two cohorts before `cohort=`;
+  - the module docstring and `wmape_loss`'s formula (`Σ|y|`); MODULE_REFERENCE.md's
+    `scoring.py` and `utils.py` rows;
+  - tests: all six metrics reject NaN and inf in either input (24 cases); the one-cohort test
+    adds the `cohort=` case and matches the new message; `check_paired_arrays` rejects NaN,
+    inf and −inf in either array.
+- **Behaviour:** the tuner, the bootstrap and the permutation importance already got a
+  `ValueError` from the primary metric on such input; only WMAPE and bias (nan / inf before)
+  and the log loss (a `RuntimeWarning` first for an inf prediction) change.
+- **Checks (2026-10-30):** the two test files and `test_modeling_base.py` 96 passed under
+  `-W error`; the non-slow suite 1373 passed, 1 skipped, 1 xfailed, 19 deselected (1346 + 27);
+  mypy no issues (29 files); ruff and the format check clean on the four files; Check A the
+  notebook unchanged (ruff 14, the two hunks, `marimo check` 1). Mutations on a full copy, each
+  caught: the finite check dropped (27 failed), `y_pred` only checked (15 failed), `< 2`
+  dropped (1 failed).
+- **Commit:** `fix(scoring): every metric rejects non-finite values, the log loss a lone cohort also with cohort=; two docstrings corrected`
+
 ## 4. PR 2: the runs in a loop, scored on every metric
 
 Branch `refactor/notebook-run-loop`, from `feat/experiment-notebook` after PR 1 is merged.
@@ -291,6 +324,13 @@ Branch `refactor/notebook-run-loop`, from `feat/experiment-notebook` after PR 1 
     scored with `cohort=<name>` (M9), and per (composite, metric), each `{cohort, metric, train,
     val}`; with tests. `POISSON_DEVIANCE` goes: `COHORT_POISSON_DEVIANCE` with a cohort is that
     cohort's deviance;
+  - **the metric constants lose their `COHORT_` prefix** (the user's note, 2026-10-30: every
+    metric scores the matrix or one cohort): one `POISSON_DEVIANCE = Metric("poisson_deviance",
+    mean_poisson_deviance_loss)` serves the tuner, the cohort rows and the composite (on one
+    column it equals scikit-learn's `mean_poisson_deviance` to the last digit, probed), and
+    `COHORT_LOG_LOSS` becomes `LOG_LOSS` (label `"log_loss"`). The numbers do not change; the
+    labels in the tables and `intervals_df` do. Done here because the 24 run cells are two loop
+    cells by then (2.2–2.3);
   - the two loop cells pass every metric;
   - the tables cells, `best_df` and the inspection's best-run rule read the primary metric's
     composite row, not `score_table[-1]`.

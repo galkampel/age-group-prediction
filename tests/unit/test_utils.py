@@ -39,6 +39,19 @@ def test_check_paired_arrays_returns_float_arrays_of_one_shape() -> None:
         check_paired_arrays(np.zeros((3, 2)), np.zeros((2, 3)))
 
 
+@pytest.mark.parametrize("value", [np.nan, np.inf, -np.inf], ids=["nan", "inf", "-inf"])
+def test_check_paired_arrays_rejects_a_non_finite_value_in_either_array(
+    value: float,
+) -> None:
+    # A NaN or an infinity in a sum gives a NaN or inf score, silently.
+    finite, non_finite = np.ones(3), np.array([1.0, value, 1.0])
+
+    with pytest.raises(ValueError, match="must be finite"):
+        check_paired_arrays(non_finite, finite)
+    with pytest.raises(ValueError, match="must be finite"):
+        check_paired_arrays(finite, non_finite)
+
+
 def test_column_position_finds_a_column_name_of_a_dataframe() -> None:
     # A misspelt name, and an array without names to look the column up in.
     table = pd.DataFrame(np.zeros((2, 3)), columns=["k", "e", "h"])

@@ -4,11 +4,12 @@ Any callable works, from :mod:`sklearn.metrics` or custom, so the direction is
 stored rather than assumed: a tuner reads ``direction``, in Optuna's terms,
 to know whether to minimize the value (a loss) or maximize it (a score).
 
-The functions below score the cohort matrix, ``(n_samples, n_cohorts)``, or a
-single target, ``(n_samples,)``, paired by position; the count metrics pool
-every cell. With ``cohort``, a column name of ``y_true``, they score that
-cohort alone: its column, or for the log loss the cohort against the rest of
-its sample. Shared by :mod:`~age_group_prediction.modeling`,
+The functions below pair ``y_true`` and ``y_pred`` by position and reject a
+NaN or an infinity. The count metrics score the cohort matrix,
+``(n_samples, n_cohorts)``, or a single target, ``(n_samples,)``, and pool
+every cell; the log loss scores the matrix of at least two cohorts. With
+``cohort``, a column name of ``y_true``, they score that cohort alone: its
+column, or for the log loss the cohort against the rest of its sample. Shared by :mod:`~age_group_prediction.modeling`,
 :mod:`~age_group_prediction.inspection` and the experiment notebook, which
 build their metrics from these. Not the ``Metric`` protocol the package root
 exports from the old ``metrics.py``.
@@ -97,10 +98,12 @@ def multinomial_log_loss(
     the binomial log loss of its share, not a part of the multinomial one.
     """
     counts, predictions = check_paired_arrays(y_true, y_pred)
-    if counts.ndim != 2:
+    # One cohort normalizes to probability 1 and would score 0 whatever the
+    # prediction; checked before cohort=, whose rest column would be all zeros.
+    if counts.ndim != 2 or counts.shape[1] < 2:
         raise ValueError(
-            "y_true and y_pred must be (n_samples, n_cohorts) matrices; score one "
-            f"cohort with cohort=, got shape {counts.shape}"
+            "y_true and y_pred must be (n_samples, n_cohorts) matrices with at least "
+            f"two cohorts; score one cohort with cohort=, got shape {counts.shape}"
         )
     if cohort is not None:
         position = column_position(y_true, cohort)
@@ -169,7 +172,7 @@ def root_mean_squared_error_loss(
 def wmape_loss(
     y_true: ArrayLike, y_pred: ArrayLike, *, cohort: str | None = None
 ) -> float:
-    """The weighted mean absolute percentage error over the cells, ``Σ|ŷ − y| / Σ y``.
+    """The weighted mean absolute percentage error over the cells, ``Σ|ŷ − y| / Σ|y|``.
 
     The absolute error as a share of the children; not finite when there are
     none (numpy warns).
