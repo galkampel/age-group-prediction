@@ -666,7 +666,8 @@ def _(mo):
     marked failed and the run goes on; the tables count them. Each run keeps
     every trial and its best components, which alone are read back from the
     best trial's parameters, refit on the training part and scored on
-    training and validation. A Gaussian loss can predict a negative count,
+    training and validation on every metric, per cohort and for the
+    composite. A Gaussian loss can predict a negative count,
     which `CountModel` floors at `y_min` (eps). The total times probability
     model is tuned by coordinate descent, under `total__…` and
     `probability__…`. First its total: one run per total family and exposure
@@ -714,7 +715,6 @@ def _(mo):
 def _():
     import numpy as np
     import optuna
-    from sklearn.metrics import mean_poisson_deviance
 
     from age_group_prediction.hyperparameter_tuning import (
         CountComponent,
@@ -724,7 +724,6 @@ def _():
         ProbabilitySearchSpace,
         build_independent_cohorts_model,
         build_total_times_probability_model,
-        fit_and_score,
     )
     from age_group_prediction.inspection import (
         BootstrapEvaluator,
@@ -733,6 +732,7 @@ def _():
     )
     from age_group_prediction.scoring import (
         Metric,
+        evaluate,
         mean_absolute_error_loss,
         mean_bias_error,
         mean_poisson_deviance_loss,
@@ -755,10 +755,9 @@ def _():
         ShapExplainer,
         build_independent_cohorts_model,
         build_total_times_probability_model,
-        fit_and_score,
+        evaluate,
         mean_absolute_error_loss,
         mean_bias_error,
-        mean_poisson_deviance,
         mean_poisson_deviance_loss,
         multinomial_log_loss,
         np,
@@ -772,36 +771,33 @@ def _(
     Metric,
     mean_absolute_error_loss,
     mean_bias_error,
-    mean_poisson_deviance,
     mean_poisson_deviance_loss,
     multinomial_log_loss,
     root_mean_squared_error_loss,
     wmape_loss,
 ):
-    # The study's objective and the tables' per-cohort score, with the direction
-    # Optuna is given; a loss, so "minimize".
-    COHORT_POISSON_DEVIANCE = Metric(
-        "cohort_poisson_deviance", mean_poisson_deviance_loss, direction="minimize"
-    )
+    # The primary metric: the study's objective, the best run's rule and the
+    # permutation importance's score, with the direction Optuna is given; a
+    # loss, so "minimize".
     POISSON_DEVIANCE = Metric(
-        "poisson_deviance", mean_poisson_deviance, direction="minimize"
+        "poisson_deviance", mean_poisson_deviance_loss, direction="minimize"
     )
-    COHORT_LOG_LOSS = Metric(
-        "cohort_log_loss", multinomial_log_loss, direction="minimize"
-    )
+    LOG_LOSS = Metric("log_loss", multinomial_log_loss, direction="minimize")
 
-    # The bootstrap of the best runs, the primary metric first; the count
-    # metrics pool the (building, cohort) cells. Bias is signed, so its
-    # direction is nominal: only the permutation importance reads one.
-    INSPECTION_METRICS = (
-        COHORT_POISSON_DEVIANCE,
-        COHORT_LOG_LOSS,
+    # Every metric, the primary first: each run's score table (each cohort
+    # through `cohort=`, then the composite) and the bootstrap of the best
+    # runs. The count metrics pool the (building, cohort) cells. Bias is
+    # signed, so its direction is nominal: only the permutation importance
+    # reads one.
+    METRICS = (
+        POISSON_DEVIANCE,
+        LOG_LOSS,
         Metric("mae", mean_absolute_error_loss, direction="minimize"),
         Metric("rmse", root_mean_squared_error_loss, direction="minimize"),
         Metric("wmape", wmape_loss, direction="minimize"),
         Metric("bias", mean_bias_error, direction="minimize"),
     )
-    return COHORT_POISSON_DEVIANCE, INSPECTION_METRICS, POISSON_DEVIANCE
+    return METRICS, POISSON_DEVIANCE
 
 
 @app.cell
@@ -815,8 +811,8 @@ def _(Y, np):
 
 @app.cell
 def _(
-    COHORT_POISSON_DEVIANCE,
     CrossValidationTuner,
+    POISSON_DEVIANCE,
     cv,
     n_splits,
     n_startup_trials,
@@ -828,7 +824,7 @@ def _(
     # (D13, D20, D26).
     tuner = CrossValidationTuner(
         cv=cv,
-        metric=COHORT_POISSON_DEVIANCE,
+        metric=POISSON_DEVIANCE,
         n_trials=n_trials,
         n_startup_trials=n_startup_trials,
         n_jobs=n_splits,
@@ -908,15 +904,14 @@ def _(mo):
 @app.cell
 def _(
     COHORTS,
-    COHORT_POISSON_DEVIANCE,
     COUNT_FEATURE_TRANSFORMERS,
     CountComponent,
+    METRICS,
     MODEL1_RUN_SETTINGS,
-    POISSON_DEVIANCE,
     PREDICTION_FLOOR,
     build_independent_cohorts_model,
     cv_groups,
-    fit_and_score,
+    evaluate,
     mo,
     run_model1,
     seed,
@@ -962,14 +957,22 @@ def _(
             )
             for cohort in COHORTS
         )
-        _, _score_table = fit_and_score(
-            build_independent_cohorts_model(
-                _best_components, y_min=PREDICTION_FLOOR, random_state=seed
-            ),
-            train_age_group,
-            val_age_group,
-            cohort_metric=POISSON_DEVIANCE,
-            metric=COHORT_POISSON_DEVIANCE,
+        # The best model refit on the training part; every metric on training
+        # and validation, per cohort and for the composite.
+        _model = build_independent_cohorts_model(
+            _best_components, y_min=PREDICTION_FLOOR, random_state=seed
+        ).fit(train_age_group.X, train_age_group.Y, exposure=train_age_group.exposure)
+        _train_scores = evaluate(
+            train_age_group.Y,
+            _model.predict(train_age_group.X, exposure=train_age_group.exposure),
+            METRICS,
+            cohorts=[*COHORTS, "composite"],
+        )
+        _val_scores = evaluate(
+            val_age_group.Y,
+            _model.predict(val_age_group.X, exposure=val_age_group.exposure),
+            METRICS,
+            cohorts=[*COHORTS, "composite"],
         )
         # The run's settings, every trial and the best (D14); the study object
         # is not kept.
@@ -980,7 +983,8 @@ def _(
                 "components": [component.to_dict() for component in _best_components],
                 "cv_best": _study.best_value,
                 "best_params": _study.best_params,
-                "score_table": _score_table,
+                "train_scores": _train_scores,
+                "val_scores": _val_scores,
                 "seconds": _seconds,
                 "seed": seed,
                 "y_min": PREDICTION_FLOOR,
@@ -990,7 +994,7 @@ def _(
 
 
 @app.cell
-def _(COUNT_FEATURE_TRANSFORMERS, MODEL1_RUNS, pd):
+def _(COUNT_FEATURE_TRANSFORMERS, MODEL1_RUNS, POISSON_DEVIANCE, pd):
     _score_rows, _arm_rows = [], []
     for _run in MODEL1_RUNS:
         _settings = {
@@ -1001,17 +1005,30 @@ def _(COUNT_FEATURE_TRANSFORMERS, MODEL1_RUNS, pd):
         }
         _trials = _run["trials"]
         _complete = _trials[_trials["state"] == "COMPLETE"]
-        _score_rows.extend({**_settings, **row} for row in _run["score_table"][:-1])
-        _score_rows.append(
-            {
-                **_settings,
-                **_run["score_table"][-1],
-                "cv_best": _run["cv_best"],
-                "n_complete": len(_complete),
-                "n_failed": int((_trials["state"] == "FAIL").sum()),
-                "seconds": _run["seconds"],
-            }
-        )
+        # Every metric per cohort and for the composite, a row each with its
+        # training and validation scores; the run's value and its trials on its
+        # primary metric's composite row.
+        _scores = pd.concat(
+            {"train": _run["train_scores"].stack(), "val": _run["val_scores"].stack()},
+            axis=1,
+        ).reset_index()
+        for _row in _scores.to_dict("records"):
+            if (
+                _row["cohort"] == "composite"
+                and _row["metric"] == POISSON_DEVIANCE.name
+            ):
+                _score_rows.append(
+                    {
+                        **_settings,
+                        **_row,
+                        "cv_best": _run["cv_best"],
+                        "n_complete": len(_complete),
+                        "n_failed": int((_trials["state"] == "FAIL").sum()),
+                        "seconds": _run["seconds"],
+                    }
+                )
+            else:
+                _score_rows.append({**_settings, **_row})
         # The completed trials per feature transformer, the model's categorical
         # choice (one column per cohort, or `shared__`): TPE concentrates on what looked good early, so a transformer
         # tried a few times has not been judged (D14). Every candidate of the
@@ -1040,10 +1057,11 @@ def _(mo, model1_arms_df, model1_df):
     mo.vstack(
         [
             mo.md(
-                "**The independent cohorts model: cohort Poisson deviance** (cv_best: the run's value; "
-                "n_complete / n_failed: its trials)"
+                "**The independent cohorts model: every metric, per cohort and for the "
+                "composite** (cv_best: the run's value; n_complete / n_failed: its "
+                "trials; on the primary metric's composite row)"
             ),
-            mo.md(f"```text\n{model1_df.round(4).to_string(index=False)}\n```"),
+            mo.ui.table(model1_df.round(4)),
             mo.md("**Trials per feature transformer**"),
             mo.md(f"```text\n{model1_arms_df.to_string(index=False)}\n```"),
         ]
@@ -1243,18 +1261,18 @@ def _(
 
 @app.cell
 def _(
-    COHORT_POISSON_DEVIANCE,
+    COHORTS,
     COUNT_FEATURE_TRANSFORMERS,
     CountComponent,
+    METRICS,
     MODEL2_PROBABILITY_RUNS,
     MODEL2_TOTAL_RUNS,
-    POISSON_DEVIANCE,
     PREDICTION_FLOOR,
     PROBABILITY_FEATURE_TRANSFORMERS,
     ProbabilityComponent,
     build_total_times_probability_model,
     cv_groups,
-    fit_and_score,
+    evaluate,
     seed,
     train_age_group,
     tuner,
@@ -1295,12 +1313,20 @@ def _(
                 train_age_group.exposure,
                 cv_groups,
             )
-            _, _score_table = fit_and_score(
-                _model,
-                train_age_group,
-                val_age_group,
-                cohort_metric=POISSON_DEVIANCE,
-                metric=COHORT_POISSON_DEVIANCE,
+            _model.fit(
+                train_age_group.X, train_age_group.Y, exposure=train_age_group.exposure
+            )
+            _train_scores = evaluate(
+                train_age_group.Y,
+                _model.predict(train_age_group.X, exposure=train_age_group.exposure),
+                METRICS,
+                cohorts=[*COHORTS, "composite"],
+            )
+            _val_scores = evaluate(
+                val_age_group.Y,
+                _model.predict(val_age_group.X, exposure=val_age_group.exposure),
+                METRICS,
+                cohorts=[*COHORTS, "composite"],
             )
             # The pair's settings, its components and their merged parameters
             # (the `total__` and `probability__` names never clash); its runs'
@@ -1318,7 +1344,8 @@ def _(
                         **_total_run["best_params"],
                         **_probability_run["best_params"],
                     },
-                    "score_table": _score_table,
+                    "train_scores": _train_scores,
+                    "val_scores": _val_scores,
                     "seed": seed,
                     "y_min": PREDICTION_FLOOR,
                 }
@@ -1332,6 +1359,7 @@ def _(
     MODEL2_PROBABILITY_RUNS,
     MODEL2_RUNS,
     MODEL2_TOTAL_RUNS,
+    POISSON_DEVIANCE,
     PROBABILITY_FEATURE_TRANSFORMERS,
     ProbabilitySearchSpace,
     pd,
@@ -1344,10 +1372,21 @@ def _(
             "family": f"{_run['total_family']}+{_run['probability_family']}",
             "use_exposure": _run["use_exposure"],
         }
-        _score_rows.extend({**_settings, **row} for row in _run["score_table"][:-1])
-        _score_rows.append(
-            {**_settings, **_run["score_table"][-1], "cv_best": _run["cv_best"]}
-        )
+        # Every metric per cohort and for the composite, a row each with its
+        # training and validation scores; the pair's value on its primary
+        # metric's composite row.
+        _scores = pd.concat(
+            {"train": _run["train_scores"].stack(), "val": _run["val_scores"].stack()},
+            axis=1,
+        ).reset_index()
+        for _row in _scores.to_dict("records"):
+            if (
+                _row["cohort"] == "composite"
+                and _row["metric"] == POISSON_DEVIANCE.name
+            ):
+                _score_rows.append({**_settings, **_row, "cv_best": _run["cv_best"]})
+            else:
+                _score_rows.append({**_settings, **_row})
     # The 10 studies, each with its categorical choices and their candidates:
     # the total's transformer in step 1; the probabilities' transformer and
     # calibration in step 2. Every candidate is listed, so one never tried
@@ -1435,10 +1474,11 @@ def _(mo, model2_arms_df, model2_df, model2_steps_df):
             ),
             mo.md(f"```text\n{model2_steps_df.round(4).to_string(index=False)}\n```"),
             mo.md(
-                "**Its 16 pairs: cohort Poisson deviance** (family: the total's + the "
-                "probabilities'; cv_best: the pair's cross-validated value)"
+                "**Its 16 pairs: every metric, per cohort and for the composite** "
+                "(family: the total's + the probabilities'; cv_best: the pair's "
+                "cross-validated value, on the primary metric's composite row)"
             ),
-            mo.md(f"```text\n{model2_df.round(4).to_string(index=False)}\n```"),
+            mo.ui.table(model2_df.round(4)),
             mo.md("**Trials per choice**"),
             mo.md(f"```text\n{model2_arms_df.to_string(index=False)}\n```"),
         ]
@@ -1447,13 +1487,17 @@ def _(mo, model2_arms_df, model2_df, model2_steps_df):
 
 
 @app.cell
-def _(mo, model1_df, model2_df, pd):
-    # Each model's best run on validation, from the composite rows. A fresh
-    # index: the two frames' labels overlap, and idxmin + loc would return both.
+def _(POISSON_DEVIANCE, mo, model1_df, model2_df, pd):
+    # Each model's best run on validation, from the primary metric's composite
+    # rows. A fresh index: the two frames' labels overlap, and idxmin + loc
+    # would return both.
     _composites = pd.concat(
         [
-            model1_df[model1_df["cohort"] == "composite"].assign(model="model1"),
-            model2_df[model2_df["cohort"] == "composite"].assign(model="model2"),
+            _df[
+                (_df["cohort"] == "composite")
+                & (_df["metric"] == POISSON_DEVIANCE.name)
+            ].assign(model=_model)
+            for _model, _df in (("model1", model1_df), ("model2", model2_df))
         ],
         ignore_index=True,
     )
@@ -1509,6 +1553,7 @@ def _(
     COUNT_FEATURE_TRANSFORMERS,
     CountComponent,
     MODEL1_RUNS,
+    POISSON_DEVIANCE,
     build_independent_cohorts_model,
     mo,
     run_inspection,
@@ -1521,7 +1566,10 @@ def _(
     # its model rebuilt from the best trial's parameters by the component
     # types and refit on the
     # training part.
-    best_run1 = min(MODEL1_RUNS, key=lambda run: run["score_table"][-1]["val"])
+    best_run1 = min(
+        MODEL1_RUNS,
+        key=lambda run: run["val_scores"].loc["composite", POISSON_DEVIANCE.name],
+    )
     best_model1 = build_independent_cohorts_model(
         tuple(
             CountComponent.from_params(
@@ -1546,6 +1594,7 @@ def _(
     COUNT_FEATURE_TRANSFORMERS,
     CountComponent,
     MODEL2_RUNS,
+    POISSON_DEVIANCE,
     PROBABILITY_FEATURE_TRANSFORMERS,
     ProbabilityComponent,
     build_total_times_probability_model,
@@ -1558,7 +1607,10 @@ def _(
     )
     # The total times probability model's best run on validation, rebuilt and
     # refit the same way.
-    best_run2 = min(MODEL2_RUNS, key=lambda run: run["score_table"][-1]["val"])
+    best_run2 = min(
+        MODEL2_RUNS,
+        key=lambda run: run["val_scores"].loc["composite", POISSON_DEVIANCE.name],
+    )
     best_model2 = build_total_times_probability_model(
         CountComponent.from_params(
             best_run2["best_params"],
@@ -1586,7 +1638,7 @@ def _(
 @app.cell
 def _(
     BootstrapEvaluator,
-    INSPECTION_METRICS,
+    METRICS,
     best_model1,
     mo,
     n_resamples,
@@ -1610,7 +1662,7 @@ def _(
                 train_age_group.Y,
                 train_age_group.groups,
                 exposure=train_age_group.exposure,
-                metrics=INSPECTION_METRICS,
+                metrics=METRICS,
             ),
             "val": _evaluator.evaluate(
                 best_model1,
@@ -1618,7 +1670,7 @@ def _(
                 val_age_group.Y,
                 val_age_group.groups,
                 exposure=val_age_group.exposure,
-                metrics=INSPECTION_METRICS,
+                metrics=METRICS,
             ),
         },
         names=["split", "metric"],
@@ -1629,7 +1681,7 @@ def _(
 @app.cell
 def _(
     BootstrapEvaluator,
-    INSPECTION_METRICS,
+    METRICS,
     best_model2,
     mo,
     n_resamples,
@@ -1651,7 +1703,7 @@ def _(
                 train_age_group.Y,
                 train_age_group.groups,
                 exposure=train_age_group.exposure,
-                metrics=INSPECTION_METRICS,
+                metrics=METRICS,
             ),
             "val": _evaluator.evaluate(
                 best_model2,
@@ -1659,7 +1711,7 @@ def _(
                 val_age_group.Y,
                 val_age_group.groups,
                 exposure=val_age_group.exposure,
-                metrics=INSPECTION_METRICS,
+                metrics=METRICS,
             ),
         },
         names=["split", "metric"],
@@ -1669,7 +1721,7 @@ def _(
 
 @app.cell
 def _(
-    COHORT_POISSON_DEVIANCE,
+    POISSON_DEVIANCE,
     PermutationImportance,
     ShapExplainer,
     best_model1,
@@ -1690,9 +1742,7 @@ def _(
     # table, on training the overfit check. SHAP, exact at nine columns, of the
     # validation subsample against the training background; the values explain
     # the count (the rows' exposure), per row, column and cohort.
-    _importance = PermutationImportance(
-        COHORT_POISSON_DEVIANCE, n_repeats, random_state=seed
-    )
+    _importance = PermutationImportance(POISSON_DEVIANCE, n_repeats, random_state=seed)
     model1_permutation = pd.concat(
         {
             "train": _importance.compute_importances(
@@ -1718,7 +1768,7 @@ def _(
 
 @app.cell
 def _(
-    COHORT_POISSON_DEVIANCE,
+    POISSON_DEVIANCE,
     PermutationImportance,
     ShapExplainer,
     best_model2,
@@ -1735,9 +1785,7 @@ def _(
     mo.stop(
         not run_inspection.value, mo.md("Click the button to inspect the best runs.")
     )
-    _importance = PermutationImportance(
-        COHORT_POISSON_DEVIANCE, n_repeats, random_state=seed
-    )
+    _importance = PermutationImportance(POISSON_DEVIANCE, n_repeats, random_state=seed)
     model2_permutation = pd.concat(
         {
             "train": _importance.compute_importances(

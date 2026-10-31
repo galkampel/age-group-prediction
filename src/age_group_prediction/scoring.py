@@ -9,7 +9,9 @@ NaN or an infinity. The count metrics score the cohort matrix,
 ``(n_samples, n_cohorts)``, or a single target, ``(n_samples,)``, and pool
 every cell; the log loss scores the matrix of at least two cohorts. With
 ``cohort``, a column name of ``y_true``, they score that cohort alone: its
-column, or for the log loss the cohort against the rest of its sample. Shared by :mod:`~age_group_prediction.modeling`,
+column, or for the log loss the cohort against the rest of its sample.
+``evaluate`` scores a list of metrics for each cohort asked for, and the
+composite. Shared by :mod:`~age_group_prediction.modeling`,
 :mod:`~age_group_prediction.inspection` and the experiment notebook, which
 build their metrics from these. Not the ``Metric`` protocol the package root
 exports from the old ``metrics.py``.
@@ -17,11 +19,12 @@ exports from the old ``metrics.py``.
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from typing import Literal, get_args
 
 import numpy as np
+import pandas as pd
 from numpy.typing import ArrayLike
 from sklearn.metrics import (
     log_loss,
@@ -35,6 +38,7 @@ from .utils import check_paired_arrays, column_position
 __all__ = [
     "Direction",
     "Metric",
+    "evaluate",
     "mean_absolute_error_loss",
     "mean_bias_error",
     "mean_poisson_deviance_loss",
@@ -196,3 +200,29 @@ def mean_bias_error(
         position = column_position(y_true, cohort)
         counts, predictions = counts[:, position], predictions[:, position]
     return float(np.mean(predictions - counts))
+
+
+def evaluate(
+    y_true: ArrayLike,
+    y_pred: ArrayLike,
+    metrics: Sequence[Metric],
+    cohorts: str | Sequence[str] = "composite",
+) -> pd.DataFrame:
+    """Each metric's score (a column, by the metric's name) for each cohort (a row).
+
+    A cohort is a column name of ``y_true``, scored alone (``cohort=``), or
+    ``"composite"``, the whole of ``y``; a single name gives one row.
+    """
+    if isinstance(cohorts, str):
+        cohorts = [cohorts]
+    return pd.DataFrame(
+        [
+            [
+                metric(y_true, y_pred, cohort=None if cohort == "composite" else cohort)
+                for metric in metrics
+            ]
+            for cohort in cohorts
+        ],
+        index=pd.Index(cohorts, name="cohort"),
+        columns=pd.Index([metric.name for metric in metrics], name="metric"),
+    )

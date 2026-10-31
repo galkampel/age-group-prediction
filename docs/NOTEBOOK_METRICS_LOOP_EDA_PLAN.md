@@ -1,6 +1,6 @@
 # Plan: the metrics in `scoring`, the runs in a loop, the objective EDA
 
-**Status (2026-10-30):** PR 1 on `refactor/scoring-metrics`: 1.1 done, revised at the user's notes (`cohort=`, `y_proba=`, samples; then the notes on the helpers: `utils.check_paired_arrays` checks, `utils.column_position` finds a cohort's column, each metric selects it, no repeated-name guard; suite 1346 passed; Check C the 24 baselines), committed as `185285e`. 1.2 done (docs only; the three guides' blocks rerun as written with the same numbers; MODEL_INSPECTION.md's stale simulator line fixed with `from_config`, the user's choice), committed as `96c950b`. 1.3 done (the notebook's six inspection metrics from `scoring`, D² dropped; Check C the 24 baselines and the intervals equal, WMAPE and bias but for their last bit); committed as `0e9d0a1`. 1.4 done (the review's fixes in `scoring`: non-finite values and a lone cohort rejected, two docstrings; suite 1373 passed); PR 1 merged as #18 (`b1d8dbd`) into `feat/experiment-notebook`, and that branch into `main` as #19 (`3db1aa8`). PR 2 on `refactor/notebook-run-loop` from `main`: 2.1 done (2026-10-31; the sharing flags' test, a fitted model per flag pair; the Verify mutation moved to the build, at the user's choice), committed as `9463651`. 2.2 done (2026-10-31; Model 1's runs in one loop over `MODEL1_RUN_SETTINGS`, the flags per run; Check C both arms' baselines), committed as `b87e68b`. 2.3a.1 done (2026-10-31; Model 2 by coordinate descent measured against D20's joint studies at 400 trials: cv better or the same in 15 of 16 pairs, the one worse within noise; about 890 s against 2871 s; docs only), committed as `4c75172`. 2.3a.2 done (2026-10-31; `tune_total_component` and `tune_probability_component`, the other component fixed; the joint tuning stays, its draw now through `suggest_count_component` and `suggest_probability_component`, at the user's notes; they reproduce 2.3a.1's step values at 400 trials; suite 1381 passed; Check C the 24 baselines), committed as `a5a4234`. 2.3 done (2026-10-31; Model 2 by coordinate descent in three cells: step 1's 8 runs, step 2's 2 runs with the best total fixed, the 16 pairs scored; the 400-trial click reproduces 2.3a.1's 16 pairs in 752 s; Check C Model 1's 8 unchanged and Model 2's 16 re-recorded), committed as `9aed504`. Next: 2.4.
+**Status (2026-10-30):** PR 1 on `refactor/scoring-metrics`: 1.1 done, revised at the user's notes (`cohort=`, `y_proba=`, samples; then the notes on the helpers: `utils.check_paired_arrays` checks, `utils.column_position` finds a cohort's column, each metric selects it, no repeated-name guard; suite 1346 passed; Check C the 24 baselines), committed as `185285e`. 1.2 done (docs only; the three guides' blocks rerun as written with the same numbers; MODEL_INSPECTION.md's stale simulator line fixed with `from_config`, the user's choice), committed as `96c950b`. 1.3 done (the notebook's six inspection metrics from `scoring`, D² dropped; Check C the 24 baselines and the intervals equal, WMAPE and bias but for their last bit); committed as `0e9d0a1`. 1.4 done (the review's fixes in `scoring`: non-finite values and a lone cohort rejected, two docstrings; suite 1373 passed); PR 1 merged as #18 (`b1d8dbd`) into `feat/experiment-notebook`, and that branch into `main` as #19 (`3db1aa8`). PR 2 on `refactor/notebook-run-loop` from `main`: 2.1 done (2026-10-31; the sharing flags' test, a fitted model per flag pair; the Verify mutation moved to the build, at the user's choice), committed as `9463651`. 2.2 done (2026-10-31; Model 1's runs in one loop over `MODEL1_RUN_SETTINGS`, the flags per run; Check C both arms' baselines), committed as `b87e68b`. 2.3a.1 done (2026-10-31; Model 2 by coordinate descent measured against D20's joint studies at 400 trials: cv better or the same in 15 of 16 pairs, the one worse within noise; about 890 s against 2871 s; docs only), committed as `4c75172`. 2.3a.2 done (2026-10-31; `tune_total_component` and `tune_probability_component`, the other component fixed; the joint tuning stays, its draw now through `suggest_count_component` and `suggest_probability_component`, at the user's notes; they reproduce 2.3a.1's step values at 400 trials; suite 1381 passed; Check C the 24 baselines), committed as `a5a4234`. 2.3 done (2026-10-31; Model 2 by coordinate descent in three cells: step 1's 8 runs, step 2's 2 runs with the best total fixed, the 16 pairs scored; the 400-trial click reproduces 2.3a.1's 16 pairs in 752 s; Check C Model 1's 8 unchanged and Model 2's 16 re-recorded), committed as `9aed504`, its record as `04caa68`. 2.4 done (2026-10-31, revised at the user's notes: fit, predict and evaluate apart; `scoring.evaluate(y_true, y_pred, metrics, cohorts)` a cohort × metric table, `fit_and_score` deleted; `POISSON_DEVIANCE`, `LOG_LOSS`, `METRICS`, no `COHORT_` prefixes; the long score tables in `mo.ui.table`; Check C the primary metric's rows equal `04caa68`'s exactly). Next: 2.4b (`model.evaluate` removed), then 2.5.
 
 The user's notes of 2026-10-30 on the experiment notebook. They replace the order of
 [EXPERIMENT_NOTEBOOK_HANDOFF.md](EXPERIMENT_NOTEBOOK_HANDOFF.md) §6: MLflow and E11's final
@@ -612,39 +612,102 @@ Reshaped on 2026-10-31 for 2.3a.
     the classifiers, with the best total (`lgbm_poisson`, exposure on), logistic 2.1306,
     lgbm 2.1502.
 
-### [ ] 2.4 `fit_and_score` with several metrics
+### [x] 2.4 Every metric from one fit: fit, predict and evaluate apart
 
-- **Change:**
-  - `fit_and_score(model, train, val, *, metrics)`: one fit, then one row per (cohort, metric),
-    scored with `cohort=<name>` (M9), and per (composite, metric), each `{cohort, metric, train,
-    val}`; with tests. `POISSON_DEVIANCE` goes: `COHORT_POISSON_DEVIANCE` with a cohort is that
-    cohort's deviance;
-  - **the metric constants lose their `COHORT_` prefix** (the user's note, 2026-10-30: every
-    metric scores the matrix or one cohort): one `POISSON_DEVIANCE = Metric("poisson_deviance",
-    mean_poisson_deviance_loss)` serves the tuner, the cohort rows and the composite (on one
-    column it equals scikit-learn's `mean_poisson_deviance` to the last digit, probed), and
-    `COHORT_LOG_LOSS` becomes `LOG_LOSS` (label `"log_loss"`). The numbers do not change; the
-    labels in the tables and `intervals_df` do. Done here because the 24 run cells are two loop
-    cells by then (2.2–2.3);
-  - Model 1's loop cell and Model 2's pairs cell pass every metric (the step studies score only
-    the objective);
-  - the tables cells, `best_df` and the inspection's best-run rule read the primary metric's
-    composite row, not `score_table[-1]`.
-- **Design question, settled 2026-10-30 by M9:** every metric restricts itself through `cohort=`,
-  so one list serves both kinds of row.
-- **Done when:** the suite passes; mypy passes, including the package path and the changed tests;
-  Check A and Check B pass.
-- **Verify:** Check C. The primary metric's 24 values are unchanged, and every other metric
-  appears in the tables.
-- **Commit:** `feat(tuning): fit_and_score scores every metric from one fit`
+- **Change (as planned on 2026-10-30):** every run scored on every metric, per cohort and for
+  the composite, from one fit; the metric constants without the `COHORT_` prefix (the user's
+  note): one `POISSON_DEVIANCE = Metric("poisson_deviance", mean_poisson_deviance_loss)` for the
+  tuner, the cohort rows and the composite, and `LOG_LOSS`; the tables, `best_df` and the
+  best-run rule read the primary metric's composite row.
+- **Revised at the user's notes (2026-10-31),** after a first implementation with
+  `fit_and_score(model, train, val, *, metrics)`: fitting and evaluating are separate steps.
+  1. `BaseAgeGroupModel.evaluate` goes; a caller calls the metric itself (2.4b);
+  2. the notebook fits the best model, then predicts on training and validation;
+  3. `evaluate(y_true, y_pred, metrics, cohorts="composite")`: a cohort name or a list of them,
+     each a column of `y_true` or `"composite"`; every metric's score.
+- **The user's choices:** `evaluate` returns a DataFrame (rows the cohorts asked for, columns
+  the metric names) and lives in `scoring` (it knows no model, so the tuner, the inspection and
+  the notebook can use it); two sub-tasks (2.4, then 2.4b); the score tables long, shown with
+  `mo.ui.table`, marimo's interactive table (sort, filter, pages); the six-metric list named
+  `METRICS` (it serves the score tables and the bootstrap).
+- **Commit:** `refactor(scoring): evaluate scores every metric per cohort; the notebook fits, predicts and evaluates apart`
+- **Done 2026-10-31.**
+  - **Facts probed at the plan:** on both models' validation predictions, one cohort's
+    `mean_poisson_deviance_loss(..., cohort=c)` equals scikit-learn's `mean_poisson_deviance` on
+    the column bit for bit; all six metrics score each cohort and the composite, finite; the
+    24 scores take about 7 ms per fit.
+  - **Changed:**
+    - `scoring.py`: `evaluate(y_true, y_pred, metrics, cohorts="composite") -> DataFrame`
+      (index `cohort`, columns `metric`; `"composite"` scores without `cohort=`); `__all__`,
+      the module docstring;
+    - deleted: `hyperparameter_tuning/evaluation.py` (`fit_and_score`), its test file, its
+      export and line in the package docstring;
+    - `tests/unit/test_scoring.py`: the table (the rows asked for in order, the metric names,
+      each value the metric with `cohort=` or without for `"composite"`; a cohort's deviance
+      equals scikit-learn's on its column), and one name or the default giving one row;
+    - the notebook:
+      - the import cell: `evaluate` from `scoring`; `fit_and_score` and scikit-learn's
+        `mean_poisson_deviance` out;
+      - the metrics cell: `POISSON_DEVIANCE`, `LOG_LOSS`, `METRICS` (the six, the primary
+        first); `COHORT_POISSON_DEVIANCE`, the old `POISSON_DEVIANCE`, `COHORT_LOG_LOSS` and
+        `INSPECTION_METRICS` gone; the tuner, bootstrap and importance cells take the new names;
+      - Model 1's loop and Model 2's pairs: the model fitted on the training part, then
+        `evaluate(<part>.Y, model.predict(<part>.X, exposure=…), METRICS,
+        cohorts=[*COHORTS, "composite"])` for training and validation; the records keep
+        `train_scores` and `val_scores` (in place of `score_table`);
+      - the two tables cells: a run's long rows (`cohort`, `metric`, `train`, `val`) from its
+        two frames; `cv_best` (Model 1: also `n_complete`, `n_failed`, `seconds`) on the
+        primary metric's composite row; the two score tables shown with `mo.ui.table`;
+      - `best_df`: the primary metric's composite rows; the best-run cells:
+        `run["val_scores"].loc["composite", POISSON_DEVIANCE.name]`;
+      - section 5's text: "…scored on training and validation on every metric, per cohort and
+        for the composite".
+    - Not changed here: HYPERPARAMETER_TUNING.md and MODULE_REFERENCE.md still name
+      `fit_and_score` (2.5).
+  - **Checks:**
+    - `test_scoring.py` 87 passed under `-W error`; ruff and the format check clean on the
+      changed files; mypy no issues (28 files, a fresh `--cache-dir`); the non-slow suite
+      1383 passed, 1 skipped, 1 xfailed, 19 deselected (1381 − 1 for
+      `fit_and_score`'s test + 3 for `evaluate`'s);
+    - Check A: the notebook test 12 passed; ruff the 14; the format diff the two hunks;
+      `marimo check` the one empty cell;
+    - Check B: `evaluate` is `scoring.evaluate`; `METRICS` the six labels (`poisson_deviance`,
+      `log_loss`, `mae`, `rmse`, `wmape`, `bias`), the primary first and the tuner's metric;
+      the old names gone; nothing fitted;
+    - **Check C against a reference run of `04caa68`** (both 3 trials, the 8 flags `False`):
+      the 24 `cv_best` equal; the `poisson_deviance` rows of `model1_df` (32) and `model2_df`
+      (64) equal the reference's exactly, but for Model 1's `seconds` (the studies' wall
+      time); 6 metrics per run and cohort (192 and 384 rows), `cv_best` on 8 and 16 rows;
+      `best_df` equal; `intervals_df` and `importance_df` equal but for the two relabelled
+      metrics.
+  - **Mutations** of `evaluate` on a full copy (a sentinel first showed the copy is imported),
+    each caught: the cohort ignored (2 tests); the first metric only (3); a single name not
+    wrapped in a list (2).
+
+### [ ] 2.4b `BaseAgeGroupModel.evaluate` removed; the callers call the metric
+
+The user's note 1 of 2.4 (2026-10-31). It reverses "`evaluate` is not changed" (the handoff
+§3, decided 2026-10-21).
+- **Change:** `modeling/base.py` loses `evaluate`; the tuner's `fold_score`
+  (`self.metric(Y_val, Y_val_pred)`), the bootstrap (two calls) and the permutation importance
+  call the metric; the tests that call `evaluate`: `test_modeling_base.py` (two tests; the
+  cohort's passing is already tested on `Metric` in `test_scoring.py`),
+  `test_modeling_count_model.py`, `test_inspection_bootstrap.py`.
+- **Done when:** the suite and mypy pass; Check A.
+- **Verify:** Check C: the 24 `cv_best`, `intervals_df` and `importance_df` unchanged.
+- **Commit:** set at its plan.
 
 ### [ ] 2.5 Docs
 
 - **Change:**
   - NOTEBOOK_TUNING_PLAN.md §0: the new decisions (M6, M7) supersede D13/D14; Model 2's
     coordinate descent (2.3a);
-  - HYPERPARAMETER_TUNING.md: the new tune methods (2.3a.2); §8 (`fit_and_score`'s new
-    signature; the block rerun);
+  - HYPERPARAMETER_TUNING.md: the new tune methods and suggest functions (2.3a.2); §8 without
+    `fit_and_score`: the fit, the predictions and `scoring.evaluate` (2.4), the block rerun;
+    `evaluate` out of the model (2.4b);
+  - MODULE_REFERENCE.md (the `scoring.py`, `hyperparameter_tuning`, `modeling/base.py` rows) and
+    the guides that call `model.evaluate` (INDEPENDENT_COHORT_MODELS.md,
+    TOTAL_TIMES_PROBABILITY_MODEL.md, MODEL_INSPECTION.md), their blocks rerun;
   - the handoff's §1–§2 and its checks;
   - this plan's status.
 - **Done when:** the doc blocks run as written and the links resolve.
