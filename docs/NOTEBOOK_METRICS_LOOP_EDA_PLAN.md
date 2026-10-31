@@ -1,6 +1,6 @@
 # Plan: the metrics in `scoring`, the runs in a loop, the objective EDA
 
-**Status (2026-10-30):** PR 1 on `refactor/scoring-metrics`: 1.1 done, revised at the user's notes (`cohort=`, `y_proba=`, samples; then the notes on the helpers: `utils.check_paired_arrays` checks, `utils.column_position` finds a cohort's column, each metric selects it, no repeated-name guard; suite 1346 passed; Check C the 24 baselines), committed as `185285e`. 1.2 done (docs only; the three guides' blocks rerun as written with the same numbers; MODEL_INSPECTION.md's stale simulator line fixed with `from_config`, the user's choice), committed as `96c950b`. 1.3 done (the notebook's six inspection metrics from `scoring`, D² dropped; Check C the 24 baselines and the intervals equal, WMAPE and bias but for their last bit); committed as `0e9d0a1`. 1.4 done (the review's fixes in `scoring`: non-finite values and a lone cohort rejected, two docstrings; suite 1373 passed); PR 1 merged as #18 (`b1d8dbd`) into `feat/experiment-notebook`, and that branch into `main` as #19 (`3db1aa8`). Next: PR 2 on `refactor/notebook-run-loop` from `main`, starting at 2.1.
+**Status (2026-10-30):** PR 1 on `refactor/scoring-metrics`: 1.1 done, revised at the user's notes (`cohort=`, `y_proba=`, samples; then the notes on the helpers: `utils.check_paired_arrays` checks, `utils.column_position` finds a cohort's column, each metric selects it, no repeated-name guard; suite 1346 passed; Check C the 24 baselines), committed as `185285e`. 1.2 done (docs only; the three guides' blocks rerun as written with the same numbers; MODEL_INSPECTION.md's stale simulator line fixed with `from_config`, the user's choice), committed as `96c950b`. 1.3 done (the notebook's six inspection metrics from `scoring`, D² dropped; Check C the 24 baselines and the intervals equal, WMAPE and bias but for their last bit); committed as `0e9d0a1`. 1.4 done (the review's fixes in `scoring`: non-finite values and a lone cohort rejected, two docstrings; suite 1373 passed); PR 1 merged as #18 (`b1d8dbd`) into `feat/experiment-notebook`, and that branch into `main` as #19 (`3db1aa8`). PR 2 on `refactor/notebook-run-loop` from `main`: 2.1 done (2026-10-31; the sharing flags' test, a fitted model per flag pair; the Verify mutation moved to the build, at the user's choice). Next: 2.2.
 
 The user's notes of 2026-10-30 on the experiment notebook. They replace the order of
 [EXPERIMENT_NOTEBOOK_HANDOFF.md](EXPERIMENT_NOTEBOOK_HANDOFF.md) §6: MLflow and E11's final
@@ -280,7 +280,7 @@ Its findings, each reproduced:
 
 Branch `refactor/notebook-run-loop`, from `main` after PR 1 (#18) and #19 are merged.
 
-### [ ] 2.1 A test that a shared choice reaches every fitted cohort model
+### [x] 2.1 A test that a shared choice reaches every fitted cohort model
 
 - **Change:** `tests/unit/test_hyperparameter_tuning_builders.py` gets one test, parametrized over
   the four flag pairs. It tests the wiring, not chance differences: independent draws can coincide.
@@ -291,8 +291,29 @@ Branch `refactor/notebook-run-loop`, from `main` after PR 1 (#18) and #19 are me
   - With a flag on, changing `shared__…` changes all three cohorts, and no `<cohort>__` key exists
     for that choice.
 - **Done when:** the test passes under `-W error`.
-- **Verify, mutation:** in `from_params`, read the cohort's key before `shared__`, and the test fails.
+- **Verify, mutations:** in `build_independent_cohorts_model`, every cohort takes the first
+  component's estimator, and the cases with `share_hyperparams` off fail; every cohort takes the
+  first component's transformer, and the cases with `share_feature_transformer` off fail.
 - **Commit:** `test(tuning): a shared choice reaches every fitted cohort model, an unshared one only its own`
+- **Done 2026-10-31.**
+  - **A fact found at the plan:** the first Verify mutation (in `from_params`, read the cohort's
+    key before `shared__`) cannot fail. A trial never holds both keys for one choice: a shared
+    choice is drawn only under `shared__`, an unshared one only under `<cohort>__` (probed: once
+    the prefixes are stripped, the two sets of keys never overlap, for all four pairs). So
+    `from_params` finds one value whichever it reads first. The user chose best practice: break
+    the code the test is about, the build (above).
+  - **Changed:** `tests/unit/test_hyperparameter_tuning_builders.py`: one test, two stacked
+    `parametrize`s (the four pairs; `SHARING` is left alone, since its first test expects 33
+    params whenever `share_hyperparams` is off). It changes `<prefix>__max_depth` and
+    `<prefix>__feature_transformer` in a trial's params, with prefix `shared` when the flag is on
+    and `n_kindergarten` when it is off. It reads both param sets back, builds and fits them,
+    and compares each cohort's `estimator_.get_params()` and `estimator_.feature_names_in_`.
+  - **Checks:** the file 17 passed under `-W error` (13 + 4); ruff, the format check and mypy
+    clean on it; the non-slow suite 1377 passed, 1 skipped, 1 xfailed, 19 deselected (1373 + 4; the 6 MLflow
+    warnings); mypy (29 files) no issues; the notebook
+    unchanged. Mutations on a full copy, each caught: first estimator, 2 of the 4 cases
+    (`share_hyperparams` off) and the existing build test; first transformer, 2 of the 4
+    (`share_feature_transformer` off) and the existing build test.
 
 ### [ ] 2.2 Model 1's runs in a loop; the sharing flags as run settings
 

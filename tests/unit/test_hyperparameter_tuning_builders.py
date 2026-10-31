@@ -1,11 +1,13 @@
-"""Tests for the builders: the sharing cases, the read-back of a trial's draws, what the build passes on."""
+"""Tests for the builders: the sharing cases, the read-back of a trial's draws, what the build passes on, what a choice reaches once fitted."""
 
 from __future__ import annotations
 
 import dataclasses
 from typing import Any
 
+import numpy as np
 import optuna
+import pandas as pd
 import pytest
 from optuna.samplers import RandomSampler
 from optuna.trial import Trial
@@ -22,6 +24,7 @@ from age_group_prediction.hyperparameter_tuning import (
     suggest_independent_cohorts_components,
     suggest_total_times_probability_components,
 )
+from age_group_prediction.modeling import CountModel
 
 PASSTHROUGH = Plan(name="passthrough")
 TRANSFORMERS = {
@@ -134,6 +137,75 @@ def test_the_independent_cohorts_components_read_back_from_a_trials_params_are_t
         share_feature_transformer=share_feature_transformer,
     )
     assert _count_components(trial.params, family=family) == drawn
+
+
+@pytest.mark.parametrize("share_feature_transformer", [False, True])
+@pytest.mark.parametrize("share_hyperparams", [False, True])
+def test_a_shared_choice_reaches_every_fitted_cohort_model_an_unshared_one_only_its_own(
+    share_hyperparams: bool, share_feature_transformer: bool
+) -> None:
+    # The wiring, not chance (independent draws can coincide): a trial's
+    # params with max_depth and the transformer changed, read back, built and
+    # fitted, against the same with the params as drawn.
+    rng = np.random.default_rng(0)
+    exposure = pd.Series(rng.integers(5, 40, 100).astype(float))
+    X = pd.DataFrame({"ses": rng.normal(size=100), "median_age": rng.normal(size=100)})
+    Y = pd.DataFrame({cohort: rng.poisson(0.1 * exposure) for cohort in COHORTS})
+    trial = _trial(0)
+    suggest_independent_cohorts_components(
+        trial,
+        family="lgbm_poisson",
+        use_exposure=True,
+        cohorts=COHORTS,
+        feature_transformer_dict=TRANSFORMERS,
+        share_hyperparams=share_hyperparams,
+        share_feature_transformer=share_feature_transformer,
+    )
+    max_depth = ("shared" if share_hyperparams else "n_kindergarten") + "__max_depth"
+    feature_transformer = (
+        "shared" if share_feature_transformer else "n_kindergarten"
+    ) + "__feature_transformer"
+    changed_params = {
+        **trial.params,
+        max_depth: trial.params[max_depth] + 1,
+        feature_transformer: next(
+            name for name in TRANSFORMERS if name != trial.params[feature_transformer]
+        ),
+    }
+    drawn_models, changed_models = (
+        build_independent_cohorts_model(
+            _count_components(params, family="lgbm_poisson"),
+            y_min=Y_MIN,
+            random_state=0,
+        )
+        .fit(X, Y, exposure=exposure)
+        .cohort_models_
+        for params in (trial.params, changed_params)
+    )
+    changed_estimators = []
+    changed_columns = []
+    for cohort in COHORTS:
+        drawn, changed = drawn_models[cohort], changed_models[cohort]
+        assert isinstance(drawn, CountModel)
+        assert isinstance(changed, CountModel)
+        if drawn.estimator_.get_params() != changed.estimator_.get_params():
+            changed_estimators.append(cohort)
+        if list(drawn.estimator_.feature_names_in_) != list(
+            changed.estimator_.feature_names_in_
+        ):
+            changed_columns.append(cohort)
+    assert changed_estimators == (
+        list(COHORTS) if share_hyperparams else ["n_kindergarten"]
+    )
+    assert changed_columns == (
+        list(COHORTS) if share_feature_transformer else ["n_kindergarten"]
+    )
+    # A shared choice has no cohort's own key beside it.
+    for cohort in COHORTS:
+        if share_hyperparams:
+            assert f"{cohort}__max_depth" not in trial.params
+        if share_feature_transformer:
+            assert f"{cohort}__feature_transformer" not in trial.params
 
 
 @pytest.mark.parametrize("probability_family", ["lgbm", "logistic"])
