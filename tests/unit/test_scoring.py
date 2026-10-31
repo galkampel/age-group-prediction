@@ -1,4 +1,4 @@
-"""The scoring functions and the validation of a custom metric."""
+"""The scoring functions, the validation of a custom metric, and the score table of several metrics."""
 
 from __future__ import annotations
 
@@ -11,6 +11,7 @@ from sklearn.metrics import log_loss, mean_absolute_error, mean_poisson_deviance
 
 from age_group_prediction.scoring import (
     Metric,
+    evaluate,
     mean_absolute_error_loss,
     mean_bias_error,
     mean_poisson_deviance_loss,
@@ -361,3 +362,53 @@ def test_a_count_metric_pairs_dataframes_and_lists_by_position(
 def test_invalid_metric_is_rejected(build: Callable[[], Metric]) -> None:
     with pytest.raises((ValueError, TypeError)):
         build()
+
+
+# --- evaluate --------------------------------------------------------------
+
+EVALUATED = (
+    Metric("poisson_deviance", mean_poisson_deviance_loss),
+    Metric("mae", mean_absolute_error_loss),
+)
+Y_TRUE = pd.DataFrame(
+    {"n_kindergarten": [1.0, 4.0, 2.0], "n_elementary": [2.0, 2.0, 5.0]}
+)
+Y_PRED = pd.DataFrame(
+    {"n_kindergarten": [1.5, 2.0, 2.5], "n_elementary": [2.0, 3.0, 4.0]}
+)
+
+
+def test_evaluate_scores_every_metric_for_each_cohort_asked_for() -> None:
+    cohorts = ["n_elementary", "composite", "n_kindergarten"]
+
+    scores = evaluate(Y_TRUE, Y_PRED, EVALUATED, cohorts=cohorts)
+
+    assert list(scores.index) == cohorts
+    assert list(scores.columns) == ["poisson_deviance", "mae"]
+    for cohort in cohorts:
+        for metric in EVALUATED:
+            expected = (
+                metric(Y_TRUE, Y_PRED)
+                if cohort == "composite"
+                else metric(Y_TRUE, Y_PRED, cohort=cohort)
+            )
+            assert scores.loc[cohort, metric.name] == expected
+    # A cohort's deviance is its column's alone: scikit-learn's on that column.
+    assert scores.loc["n_kindergarten", "poisson_deviance"] == mean_poisson_deviance(
+        Y_TRUE["n_kindergarten"], Y_PRED["n_kindergarten"]
+    )
+
+
+@pytest.mark.parametrize("cohorts", ["n_elementary", None])
+def test_evaluate_of_one_name_or_the_default_is_one_row(cohorts: str | None) -> None:
+    # The default is the composite; a name is one cohort, not its characters.
+    scores = (
+        evaluate(Y_TRUE, Y_PRED, EVALUATED)
+        if cohorts is None
+        else evaluate(Y_TRUE, Y_PRED, EVALUATED, cohorts=cohorts)
+    )
+
+    assert list(scores.index) == [cohorts or "composite"]
+    assert scores.loc[cohorts or "composite", "mae"] == mean_absolute_error_loss(
+        Y_TRUE, Y_PRED, cohort=cohorts
+    )

@@ -318,11 +318,12 @@ classes of the old stack.
 | `NegativeBinomialRegressor` | `dispersion=None` ($\alpha$ estimated, or fixed by a float), `alpha=0.0` (L1 on $\beta$, needs a fixed dispersion), `max_iter=500` | `X`, the counts `y`, `exposure=None` (raw) | `intercept_`, `coef_`, `dispersion_` ($\alpha$), `n_features_in_`, `feature_names_in_` | $E\cdot\exp(b + X\beta)$, or $\exp(b + X\beta)$ without an exposure |
 | `IndependentCohortModels` | `cohort_models` (a mapping cohort → `BaseAgeGroupModel`); nested: `cohort_models__<cohort>__<param>`, `cohort_models__<cohort>` | the raw table, a DataFrame of cohort counts, `exposure=` for every cohort | `cohort_models_` | a DataFrame, one column per cohort in `y`'s order, indexed like `X` |
 
-Every model has `evaluate(y_true, y_pred, metric, *, cohort=None)` with a `Metric`
-wrapping a scoring function: scikit-learn's `mean_poisson_deviance`,
-`root_mean_squared_error`, `mean_absolute_error`, one of `scoring`'s functions, which
-also score the cohort matrix or, with `cohort=` (a column name of `y_true`), one cohort of
-it, or a custom one. Build LightGBM with `n_jobs=1`
+A model fits and predicts; a caller scores the predictions by calling a `Metric`,
+`metric(y_true, y_pred)`, which wraps a scoring function: scikit-learn's
+`mean_poisson_deviance`, `root_mean_squared_error`, `mean_absolute_error`, one of
+`scoring`'s functions, which also score the cohort matrix or, with `cohort=` (a column name
+of `y_true`), one cohort of it, or a custom one. `scoring.evaluate(y_true, y_pred, metrics,
+cohorts)` scores several metrics for several cohorts and the composite at once. Build LightGBM with `n_jobs=1`
 while the old stack's tests still import torch: more OpenMP threads crash alongside it
 on macOS. LightGBM ignores `subsample` unless `subsample_freq >= 1` is set too.
 
@@ -375,12 +376,13 @@ model = IndependentCohortModels({
 }).fit(X_train, Y_train, exposure=exposure_train)
 predictions = model.predict(X_test, exposure=exposure_test)  # a DataFrame
 scores = {
-    cohort: model.evaluate(Y_test[cohort], predictions[cohort], POISSON_DEVIANCE)
+    cohort: POISSON_DEVIANCE(Y_test[cohort], predictions[cohort])
     for cohort in COHORTS
 }
 ```
 
-Run as written on the simulator's seed-0 population (2026-10-08, under `-W error`):
+Run as written on the simulator's seed-0 population (2026-10-08, under `-W error`; rerun
+on 2026-10-31 with the metric called directly, the same numbers):
 196 training and 49 test buildings; `scores` 1.903 (kindergarten), 2.011 (elementary),
 2.404 (high school).
 

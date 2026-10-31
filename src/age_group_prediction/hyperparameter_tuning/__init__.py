@@ -14,9 +14,6 @@
     models built from components.
 :mod:`~age_group_prediction.hyperparameter_tuning.cross_validation`
     The tuner: a model's cross-validated score and the study of each model.
-:mod:`~age_group_prediction.hyperparameter_tuning.evaluation`
-    The refit of a run's best model on the training part, scored on
-    training and validation.
 :mod:`~age_group_prediction.hyperparameter_tuning.aggregation`
     How a trial's fold scores are combined into its value.
 
@@ -37,7 +34,9 @@ from .aggregation import (
 from .builders import (
     build_independent_cohorts_model,
     build_total_times_probability_model,
+    suggest_count_component,
     suggest_independent_cohorts_components,
+    suggest_probability_component,
     suggest_total_times_probability_components,
 )
 from .components import (
@@ -48,7 +47,6 @@ from .components import (
     ProbabilityFamily,
 )
 from .cross_validation import CrossValidationTuner
-from .evaluation import fit_and_score
 from .params import (
     EstimatorParams,
     LGBMParams,
@@ -84,7 +82,8 @@ __all__ = [
     "build_independent_cohorts_model",
     "build_total_times_probability_model",
     "corrected_std_error",
-    "fit_and_score",
+    "suggest_count_component",
     "suggest_independent_cohorts_components",
+    "suggest_probability_component",
     "suggest_total_times_probability_components",
 ]

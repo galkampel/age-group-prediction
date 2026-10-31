@@ -71,7 +71,7 @@ class PermutationImportance:
             # shuffled; the rows stay in place, so the exposure taken by
             # position still matches.
             y_pred = estimator.predict(X_permuted, exposure=exposure)
-            return sign * estimator.evaluate(y_true, y_pred, self.metric)
+            return sign * self.metric(y_true, y_pred)
 
         result = permutation_importance(
             model,

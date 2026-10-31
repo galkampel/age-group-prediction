@@ -341,7 +341,7 @@ def test_a_negative_gaussian_prediction_breaking_the_deviance_is_caught() -> Non
 
     assert 0 < prediction[0] <= np.finfo(float).eps
     # A count of 5: at np.finfo(float).tiny the deviance overflows under -W error.
-    assert math.isfinite(model.evaluate([5.0], prediction, POISSON_DEVIANCE))
+    assert math.isfinite(POISSON_DEVIANCE([5.0], prediction))
 
 
 def test_without_y_min_the_prediction_is_not_floored() -> None:

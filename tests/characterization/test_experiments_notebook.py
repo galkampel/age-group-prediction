@@ -123,8 +123,6 @@ def test_a_setting_missing_or_changed_in_a_settings_mapping_is_caught(
         "n_splits": "5",
         "n_trials": "400",
         "n_startup_trials": "20",
-        "share_hyperparams": "True",
-        "share_feature_transformer": "False",
         "n_resamples": "1000",
         "n_repeats": "10",
         "n_shap_rows": "100",
@@ -345,3 +343,33 @@ def test_a_missing_entry_in_the_params_is_named(notebook_defs: dict) -> None:
             use_exposure=True,
             feature_transformer_dict=notebook_defs["COUNT_FEATURE_TRANSFORMERS"]["nb2"],
         )
+
+
+def test_the_run_settings_are_the_ones_the_baselines_were_recorded_with(
+    notebook_defs: dict,
+) -> None:
+    # Each run is seeded seed + i in its list's order, and Check C's baselines
+    # were recorded with these entries: a reordered, dropped or flipped entry
+    # changes the seeded results, and only a clicked run would show it.
+    arms = [
+        (family, use_exposure)
+        for family in ("lgbm_poisson", "lgbm_gaussian", "poisson_glm", "nb2")
+        for use_exposure in (True, False)
+    ]
+    assert notebook_defs["MODEL1_RUN_SETTINGS"] == [
+        {
+            "family": family,
+            "use_exposure": use_exposure,
+            "share_hyperparams": True,
+            "share_feature_transformer": False,
+        }
+        for family, use_exposure in arms
+    ]
+    assert notebook_defs["MODEL2_TOTAL_RUN_SETTINGS"] == [
+        {"total_family": family, "use_exposure": use_exposure}
+        for family, use_exposure in arms
+    ]
+    assert notebook_defs["MODEL2_PROBABILITY_RUN_SETTINGS"] == [
+        {"probability_family": "logistic"},
+        {"probability_family": "lgbm"},
+    ]

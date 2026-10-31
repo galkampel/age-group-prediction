@@ -1,4 +1,4 @@
-"""The contract every age-group model shares: fit, predict and evaluate."""
+"""The contract every age-group model shares: fit and predict."""
 
 from __future__ import annotations
 
@@ -12,7 +12,6 @@ from sklearn.base import BaseEstimator, clone
 from sklearn.utils.validation import check_consistent_length
 
 from ..feature_engineering import FeatureTransformer
-from ..scoring import Metric
 
 __all__ = ["BaseAgeGroupModel"]
 
@@ -68,20 +67,6 @@ class BaseAgeGroupModel(BaseEstimator, ABC):
 
         An array for one target; a DataFrame with ``y``'s columns for several.
         """
-
-    def evaluate(
-        self,
-        y_true: ArrayLike,
-        y_pred: ArrayLike,
-        metric: Metric,
-        *,
-        cohort: str | None = None,
-    ) -> float:
-        """Score ``y_pred`` against ``y_true`` with one metric.
-
-        With ``cohort``, a column name of ``y_true``, on that cohort alone.
-        """
-        return metric(y_true, y_pred, cohort=cohort)
 
     def _fit_features(
         self, X: pd.DataFrame, y: pd.Series | pd.DataFrame

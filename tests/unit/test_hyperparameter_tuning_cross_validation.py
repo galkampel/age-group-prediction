@@ -18,6 +18,7 @@ from age_group_prediction.feature_engineering import FeatureTransformer, Plan
 from age_group_prediction.hyperparameter_tuning import (
     CountComponent,
     CrossValidationTuner,
+    LogisticParams,
     Mean,
     PoissonGLMParams,
     ProbabilityComponent,
@@ -327,5 +328,87 @@ def test_the_total_times_probability_study_scores_the_model_its_components_build
             ),
             y_min=2.0,
             random_state=3,
+        )
+        assert trial.value == TUNER.cv_score(model, X, Y, exposure)
+
+
+@pytest.mark.parametrize("use_exposure", [True, False])
+def test_the_total_study_scores_its_total_with_the_fixed_probability_component(
+    use_exposure: bool,
+) -> None:
+    # Coordinate descent's step for the total: the trials draw the total only,
+    # and each value is the score of the drawn total with the given
+    # probabilities, rebuilt as the refit does; with the exposure on and off,
+    # so a dropped setting fails.
+    X, Y, exposure = _table()
+    probability = ProbabilityComponent(
+        name="probability",
+        family="logistic",
+        calibration_method="temperature",
+        estimator_params=LogisticParams(C=2.0),
+        feature_transformer=TRANSFORMERS["median_age_only"],
+    )
+    study, _ = TUNER.tune_total_component(
+        X,
+        Y,
+        exposure,
+        total_family="lgbm_gaussian",
+        use_exposure=use_exposure,
+        total_feature_transformer_dict=TRANSFORMERS,
+        probability_component=probability,
+        y_min=2.0,
+        random_state=3,
+        study_seed=0,
+    )
+    for trial in _completed(study):
+        assert {name.split("__")[0] for name in trial.params} == {"total"}
+        total = CountComponent.from_params(
+            trial.params,
+            name="total",
+            family="lgbm_gaussian",
+            use_exposure=use_exposure,
+            feature_transformer_dict=TRANSFORMERS,
+        )
+        model = build_total_times_probability_model(
+            total, probability, y_min=2.0, random_state=3
+        )
+        assert trial.value == TUNER.cv_score(model, X, Y, exposure)
+
+
+@pytest.mark.parametrize("probability_family", ["lgbm", "logistic"])
+def test_the_probability_study_scores_its_probabilities_with_the_fixed_total_component(
+    probability_family: str,
+) -> None:
+    # Coordinate descent's step for the probabilities, the mirror of the total's;
+    # with both classifier families, so a dropped family fails.
+    X, Y, exposure = _table()
+    total = CountComponent(
+        name="total",
+        family="poisson_glm",
+        use_exposure=True,
+        estimator_params=PoissonGLMParams(alpha=0.1),
+        feature_transformer=TRANSFORMERS["ses_only"],
+    )
+    study, _ = TUNER.tune_probability_component(
+        X,
+        Y,
+        exposure,
+        total_component=total,
+        probability_family=probability_family,  # type: ignore[arg-type]
+        probability_feature_transformer_dict=TRANSFORMERS,
+        y_min=2.0,
+        random_state=3,
+        study_seed=0,
+    )
+    for trial in _completed(study):
+        assert {name.split("__")[0] for name in trial.params} == {"probability"}
+        probability = ProbabilityComponent.from_params(
+            trial.params,
+            name="probability",
+            family=probability_family,  # type: ignore[arg-type]
+            feature_transformer_dict=TRANSFORMERS,
+        )
+        model = build_total_times_probability_model(
+            total, probability, y_min=2.0, random_state=3
         )
         assert trial.value == TUNER.cv_score(model, X, Y, exposure)
