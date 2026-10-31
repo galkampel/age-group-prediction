@@ -494,11 +494,12 @@ groups, the composite's settings and the study's seed (D26):
   probability_family, probability_feature_transformer_dict, ...)` run one study of Model 2's
   total or probabilities, the other component given and fixed: coordinate descent. Each
   scores the whole composite. Under the Poisson deviance the composite is the total's
-  deviance plus the probabilities' log loss, and no hyperparameter reaches both, so the
-  fixed part adds the same constant to every trial and one round of the two steps finds
-  what the joint study finds: at 400 trials, as good or better in 15 of the 16 notebook
-  pairs, 3.8× faster (752 s against 2871 s; the metrics plan's 2.3a). Under another metric
-  a step is the best part given the other. The joint method stays.
+  deviance plus the probabilities' log loss, and no hyperparameter reaches both, so with a
+  mean aggregator (`Mean`, `WeightedMean`; §7) the fixed part adds the same constant to
+  every trial and one round of the two steps finds what the joint study finds: at 400 trials, as good or better in 15 of the 16 notebook
+  pairs, 3.8× faster (752 s against 2871 s; the metrics plan's 2.3a). Under another metric,
+  or `UpperBound` (the fixed part's fold values change its standard error), a step is the
+  best part given the other. The joint method stays.
 
 The study is `optuna.create_study(direction=metric.direction,
 sampler=TPESampler(seed=study_seed, n_startup_trials=n_startup_trials))`. The notebook runs

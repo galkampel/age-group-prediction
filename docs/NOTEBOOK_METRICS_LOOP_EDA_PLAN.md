@@ -390,7 +390,9 @@ splitting into two objectives (a total deviance and a log loss).
     hyperparameter reaches both parts;
   - so the joint optimum is the pair of the two separate optima, and the second step cannot
     change the first's result;
-  - within a step, the fixed part adds the same constant to every trial's value. Step 1 may
+  - within a step, the fixed part adds the same constant to every trial's value, under a mean
+    aggregator (`Mean`, the notebook's, or `WeightedMean`; not `UpperBound`, whose standard
+    error the fixed part's fold values change: the PR's review, reproduced). Step 1 may
     therefore fix the cheapest classifier: logistic, `C = 1.0`, no calibration, transformer
     `glm_base`;
   - each step scores the full composite, as today. Only what is searched changes.

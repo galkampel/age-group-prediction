@@ -637,7 +637,7 @@ def _(mo):
     the total times a classifier's cohort probabilities). One run per model
     family and exposure (on or off, fixed for the run):
     one Optuna study on the composite, so the model that is scored is the
-    model that is tuned, by the cohort Poisson deviance of its
+    model that is tuned, by the Poisson deviance of the composite on its
     cross-validation folds on the training part, the plain mean over folds.
     A trial draws, per cohort (one part per run for the total times
     probability model), the estimator's hyperparameters and the feature
@@ -665,9 +665,10 @@ def _(mo):
     parallel. A trial whose fit raises (an NB2 fit that does not converge) is
     marked failed and the run goes on; the tables count them. Each run keeps
     every trial and its best components, which alone are read back from the
-    best trial's parameters, refit on the training part and scored on
-    training and validation on every metric, per cohort and for the
-    composite. A Gaussian loss can predict a negative count,
+    best trial's parameters; the independent cohorts model's best, and the
+    total times probability model's pairs (below), are refit on the training
+    part and scored on training and validation on every metric, per cohort
+    and for the composite. A Gaussian loss can predict a negative count,
     which `CountModel` floors at `y_min` (eps). The total times probability
     model is tuned by coordinate descent, under `total__…` and
     `probability__…`. First its total: one run per total family and exposure
@@ -696,8 +697,8 @@ def _(mo):
     part waits for the final refit on training + validation). A bootstrap
     that resamples whole neighborhoods gives the interval of six metrics,
     per cohort and for the composite, all paired on the same replicates:
-    the cohort Poisson deviance (the
-    primary metric, the tuning's objective); the cohort log loss (the
+    the Poisson deviance (the
+    primary metric, the tuning's objective); the log loss (the
     proportions between cohorts only, so it never selects); MAE and RMSE per
     (building, cohort) cell; WMAPE (the absolute error as a share of the
     children); and the bias (mean predicted minus true count, signed, so 0
@@ -819,10 +820,10 @@ def _(
     n_startup_trials,
     n_trials,
 ):
-    # The study's design, the same for every run: the cohort Poisson deviance
-    # of the folds, the plain mean over them, the first n_startup_trials of
-    # n_trials at random; each trial fits its folds in n_splits processes
-    # (D13, D20, D26).
+    # The study's design, the same for every run: the Poisson deviance of the
+    # composite on each fold, the plain mean over them, the first
+    # n_startup_trials of n_trials at random; each trial fits its folds in
+    # n_splits processes (D13, D20, D26).
     tuner = CrossValidationTuner(
         cv=cv,
         metric=POISSON_DEVIANCE,
@@ -1508,7 +1509,9 @@ def _(POISSON_DEVIANCE, mo, model1_df, model2_df, pd):
     ]
     mo.vstack(
         [
-            mo.md("**Best run per model** (validation cohort Poisson deviance)"),
+            mo.md(
+                "**Best run per model** (validation Poisson deviance of the composite)"
+            ),
             mo.md(f"```text\n{best_df.round(4).to_string(index=False)}\n```"),
         ]
     )
@@ -1815,8 +1818,8 @@ def _(
 
 @app.cell
 def _(best_run1, best_run2, mo, model1_intervals, model2_intervals, pd):
-    # Each metric's score and interval per model, split and cohort; the
-    # caption names the two best runs.
+    # Each metric's interval per model, split and cohort; the caption names
+    # the two best runs.
     intervals_df = pd.concat(
         {"model1": model1_intervals, "model2": model2_intervals}, names=["model"]
     ).reset_index()

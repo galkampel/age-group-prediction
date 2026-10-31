@@ -332,12 +332,14 @@ def test_the_total_times_probability_study_scores_the_model_its_components_build
         assert trial.value == TUNER.cv_score(model, X, Y, exposure)
 
 
-def test_the_total_study_scores_its_total_with_the_fixed_probability_component() -> (
-    None
-):
+@pytest.mark.parametrize("use_exposure", [True, False])
+def test_the_total_study_scores_its_total_with_the_fixed_probability_component(
+    use_exposure: bool,
+) -> None:
     # Coordinate descent's step for the total: the trials draw the total only,
     # and each value is the score of the drawn total with the given
-    # probabilities, rebuilt as the refit does.
+    # probabilities, rebuilt as the refit does; with the exposure on and off,
+    # so a dropped setting fails.
     X, Y, exposure = _table()
     probability = ProbabilityComponent(
         name="probability",
@@ -351,7 +353,7 @@ def test_the_total_study_scores_its_total_with_the_fixed_probability_component()
         Y,
         exposure,
         total_family="lgbm_gaussian",
-        use_exposure=True,
+        use_exposure=use_exposure,
         total_feature_transformer_dict=TRANSFORMERS,
         probability_component=probability,
         y_min=2.0,
@@ -364,7 +366,7 @@ def test_the_total_study_scores_its_total_with_the_fixed_probability_component()
             trial.params,
             name="total",
             family="lgbm_gaussian",
-            use_exposure=True,
+            use_exposure=use_exposure,
             feature_transformer_dict=TRANSFORMERS,
         )
         model = build_total_times_probability_model(
@@ -373,10 +375,12 @@ def test_the_total_study_scores_its_total_with_the_fixed_probability_component()
         assert trial.value == TUNER.cv_score(model, X, Y, exposure)
 
 
-def test_the_probability_study_scores_its_probabilities_with_the_fixed_total_component() -> (
-    None
-):
-    # Coordinate descent's step for the probabilities, the mirror of the total's.
+@pytest.mark.parametrize("probability_family", ["lgbm", "logistic"])
+def test_the_probability_study_scores_its_probabilities_with_the_fixed_total_component(
+    probability_family: str,
+) -> None:
+    # Coordinate descent's step for the probabilities, the mirror of the total's;
+    # with both classifier families, so a dropped family fails.
     X, Y, exposure = _table()
     total = CountComponent(
         name="total",
@@ -390,7 +394,7 @@ def test_the_probability_study_scores_its_probabilities_with_the_fixed_total_com
         Y,
         exposure,
         total_component=total,
-        probability_family="lgbm",
+        probability_family=probability_family,  # type: ignore[arg-type]
         probability_feature_transformer_dict=TRANSFORMERS,
         y_min=2.0,
         random_state=3,
@@ -401,7 +405,7 @@ def test_the_probability_study_scores_its_probabilities_with_the_fixed_total_com
         probability = ProbabilityComponent.from_params(
             trial.params,
             name="probability",
-            family="lgbm",
+            family=probability_family,  # type: ignore[arg-type]
             feature_transformer_dict=TRANSFORMERS,
         )
         model = build_total_times_probability_model(

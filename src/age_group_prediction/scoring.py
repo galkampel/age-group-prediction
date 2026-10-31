@@ -211,7 +211,7 @@ def evaluate(
     """Each metric's score (a column, by the metric's name) for each cohort (a row).
 
     A cohort is a column name of ``y_true``, scored alone (``cohort=``), or
-    ``"composite"``, the whole of ``y``; a single name gives one row.
+    ``"composite"``, the whole of ``y_true``; a single name gives one row.
     """
     if isinstance(cohorts, str):
         cohorts = [cohorts]

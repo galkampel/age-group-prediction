@@ -212,9 +212,11 @@ class CrossValidationTuner:
         """One study of the total times probability model's total of one family and exposure, ``probability_component`` fixed; the study and its seconds.
 
         Coordinate descent's step for the total. Under the Poisson deviance
-        the fixed probabilities add the same constant to every trial's
-        value, so the best total is the joint study's; under another metric
-        it is the best total given ``probability_component``.
+        and a mean aggregator (``Mean``, ``WeightedMean``) the fixed
+        probabilities add the same constant to every trial's value, so the
+        best total is the joint study's; under another metric, or
+        ``UpperBound`` (whose standard error the fixed part changes), it is
+        the best total given ``probability_component``.
         """
 
         def objective(trial: optuna.Trial) -> float:
@@ -252,9 +254,10 @@ class CrossValidationTuner:
         """One study of the total times probability model's probabilities of one family, ``total_component`` fixed; the study and its seconds.
 
         Coordinate descent's step for the probabilities. Under the Poisson
-        deviance the fixed total adds the same constant to every trial's
-        value, so the best probabilities are the joint study's; under
-        another metric they are the best given ``total_component``.
+        deviance and a mean aggregator (``Mean``, ``WeightedMean``) the
+        fixed total adds the same constant to every trial's value, so the
+        best probabilities are the joint study's; under another metric, or
+        ``UpperBound``, they are the best given ``total_component``.
         """
 
         def objective(trial: optuna.Trial) -> float:
