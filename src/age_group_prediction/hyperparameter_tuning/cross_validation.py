@@ -2,9 +2,10 @@
 
 :class:`CrossValidationTuner` holds the study's design; each of its tune
 methods runs one study of the model it names, whose objective draws the
-components, builds the model and scores it on the folds. Each trial fits its
-folds in ``n_jobs`` parallel processes, and the trials run one after another
-(D13, D19).
+components, builds the model and scores it on the folds. The total times
+probability model has also a tune method per component, the other one fixed
+(coordinate descent). Each trial fits its folds in ``n_jobs`` parallel
+processes, and the trials run one after another (D13, D19).
 """
 
 from __future__ import annotations
@@ -28,10 +29,17 @@ from .aggregation import Aggregator, Mean
 from .builders import (
     build_independent_cohorts_model,
     build_total_times_probability_model,
+    suggest_count_component,
     suggest_independent_cohorts_components,
+    suggest_probability_component,
     suggest_total_times_probability_components,
 )
-from .components import CountFamily, ProbabilityFamily
+from .components import (
+    CountComponent,
+    CountFamily,
+    ProbabilityComponent,
+    ProbabilityFamily,
+)
 
 __all__ = ["CrossValidationTuner"]
 
@@ -175,6 +183,86 @@ class CrossValidationTuner:
                     total_feature_transformer_dict=total_feature_transformer_dict,
                     probability_feature_transformer_dict=probability_feature_transformer_dict,
                 )
+            )
+            model = build_total_times_probability_model(
+                total_component,
+                probability_component,
+                y_min=y_min,
+                random_state=random_state,
+            )
+            return self.cv_score(model, X, Y, exposure, groups)
+
+        return self._optimize(objective, study_seed=study_seed)
+
+    def tune_total_component(
+        self,
+        X: pd.DataFrame,
+        Y: pd.DataFrame,
+        exposure: pd.Series,
+        groups: Groups | None = None,
+        *,
+        total_family: CountFamily,
+        use_exposure: bool,
+        total_feature_transformer_dict: Mapping[str, FeatureTransformer],
+        probability_component: ProbabilityComponent,
+        y_min: float,
+        random_state: int | None,
+        study_seed: int,
+    ) -> tuple[optuna.Study, float]:
+        """One study of the total times probability model's total of one family and exposure, ``probability_component`` fixed; the study and its seconds.
+
+        Coordinate descent's step for the total. Under the Poisson deviance
+        the fixed probabilities add the same constant to every trial's
+        value, so the best total is the joint study's; under another metric
+        it is the best total given ``probability_component``.
+        """
+
+        def objective(trial: optuna.Trial) -> float:
+            total_component = suggest_count_component(
+                trial,
+                name="total",
+                family=total_family,
+                use_exposure=use_exposure,
+                feature_transformer_dict=total_feature_transformer_dict,
+            )
+            model = build_total_times_probability_model(
+                total_component,
+                probability_component,
+                y_min=y_min,
+                random_state=random_state,
+            )
+            return self.cv_score(model, X, Y, exposure, groups)
+
+        return self._optimize(objective, study_seed=study_seed)
+
+    def tune_probability_component(
+        self,
+        X: pd.DataFrame,
+        Y: pd.DataFrame,
+        exposure: pd.Series,
+        groups: Groups | None = None,
+        *,
+        total_component: CountComponent,
+        probability_family: ProbabilityFamily,
+        probability_feature_transformer_dict: Mapping[str, FeatureTransformer],
+        y_min: float,
+        random_state: int | None,
+        study_seed: int,
+    ) -> tuple[optuna.Study, float]:
+        """One study of the total times probability model's probabilities of one family, ``total_component`` fixed; the study and its seconds.
+
+        Coordinate descent's step for the probabilities. Under the Poisson
+        deviance the fixed total adds the same constant to every trial's
+        value, so the best probabilities are the joint study's; under
+        another metric they are the best given ``total_component``.
+        """
+
+        def objective(trial: optuna.Trial) -> float:
+            probability_component = suggest_probability_component(
+                trial,
+                name="probability",
+                family=probability_family,
+                feature_transformer_dict=probability_feature_transformer_dict,
             )
             model = build_total_times_probability_model(
                 total_component,

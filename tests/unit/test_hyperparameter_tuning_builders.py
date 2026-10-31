@@ -1,4 +1,4 @@
-"""Tests for the builders: the sharing cases, the read-back of a trial's draws, what the build passes on, what a choice reaches once fitted."""
+"""Tests for the builders: the sharing cases, the read-back of a trial's draws, Model 2's parts drawn one at a time, what the build passes on, what a choice reaches once fitted."""
 
 from __future__ import annotations
 
@@ -21,7 +21,9 @@ from age_group_prediction.hyperparameter_tuning import (
     ProbabilityComponent,
     build_independent_cohorts_model,
     build_total_times_probability_model,
+    suggest_count_component,
     suggest_independent_cohorts_components,
+    suggest_probability_component,
     suggest_total_times_probability_components,
 )
 from age_group_prediction.modeling import CountModel
@@ -236,6 +238,49 @@ def test_the_total_times_probability_components_read_back_from_a_trials_params_a
         feature_transformer_dict=PROBABILITY_TRANSFORMERS,
     )
     assert (total, probability) == drawn
+
+
+@pytest.mark.parametrize("probability_family", ["lgbm", "logistic"])
+def test_the_two_parts_drawn_in_order_are_the_joint_draws(
+    probability_family: str,
+) -> None:
+    # Coordinate descent searches the joint study's space one part at a time:
+    # the parts' functions, the total first, draw what the joint one draws
+    # from a same-seeded trial, each under the name it is given only.
+    joint_trial, parts_trial = _trial(2), _trial(2)
+    joint = suggest_total_times_probability_components(
+        joint_trial,
+        total_family="lgbm_gaussian",
+        probability_family=probability_family,  # type: ignore[arg-type]
+        use_exposure=True,
+        total_feature_transformer_dict=TRANSFORMERS,
+        probability_feature_transformer_dict=PROBABILITY_TRANSFORMERS,
+    )
+    total = suggest_count_component(
+        parts_trial,
+        name="total",
+        family="lgbm_gaussian",
+        use_exposure=True,
+        feature_transformer_dict=TRANSFORMERS,
+    )
+    assert {name.split("__")[0] for name in parts_trial.params} == {"total"}
+    probability = suggest_probability_component(
+        parts_trial,
+        name="probability",
+        family=probability_family,  # type: ignore[arg-type]
+        feature_transformer_dict=PROBABILITY_TRANSFORMERS,
+    )
+    assert (total, probability) == joint
+    assert parts_trial.params == joint_trial.params
+    other_trial = _trial(2)
+    suggest_count_component(
+        other_trial,
+        name="n_kindergarten",
+        family="lgbm_gaussian",
+        use_exposure=True,
+        feature_transformer_dict=TRANSFORMERS,
+    )
+    assert {name.split("__")[0] for name in other_trial.params} == {"n_kindergarten"}
 
 
 def test_the_independent_cohorts_build_passes_each_components_settings_on() -> None:

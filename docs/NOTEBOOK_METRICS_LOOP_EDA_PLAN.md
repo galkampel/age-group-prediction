@@ -1,6 +1,6 @@
 # Plan: the metrics in `scoring`, the runs in a loop, the objective EDA
 
-**Status (2026-10-30):** PR 1 on `refactor/scoring-metrics`: 1.1 done, revised at the user's notes (`cohort=`, `y_proba=`, samples; then the notes on the helpers: `utils.check_paired_arrays` checks, `utils.column_position` finds a cohort's column, each metric selects it, no repeated-name guard; suite 1346 passed; Check C the 24 baselines), committed as `185285e`. 1.2 done (docs only; the three guides' blocks rerun as written with the same numbers; MODEL_INSPECTION.md's stale simulator line fixed with `from_config`, the user's choice), committed as `96c950b`. 1.3 done (the notebook's six inspection metrics from `scoring`, D² dropped; Check C the 24 baselines and the intervals equal, WMAPE and bias but for their last bit); committed as `0e9d0a1`. 1.4 done (the review's fixes in `scoring`: non-finite values and a lone cohort rejected, two docstrings; suite 1373 passed); PR 1 merged as #18 (`b1d8dbd`) into `feat/experiment-notebook`, and that branch into `main` as #19 (`3db1aa8`). PR 2 on `refactor/notebook-run-loop` from `main`: 2.1 done (2026-10-31; the sharing flags' test, a fitted model per flag pair; the Verify mutation moved to the build, at the user's choice), committed as `9463651`. 2.2 done (2026-10-31; Model 1's runs in one loop over `MODEL1_RUN_SETTINGS`, the flags per run; Check C both arms' baselines), committed as `b87e68b`. 2.3a.1 done (2026-10-31; Model 2 by coordinate descent measured against D20's joint studies at 400 trials: cv better or the same in 15 of 16 pairs, the one worse within noise; about 890 s against 2871 s; docs only). Next: 2.3a.2.
+**Status (2026-10-30):** PR 1 on `refactor/scoring-metrics`: 1.1 done, revised at the user's notes (`cohort=`, `y_proba=`, samples; then the notes on the helpers: `utils.check_paired_arrays` checks, `utils.column_position` finds a cohort's column, each metric selects it, no repeated-name guard; suite 1346 passed; Check C the 24 baselines), committed as `185285e`. 1.2 done (docs only; the three guides' blocks rerun as written with the same numbers; MODEL_INSPECTION.md's stale simulator line fixed with `from_config`, the user's choice), committed as `96c950b`. 1.3 done (the notebook's six inspection metrics from `scoring`, D² dropped; Check C the 24 baselines and the intervals equal, WMAPE and bias but for their last bit); committed as `0e9d0a1`. 1.4 done (the review's fixes in `scoring`: non-finite values and a lone cohort rejected, two docstrings; suite 1373 passed); PR 1 merged as #18 (`b1d8dbd`) into `feat/experiment-notebook`, and that branch into `main` as #19 (`3db1aa8`). PR 2 on `refactor/notebook-run-loop` from `main`: 2.1 done (2026-10-31; the sharing flags' test, a fitted model per flag pair; the Verify mutation moved to the build, at the user's choice), committed as `9463651`. 2.2 done (2026-10-31; Model 1's runs in one loop over `MODEL1_RUN_SETTINGS`, the flags per run; Check C both arms' baselines), committed as `b87e68b`. 2.3a.1 done (2026-10-31; Model 2 by coordinate descent measured against D20's joint studies at 400 trials: cv better or the same in 15 of 16 pairs, the one worse within noise; about 890 s against 2871 s; docs only), committed as `4c75172`. 2.3a.2 done (2026-10-31; `tune_total_component` and `tune_probability_component`, the other component fixed; the joint tuning stays, its draw now through `suggest_count_component` and `suggest_probability_component`, at the user's notes; they reproduce 2.3a.1's step values at 400 trials; suite 1381 passed; Check C the 24 baselines). Next: 2.3.
 
 The user's notes of 2026-10-30 on the experiment notebook. They replace the order of
 [EXPERIMENT_NOTEBOOK_HANDOFF.md](EXPERIMENT_NOTEBOOK_HANDOFF.md) §6: MLflow and E11's final
@@ -367,7 +367,7 @@ Branch `refactor/notebook-run-loop`, from `main` after PR 1 (#18) and #19 are me
         study.
     - The non-slow suite: 1377 passed, 1 skipped, 1 xfailed, 19 deselected.
 
-### [ ] 2.3a Model 2 by coordinate descent
+### [x] 2.3a Model 2 by coordinate descent
 
 Decided by the user on 2026-10-31
 ([EXPERIMENT_NOTEBOOK_HANDOFF.md](EXPERIMENT_NOTEBOOK_HANDOFF.md) §2a). It was asked because
@@ -440,12 +440,11 @@ splitting into two objectives (a total deviance and a log loss).
     is done in the package's code (2.3a.2).
 - **Commit:** `docs(notebook): Model 2 by coordinate descent measured against the joint studies`
 
-#### [ ] 2.3a.2 The tuner tunes one part of Model 2 with the other fixed
+#### [x] 2.3a.2 The tuner tunes one part of Model 2 with the other fixed
 
 - **Change** (`src`, the smallest that works):
-  - the draws move into `suggest_total_component` and `suggest_probability_component`
-    (`builders.py`), and `suggest_total_times_probability_components` calls both, in today's
-    order, so the joint draws and every baseline stay;
+  - `suggest_count_component` and `suggest_probability_component` (`builders.py`) each draw one
+    component under a given name; the joint draw calls both, the total first;
   - the tuner can tune one part with the other part's component given and fixed. **The joint
     method stays.**
 - **Design question for the user, with code previews:** two named tune methods (one per step,
@@ -455,7 +454,78 @@ splitting into two objectives (a total deviance and a log loss).
 - **Done when:** the non-slow suite and mypy pass; Check A passes (the notebook unchanged).
 - **Verify:** Check C gives the 24 baselines unchanged (the notebook still runs the joint
   studies); one mutation per claimed behaviour.
-- **Commit:** set at its plan.
+- **Commit:** `feat(tuning): tune the total times probability model's total or probabilities with the other component fixed`
+- **Done 2026-10-31.**
+  - **The user's choices at the plan:**
+    - two named tune methods;
+    - **the joint tuning is valid (correct, only slow) and stays:** the new code is added, not
+      put in its place.
+  - **The user's notes after the first implementation** (which had copied the joint function's
+    two halves into new functions beside it):
+    - the joint `suggest_total_times_probability_components` calls the two new functions, so
+      each draw exists once. Its signature and its draws are unchanged (the builders test,
+      Check C);
+    - `suggest_total_component` becomes `suggest_count_component`, the name an argument. At the
+      session's recommendation `suggest_probability_component` takes a name too: each mirrors
+      its component's `from_params` (`name`, `family`, `use_exposure`,
+      `feature_transformer_dict`). The names `"total"` and `"probability"` are given where the
+      model is assembled: the joint function and the two tune methods;
+    - not used in `suggest_independent_cohorts_components`: its loop interleaves the shared
+      draws with each cohort's own, and `suggest_count_component` fits only with both flags
+      off.
+  - **Facts found at the plan** (read-only probes):
+    - the two parts, drawn in order on a same-seeded trial, give the joint's params and
+      components exactly (lgbm and logistic); the reverse order draws other values;
+    - **step 2 does not depend on which total is fixed.** Step 2's logistic study at 400 trials
+      (`seed + 8`), with a cheap `poisson_glm` total (`alpha = 1`) fixed instead of step 1's
+      best, gave the same `best_params` to the last digit (`C` 0.1012250205366361). The values
+      shift by a constant (2.5191 against 2.0622); 46 s against 65 s. The user asked whether
+      both steps can be one loop; that is 2.3's choice (below).
+  - **Changed:**
+    - `builders.py`: `suggest_count_component(trial, *, name, family, use_exposure,
+      feature_transformer_dict)` and `suggest_probability_component(trial, *, name, family,
+      feature_transformer_dict)`, before the joint function, whose body is now the two calls
+      (`name="total"`, then `name="probability"`; the order comment kept); `__all__` and the
+      module docstring;
+    - `cross_validation.py`: `CrossValidationTuner.tune_total_component(..., total_family,
+      use_exposure, total_feature_transformer_dict, probability_component, y_min,
+      random_state, study_seed)` and `tune_probability_component(..., total_component,
+      probability_family, probability_feature_transformer_dict, ...)`, each shaped like the
+      joint method (the joint's keyword names, so a run's settings splat in; each passes its
+      part's name); the docstrings say that under the Poisson deviance the fixed part adds a
+      constant to every trial, so the best is the joint study's; the imports and the module
+      docstring;
+    - `__init__.py`: the two suggest functions exported;
+    - tests: `test_the_two_parts_drawn_in_order_are_the_joint_draws` (builders, lgbm and
+      logistic; it pins the joint's order of calls, and a count component drawn under another
+      name holds only that name's keys); `test_the_total_study_scores_its_total_with_the_fixed_probability_component`
+      and `test_the_probability_study_scores_its_probabilities_with_the_fixed_total_component`
+      (the tuner: each trial's keys are its part's only, and its value is the `cv_score` of the
+      read-back part with the fixed one).
+  - **Checks:**
+    - the two test files 32 passed under `-W error` (17 + 2, 11 + 2); the non-slow suite 1381
+      passed, 1 skipped, 1 xfailed, 19 deselected (1377 + 4; the 6 MLflow warnings); mypy no
+      issues (29 files; with a fresh `--cache-dir`: the repo's `.mypy_cache` had 9 offloaded
+      files and mypy crashed on them); ruff and the format check clean on the five files;
+    - Check A: the notebook unchanged (md5 `e5fea5dcd691aa1e69a94769f4cff3d5`), its test 12
+      passed, ruff the 14, the two format hunks, `marimo check` the one empty cell;
+    - Check C (87 s): the 24 baselines (the 8 flags `False`), `intervals_df` 24 rows; with the
+      joint draw through the shared functions, Model 2's 16 are unchanged;
+    - **the new methods reproduce 2.3a.1** (400 trials, `PYTHONWARNINGS=error`):
+      `tune_total_component` for `lgbm_poisson`, exposure on, `seed + 0`, step 1's fixed
+      logistic: 2.071780, the measured `best_params` (50 s); `tune_probability_component` for
+      logistic, `seed + 8`, that total fixed: 2.062233, the measured `best_params` (63 s).
+    - All of the above were run on the first implementation and again on the revised one, with
+      the same results.
+  - **Mutations** on a full copy (a sentinel first showed the copy is imported), each caught:
+    - the joint draws the probabilities first: the builders test (2);
+    - `suggest_count_component` ignores `name` (draws under `total__`): the builders test (2);
+    - `tune_total_component` builds with another probability component (`C = 1.0`): the
+      total study's test;
+    - `tune_probability_component` draws the total too (the joint suggest): the probability
+      study's test;
+    - `tune_probability_component` builds with another total (the exposure flipped): the
+      probability study's test.
 
 ### [ ] 2.3 Model 2's runs in loops, by coordinate descent
 
@@ -471,6 +541,12 @@ Reshaped on 2026-10-31 for 2.3a.
     is `tuner.cv_score` of the pair;
   - **the arms table** counts the 10 step studies' trials;
   - section 5's text, with the user's approval.
+- **Open for the user at this plan: one loop or two?** As decided, step 2 fixes step 1's best
+  total, so it waits for step 1's 8 studies: two loops in sequence (they may share one cell).
+  2.3a.2's probe showed step 2's best is the same whichever total is fixed (identical
+  `best_params`, values shifted by a constant). With a cheap fixed total in step 2 too, the 10
+  studies are independent (any order, one loop), but step 2's values are then not a real
+  pair's cv (the 16 pairs are scored anyway).
 - **Done when:** Check A and Check B pass.
 - **Verify:** Check C. Model 1's 8 values are unchanged; Model 2's 16 are re-recorded (3 trials).
 - **Commit:** set at its plan.

@@ -9,6 +9,9 @@ into models, with no Optuna. A study is one family combination and exposure
 ``suggest_total_times_probability_components`` and builds them; the best
 run's refit sets its components from the study's ``best_params`` with the
 component types' ``from_params`` (D25) and builds them the same way.
+``suggest_count_component`` and ``suggest_probability_component`` draw one
+component under a given name; the total times probability model's joint draw
+calls both, and its coordinate descent one at a time.
 """
 
 from __future__ import annotations
@@ -35,7 +38,9 @@ from .search_spaces import CountSearchSpace, ProbabilitySearchSpace
 __all__ = [
     "build_independent_cohorts_model",
     "build_total_times_probability_model",
+    "suggest_count_component",
     "suggest_independent_cohorts_components",
+    "suggest_probability_component",
     "suggest_total_times_probability_components",
 ]
 
@@ -146,6 +151,55 @@ def build_total_times_probability_model(
     )
 
 
+def suggest_count_component(
+    trial: BaseTrial,
+    *,
+    name: str,
+    family: CountFamily,
+    use_exposure: bool,
+    feature_transformer_dict: Mapping[str, FeatureTransformer],
+) -> CountComponent:
+    """The count component ``trial`` draws under ``<name>__``: its hyperparameters, then its transformer."""
+    search_space = CountSearchSpace(
+        name=name,
+        family=family,
+        feature_transformer_names=tuple(feature_transformer_dict),
+    )
+    return CountComponent(
+        name=name,
+        family=family,
+        use_exposure=use_exposure,
+        estimator_params=search_space.suggest_hyperparameters(trial),
+        feature_transformer=feature_transformer_dict[
+            search_space.suggest_feature_transformer_name(trial)
+        ],
+    )
+
+
+def suggest_probability_component(
+    trial: BaseTrial,
+    *,
+    name: str,
+    family: ProbabilityFamily,
+    feature_transformer_dict: Mapping[str, FeatureTransformer],
+) -> ProbabilityComponent:
+    """The probability component ``trial`` draws under ``<name>__``: its hyperparameters, calibration, then transformer."""
+    search_space = ProbabilitySearchSpace(
+        name=name,
+        family=family,
+        feature_transformer_names=tuple(feature_transformer_dict),
+    )
+    return ProbabilityComponent(
+        name=name,
+        family=family,
+        estimator_params=search_space.suggest_hyperparameters(trial),
+        calibration_method=search_space.suggest_calibration_method(trial),
+        feature_transformer=feature_transformer_dict[
+            search_space.suggest_feature_transformer_name(trial)
+        ],
+    )
+
+
 def suggest_total_times_probability_components(
     trial: BaseTrial,
     *,
@@ -159,32 +213,17 @@ def suggest_total_times_probability_components(
     # The draws, in order: the total's hyperparameters and transformer under
     # `total__`, then the probabilities' hyperparameters, calibration and
     # transformer under `probability__`.
-    total_search_space = CountSearchSpace(
+    total_component = suggest_count_component(
+        trial,
         name="total",
         family=total_family,
-        feature_transformer_names=tuple(total_feature_transformer_dict),
-    )
-    total_component = CountComponent(
-        name=total_search_space.name,
-        family=total_family,
         use_exposure=use_exposure,
-        estimator_params=total_search_space.suggest_hyperparameters(trial),
-        feature_transformer=total_feature_transformer_dict[
-            total_search_space.suggest_feature_transformer_name(trial)
-        ],
+        feature_transformer_dict=total_feature_transformer_dict,
     )
-    probability_search_space = ProbabilitySearchSpace(
+    probability_component = suggest_probability_component(
+        trial,
         name="probability",
         family=probability_family,
-        feature_transformer_names=tuple(probability_feature_transformer_dict),
-    )
-    probability_component = ProbabilityComponent(
-        name=probability_search_space.name,
-        family=probability_family,
-        estimator_params=probability_search_space.suggest_hyperparameters(trial),
-        calibration_method=probability_search_space.suggest_calibration_method(trial),
-        feature_transformer=probability_feature_transformer_dict[
-            probability_search_space.suggest_feature_transformer_name(trial)
-        ],
+        feature_transformer_dict=probability_feature_transformer_dict,
     )
     return total_component, probability_component
