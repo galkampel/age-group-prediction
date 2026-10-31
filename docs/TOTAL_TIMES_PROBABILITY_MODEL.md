@@ -350,8 +350,9 @@ classes of the old stack. `CountModel` and `NegativeBinomialRegressor`:
 | `CohortProbabilityModel` | `estimator` (required: a `Classifier`); `replication_method="weighted"` or `"per_child"`; `calibration_method=None`, `"temperature"`, `"sigmoid"` or `"isotonic"`; `calibration_cv=5`; `feature_transformer=None` | the raw table with `feature_transformer`, otherwise the design matrix; a DataFrame of cohort counts (≥ 2 columns, every cohort with a child, counts non-negative and finite, integer under `"per_child"`); an exposure is ignored | `estimator_` (the fitted classifier, or the `CalibratedClassifierCV` around it), `cohorts_` (`y`'s columns), `feature_transformer_` | the probabilities, a DataFrame with `y`'s columns, indexed like `X`, rows summing to 1 |
 | `TotalTimesProbabilityModel` | `total_model` (a `BaseAgeGroupModel`, e.g. `CountModel`), `probability_model` (a `CohortProbabilityModel`) | the raw table, the cohort counts, `exposure=` for both models | `total_model_`, `probability_model_` | `total × probabilities`, a DataFrame with `y`'s columns at fit, indexed like `X`, each row summing to the predicted total |
 
-Every model keeps `fit(X, y, exposure=None)`, `predict(X, exposure=None)` and
-`evaluate(y_true, y_pred, metric, *, cohort=None)`. Type aliases: `Classifier`, `ReplicationMethod`,
+Every model keeps `fit(X, y, exposure=None)` and `predict(X, exposure=None)`; a caller
+scores the predictions by calling a `Metric`, `metric(y_true, y_pred)`, or several at once,
+per cohort, with `scoring.evaluate`. Type aliases: `Classifier`, `ReplicationMethod`,
 `CalibrationMethod`.
 
 ## 6. Data Flow
@@ -380,7 +381,7 @@ from age_group_prediction.utils import take_rows
 
 COHORTS = ["n_kindergarten", "n_elementary", "n_highschool"]
 POISSON_DEVIANCE = Metric("poisson_deviance", mean_poisson_deviance)
-COHORT_LOG_LOSS = Metric("cohort_log_loss", multinomial_log_loss)
+LOG_LOSS = Metric("log_loss", multinomial_log_loss)
 
 # 1. On the full table: raw_table is the simulator's or the real data
 table = ShareTransformer(
@@ -412,16 +413,17 @@ model = TotalTimesProbabilityModel(
 ).fit(X_train, Y_train, exposure=exposure_train)
 predictions = model.predict(X_test, exposure=exposure_test)  # a DataFrame, total × probabilities
 scores = {
-    cohort: model.evaluate(Y_test[cohort], predictions[cohort], POISSON_DEVIANCE)
+    cohort: POISSON_DEVIANCE(Y_test[cohort], predictions[cohort])
     for cohort in COHORTS
 }
-scores["total"] = model.evaluate(Y_test.sum(axis=1), predictions.sum(axis=1), POISSON_DEVIANCE)
-scores["composition"] = model.evaluate(Y_test, predictions, COHORT_LOG_LOSS)  # per child
+scores["total"] = POISSON_DEVIANCE(Y_test.sum(axis=1), predictions.sum(axis=1))
+scores["composition"] = LOG_LOSS(Y_test, predictions)  # per child
 alpha = model.total_model_.estimator_.dispersion_  # NB2's fitted α
 ```
 
 Run as written on the simulator's seed-0 population (2026-10-08, under `-W error`; rerun
-on 2026-10-30 with the renamed `multinomial_log_loss`, the same numbers): 196 training and
+on 2026-10-30 with the renamed `multinomial_log_loss`, and on 2026-10-31 with the metrics
+called directly, the same numbers): 196 training and
 49 test buildings; `scores` 1.855 (kindergarten), 1.958 (elementary), 2.250 (high school),
 total 3.587, composition 1.084; $\alpha$ 0.0876; `predictions.sum(axis=1)` equals the total
 model's prediction.

@@ -2,7 +2,8 @@
 
 > The `age_group_prediction.inspection` package: what a **fitted** model does
 > and how sure its score is, in three independent parts. `BootstrapEvaluator`
-> gives a metric's mean and percentile interval on an evaluation set;
+> gives a metric's mean and percentile interval on an evaluation set, from the
+> model's predictions;
 > `PermutationImportance` scores each raw input column by the metric's drop
 > when it is shuffled; `ShapExplainer` gives Shapley values of each row's
 > prediction per raw column. Built on PRs #14 and C of the
@@ -11,7 +12,7 @@
 > [bootstrap plan](MODEL_INSPECTION_PLAN.md) (I1–I2, I7, I12–I13) and the
 > [importance plan](FEATURE_IMPORTANCE_PLAN.md) (I3–I6, I8–I11).
 
-Every code block below was run as written on 2026-10-30 (shap 0.53.0,
+Every code block below was run as written on 2026-10-31 (shap 0.53.0,
 scikit-learn 1.9.0, LightGBM 4.7.0); the numbers are its output. The blocks
 build on each other in order.
 
@@ -19,12 +20,12 @@ build on each other in order.
 
 | part | answers | class |
 |---|---|---|
-| bootstrap | how sure is the validation score? | `BootstrapEvaluator(n_resamples, alpha=0.05, random_state=None).evaluate(..., metrics=[...])` → a DataFrame, one row per metric: `score`, `mean`, `lower`, `upper` |
+| bootstrap | how sure is the validation score? | `BootstrapEvaluator(n_resamples, alpha=0.05, random_state=None).evaluate(y_true, y_pred, groups=None, *, metrics=[...], cohorts="composite")` → a DataFrame, one row per (cohort, metric): `mean`, `lower`, `upper` |
 | permutation importance | which columns does the score depend on? | `PermutationImportance(metric, n_repeats, random_state=None)` → a DataFrame per column |
 | SHAP | how does each column move each row's prediction? | `ShapExplainer(method, max_evals=None, random_state=None, n_jobs=1)` → a `shap.Explanation` |
 
-All three take a fitted `BaseAgeGroupModel` and the **raw** table the model
-was fitted on: the model transforms it inside `predict` through its own
+The bootstrap takes the fitted model's predictions; the other two take a
+fitted `BaseAgeGroupModel` and the **raw** table the model was fitted on: the model transforms it inside `predict` through its own
 `feature_transformer`, so a one-hot or interaction column is credited to its
 source column. Data are paired by position, never by index label. Settings
 are checked when the object is built (a misspelt keyword, a bool or string
@@ -49,7 +50,6 @@ import numpy as np
 import pandas as pd
 from lightgbm import LGBMRegressor
 from sklearn.linear_model import LogisticRegression, PoissonRegressor
-from sklearn.metrics import mean_poisson_deviance
 
 from age_group_prediction.feature_engineering import FeatureTransformer, OneHot, Plan, Standardize
 from age_group_prediction.inspection import BootstrapEvaluator, PermutationImportance, ShapExplainer
@@ -63,9 +63,10 @@ from age_group_prediction.utils import take_rows
 from student_simulator import StudentPopulationSimulator, load_simulation_config
 
 # The metrics, built here: the notebook does the same (the scoring module holds no constants).
-COHORT_POISSON_DEVIANCE = Metric("cohort_poisson_deviance", mean_poisson_deviance_loss)
-COHORT_LOG_LOSS = Metric("cohort_log_loss", multinomial_log_loss)
-POISSON_DEVIANCE = Metric("poisson_deviance", mean_poisson_deviance)
+# The deviance scores the cohort matrix, one cohort with cohort=, or a single
+# target (Model 2's total below).
+POISSON_DEVIANCE = Metric("poisson_deviance", mean_poisson_deviance_loss)
+LOG_LOSS = Metric("log_loss", multinomial_log_loss)
 
 base = load_simulation_config("configs/simulation.yml")
 config = base.with_overrides({
@@ -129,12 +130,12 @@ print(len(X_train), len(X_val), groups_val.nunique())
 
 ```python
 bootstrap = BootstrapEvaluator(500, random_state=0)
-metrics = [COHORT_POISSON_DEVIANCE]
+metrics = [POISSON_DEVIANCE]
 for name, model in models.items():
-    rows = bootstrap.evaluate(model, X_val, Y_val, exposure=exposure_val, metrics=metrics)
-    by_group = bootstrap.evaluate(
-        model, X_val, Y_val, groups_val, exposure=exposure_val, metrics=metrics
-    )
+    # The model predicts once; the bootstrap resamples the predictions' rows.
+    Y_val_pred = model.predict(X_val, exposure=exposure_val)
+    rows = bootstrap.evaluate(Y_val, Y_val_pred, metrics=metrics)
+    by_group = bootstrap.evaluate(Y_val, Y_val_pred, groups_val, metrics=metrics)
     rows, by_group = rows.iloc[0], by_group.iloc[0]
     print(f"{name}  rows: {rows['mean']:.3f} [{rows['lower']:.3f}, {rows['upper']:.3f}]"
           f"  neighborhoods: {by_group['mean']:.3f} [{by_group['lower']:.3f}, {by_group['upper']:.3f}]")
@@ -151,7 +152,7 @@ On the validation rows, the decision table; on the training rows, the overfit
 diagnostic; and, for Model 2, per component.
 
 ```python
-importance = PermutationImportance(COHORT_POISSON_DEVIANCE, 10, random_state=0)
+importance = PermutationImportance(POISSON_DEVIANCE, 10, random_state=0)
 permutation = {}
 for name, model in models.items():
     on_train = importance.compute_importances(model, X_train, Y_train, exposure=exposure_train)
@@ -163,7 +164,7 @@ for name, model in models.items():
 component = pd.DataFrame({
     "total (poisson_deviance)": PermutationImportance(POISSON_DEVIANCE, 10, random_state=0)
         .compute_importances(model_2.total_model_, X_val, Y_val.sum(axis=1), exposure=exposure_val)["importance_mean"],
-    "probability (cohort_log_loss)": PermutationImportance(COHORT_LOG_LOSS, 10, random_state=0)
+    "probability (log_loss)": PermutationImportance(LOG_LOSS, 10, random_state=0)
         .compute_importances(model_2.probability_model_, X_val, Y_val)["importance_mean"],
 })
 print(component.sort_values("total (poisson_deviance)", ascending=False).round(4))
@@ -192,16 +193,16 @@ school_status       0.029  0.019    0.006
 ses                 0.000 -0.002    0.001
 n_apartments        0.003 -0.002    0.002
 n_daycares_500m     0.032 -0.003    0.010
-                    total (poisson_deviance)  probability (cohort_log_loss)
-avg_household_size                    0.6859                         0.0072
-6_rooms_share                         0.0598                         0.0038
-5_rooms_share                         0.0598                         0.0012
-school_status                         0.0527                         0.0001
-median_age                            0.0198                         0.0074
-4_rooms_share                         0.0090                         0.0002
-n_apartments                          0.0033                        -0.0002
-ses                                  -0.0043                        -0.0000
-n_daycares_500m                      -0.0242                         0.0003
+                    total (poisson_deviance)  probability (log_loss)
+avg_household_size                    0.6859                  0.0072
+6_rooms_share                         0.0598                  0.0038
+5_rooms_share                         0.0598                  0.0012
+school_status                         0.0527                  0.0001
+median_age                            0.0198                  0.0074
+4_rooms_share                         0.0090                  0.0002
+n_apartments                          0.0033                 -0.0002
+ses                                  -0.0043                 -0.0000
+n_daycares_500m                      -0.0242                  0.0003
 ```
 
 ### SHAP
@@ -295,15 +296,19 @@ processes).
 
 ## 3. The Bootstrap
 
-`BootstrapEvaluator.evaluate(model, X, y, groups=None, *, exposure=None, metrics)`
-predicts `X` **once**, then draws `n_resamples` replicates of the evaluation
-rows with replacement and recomputes every metric on each. The evaluator
-holds the resampling design only; the metrics are named per call, as
-`cross_validate`'s `scoring`, and all of them score the same replicates, so
-their intervals are paired. The result has one row per metric name: `score`
-is the metric on the unresampled rows, `mean` the mean of the replicate
-scores, `lower` and `upper` their `alpha/2` and `1 - alpha/2` quantiles
-(`np.quantile`, so the 95 % interval at the default `alpha=0.05`). The interval is **conditional on the fitted model**: nothing is
+`BootstrapEvaluator.evaluate(y_true, y_pred, groups=None, *, metrics,
+cohorts="composite")` takes the fitted model's predictions, made **once** by
+the caller, then draws `n_resamples` replicates of the evaluation rows with
+replacement and recomputes every metric on each, for every cohort asked for
+(`scoring.evaluate`'s rule: a column of `y_true`, scored alone, or
+`"composite"`, the whole matrix). The evaluator holds the resampling design
+only; the metrics and cohorts are named per call, as `cross_validate`'s
+`scoring`, and all of them score the same replicates, so their intervals are
+paired. The result has one row per (cohort, metric): `mean`, the mean of the
+replicate scores, and `lower` and `upper`, their `alpha/2` and
+`1 - alpha/2` quantiles (`np.quantile`, so the 95 % interval at the default
+`alpha=0.05`). The score on the unresampled rows, the interval's point
+estimate, is `scoring.evaluate(y_true, y_pred, metrics, cohorts)`'s. The interval is **conditional on the fitted model**: nothing is
 refit, so it measures how much the score depends on which rows were held out,
 not how much the model would change on other training data.
 
@@ -322,7 +327,7 @@ distinct groups raise `ValueError`.
 
 **Ratio metrics.** The cohort log loss is a ratio of sums recomputed on each
 replicate, as it should be; a replicate with no children at all is 0/0, and a
-non-finite replicate score raises `ValueError` naming the metric and how many, rather than
+non-finite replicate score raises `ValueError` naming the cohort, the metric and how many, rather than
 returning NaN bounds silently.
 
 ## 4. Permutation Importance
@@ -441,8 +446,9 @@ print(sorted(path.name for path in out.iterdir()))
 ## 6. Hazards
 
 - **The exposure.** Pass the same exposure the model would get at prediction
-  time, taken by the split's positions; the bootstrap and permutation
-  importance score `predict(X, exposure)`, and SHAP explains it. A model
+  time, taken by the split's positions; the bootstrap scores the predictions
+  `predict(X, exposure)` the caller made, permutation importance scores
+  `predict(X, exposure)`, and SHAP explains it. A model
   fitted without an exposure ignores the argument.
 - **Column order.** `background` is aligned to `X`'s columns by name (shap
   itself pairs columns by position), and a missing column raises `KeyError`.

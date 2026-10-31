@@ -8,9 +8,11 @@
 > rebuilt from section 5 of the experiment notebook (`notebooks/02_experiments.py`), which
 > is its first client. The decisions and their measured evidence are D1–D26 of the
 > [notebook tuning plan](NOTEBOOK_TUNING_PLAN.md), above all D21 (what lives in the package),
-> D25 (components read back from `best_params`) and D26 (the tuner).
+> D25 (components read back from `best_params`) and D26 (the tuner), and those of the
+> [metrics plan](NOTEBOOK_METRICS_LOOP_EDA_PLAN.md)'s PR 2: Model 2 by coordinate descent
+> (2.3a), fitting and evaluating as separate steps (2.4, 2.4b).
 
-Every code block below was run as written on 2026-10-30 (optuna 4.9.0, joblib 1.5.3,
+Every code block below was run as written on 2026-10-31 (optuna 4.9.0, joblib 1.5.3,
 LightGBM 4.7.0, scikit-learn 1.9.0); the numbers are its output. The blocks build on each
 other in order.
 
@@ -21,20 +23,20 @@ other in order.
 | `params` | which hyperparameters an estimator family searches | `LGBMParams`, `PoissonGLMParams`, `NB2Params`, `LogisticParams`, `EstimatorParams` |
 | `components` | what one part of a composite is: family, transformer, estimator params | `CountComponent`, `ProbabilityComponent` (`from_params`, `make_estimator`, `to_dict`), `CountFamily`, `ProbabilityFamily` |
 | `search_spaces` | how a trial samples one component's choices | `CountSearchSpace`, `ProbabilitySearchSpace` |
-| `builders` | which components a trial draws for a composite, and the composite built from components | `suggest_independent_cohorts_components`, `suggest_total_times_probability_components`, `build_independent_cohorts_model`, `build_total_times_probability_model` |
-| `cross_validation` | a model's cross-validated score, and the study of each composite | `CrossValidationTuner` |
-| `evaluation` | the refit of the best model, scored on training and validation | `fit_and_score` |
+| `builders` | which components a trial draws for a composite or for one named component, and the composite built from components | `suggest_independent_cohorts_components`, `suggest_total_times_probability_components`, `suggest_count_component`, `suggest_probability_component`, `build_independent_cohorts_model`, `build_total_times_probability_model` |
+| `cross_validation` | a model's cross-validated score, the study of each composite, and the study of one of Model 2's components with the other fixed | `CrossValidationTuner` |
 | `aggregation` | how a trial's fold scores become its value | `Mean`, `WeightedMean`, `UpperBound`, `Aggregator`, `corrected_std_error` |
 
 The dependencies run one way: `params` ← `components` ← `search_spaces` ← `builders` ←
-`cross_validation`, which also uses `aggregation`; within the package, `evaluation` and
-`aggregation` stand alone. Import from `age_group_prediction.hyperparameter_tuning`; nothing is re-exported from
-the project's root.
+`cross_validation`, which also uses `aggregation`; within the package, `aggregation` stands
+alone. Import from `age_group_prediction.hyperparameter_tuning`; nothing is re-exported from
+the project's root. The refit is the caller's: it fits the best model, predicts, and scores
+the predictions with `scoring.evaluate` (§8).
 
 What lives here is the mechanism: records a test can pin down and another notebook could
 reuse. What stays in the notebook is the reading of one experiment (D21): the candidate
-feature transformers of each family, the metrics, the settings, one cell per run, the tables
-and the inspection. The package holds no runner over runs, no results table, no MLflow and
+feature transformers of each family, the metrics, the run settings and their loops, the
+tables and the inspection. The package holds no runner over runs, no results table, no MLflow and
 no transformer registry; the candidates are injected, as scikit-learn's
 `GridSearchCV(param_grid=...)` takes its grid.
 
@@ -42,23 +44,23 @@ no transformer registry; the candidates are injected, as scikit-learn's
 
 The notebook's data (sections 1–3: the simulator at 150 neighborhoods × 9 buildings, the
 `random` split of [Splitting §3](SPLITTING.md#3-train-validation-and-test), seed 42), two
-candidate transformers per family, and one short study of each composite. The notebook runs
-the same calls at 400 trials, one cell per family and exposure.
+candidate transformers per family, and one short study of each composite, Model 2 also by
+coordinate descent. The notebook runs the same calls at 400 trials, in loops over its run
+settings, Model 2 by coordinate descent.
 
 ```python
 import json
 
 import optuna
 import pandas as pd
-from sklearn.metrics import mean_poisson_deviance
 
 from age_group_prediction.feature_engineering import FeatureTransformer, OneHot, Plan, Quadratic, Standardize, CenterByReferencePoint
 from age_group_prediction.hyperparameter_tuning import (
-    CountComponent, CrossValidationTuner, ProbabilityComponent,
-    build_independent_cohorts_model, build_total_times_probability_model, fit_and_score,
+    CountComponent, CrossValidationTuner, LogisticParams, ProbabilityComponent,
+    build_independent_cohorts_model, build_total_times_probability_model,
 )
 from age_group_prediction.preprocessing import ExposureTransformer, ShareTransformer
-from age_group_prediction.scoring import Metric, mean_poisson_deviance_loss
+from age_group_prediction.scoring import Metric, evaluate, mean_poisson_deviance_loss
 from age_group_prediction.splitting import Splitter
 from age_group_prediction.utils import AgeGroupDataset
 from student_simulator import (
@@ -148,10 +150,10 @@ glm_candidates = {
 
 # The study's design, shared by every run: the metric scores each fold and
 # gives the direction; 5 folds fitted in 5 processes.
-COHORT_POISSON_DEVIANCE = Metric("cohort_poisson_deviance", mean_poisson_deviance_loss)
+POISSON_DEVIANCE = Metric("poisson_deviance", mean_poisson_deviance_loss)
 tuner = CrossValidationTuner(
     cv=splitter.cv(n_splits=5, random_state=42),
-    metric=COHORT_POISSON_DEVIANCE,
+    metric=POISSON_DEVIANCE,
     n_trials=20,
     n_startup_trials=10,
     n_jobs=5,
@@ -216,13 +218,60 @@ print({name: round(value, 4) if isinstance(value, float) else value
 {'total__alpha': 0.0018, 'total__feature_transformer': 'glm__ses_quadratic', 'probability__C': 24.8263, 'probability__calibration_method': 'sigmoid', 'probability__feature_transformer': 'glm__ses_quadratic'}
 ```
 
-A study keeps every trial; only the best is refit. Its components are read back from
-`best_params` by the component types (§3), built the same way the objective built them,
-refit on the whole training part and scored on both parts:
+The same model by coordinate descent (§6): one study of the total with a plain classifier
+fixed, then one of the probabilities with that best total fixed. Each study draws its own
+part only, and each still scores the whole composite.
 
 ```python
-# The best components, read back from best_params by their type, then built,
-# refit on the whole training part and scored on training and validation.
+# Step 1: the total, the probabilities fixed at a plain logistic model.
+fixed_probability = ProbabilityComponent(
+    name="probability", family="logistic", calibration_method=None,
+    estimator_params=LogisticParams(C=1.0), feature_transformer=glm_candidates["glm_base"],
+)
+study_total, _ = tuner.tune_total_component(
+    train.X, train.Y, train.exposure,
+    total_family="poisson_glm",
+    use_exposure=True,
+    total_feature_transformer_dict=glm_candidates,
+    probability_component=fixed_probability,
+    y_min=1e-9,
+    random_state=42,
+    study_seed=43,
+)
+# Step 2: the probabilities, step 1's best total fixed.
+total_by_steps = CountComponent.from_params(
+    study_total.best_params, name="total", family="poisson_glm",
+    use_exposure=True, feature_transformer_dict=glm_candidates,
+)
+study_probability, _ = tuner.tune_probability_component(
+    train.X, train.Y, train.exposure,
+    total_component=total_by_steps,
+    probability_family="logistic",
+    probability_feature_transformer_dict=glm_candidates,
+    y_min=1e-9,
+    random_state=42,
+    study_seed=44,
+)
+print(f"{study_total.best_value:.4f} {study_probability.best_value:.4f}")
+print(sorted(study_total.best_params), sorted(study_probability.best_params))
+```
+
+```text
+2.2512 2.2478
+['total__alpha', 'total__feature_transformer'] ['probability__C', 'probability__calibration_method', 'probability__feature_transformer']
+```
+
+Step 1's value holds the fixed classifier's log loss; step 2's best is the pair's own value,
+2.2478 against the joint study's 2.2520 with as many trials per study.
+
+A study keeps every trial; only the best is refit. Its components are read back from
+`best_params` by the component types (§3), built the same way the objective built them and
+refit on the whole training part; each part is then predicted and scored with
+`scoring.evaluate`, per cohort and for the composite (§8):
+
+```python
+# The best components, read back from best_params by their type, then built and
+# refit on the whole training part; training and validation predicted and scored.
 best_components_1 = tuple(
     CountComponent.from_params(
         study_1.best_params, name=cohort, family="lgbm_poisson",
@@ -238,18 +287,25 @@ best_probability = ProbabilityComponent.from_params(
     study_2.best_params, name="probability", family="logistic",
     feature_transformer_dict=glm_candidates,
 )
-POISSON_DEVIANCE = Metric("poisson_deviance", mean_poisson_deviance)
 for label, model in [
     ("model 1", build_independent_cohorts_model(best_components_1, y_min=1e-9, random_state=42)),
     ("model 2", build_total_times_probability_model(
         best_total, best_probability, y_min=1e-9, random_state=42
     )),
 ]:
-    _, score_table = fit_and_score(
-        model, train, val, cohort_metric=POISSON_DEVIANCE, metric=COHORT_POISSON_DEVIANCE
+    model.fit(train.X, train.Y, exposure=train.exposure)
+    scores = pd.concat(
+        {
+            part: evaluate(
+                data.Y, model.predict(data.X, exposure=data.exposure),
+                [POISSON_DEVIANCE], cohorts=[*cohorts, "composite"],
+            )["poisson_deviance"]
+            for part, data in [("train", train), ("val", val)]
+        },
+        axis=1,
     )
     print(label)
-    print(pd.DataFrame(score_table).round(4).to_string(index=False))
+    print(scores.round(4).reset_index().to_string(index=False))
 ```
 
 ```text
@@ -389,6 +445,11 @@ feature_transformer_dict, share_hyperparams, share_feature_transformer)` returns
 total_family, probability_family, use_exposure, total_feature_transformer_dict,
 probability_feature_transformer_dict)` returns the total's component and the probabilities'.
 They draw and set components only; `y_min` and `random_state` are build settings (D26.1).
+`suggest_count_component(trial, *, name, family, use_exposure, feature_transformer_dict)` and
+`suggest_probability_component(trial, *, name, family, feature_transformer_dict)` draw one
+component under `<name>__`, with the arguments of its `from_params` (§3): the joint Model 2
+draw calls the two, `name="total"` then `name="probability"`, and coordinate descent calls
+one per study (§6).
 
 The two sharing flags of the independent cohorts model (D23–D24): a shared choice is drawn
 once, before the cohorts, under `shared__`, and every cohort takes it; otherwise each cohort
@@ -428,6 +489,16 @@ groups, the composite's settings and the study's seed (D26):
   each run one study whose objective draws the components, builds the composite and
   returns its `cv_score`; they return the study and its seconds. The method names the
   model, so no callable is passed in.
+- `tune_total_component(..., total_family, use_exposure, total_feature_transformer_dict,
+  probability_component, ...)` and `tune_probability_component(..., total_component,
+  probability_family, probability_feature_transformer_dict, ...)` run one study of Model 2's
+  total or probabilities, the other component given and fixed: coordinate descent. Each
+  scores the whole composite. Under the Poisson deviance the composite is the total's
+  deviance plus the probabilities' log loss, and no hyperparameter reaches both, so the
+  fixed part adds the same constant to every trial and one round of the two steps finds
+  what the joint study finds: at 400 trials, as good or better in 15 of the 16 notebook
+  pairs, 3.8× faster (752 s against 2871 s; the metrics plan's 2.3a). Under another metric
+  a step is the best part given the other. The joint method stays.
 
 The study is `optuna.create_study(direction=metric.direction,
 sampler=TPESampler(seed=study_seed, n_startup_trials=n_startup_trials))`. The notebook runs
@@ -493,28 +564,32 @@ UpperBound(z=1.645)
 
 ## 8. The Refit And The Run Record
 
-`fit_and_score(model, train_age_group, val_age_group, *, cohort_metric, metric)` fits the
-model on the training part and returns it with a score table: one row per cohort column,
-scored by `cohort_metric`, then the composite, scored by `metric`, each on training and
-validation. The best model is rebuilt from `best_params` (§3), so no fitted model or Optuna
-study needs to be kept. A notebook run keeps a record: its settings,
-`study.trials_dataframe()` (every trial, about 1.7 KiB each), `[c.to_dict() for c in
-best_components]`, `best_params`, `best_value`, the score table, the seconds, the seed and
-`y_min`. To save it as JSON use `trials.to_json(orient="records")`: `json.dumps(record,
+Fitting and scoring are the caller's two steps: the best model is rebuilt from
+`best_params` (§3) and fitted on the training part, each part is predicted, and
+`scoring.evaluate(y_true, y_pred, metrics, cohorts="composite")` returns a table of every
+metric (a column, by name) for each cohort asked for (a row): a column of `y_true`, scored
+alone through `cohort=`, or `"composite"`, the whole matrix. No fitted model or Optuna study
+needs to be kept. A notebook run keeps a record: its settings, `study.trials_dataframe()`
+(every trial, about 1.7 KiB each), `[c.to_dict() for c in best_components]`, `best_params`,
+`best_value`, `train_scores` and `val_scores` (the two tables), the seconds, the seed and
+`y_min`. Model 2's coordinate descent keeps a record per step study (its trials, its best
+component and the fixed one) and one per pair (its components, the merged `best_params`,
+its `cv_score` as `cv_best`, its two tables). To save it as JSON use `trials.to_json(orient="records")`: `json.dumps(record,
 default=str)` writes a bare `NaN`, which strict readers reject.
 
 ## 9. Reproducibility
 
 - `study_seed` seeds TPE's draws; `random_state` seeds the estimators (LightGBM's bagging
-  and column sampling). The notebook seeds run *i* with `seed + i`, in a fixed order of
-  cells, and passes `random_state=seed`.
+  and column sampling). The notebook seeds run *i* with `seed + i`, in the order of its run
+  settings, and passes `random_state=seed`.
 - The folds come from the seeded `cv`; fitting them in parallel changes nothing (tested).
 - The draw order (§5) is fixed; a change to it, to a range, or to a candidate list changes
   every seeded result.
-- **The regression check:** the notebook's 24 runs at 3 trials, both sharing flags off,
+- **The regression check:** the notebook's runs at 3 trials, both sharing flags off,
   reproduce to the fourth decimal the baselines recorded in the
-  [handoff](NOTEBOOK_T4_HANDOFF.md) §5 (Check C). Every change to this package since it was
-  rebuilt has passed it.
+  [handoff](EXPERIMENT_NOTEBOOK_HANDOFF.md) §2 (Check C): Model 1's 8 since T1, Model 2's 16
+  since its coordinate descent (the metrics plan's 2.3). Every change to this package since
+  it was rebuilt has passed it.
 
 ## 10. Hazards
 
