@@ -2,13 +2,18 @@
 
 **For:** the session that continues [NOTEBOOK_METRICS_LOOP_EDA_PLAN.md](NOTEBOOK_METRICS_LOOP_EDA_PLAN.md)
 (three PRs: the metrics in `scoring`, the runs in a loop, the objective EDA). PR 1 is merged
-(#18), and the experiment-notebook line is merged into `main` (#19, §2). The next session starts
-PR 2 at sub-task 2.1, on `refactor/notebook-run-loop` from `main`. MLflow and E11's final
-evaluation are deferred (§6).
+(#18), and the experiment-notebook line is merged into `main` (#19, §2). PR 2 is in progress on
+`refactor/notebook-run-loop`:
+- 2.1 is committed (`9463651`);
+- 2.2 is done and awaits the user's commit;
+- Model 2 moves to coordinate descent (2.3a, §2a), measured on 2026-10-31.
+
+The next session starts at §6. MLflow and E11's final evaluation are deferred.
 
 **Written:** 2026-10-29, after T5 of [NOTEBOOK_TUNING_PLAN.md](NOTEBOOK_TUNING_PLAN.md);
 **updated** 2026-10-30 after sub-task 1.1 of the metrics plan, after the user's notes on its
-helpers, after sub-tasks 1.2, 1.3 and 1.4, and after the merges of #18 and #19 (§2, §6). The detailed history of
+helpers, after sub-tasks 1.2, 1.3 and 1.4, and after the merges of #18 and #19 (§2, §6);
+**updated** 2026-10-31 after 2.1, 2.2 and the coordinate-descent measurement (§2, §2a, §4, §6). The detailed history of
 the tuning work is in that plan (§0 D1–D26, §2–§6 the sub-tasks), in
 [NOTEBOOK_T4_HANDOFF.md](NOTEBOOK_T4_HANDOFF.md) (T4–T5) and in git; the decisions of the current
 work are M1–M9 of the metrics plan. Re-verify every fact here against the code of the day.
@@ -66,8 +71,37 @@ tuner, `fit_and_score`, aggregation), [`inspection`](MODEL_INSPECTION.md) (`Boot
 `feature_engineering` ([FEATURE_TRANSFORMATIONS.md](FEATURE_TRANSFORMATIONS.md)). MLflow is not
 used yet; the old `tracking/` package belongs to the old stack.
 
-## 2. State (2026-10-30, end of day)
+## 2. State (2026-10-31, end of day; the 2026-10-30 entries follow)
 
+- **PR 2 so far** (the metrics plan §4 holds each sub-task's "Done" note):
+  - **2.1 is committed as `9463651`:** one test in `test_hyperparameter_tuning_builders.py`.
+    For each of the four flag pairs, a changed `max_depth` and transformer reach every fitted
+    cohort model when shared, and only kindergarten's when not. The plan's first mutation
+    could not fail (a shared and a cohort key never coexist), so the mutation moved to the
+    build, at the user's choice.
+  - **2.2 is done and NOT committed.** The user commits it first. The tree holds its three
+    files:
+    - `notebooks/02_experiments.py`: `MODEL1_RUN_SETTINGS` (8 entries, the flags per run), one
+      loop cell for Model 1, the tables cell reading `MODEL1_RUNS`, the flags out of
+      `EXPERIMENT_SETTINGS`, three sentences of section 5 in the user's approved wording;
+    - `tests/characterization/test_experiments_notebook.py`;
+    - `docs/NOTEBOOK_METRICS_LOOP_EDA_PLAN.md`.
+
+    Its commit message:
+    `refactor(notebook): the independent cohorts model's runs in one loop; the sharing flags are run settings`.
+  - **The notebook's md5 with 2.2:** `e5fea5dcd691aa1e69a94769f4cff3d5`. Read it through `cat`
+    (`cat notebooks/02_experiments.py | md5`): on an iCloud-offloaded file, `md5 -q` printed
+    the empty file's hash (§4).
+  - **Checks at 2.2:**
+    - the non-slow suite 1377 passed, 1 skipped, 1 xfailed, 19 deselected; mypy clean (29 files);
+    - ruff on the notebook the same 14 findings; the format diff the user's two hunks;
+      `marimo check` the one empty cell;
+    - Check C (new recipe, §4): Model 1 gives the `share_hyperparams=True` baselines below,
+      with the 8 flags set to `False` the first table, and Model 2's 16 are unchanged.
+- **The environment was rebuilt on 2026-10-31 (§4, iCloud):**
+  - `.venv` was deleted and rebuilt with `uv sync --frozen --all-groups`: the same lock and
+    versions, every group (marimo, ruff, pytest, mypy, mlflow);
+  - a second, identical environment outside iCloud is at `~/.venvs/age-group-prediction`.
 - **Branches:** `main` at `3db1aa8` (`Merge pull request #19 from galkampel/feat/experiment-notebook`,
   a merge commit, so every commit the docs cite by hash is on `main`) and, from it,
   **`refactor/notebook-run-loop`** (PR 2 of the metrics plan; the user opens it as a draft into
@@ -116,9 +150,11 @@ used yet; the old `tracking/` package belongs to the old stack.
     `ruff format --diff` only the user's two hunks, `@@ -158` and `@@ -208`; `marimo check` 1
     issue (the remaining empty cell, line 637);
   - Check C: the 24 baselines below (75–80 s).
-- **Check C baselines** (the regression check: the clicked run on a copy with `n_trials = 3` and
-  `share_hyperparams = False`, both flags off, under `PYTHONWARNINGS=error`; `cv_best`). Every
-  change since T1.6 has reproduced them to the fourth decimal, PR 1 included.
+- **Check C baselines** (the regression check: the clicked run on a copy with `n_trials = 3`
+  and both sharing flags off, under `PYTHONWARNINGS=error`; `cv_best`). Since 2.2 the flags are
+  turned off in the 8 entries of `MODEL1_RUN_SETTINGS` (§4). Every change since T1.6 has
+  reproduced the baselines to the fourth decimal, PR 1 and 2.2 included. Model 2's 16 will be
+  re-recorded when its cells move to coordinate descent (§2a, §6).
 
   | Model 1 | exposure on | exposure off |
   |---|---|---|
@@ -148,6 +184,80 @@ used yet; the old `tracking/` package belongs to the old stack.
   `lgbm_gaussian+lgbm`, exposure on, cv 2.0962, val 2.1202 (247 s). The full tables are in the
   tuning plan's D20.
 - **Earlier commits** (T1–T5, PR #17) are listed in the tuning plan's status line and in git.
+
+## 2a. Model 2 by coordinate descent (decided 2026-10-31)
+
+**The user's decision:** the notebook tunes Model 2 in two steps.
+1. Tune the total, with the probability model fixed.
+2. Tune the probability model, with the best total fixed.
+
+Then each of the 16 pairs is built from its two winners and scored, with no search. **The
+implementation that tunes both components at once stays** in `src`:
+`CrossValidationTuner.tune_total_times_probability_model`, `suggest_total_times_probability_components`
+and their tests. Nothing is removed. It was asked because Model 2's joint search takes 48 min
+at 400 trials. T2.4 / D19 had already measured and rejected pruning and more parallelism (slower
+or unsafe), and the user declined splitting into two objectives (a total deviance and a log
+loss).
+
+**Why one round is exact** (probed on the notebook's 5 folds, ≤ 3e-15 on each):
+- Model 2's composite Poisson deviance is `D_total / K + 2 (C + N · log_loss) / (n K)`, where:
+  - `D_total` is the total's deviance;
+  - `log_loss` is the probabilities' per-child multinomial log loss;
+  - `C` depends on `Y` alone.
+- The prediction is `probabilities × total`, and `y_min` floors the total only. No
+  hyperparameter reaches both parts.
+- So the joint optimum is the pair of the two separate optima, and the second step cannot
+  change the first's result.
+- Within a step, the fixed part adds the same constant to every trial's value. Step 1 may
+  therefore fix the cheapest classifier: logistic, `C = 1.0`, no calibration, transformer
+  `glm_base`.
+- Each step scores the full composite, as today. Only what is searched changes.
+
+**Reuse:**
+- step 1: 8 studies (4 total families × exposure on / off), seeded `seed + 0 … 7` in Model 1's
+  order of families;
+- step 2: 2 studies (logistic, lgbm), seeded `seed + 8`, `seed + 9`. The exposure does not reach
+  the classifier;
+- the 16 pairs: each one's `cv_best` is `tuner.cv_score` of the pair, comparable with a joint
+  `best_value`, plus `fit_and_score`.
+
+**Measured (2.3a.1, 400 trials, `PYTHONWARNINGS=error`; a scratchpad probe built from the
+package's public pieces).** Today's joint `lgbm_gaussian+lgbm` (exposure on, `seed + 5`)
+reproduced D20's 2.0962 first. The comparison with D20's joint results:
+
+| Pair | Exposure | cv joint | cv coordinate | val joint | val coordinate |
+|---|---|---|---|---|---|
+| lgbm_poisson+logistic | on / off | 2.0489 / 2.0878 | 2.0622 / 2.0813 | 2.1285 / 2.1777 | 2.0965 / 2.1963 |
+| lgbm_poisson+lgbm | on / off | 2.0809 / 2.0976 | 2.0769 / 2.0960 | 2.1775 / 2.1679 | 2.1256 / 2.2254 |
+| lgbm_gaussian+logistic | on / off | 2.0715 / 2.1336 | 2.0706 / 2.1094 | 2.1256 / 2.2040 | 2.0759 / 2.1721 |
+| lgbm_gaussian+lgbm | on / off | 2.0962 / 2.1483 | 2.0853 / 2.1241 | 2.1202 / 2.2304 | 2.1050 / 2.2012 |
+| poisson_glm+logistic | on / off | 2.2418 / 2.8511 | 2.2418 / 2.8511 | 2.1749 / 3.0380 | 2.1749 / 3.0378 |
+| poisson_glm+lgbm | on / off | 2.2562 / 2.8656 | 2.2565 / 2.8658 | 2.2019 / 3.0672 | 2.2039 / 3.0669 |
+| nb2+logistic | on / off | 2.2289 / 2.8457 | 2.2290 / 2.8457 | 2.1848 / 3.0489 | 2.1838 / 3.0489 |
+| nb2+lgbm | on / off | 2.2479 / 2.8633 | 2.2437 / 2.8604 | 2.2132 / 3.0780 | 2.2128 / 3.0779 |
+
+- **cv** (the objective): better in 9, the same in 6 (≤ 0.0005), worse in 1
+  (`lgbm_poisson+logistic` on, +0.013, within the 0.02 noise); the mean −0.004. The two
+  differences beyond the noise are improvements (both `lgbm_gaussian` exposure-off pairs,
+  −0.024). The GLM pairs equal the joint results to 4 decimals, which shows the same objective.
+- **val** (one holdout): better in 7, the same in 6, worse in 3. One worse pair is beyond the
+  noise: `lgbm_poisson+lgbm` off, +0.058, while its cv is −0.002, so this is holdout noise.
+  The best pair on validation is `lgbm_gaussian+logistic`, exposure on, 2.0759 (D20's best
+  was `lgbm_gaussian+lgbm`, 2.1202).
+- **Time:** 2871 s joint against about 890 s coordinate: the totals 422 s (36–93 s each), the
+  classifiers 454 s (logistic 64, lgbm 390), the pairs 14 s. That is 3.2× faster. A rerun
+  under a machine load of about 18 took 1137 s, with identical values.
+- **The winners:**
+  - step 1's best total by cv: `lgbm_poisson`, exposure on, 2.0718;
+  - step 2, logistic: 2.0622, with `C` 0.1012, `sigmoid`,
+    `probability__room_share_x_median_age`;
+  - step 2, lgbm: 2.0769, with `max_depth` 3, `n_estimators` 215, `learning_rate` 0.0109,
+    `sigmoid`, `tree`.
+- Optuna's `PartialFixedSampler` raises `ExperimentalWarning` under `-W error`, so the fixing is
+  done in the package's code.
+
+**Not yet recorded in the metrics plan:** 2.2's uncommitted changes are in the same file, so the
+entry waits for the user's 2.2 commit (§6, step 1).
 
 ## 3. Decisions (do not re-ask)
 
@@ -184,6 +294,15 @@ later one supersedes an earlier one where it says so.
 - D26: `suggest_*_components` return the components; `CrossValidationTuner` holds the study's
   design, with one named tune method per model (the user chose them over one `tune` with a
   `Literal`); `fit_and_score` in `evaluation.py`.
+
+**Decided by the user on 2026-10-31** (PR 2):
+- the sharing flags are run settings, in `MODEL1_RUN_SETTINGS`, its own cell before the button
+  (M6);
+- Model 1's runs are one loop (M7);
+- Model 2 is tuned by coordinate descent in the notebook, and the joint implementation stays in
+  `src` (§2a);
+- the user's wish for this work: do not overcomplicate the implementation; the smallest change
+  that works.
 
 **Decided by the user** (2026-10-21 onward): `y_min` stays a build argument, recorded once per
 run with the seed; `evaluate` is not changed; `Aggregator.aggregate_scores` is a named method;
@@ -235,12 +354,37 @@ new md5, the commit message. Tick the sub-task and update the status lines.
 - **Check B:** the names a script run defines (`app.run()`'s defs).
 - **Check C:** the clicked run on a copy. Build `<scratch>/project/notebooks/02_experiments.py`
   from the notebook with the line `    n_trials = 400` replaced by `    n_trials = 3` (by line: the
-  header's markdown holds the string too) and `    share_hyperparams = True` by `False`, and
+  header's markdown holds the string too), and each of the 8 lines
+  `            "share_hyperparams": True,` in `MODEL1_RUN_SETTINGS` replaced by `False` (assert
+  the count, 8; before 2.2 it was the one line `    share_hyperparams = True`). Also make
   `<scratch>/project/configs` a symlink to the repo's `configs`; run it with `marimo.ui.run_button`
   patched to a clicked value, `PYTHONWARNINGS=error`, `PYTHONPATH=src`, in the background. It
   takes 80–170 s with the inspection; the 24 values must equal §2's.
 - The machine can be heavily loaded: run notebook checks and the suite in the background with
   stdin closed, unbuffered, logged to the scratchpad; `timeout` does not exist on macOS.
+
+**iCloud (found 2026-10-31):** the repo is in `~/Desktop`, which iCloud Drive syncs with storage
+optimization. macOS offloads files ("dataless": the name stays, the content is downloaded on
+read). On 2026-10-31 it had offloaded:
+- about 19,600 `.venv` files;
+- 43 source files, even ones edited that hour, the notebook among them;
+- 1,152 of 2,562 `.git` files.
+
+A read of an offloaded file blocks until iCloud delivers it (seconds to 30+ s each). That hung
+a 400-trial probe on an `import` and hung `git diff`. Precautions:
+- **Before a long run or a git command,** check `find . -flags +dataless -type f | wc -l`. A
+  stalled process shows 0% CPU, its main thread is in `read()` (`sample <pid>`), and
+  `lsof -p <pid>` names the file.
+- **To bring a file back,** read it (`cat file > /dev/null`). `brctl download` did nothing.
+- **Long runs use `~/.venvs/age-group-prediction/bin/python`,** an identical environment outside
+  iCloud (`UV_PROJECT_ENVIRONMENT=$HOME/.venvs/age-group-prediction uv sync --frozen --all-groups`),
+  with `PYTHONPYCACHEPREFIX=<scratch>/pycache`, so offloaded `__pycache__` files are never read.
+  Compile that cache once without strict warnings, `python -m compileall -q
+  <site-packages> src`. Under `PYTHONWARNINGS=error`, a fresh compile of `pyro` raises a
+  `SyntaxError` (an invalid escape in a docstring).
+- **`uv sync` needs `--all-groups`:** marimo, ruff, pytest and mlflow are dependency groups.
+- **The lasting fix is the user's:** Finder's "Keep Downloaded" on the folder, turning off
+  Optimize Mac Storage, or moving the repo out of `~/Desktop`.
 
 **Traps:**
 - Never run two tuner calls (two `Parallel` calls) at once from threads in one process: joblib
@@ -282,41 +426,84 @@ terms (`check_paired_arrays`, `column_position`).
   MODEL_INSPECTION.md §2 was done in the metrics plan's 1.2),
   and the simulator plan's cleanup stop (dead code) and format-only commit.
 - **A `log(n_apartments)` plan for the GLMs** (FEATURE_TRANSFORMATIONS.md §4.4); not asked for.
-- **What would shorten a click** (62 min at 400 trials) is a modeling choice the user has not
-  asked for: fewer calibration inner folds or a lower `n_estimators` ceiling (D19).
+- **What would shorten a click** (62 min at 400 trials): Model 2's coordinate descent (§2a)
+  takes Model 2 from 48 to about 15 min. Still open, and not asked for:
+  - dropping the GLM exposure-off arms (structurally worse by about 0.6: the GLMs see
+    `n_apartments` only as the exposure);
+  - narrowing LightGBM's search after measuring its fANOVA importances (`num_leaves` above
+    `2**max_depth`; `learning_rate` × `n_estimators`; the calibration's cost of ×5);
+  - fewer trials once the space is narrower.
+
+  The user asked about all of these on 2026-10-31 and chose coordinate descent first.
 
 ## 6. Next, and the prompt
 
-The order is [NOTEBOOK_METRICS_LOOP_EDA_PLAN.md](NOTEBOOK_METRICS_LOOP_EDA_PLAN.md)'s, one
-sub-task per approval:
-1. **PR 1** (`refactor/scoring-metrics`): merged as #18 (`b1d8dbd`), and with the
-   experiment-notebook line into `main` as #19 (`3db1aa8`).
-2. **PR 2** (`refactor/notebook-run-loop`, from `main`, a draft into `main`): the sharing-flags
-   test (2.1), the runs in a loop (2.2–2.3), and `fit_and_score(model, train, val, *, metrics)`
-   scoring every metric per cohort (`cohort=`) and for the composite, with the user's 2.4
-   amendment (one `POISSON_DEVIANCE`, `LOG_LOSS`, no `COHORT_` prefixes; §2).
-3. **PR 3** (`feat/objective-eda`, from `main` after PR 2 is merged): the objective EDA
-   (cross-entropy, Poisson deviance, RMSE on one run per model).
-4. **Deferred:** the MLflow runs (the D1e guard first: with `MLFLOW_TRACKING_URI` unset, MLflow 3.16
-   writes to the repo's canonical `mlflow.db` and its artifacts to `./mlruns`), D4's comparison
-   table, and E11's final evaluation.
+The order is [NOTEBOOK_METRICS_LOOP_EDA_PLAN.md](NOTEBOOK_METRICS_LOOP_EDA_PLAN.md)'s, reshaped
+for Model 2 on 2026-10-31. One sub-task per approval:
+1. **The user commits 2.2.** First check that nothing is offloaded
+   (`find . -flags +dataless -type f | wc -l`, §4), or the commit may stall on `.git`.
+2. **2.3a.1, recorded in the plan (docs only).** A new 2.3a entry in the metrics plan's §4:
+   - the decision, the measurement and the table of §2a;
+   - the reshaped 2.3a.2 and 2.3 below;
+   - the status line.
+
+   Commit: `docs(notebook): Model 2 by coordinate descent measured against the joint studies`.
+3. **2.3a.2, the `src` change, the smallest that works.**
+   - **The change:** the tuner can tune one part of Model 2 with the other part's component
+     given and fixed. The draws move into `suggest_total_component` and
+     `suggest_probability_component`, and `suggest_total_times_probability_components` calls
+     both, so the joint draws and every baseline stay. **The joint method stays.**
+   - **The design question for the user, with code previews:** two named tune methods (one per
+     step, D26's pattern; the session's recommendation) or one method with an optional fixed
+     component.
+   - **Tests:** a step's trials hold only that part's keys; the fixed component is the one in
+     the model that is scored; the joint method's tests still pass.
+4. **2.3 (reshaped), Model 2's runs in loops, by coordinate descent.**
+   - **Settings:** `MODEL2_TOTAL_RUN_SETTINGS` (8 entries, `seed + 0 … 7`),
+     `MODEL2_PROBABILITY_RUN_SETTINGS` (2 entries, `seed + 8`, `seed + 9`), and the fixed
+     classifier of step 1 (§2a).
+   - **The cells:** a loop for step 1, a loop for step 2 (the best step-1 total by cv fixed),
+     then the 16 pairs. Each pair's record keeps today's keys, so `model2_df`, `best_df` and the
+     inspection are unchanged. Its `best_params` merge the two steps' params, and its `cv_best`
+     is `tuner.cv_score` of the pair.
+   - **The arms table** counts the 10 step studies' trials.
+   - **Text and checks:** section 5's text is updated with the user's approval. Model 2's 16
+     Check C baselines are re-recorded (3 trials), and Model 1's 8 must be unchanged.
+5. **2.4:** `fit_and_score(model, train, val, *, metrics)`, every metric per cohort and for the
+   composite (the user's amendment: one `POISSON_DEVIANCE`, `LOG_LOSS`, no `COHORT_` prefixes).
+6. **2.5:** the docs (the decisions M6, M7 and Model 2's coordinate descent into the tuning
+   plan's §0; HYPERPARAMETER_TUNING.md's new methods and `fit_and_score`; this handoff's checks),
+   then the PR's review subagent. Then the user opens PR 2 as a draft into `main`.
+7. **PR 3** (`feat/objective-eda`, from `main` after PR 2 is merged): the objective EDA.
+8. **Deferred:** the MLflow runs (the D1e guard first: with `MLFLOW_TRACKING_URI` unset, MLflow
+   3.16 writes to the repo's canonical `mlflow.db` and its artifacts to `./mlruns`), D4's
+   comparison table, and E11's final evaluation.
 
 The user's preferences for this work: PR descriptions carry no "Generated with Claude Code" line
 and commit messages no `Co-Authored-By`; plan docs live in `docs/`, split into sub-tasks the user
-validates one at a time.
+validates one at a time; the user is new to marimo's UI terms (explain "button", "click"); keep
+the implementation simple.
 
 **The prompt for the next session:**
 
 ```text
-Read docs/EXPERIMENT_NOTEBOOK_HANDOFF.md in full, then docs/NOTEBOOK_METRICS_LOOP_EDA_PLAN.md in
-full (§4, PR 2), src/age_group_prediction/hyperparameter_tuning/components.py and builders.py,
-and tests/unit/test_hyperparameter_tuning_builders.py. Verify the state of the handoff's §2
-first: branch refactor/notebook-run-loop from main (3db1aa8, the merge of #19), HEAD my commit
-of this handoff on top of it, a clean tree, the notebook md5 b3287cd0e24b9b489b1b9f63fc7cbac0.
-If anything differs, stop and show me the diff. Then plan sub-task 2.1 in plan mode: re-verify
-the facts with read-only probes, give a recommendation with evidence and the trade-off for any
-design question, write the steps and the commit message in the chat, and wait for my approval
-before editing. Then each later sub-task of the plan in order, one per approval; I commit
-myself (never commit, no Co-Authored-By line, no "Generated with Claude Code" in PR text,
-never git checkout/stash/reset/mv).
+Read docs/EXPERIMENT_NOTEBOOK_HANDOFF.md in full (§2a and §4's iCloud notes first), then
+docs/NOTEBOOK_METRICS_LOOP_EDA_PLAN.md (§4, PR 2), and
+src/age_group_prediction/hyperparameter_tuning/cross_validation.py and builders.py. Verify the
+state first:
+- branch refactor/notebook-run-loop;
+- HEAD my commits of 2.2 and of this handoff on top of 9463651 (if either is uncommitted,
+  stop and tell me);
+- a clean tree;
+- the notebook md5 e5fea5dcd691aa1e69a94769f4cff3d5, read via `cat notebooks/02_experiments.py | md5`;
+- no iCloud-offloaded files (`find . -flags +dataless -type f | wc -l` is 0; otherwise stop and
+  tell me).
+If anything differs, stop and show me the diff. Then do step 2 of the handoff's §6 (record 2.3a.1
+in the plan, docs only) and wait for my commit. Then plan 2.3a.2 in plan mode: re-verify the
+facts with read-only probes, give a recommendation with evidence and the trade-off for any
+design question (code previews), write the steps and the commit message in the chat, and wait
+for my approval before editing. Keep the implementation simple and do not remove the joint
+tuning of both components. Then each later sub-task in order, one per approval. I commit myself:
+never commit, no Co-Authored-By line, no "Generated with Claude Code" in PR text, never git
+checkout/stash/reset/mv.
 ```
