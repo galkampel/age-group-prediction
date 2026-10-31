@@ -1,6 +1,6 @@
 # Plan: the metrics in `scoring`, the runs in a loop, the objective EDA
 
-**Status (2026-10-30):** PR 1 on `refactor/scoring-metrics`: 1.1 done, revised at the user's notes (`cohort=`, `y_proba=`, samples; then the notes on the helpers: `utils.check_paired_arrays` checks, `utils.column_position` finds a cohort's column, each metric selects it, no repeated-name guard; suite 1346 passed; Check C the 24 baselines), committed as `185285e`. 1.2 done (docs only; the three guides' blocks rerun as written with the same numbers; MODEL_INSPECTION.md's stale simulator line fixed with `from_config`, the user's choice), committed as `96c950b`. 1.3 done (the notebook's six inspection metrics from `scoring`, D² dropped; Check C the 24 baselines and the intervals equal, WMAPE and bias but for their last bit); committed as `0e9d0a1`. 1.4 done (the review's fixes in `scoring`: non-finite values and a lone cohort rejected, two docstrings; suite 1373 passed); PR 1 merged as #18 (`b1d8dbd`) into `feat/experiment-notebook`, and that branch into `main` as #19 (`3db1aa8`). PR 2 on `refactor/notebook-run-loop` from `main`: 2.1 done (2026-10-31; the sharing flags' test, a fitted model per flag pair; the Verify mutation moved to the build, at the user's choice). Next: 2.2.
+**Status (2026-10-30):** PR 1 on `refactor/scoring-metrics`: 1.1 done, revised at the user's notes (`cohort=`, `y_proba=`, samples; then the notes on the helpers: `utils.check_paired_arrays` checks, `utils.column_position` finds a cohort's column, each metric selects it, no repeated-name guard; suite 1346 passed; Check C the 24 baselines), committed as `185285e`. 1.2 done (docs only; the three guides' blocks rerun as written with the same numbers; MODEL_INSPECTION.md's stale simulator line fixed with `from_config`, the user's choice), committed as `96c950b`. 1.3 done (the notebook's six inspection metrics from `scoring`, D² dropped; Check C the 24 baselines and the intervals equal, WMAPE and bias but for their last bit); committed as `0e9d0a1`. 1.4 done (the review's fixes in `scoring`: non-finite values and a lone cohort rejected, two docstrings; suite 1373 passed); PR 1 merged as #18 (`b1d8dbd`) into `feat/experiment-notebook`, and that branch into `main` as #19 (`3db1aa8`). PR 2 on `refactor/notebook-run-loop` from `main`: 2.1 done (2026-10-31; the sharing flags' test, a fitted model per flag pair; the Verify mutation moved to the build, at the user's choice), committed as `9463651`. 2.2 done (2026-10-31; Model 1's runs in one loop over `MODEL1_RUN_SETTINGS`, the flags per run; Check C both arms' baselines). Next: 2.3.
 
 The user's notes of 2026-10-30 on the experiment notebook. They replace the order of
 [EXPERIMENT_NOTEBOOK_HANDOFF.md](EXPERIMENT_NOTEBOOK_HANDOFF.md) §6: MLflow and E11's final
@@ -315,7 +315,7 @@ Branch `refactor/notebook-run-loop`, from `main` after PR 1 (#18) and #19 are me
     (`share_hyperparams` off) and the existing build test; first transformer, 2 of the 4
     (`share_feature_transformer` off) and the existing build test.
 
-### [ ] 2.2 Model 1's runs in a loop; the sharing flags as run settings
+### [x] 2.2 Model 1's runs in a loop; the sharing flags as run settings
 
 - **Change:**
   - `MODEL1_RUN_SETTINGS`: 8 dicts, each with `family`, `use_exposure`, `share_hyperparams` and
@@ -330,6 +330,42 @@ Branch `refactor/notebook-run-loop`, from `main` after PR 1 (#18) and #19 are me
 - **Verify:** Check C. Model 1's 8 values equal the handoff §2 baselines for `share_hyperparams=True`
   (`lgbm_poisson` 2.1812 / 2.2193, …), and a copy with both flags `False` gives the first table.
 - **Commit:** `refactor(notebook): the independent cohorts model's runs in one loop; the sharing flags are run settings`
+- **Done 2026-10-31.**
+  - **The user's choices at the plan:** `MODEL1_RUN_SETTINGS` in its own cell, before the
+    button; section 5's text changed in the same commit. Three sentences change:
+    - "each in its own cell" goes;
+    - "Two run settings decide …";
+    - "Each entry of `MODEL1_RUN_SETTINGS` sets both: its eight runs take `True` and `False`, and
+      a run with other values is one more entry in that list" replaces "the other arm … is a
+      click with the setting changed";
+    - the seeds' sentence names the loop.
+  - **Changed:**
+    - the notebook:
+      - the settings cell (the flags, their comment, their two `EXPERIMENT_SETTINGS` entries and
+        return names out);
+      - the new `MODEL1_RUN_SETTINGS` cell (8 entries in the old order of cells, each `True` /
+        `False`; the D24.4 comment moved there);
+      - the button's caption;
+      - the 8 run cells replaced by one loop cell (`study_seed=seed + i`, the flags from each
+        entry, records `{**run_settings, …}` with the old keys in the old order);
+      - the tables cell (takes `MODEL1_RUNS`; the 8-name list out);
+      - section 5's text.
+    - The notebook test: the two flags out of `experiment_settings`.
+  - **Check C's copy recipe from now on:** the line `    n_trials = 400` → `3` (one line), and
+    each `            "share_hyperparams": True,` → `False` (8 lines, in `MODEL1_RUN_SETTINGS`).
+    The handoff's recipe changes in 2.5.
+  - **Checks:**
+    - Check A: the notebook test 12 passed; ruff the same 14 findings, on shifted lines; the
+      format diff the two hunks (`@@ -158`, `@@ -208`); `marimo check` the one empty cell.
+    - Check B: `MODEL1_RUN_SETTINGS` defined (8 entries, the order above), the two flags not
+      defined, nothing fitted.
+    - Check C, two copies:
+      - (a) the entries as committed (83 s): Model 1's 8 equal §2's `share_hyperparams=True`
+        line, Model 2's 16 their table, the records' keys the old ones, the inspection ran;
+      - (b) the 8 flags `False` (70 s): Model 1's 8 equal §2's first table, Model 2 unchanged.
+        That (b) moves to the other baselines is the check that each entry's flags reach its
+        study.
+    - The non-slow suite: 1377 passed, 1 skipped, 1 xfailed, 19 deselected.
 
 ### [ ] 2.3 Model 2's runs in a loop
 

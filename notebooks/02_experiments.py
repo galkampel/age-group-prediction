@@ -243,11 +243,6 @@ def _(mo, pd):
     n_trials = 400
     # TPE's random start: the trials drawn at random before its model guides the draws.
     n_startup_trials = 20
-    # The independent cohorts model's search: one set of hyperparameters for
-    # all cohorts, and one feature transformer for all cohorts (D24.4); the
-    # other arm is a click with share_feature_transformer = True.
-    share_hyperparams = True
-    share_feature_transformer = False
     n_resamples = 1000
     # The inspection of the best runs: permutation repeats per column, and the
     # validation rows SHAP explains against the training rows it averages over.
@@ -264,8 +259,6 @@ def _(mo, pd):
         "n_splits": n_splits,
         "n_trials": n_trials,
         "n_startup_trials": n_startup_trials,
-        "share_hyperparams": share_hyperparams,
-        "share_feature_transformer": share_feature_transformer,
         "n_resamples": n_resamples,
         "n_repeats": n_repeats,
         "n_shap_rows": n_shap_rows,
@@ -285,8 +278,6 @@ def _(mo, pd):
         n_startup_trials,
         n_trials,
         seed,
-        share_feature_transformer,
-        share_hyperparams,
         split_method,
         test_size,
         val_size,
@@ -644,7 +635,7 @@ def _(mo):
     Two models: the independent cohorts model (Model 1, one count model per
     cohort) and the total times probability model (Model 2, a count model of
     the total times a classifier's cohort probabilities). One run per model
-    family and exposure (on or off, fixed for the run), each in its own cell:
+    family and exposure (on or off, fixed for the run):
     one Optuna study on the composite, so the model that is scored is the
     model that is tuned, by the cohort Poisson deviance of its
     cross-validation folds on the training part, the plain mean over folds.
@@ -655,19 +646,21 @@ def _(mo):
     that part, and the composite is built from the components with
     constructor calls; the best run's components are read back from the
     study's `best_params` by the component type, the same records. Two
-    settings decide what the independent cohorts model's cohorts share,
+    run settings decide what the independent cohorts model's cohorts share,
     each drawn once under `shared__`:
     `share_hyperparams` (one set of hyperparameters for all cohorts) and
-    `share_feature_transformer` (one transformer for all cohorts). The runs
-    below take `True` and `False`; the other arm, both `True`, is a click
-    with the setting changed. LightGBM's two losses, Poisson and Gaussian, are
+    `share_feature_transformer` (one transformer for all cohorts). Each
+    entry of `MODEL1_RUN_SETTINGS` sets both: its eight runs take `True` and
+    `False`, and a run with other values is one more entry in that list.
+    LightGBM's two losses, Poisson and Gaussian, are
     separate families, and the exposure a run setting: a study that sampled
     the loss split 30 trials 10/20 and did worse than either loss alone, and
     the exposure changes the target (a count or a weighted rate).
     `n_trials = 400`, the first `n_startup_trials = 20` drawn at random; the
     tables of trials per choice show whether any was tried too rarely to be
     judged. The runs go one after another, seeded
-    `seed + 0`, `seed + 1`, … in order, and each trial fits its 5 folds in
+    `seed + 0`, `seed + 1`, … in order (the independent cohorts model's in
+    one loop over `MODEL1_RUN_SETTINGS`), and each trial fits its 5 folds in
     parallel. A trial whose fit raises (an NB2 fit that does not converge) is
     marked failed and the run goes on; the tables count them. Each run keeps
     every trial and its best components, which alone are read back from the
@@ -831,11 +824,70 @@ def _(
 
 
 @app.cell
+def _():
+    # The independent cohorts model's runs, in the order of their seeds (the
+    # i-th study gets seed + i): a count family × exposure on or off. In each,
+    # the cohorts share one set of hyperparameters and each draws its own
+    # feature transformer (D24.4).
+    MODEL1_RUN_SETTINGS = [
+        {
+            "family": "lgbm_poisson",
+            "use_exposure": True,
+            "share_hyperparams": True,
+            "share_feature_transformer": False,
+        },
+        {
+            "family": "lgbm_poisson",
+            "use_exposure": False,
+            "share_hyperparams": True,
+            "share_feature_transformer": False,
+        },
+        {
+            "family": "lgbm_gaussian",
+            "use_exposure": True,
+            "share_hyperparams": True,
+            "share_feature_transformer": False,
+        },
+        {
+            "family": "lgbm_gaussian",
+            "use_exposure": False,
+            "share_hyperparams": True,
+            "share_feature_transformer": False,
+        },
+        {
+            "family": "poisson_glm",
+            "use_exposure": True,
+            "share_hyperparams": True,
+            "share_feature_transformer": False,
+        },
+        {
+            "family": "poisson_glm",
+            "use_exposure": False,
+            "share_hyperparams": True,
+            "share_feature_transformer": False,
+        },
+        {
+            "family": "nb2",
+            "use_exposure": True,
+            "share_hyperparams": True,
+            "share_feature_transformer": False,
+        },
+        {
+            "family": "nb2",
+            "use_exposure": False,
+            "share_hyperparams": True,
+            "share_feature_transformer": False,
+        },
+    ]
+    return (MODEL1_RUN_SETTINGS,)
+
+
+@app.cell
 def _(mo):
     run_model1 = mo.ui.run_button(label="Tune the independent cohorts model")
     mo.md(
-        f"{run_model1} 8 runs, one cell each (a count family × exposure on or off); "
-        "each trial fits its folds in parallel."
+        f"{run_model1} 8 runs in one loop, one per entry of `MODEL1_RUN_SETTINGS` "
+        "(a count family × exposure on or off); each trial fits its folds in parallel."
     )
     return (run_model1,)
 
@@ -846,6 +898,7 @@ def _(
     COHORT_POISSON_DEVIANCE,
     COUNT_FEATURE_TRANSFORMERS,
     CountComponent,
+    MODEL1_RUN_SETTINGS,
     POISSON_DEVIANCE,
     PREDICTION_FLOOR,
     build_independent_cohorts_model,
@@ -854,8 +907,6 @@ def _(
     mo,
     run_model1,
     seed,
-    share_feature_transformer,
-    share_hyperparams,
     train_age_group,
     tuner,
     val_age_group,
@@ -864,651 +915,69 @@ def _(
         not run_model1.value,
         mo.md("Click the button to tune the independent cohorts model."),
     )
-    # The independent cohorts model, run 1 of 8: LightGBM with the Poisson loss,
-    # exposure on.
-    _family, _use_exposure = "lgbm_poisson", True
-    _study, _seconds = tuner.tune_independent_cohorts_model(
-        train_age_group.X,
-        train_age_group.Y,
-        train_age_group.exposure,
-        cv_groups,
-        family=_family,
-        use_exposure=_use_exposure,
-        cohorts=COHORTS,
-        feature_transformer_dict=COUNT_FEATURE_TRANSFORMERS[_family],
-        share_hyperparams=share_hyperparams,
-        share_feature_transformer=share_feature_transformer,
-        y_min=PREDICTION_FLOOR,
-        random_state=seed,
-        study_seed=seed + 0,
-    )
-    # The best components, read from the best trial's parameters by their
-    # type, are the model scored and the record kept (D10-D12, D14, D25).
-    _best_components = tuple(
-        CountComponent.from_params(
-            _study.best_params,
-            name=cohort,
+    # The independent cohorts model's runs, one after another, the i-th seeded
+    # seed + i. A failed trial is caught by the study; any other error ends
+    # the loop, and the records made so far are lost.
+    MODEL1_RUNS = []
+    for _i, _run_settings in enumerate(MODEL1_RUN_SETTINGS):
+        _family = _run_settings["family"]
+        _use_exposure = _run_settings["use_exposure"]
+        _study, _seconds = tuner.tune_independent_cohorts_model(
+            train_age_group.X,
+            train_age_group.Y,
+            train_age_group.exposure,
+            cv_groups,
             family=_family,
             use_exposure=_use_exposure,
+            cohorts=COHORTS,
             feature_transformer_dict=COUNT_FEATURE_TRANSFORMERS[_family],
+            share_hyperparams=_run_settings["share_hyperparams"],
+            share_feature_transformer=_run_settings["share_feature_transformer"],
+            y_min=PREDICTION_FLOOR,
+            random_state=seed,
+            study_seed=seed + _i,
         )
-        for cohort in COHORTS
-    )
-    _, _score_table = fit_and_score(
-        build_independent_cohorts_model(
-            _best_components, y_min=PREDICTION_FLOOR, random_state=seed
-        ),
-        train_age_group,
-        val_age_group,
-        cohort_metric=POISSON_DEVIANCE,
-        metric=COHORT_POISSON_DEVIANCE,
-    )
-    # Every trial and the best (D14); the study object is not kept.
-    model1_lgbm_poisson_exposure = {
-        "family": _family,
-        "use_exposure": _use_exposure,
-        "share_hyperparams": share_hyperparams,
-        "share_feature_transformer": share_feature_transformer,
-        "trials": _study.trials_dataframe(),
-        "components": [component.to_dict() for component in _best_components],
-        "cv_best": _study.best_value,
-        "best_params": _study.best_params,
-        "score_table": _score_table,
-        "seconds": _seconds,
-        "seed": seed,
-        "y_min": PREDICTION_FLOOR,
-    }
-    return (model1_lgbm_poisson_exposure,)
+        # The best components, read from the best trial's parameters by their
+        # type, are the model scored and the record kept (D10-D12, D14, D25).
+        _best_components = tuple(
+            CountComponent.from_params(
+                _study.best_params,
+                name=cohort,
+                family=_family,
+                use_exposure=_use_exposure,
+                feature_transformer_dict=COUNT_FEATURE_TRANSFORMERS[_family],
+            )
+            for cohort in COHORTS
+        )
+        _, _score_table = fit_and_score(
+            build_independent_cohorts_model(
+                _best_components, y_min=PREDICTION_FLOOR, random_state=seed
+            ),
+            train_age_group,
+            val_age_group,
+            cohort_metric=POISSON_DEVIANCE,
+            metric=COHORT_POISSON_DEVIANCE,
+        )
+        # The run's settings, every trial and the best (D14); the study object
+        # is not kept.
+        MODEL1_RUNS.append(
+            {
+                **_run_settings,
+                "trials": _study.trials_dataframe(),
+                "components": [component.to_dict() for component in _best_components],
+                "cv_best": _study.best_value,
+                "best_params": _study.best_params,
+                "score_table": _score_table,
+                "seconds": _seconds,
+                "seed": seed,
+                "y_min": PREDICTION_FLOOR,
+            }
+        )
+    return (MODEL1_RUNS,)
 
 
 @app.cell
-def _(
-    COHORTS,
-    COHORT_POISSON_DEVIANCE,
-    COUNT_FEATURE_TRANSFORMERS,
-    CountComponent,
-    POISSON_DEVIANCE,
-    PREDICTION_FLOOR,
-    build_independent_cohorts_model,
-    cv_groups,
-    fit_and_score,
-    mo,
-    run_model1,
-    seed,
-    share_feature_transformer,
-    share_hyperparams,
-    train_age_group,
-    tuner,
-    val_age_group,
-):
-    mo.stop(
-        not run_model1.value,
-        mo.md("Click the button to tune the independent cohorts model."),
-    )
-    # The independent cohorts model, run 2 of 8: LightGBM with the Poisson loss,
-    # exposure off.
-    _family, _use_exposure = "lgbm_poisson", False
-    _study, _seconds = tuner.tune_independent_cohorts_model(
-        train_age_group.X,
-        train_age_group.Y,
-        train_age_group.exposure,
-        cv_groups,
-        family=_family,
-        use_exposure=_use_exposure,
-        cohorts=COHORTS,
-        feature_transformer_dict=COUNT_FEATURE_TRANSFORMERS[_family],
-        share_hyperparams=share_hyperparams,
-        share_feature_transformer=share_feature_transformer,
-        y_min=PREDICTION_FLOOR,
-        random_state=seed,
-        study_seed=seed + 1,
-    )
-    # The best components, read from the best trial's parameters by their
-    # type, are the model scored and the record kept (D10-D12, D14, D25).
-    _best_components = tuple(
-        CountComponent.from_params(
-            _study.best_params,
-            name=cohort,
-            family=_family,
-            use_exposure=_use_exposure,
-            feature_transformer_dict=COUNT_FEATURE_TRANSFORMERS[_family],
-        )
-        for cohort in COHORTS
-    )
-    _, _score_table = fit_and_score(
-        build_independent_cohorts_model(
-            _best_components, y_min=PREDICTION_FLOOR, random_state=seed
-        ),
-        train_age_group,
-        val_age_group,
-        cohort_metric=POISSON_DEVIANCE,
-        metric=COHORT_POISSON_DEVIANCE,
-    )
-    # Every trial and the best (D14); the study object is not kept.
-    model1_lgbm_poisson_no_exposure = {
-        "family": _family,
-        "use_exposure": _use_exposure,
-        "share_hyperparams": share_hyperparams,
-        "share_feature_transformer": share_feature_transformer,
-        "trials": _study.trials_dataframe(),
-        "components": [component.to_dict() for component in _best_components],
-        "cv_best": _study.best_value,
-        "best_params": _study.best_params,
-        "score_table": _score_table,
-        "seconds": _seconds,
-        "seed": seed,
-        "y_min": PREDICTION_FLOOR,
-    }
-    return (model1_lgbm_poisson_no_exposure,)
-
-
-@app.cell
-def _(
-    COHORTS,
-    COHORT_POISSON_DEVIANCE,
-    COUNT_FEATURE_TRANSFORMERS,
-    CountComponent,
-    POISSON_DEVIANCE,
-    PREDICTION_FLOOR,
-    build_independent_cohorts_model,
-    cv_groups,
-    fit_and_score,
-    mo,
-    run_model1,
-    seed,
-    share_feature_transformer,
-    share_hyperparams,
-    train_age_group,
-    tuner,
-    val_age_group,
-):
-    mo.stop(
-        not run_model1.value,
-        mo.md("Click the button to tune the independent cohorts model."),
-    )
-    # The independent cohorts model, run 3 of 8: LightGBM with the Gaussian loss,
-    # exposure on.
-    _family, _use_exposure = "lgbm_gaussian", True
-    _study, _seconds = tuner.tune_independent_cohorts_model(
-        train_age_group.X,
-        train_age_group.Y,
-        train_age_group.exposure,
-        cv_groups,
-        family=_family,
-        use_exposure=_use_exposure,
-        cohorts=COHORTS,
-        feature_transformer_dict=COUNT_FEATURE_TRANSFORMERS[_family],
-        share_hyperparams=share_hyperparams,
-        share_feature_transformer=share_feature_transformer,
-        y_min=PREDICTION_FLOOR,
-        random_state=seed,
-        study_seed=seed + 2,
-    )
-    # The best components, read from the best trial's parameters by their
-    # type, are the model scored and the record kept (D10-D12, D14, D25).
-    _best_components = tuple(
-        CountComponent.from_params(
-            _study.best_params,
-            name=cohort,
-            family=_family,
-            use_exposure=_use_exposure,
-            feature_transformer_dict=COUNT_FEATURE_TRANSFORMERS[_family],
-        )
-        for cohort in COHORTS
-    )
-    _, _score_table = fit_and_score(
-        build_independent_cohorts_model(
-            _best_components, y_min=PREDICTION_FLOOR, random_state=seed
-        ),
-        train_age_group,
-        val_age_group,
-        cohort_metric=POISSON_DEVIANCE,
-        metric=COHORT_POISSON_DEVIANCE,
-    )
-    # Every trial and the best (D14); the study object is not kept.
-    model1_lgbm_gaussian_exposure = {
-        "family": _family,
-        "use_exposure": _use_exposure,
-        "share_hyperparams": share_hyperparams,
-        "share_feature_transformer": share_feature_transformer,
-        "trials": _study.trials_dataframe(),
-        "components": [component.to_dict() for component in _best_components],
-        "cv_best": _study.best_value,
-        "best_params": _study.best_params,
-        "score_table": _score_table,
-        "seconds": _seconds,
-        "seed": seed,
-        "y_min": PREDICTION_FLOOR,
-    }
-    return (model1_lgbm_gaussian_exposure,)
-
-
-@app.cell
-def _(
-    COHORTS,
-    COHORT_POISSON_DEVIANCE,
-    COUNT_FEATURE_TRANSFORMERS,
-    CountComponent,
-    POISSON_DEVIANCE,
-    PREDICTION_FLOOR,
-    build_independent_cohorts_model,
-    cv_groups,
-    fit_and_score,
-    mo,
-    run_model1,
-    seed,
-    share_feature_transformer,
-    share_hyperparams,
-    train_age_group,
-    tuner,
-    val_age_group,
-):
-    mo.stop(
-        not run_model1.value,
-        mo.md("Click the button to tune the independent cohorts model."),
-    )
-    # The independent cohorts model, run 4 of 8: LightGBM with the Gaussian loss,
-    # exposure off.
-    _family, _use_exposure = "lgbm_gaussian", False
-    _study, _seconds = tuner.tune_independent_cohorts_model(
-        train_age_group.X,
-        train_age_group.Y,
-        train_age_group.exposure,
-        cv_groups,
-        family=_family,
-        use_exposure=_use_exposure,
-        cohorts=COHORTS,
-        feature_transformer_dict=COUNT_FEATURE_TRANSFORMERS[_family],
-        share_hyperparams=share_hyperparams,
-        share_feature_transformer=share_feature_transformer,
-        y_min=PREDICTION_FLOOR,
-        random_state=seed,
-        study_seed=seed + 3,
-    )
-    # The best components, read from the best trial's parameters by their
-    # type, are the model scored and the record kept (D10-D12, D14, D25).
-    _best_components = tuple(
-        CountComponent.from_params(
-            _study.best_params,
-            name=cohort,
-            family=_family,
-            use_exposure=_use_exposure,
-            feature_transformer_dict=COUNT_FEATURE_TRANSFORMERS[_family],
-        )
-        for cohort in COHORTS
-    )
-    _, _score_table = fit_and_score(
-        build_independent_cohorts_model(
-            _best_components, y_min=PREDICTION_FLOOR, random_state=seed
-        ),
-        train_age_group,
-        val_age_group,
-        cohort_metric=POISSON_DEVIANCE,
-        metric=COHORT_POISSON_DEVIANCE,
-    )
-    # Every trial and the best (D14); the study object is not kept.
-    model1_lgbm_gaussian_no_exposure = {
-        "family": _family,
-        "use_exposure": _use_exposure,
-        "share_hyperparams": share_hyperparams,
-        "share_feature_transformer": share_feature_transformer,
-        "trials": _study.trials_dataframe(),
-        "components": [component.to_dict() for component in _best_components],
-        "cv_best": _study.best_value,
-        "best_params": _study.best_params,
-        "score_table": _score_table,
-        "seconds": _seconds,
-        "seed": seed,
-        "y_min": PREDICTION_FLOOR,
-    }
-    return (model1_lgbm_gaussian_no_exposure,)
-
-
-@app.cell
-def _(
-    COHORTS,
-    COHORT_POISSON_DEVIANCE,
-    COUNT_FEATURE_TRANSFORMERS,
-    CountComponent,
-    POISSON_DEVIANCE,
-    PREDICTION_FLOOR,
-    build_independent_cohorts_model,
-    cv_groups,
-    fit_and_score,
-    mo,
-    run_model1,
-    seed,
-    share_feature_transformer,
-    share_hyperparams,
-    train_age_group,
-    tuner,
-    val_age_group,
-):
-    mo.stop(
-        not run_model1.value,
-        mo.md("Click the button to tune the independent cohorts model."),
-    )
-    # The independent cohorts model, run 5 of 8: the Poisson GLM, exposure on.
-    _family, _use_exposure = "poisson_glm", True
-    _study, _seconds = tuner.tune_independent_cohorts_model(
-        train_age_group.X,
-        train_age_group.Y,
-        train_age_group.exposure,
-        cv_groups,
-        family=_family,
-        use_exposure=_use_exposure,
-        cohorts=COHORTS,
-        feature_transformer_dict=COUNT_FEATURE_TRANSFORMERS[_family],
-        share_hyperparams=share_hyperparams,
-        share_feature_transformer=share_feature_transformer,
-        y_min=PREDICTION_FLOOR,
-        random_state=seed,
-        study_seed=seed + 4,
-    )
-    # The best components, read from the best trial's parameters by their
-    # type, are the model scored and the record kept (D10-D12, D14, D25).
-    _best_components = tuple(
-        CountComponent.from_params(
-            _study.best_params,
-            name=cohort,
-            family=_family,
-            use_exposure=_use_exposure,
-            feature_transformer_dict=COUNT_FEATURE_TRANSFORMERS[_family],
-        )
-        for cohort in COHORTS
-    )
-    _, _score_table = fit_and_score(
-        build_independent_cohorts_model(
-            _best_components, y_min=PREDICTION_FLOOR, random_state=seed
-        ),
-        train_age_group,
-        val_age_group,
-        cohort_metric=POISSON_DEVIANCE,
-        metric=COHORT_POISSON_DEVIANCE,
-    )
-    # Every trial and the best (D14); the study object is not kept.
-    model1_poisson_glm_exposure = {
-        "family": _family,
-        "use_exposure": _use_exposure,
-        "share_hyperparams": share_hyperparams,
-        "share_feature_transformer": share_feature_transformer,
-        "trials": _study.trials_dataframe(),
-        "components": [component.to_dict() for component in _best_components],
-        "cv_best": _study.best_value,
-        "best_params": _study.best_params,
-        "score_table": _score_table,
-        "seconds": _seconds,
-        "seed": seed,
-        "y_min": PREDICTION_FLOOR,
-    }
-    return (model1_poisson_glm_exposure,)
-
-
-@app.cell
-def _(
-    COHORTS,
-    COHORT_POISSON_DEVIANCE,
-    COUNT_FEATURE_TRANSFORMERS,
-    CountComponent,
-    POISSON_DEVIANCE,
-    PREDICTION_FLOOR,
-    build_independent_cohorts_model,
-    cv_groups,
-    fit_and_score,
-    mo,
-    run_model1,
-    seed,
-    share_feature_transformer,
-    share_hyperparams,
-    train_age_group,
-    tuner,
-    val_age_group,
-):
-    mo.stop(
-        not run_model1.value,
-        mo.md("Click the button to tune the independent cohorts model."),
-    )
-    # The independent cohorts model, run 6 of 8: the Poisson GLM, exposure off.
-    _family, _use_exposure = "poisson_glm", False
-    _study, _seconds = tuner.tune_independent_cohorts_model(
-        train_age_group.X,
-        train_age_group.Y,
-        train_age_group.exposure,
-        cv_groups,
-        family=_family,
-        use_exposure=_use_exposure,
-        cohorts=COHORTS,
-        feature_transformer_dict=COUNT_FEATURE_TRANSFORMERS[_family],
-        share_hyperparams=share_hyperparams,
-        share_feature_transformer=share_feature_transformer,
-        y_min=PREDICTION_FLOOR,
-        random_state=seed,
-        study_seed=seed + 5,
-    )
-    # The best components, read from the best trial's parameters by their
-    # type, are the model scored and the record kept (D10-D12, D14, D25).
-    _best_components = tuple(
-        CountComponent.from_params(
-            _study.best_params,
-            name=cohort,
-            family=_family,
-            use_exposure=_use_exposure,
-            feature_transformer_dict=COUNT_FEATURE_TRANSFORMERS[_family],
-        )
-        for cohort in COHORTS
-    )
-    _, _score_table = fit_and_score(
-        build_independent_cohorts_model(
-            _best_components, y_min=PREDICTION_FLOOR, random_state=seed
-        ),
-        train_age_group,
-        val_age_group,
-        cohort_metric=POISSON_DEVIANCE,
-        metric=COHORT_POISSON_DEVIANCE,
-    )
-    # Every trial and the best (D14); the study object is not kept.
-    model1_poisson_glm_no_exposure = {
-        "family": _family,
-        "use_exposure": _use_exposure,
-        "share_hyperparams": share_hyperparams,
-        "share_feature_transformer": share_feature_transformer,
-        "trials": _study.trials_dataframe(),
-        "components": [component.to_dict() for component in _best_components],
-        "cv_best": _study.best_value,
-        "best_params": _study.best_params,
-        "score_table": _score_table,
-        "seconds": _seconds,
-        "seed": seed,
-        "y_min": PREDICTION_FLOOR,
-    }
-    return (model1_poisson_glm_no_exposure,)
-
-
-@app.cell
-def _(
-    COHORTS,
-    COHORT_POISSON_DEVIANCE,
-    COUNT_FEATURE_TRANSFORMERS,
-    CountComponent,
-    POISSON_DEVIANCE,
-    PREDICTION_FLOOR,
-    build_independent_cohorts_model,
-    cv_groups,
-    fit_and_score,
-    mo,
-    run_model1,
-    seed,
-    share_feature_transformer,
-    share_hyperparams,
-    train_age_group,
-    tuner,
-    val_age_group,
-):
-    mo.stop(
-        not run_model1.value,
-        mo.md("Click the button to tune the independent cohorts model."),
-    )
-    # The independent cohorts model, run 7 of 8: the negative binomial GLM (NB2),
-    # exposure on.
-    _family, _use_exposure = "nb2", True
-    _study, _seconds = tuner.tune_independent_cohorts_model(
-        train_age_group.X,
-        train_age_group.Y,
-        train_age_group.exposure,
-        cv_groups,
-        family=_family,
-        use_exposure=_use_exposure,
-        cohorts=COHORTS,
-        feature_transformer_dict=COUNT_FEATURE_TRANSFORMERS[_family],
-        share_hyperparams=share_hyperparams,
-        share_feature_transformer=share_feature_transformer,
-        y_min=PREDICTION_FLOOR,
-        random_state=seed,
-        study_seed=seed + 6,
-    )
-    # The best components, read from the best trial's parameters by their
-    # type, are the model scored and the record kept (D10-D12, D14, D25).
-    _best_components = tuple(
-        CountComponent.from_params(
-            _study.best_params,
-            name=cohort,
-            family=_family,
-            use_exposure=_use_exposure,
-            feature_transformer_dict=COUNT_FEATURE_TRANSFORMERS[_family],
-        )
-        for cohort in COHORTS
-    )
-    _, _score_table = fit_and_score(
-        build_independent_cohorts_model(
-            _best_components, y_min=PREDICTION_FLOOR, random_state=seed
-        ),
-        train_age_group,
-        val_age_group,
-        cohort_metric=POISSON_DEVIANCE,
-        metric=COHORT_POISSON_DEVIANCE,
-    )
-    # Every trial and the best (D14); the study object is not kept.
-    model1_nb2_exposure = {
-        "family": _family,
-        "use_exposure": _use_exposure,
-        "share_hyperparams": share_hyperparams,
-        "share_feature_transformer": share_feature_transformer,
-        "trials": _study.trials_dataframe(),
-        "components": [component.to_dict() for component in _best_components],
-        "cv_best": _study.best_value,
-        "best_params": _study.best_params,
-        "score_table": _score_table,
-        "seconds": _seconds,
-        "seed": seed,
-        "y_min": PREDICTION_FLOOR,
-    }
-    return (model1_nb2_exposure,)
-
-
-@app.cell
-def _(
-    COHORTS,
-    COHORT_POISSON_DEVIANCE,
-    COUNT_FEATURE_TRANSFORMERS,
-    CountComponent,
-    POISSON_DEVIANCE,
-    PREDICTION_FLOOR,
-    build_independent_cohorts_model,
-    cv_groups,
-    fit_and_score,
-    mo,
-    run_model1,
-    seed,
-    share_feature_transformer,
-    share_hyperparams,
-    train_age_group,
-    tuner,
-    val_age_group,
-):
-    mo.stop(
-        not run_model1.value,
-        mo.md("Click the button to tune the independent cohorts model."),
-    )
-    # The independent cohorts model, run 8 of 8: the negative binomial GLM (NB2),
-    # exposure off.
-    _family, _use_exposure = "nb2", False
-    _study, _seconds = tuner.tune_independent_cohorts_model(
-        train_age_group.X,
-        train_age_group.Y,
-        train_age_group.exposure,
-        cv_groups,
-        family=_family,
-        use_exposure=_use_exposure,
-        cohorts=COHORTS,
-        feature_transformer_dict=COUNT_FEATURE_TRANSFORMERS[_family],
-        share_hyperparams=share_hyperparams,
-        share_feature_transformer=share_feature_transformer,
-        y_min=PREDICTION_FLOOR,
-        random_state=seed,
-        study_seed=seed + 7,
-    )
-    # The best components, read from the best trial's parameters by their
-    # type, are the model scored and the record kept (D10-D12, D14, D25).
-    _best_components = tuple(
-        CountComponent.from_params(
-            _study.best_params,
-            name=cohort,
-            family=_family,
-            use_exposure=_use_exposure,
-            feature_transformer_dict=COUNT_FEATURE_TRANSFORMERS[_family],
-        )
-        for cohort in COHORTS
-    )
-    _, _score_table = fit_and_score(
-        build_independent_cohorts_model(
-            _best_components, y_min=PREDICTION_FLOOR, random_state=seed
-        ),
-        train_age_group,
-        val_age_group,
-        cohort_metric=POISSON_DEVIANCE,
-        metric=COHORT_POISSON_DEVIANCE,
-    )
-    # Every trial and the best (D14); the study object is not kept.
-    model1_nb2_no_exposure = {
-        "family": _family,
-        "use_exposure": _use_exposure,
-        "share_hyperparams": share_hyperparams,
-        "share_feature_transformer": share_feature_transformer,
-        "trials": _study.trials_dataframe(),
-        "components": [component.to_dict() for component in _best_components],
-        "cv_best": _study.best_value,
-        "best_params": _study.best_params,
-        "score_table": _score_table,
-        "seconds": _seconds,
-        "seed": seed,
-        "y_min": PREDICTION_FLOOR,
-    }
-    return (model1_nb2_no_exposure,)
-
-
-@app.cell
-def _(
-    COUNT_FEATURE_TRANSFORMERS,
-    model1_lgbm_gaussian_exposure,
-    model1_lgbm_gaussian_no_exposure,
-    model1_lgbm_poisson_exposure,
-    model1_lgbm_poisson_no_exposure,
-    model1_nb2_exposure,
-    model1_nb2_no_exposure,
-    model1_poisson_glm_exposure,
-    model1_poisson_glm_no_exposure,
-    pd,
-):
-    MODEL1_RUNS = [
-        model1_lgbm_poisson_exposure,
-        model1_lgbm_poisson_no_exposure,
-        model1_lgbm_gaussian_exposure,
-        model1_lgbm_gaussian_no_exposure,
-        model1_poisson_glm_exposure,
-        model1_poisson_glm_no_exposure,
-        model1_nb2_exposure,
-        model1_nb2_no_exposure,
-    ]
+def _(COUNT_FEATURE_TRANSFORMERS, MODEL1_RUNS, pd):
     _score_rows, _arm_rows = [], []
     for _run in MODEL1_RUNS:
         _settings = {
@@ -1550,7 +1019,7 @@ def _(
                         }
                     )
     model1_df, model1_arms_df = pd.DataFrame(_score_rows), pd.DataFrame(_arm_rows)
-    return MODEL1_RUNS, model1_arms_df, model1_df
+    return model1_arms_df, model1_df
 
 
 @app.cell
