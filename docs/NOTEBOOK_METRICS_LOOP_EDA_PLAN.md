@@ -1,6 +1,6 @@
 # Plan: the metrics in `scoring`, the runs in a loop, the objective EDA
 
-**Status (2026-10-30):** PR 1 on `refactor/scoring-metrics`: 1.1 done, revised at the user's notes (`cohort=`, `y_proba=`, samples; then the notes on the helpers: `utils.check_paired_arrays` checks, `utils.column_position` finds a cohort's column, each metric selects it, no repeated-name guard; suite 1346 passed; Check C the 24 baselines), committed as `185285e`. 1.2 done (docs only; the three guides' blocks rerun as written with the same numbers; MODEL_INSPECTION.md's stale simulator line fixed with `from_config`, the user's choice), committed as `96c950b`. 1.3 done (the notebook's six inspection metrics from `scoring`, D² dropped; Check C the 24 baselines and the intervals equal, WMAPE and bias but for their last bit); committed as `0e9d0a1`. 1.4 done (the review's fixes in `scoring`: non-finite values and a lone cohort rejected, two docstrings; suite 1373 passed); PR 1 merged as #18 (`b1d8dbd`) into `feat/experiment-notebook`, and that branch into `main` as #19 (`3db1aa8`). PR 2 on `refactor/notebook-run-loop` from `main`: 2.1 done (2026-10-31; the sharing flags' test, a fitted model per flag pair; the Verify mutation moved to the build, at the user's choice), committed as `9463651`. 2.2 done (2026-10-31; Model 1's runs in one loop over `MODEL1_RUN_SETTINGS`, the flags per run; Check C both arms' baselines). Next: 2.3.
+**Status (2026-10-30):** PR 1 on `refactor/scoring-metrics`: 1.1 done, revised at the user's notes (`cohort=`, `y_proba=`, samples; then the notes on the helpers: `utils.check_paired_arrays` checks, `utils.column_position` finds a cohort's column, each metric selects it, no repeated-name guard; suite 1346 passed; Check C the 24 baselines), committed as `185285e`. 1.2 done (docs only; the three guides' blocks rerun as written with the same numbers; MODEL_INSPECTION.md's stale simulator line fixed with `from_config`, the user's choice), committed as `96c950b`. 1.3 done (the notebook's six inspection metrics from `scoring`, D² dropped; Check C the 24 baselines and the intervals equal, WMAPE and bias but for their last bit); committed as `0e9d0a1`. 1.4 done (the review's fixes in `scoring`: non-finite values and a lone cohort rejected, two docstrings; suite 1373 passed); PR 1 merged as #18 (`b1d8dbd`) into `feat/experiment-notebook`, and that branch into `main` as #19 (`3db1aa8`). PR 2 on `refactor/notebook-run-loop` from `main`: 2.1 done (2026-10-31; the sharing flags' test, a fitted model per flag pair; the Verify mutation moved to the build, at the user's choice), committed as `9463651`. 2.2 done (2026-10-31; Model 1's runs in one loop over `MODEL1_RUN_SETTINGS`, the flags per run; Check C both arms' baselines), committed as `b87e68b`. 2.3a.1 done (2026-10-31; Model 2 by coordinate descent measured against D20's joint studies at 400 trials: cv better or the same in 15 of 16 pairs, the one worse within noise; about 890 s against 2871 s; docs only). Next: 2.3a.2.
 
 The user's notes of 2026-10-30 on the experiment notebook. They replace the order of
 [EXPERIMENT_NOTEBOOK_HANDOFF.md](EXPERIMENT_NOTEBOOK_HANDOFF.md) §6: MLflow and E11's final
@@ -367,13 +367,113 @@ Branch `refactor/notebook-run-loop`, from `main` after PR 1 (#18) and #19 are me
         study.
     - The non-slow suite: 1377 passed, 1 skipped, 1 xfailed, 19 deselected.
 
-### [ ] 2.3 Model 2's runs in a loop
+### [ ] 2.3a Model 2 by coordinate descent
 
-- **Change:** `MODEL2_RUN_SETTINGS` (16 dicts); Model 2's 16 run cells become one loop cell; the
-  tables cell takes the list.
+Decided by the user on 2026-10-31
+([EXPERIMENT_NOTEBOOK_HANDOFF.md](EXPERIMENT_NOTEBOOK_HANDOFF.md) §2a). It was asked because
+Model 2's joint search takes 48 of the click's 62 min at 400 trials. T2.4 / D19 had already
+measured and rejected pruning and more parallelism (slower or unsafe), and the user declined
+splitting into two objectives (a total deviance and a log loss).
+
+- **The decision:** the notebook tunes Model 2 in two steps.
+  1. Tune the total, with the probability model fixed.
+  2. Tune the probability model, with step 1's best total (by cv) fixed.
+
+  Then each of the 16 pairs is built from its two winners and scored, with no search. **The
+  joint tuning stays** in `src`: `CrossValidationTuner.tune_total_times_probability_model`,
+  `suggest_total_times_probability_components` and their tests. Nothing is removed.
+- **Why one round is exact** (probed on the notebook's 5 folds, ≤ 3e-15 on each):
+  - Model 2's composite Poisson deviance is `D_total / K + 2 (C + N · log_loss) / (n K)`, where
+    `D_total` is the total's deviance, `log_loss` the probabilities' per-child multinomial log
+    loss, and `C` depends on `Y` alone;
+  - the prediction is `probabilities × total`, and `y_min` floors the total only; no
+    hyperparameter reaches both parts;
+  - so the joint optimum is the pair of the two separate optima, and the second step cannot
+    change the first's result;
+  - within a step, the fixed part adds the same constant to every trial's value. Step 1 may
+    therefore fix the cheapest classifier: logistic, `C = 1.0`, no calibration, transformer
+    `glm_base`;
+  - each step scores the full composite, as today. Only what is searched changes.
+- **The studies:**
+  - step 1: 8 studies (4 total families × exposure on / off), seeded `seed + 0 … 7` in Model 1's
+    order (`lgbm_poisson`, `lgbm_gaussian`, `poisson_glm`, `nb2`; exposure on, then off);
+  - step 2: 2 studies (logistic, lgbm), seeded `seed + 8`, `seed + 9`. The exposure does not
+    reach the classifier;
+  - the 16 pairs: each one's `cv_best` is `tuner.cv_score` of the pair, comparable with a joint
+    `best_value`, plus `fit_and_score`.
+
+#### [x] 2.3a.1 The measurement
+
+- **Done 2026-10-31,** docs only: a scratchpad probe built from the package's public pieces, 400
+  trials, `PYTHONWARNINGS=error`. Today's joint `lgbm_gaussian+lgbm` (exposure on, `seed + 5`)
+  reproduced D20's 2.0962 first. The comparison with D20's joint results:
+
+  | Pair | Exposure | cv joint | cv coordinate | val joint | val coordinate |
+  |---|---|---|---|---|---|
+  | lgbm_poisson+logistic | on / off | 2.0489 / 2.0878 | 2.0622 / 2.0813 | 2.1285 / 2.1777 | 2.0965 / 2.1963 |
+  | lgbm_poisson+lgbm | on / off | 2.0809 / 2.0976 | 2.0769 / 2.0960 | 2.1775 / 2.1679 | 2.1256 / 2.2254 |
+  | lgbm_gaussian+logistic | on / off | 2.0715 / 2.1336 | 2.0706 / 2.1094 | 2.1256 / 2.2040 | 2.0759 / 2.1721 |
+  | lgbm_gaussian+lgbm | on / off | 2.0962 / 2.1483 | 2.0853 / 2.1241 | 2.1202 / 2.2304 | 2.1050 / 2.2012 |
+  | poisson_glm+logistic | on / off | 2.2418 / 2.8511 | 2.2418 / 2.8511 | 2.1749 / 3.0380 | 2.1749 / 3.0378 |
+  | poisson_glm+lgbm | on / off | 2.2562 / 2.8656 | 2.2565 / 2.8658 | 2.2019 / 3.0672 | 2.2039 / 3.0669 |
+  | nb2+logistic | on / off | 2.2289 / 2.8457 | 2.2290 / 2.8457 | 2.1848 / 3.0489 | 2.1838 / 3.0489 |
+  | nb2+lgbm | on / off | 2.2479 / 2.8633 | 2.2437 / 2.8604 | 2.2132 / 3.0780 | 2.2128 / 3.0779 |
+
+  - **cv** (the objective): better in 9, the same in 6 (≤ 0.0005), worse in 1
+    (`lgbm_poisson+logistic` on, +0.013, within the 0.02 noise); the mean −0.004. The two
+    differences beyond the noise are improvements (both `lgbm_gaussian` exposure-off pairs,
+    −0.024). The GLM pairs equal the joint results to 4 decimals, which shows the same objective.
+  - **val** (one holdout): better in 7, the same in 6, worse in 3. One worse pair is beyond the
+    noise: `lgbm_poisson+lgbm` off, +0.058, while its cv is −0.002, so this is holdout noise.
+    The best pair on validation is `lgbm_gaussian+logistic`, exposure on, 2.0759 (D20's best
+    was `lgbm_gaussian+lgbm`, 2.1202).
+  - **Time:** 2871 s joint against about 890 s coordinate: the totals 422 s (36–93 s each), the
+    classifiers 454 s (logistic 64, lgbm 390), the pairs 14 s. That is 3.2× faster. A rerun
+    under a machine load of about 18 took 1137 s, with identical values.
+  - **The winners:**
+    - step 1's best total by cv: `lgbm_poisson`, exposure on, 2.0718;
+    - step 2, logistic: 2.0622, with `C` 0.1012, `sigmoid`,
+      `probability__room_share_x_median_age`;
+    - step 2, lgbm: 2.0769, with `max_depth` 3, `n_estimators` 215, `learning_rate` 0.0109,
+      `sigmoid`, `tree`.
+  - Optuna's `PartialFixedSampler` raises `ExperimentalWarning` under `-W error`, so the fixing
+    is done in the package's code (2.3a.2).
+- **Commit:** `docs(notebook): Model 2 by coordinate descent measured against the joint studies`
+
+#### [ ] 2.3a.2 The tuner tunes one part of Model 2 with the other fixed
+
+- **Change** (`src`, the smallest that works):
+  - the draws move into `suggest_total_component` and `suggest_probability_component`
+    (`builders.py`), and `suggest_total_times_probability_components` calls both, in today's
+    order, so the joint draws and every baseline stay;
+  - the tuner can tune one part with the other part's component given and fixed. **The joint
+    method stays.**
+- **Design question for the user, with code previews:** two named tune methods (one per step,
+  D26's pattern; recommended) or one method with an optional fixed component.
+- **Tests:** a step's trials hold only that part's keys; the fixed component is the one in the
+  model that is scored; the joint method's tests still pass.
+- **Done when:** the non-slow suite and mypy pass; Check A passes (the notebook unchanged).
+- **Verify:** Check C gives the 24 baselines unchanged (the notebook still runs the joint
+  studies); one mutation per claimed behaviour.
+- **Commit:** set at its plan.
+
+### [ ] 2.3 Model 2's runs in loops, by coordinate descent
+
+Reshaped on 2026-10-31 for 2.3a.
+
+- **Change:**
+  - **settings:** `MODEL2_TOTAL_RUN_SETTINGS` (8 entries, `seed + 0 … 7`),
+    `MODEL2_PROBABILITY_RUN_SETTINGS` (2 entries, `seed + 8`, `seed + 9`), and the fixed
+    classifier of step 1 (2.3a);
+  - **the cells:** a loop for step 1, a loop for step 2 (the best step-1 total by cv fixed), then
+    the 16 pairs. Each pair's record keeps today's keys, so `model2_df`, `best_df` and the
+    inspection are unchanged. Its `best_params` merge the two steps' params, and its `cv_best`
+    is `tuner.cv_score` of the pair;
+  - **the arms table** counts the 10 step studies' trials;
+  - section 5's text, with the user's approval.
 - **Done when:** Check A and Check B pass.
-- **Verify:** Check C. Model 2's 16 values equal the baselines.
-- **Commit:** `refactor(notebook): the total times probability model's runs in one loop`
+- **Verify:** Check C. Model 1's 8 values are unchanged; Model 2's 16 are re-recorded (3 trials).
+- **Commit:** set at its plan.
 
 ### [ ] 2.4 `fit_and_score` with several metrics
 
@@ -389,7 +489,8 @@ Branch `refactor/notebook-run-loop`, from `main` after PR 1 (#18) and #19 are me
     `COHORT_LOG_LOSS` becomes `LOG_LOSS` (label `"log_loss"`). The numbers do not change; the
     labels in the tables and `intervals_df` do. Done here because the 24 run cells are two loop
     cells by then (2.2–2.3);
-  - the two loop cells pass every metric;
+  - Model 1's loop cell and Model 2's pairs cell pass every metric (the step studies score only
+    the objective);
   - the tables cells, `best_df` and the inspection's best-run rule read the primary metric's
     composite row, not `score_table[-1]`.
 - **Design question, settled 2026-10-30 by M9:** every metric restricts itself through `cohort=`,
@@ -403,8 +504,10 @@ Branch `refactor/notebook-run-loop`, from `main` after PR 1 (#18) and #19 are me
 ### [ ] 2.5 Docs
 
 - **Change:**
-  - NOTEBOOK_TUNING_PLAN.md §0: the new decisions (M6, M7) supersede D13/D14;
-  - HYPERPARAMETER_TUNING.md §8 (`fit_and_score`'s new signature; the block rerun);
+  - NOTEBOOK_TUNING_PLAN.md §0: the new decisions (M6, M7) supersede D13/D14; Model 2's
+    coordinate descent (2.3a);
+  - HYPERPARAMETER_TUNING.md: the new tune methods (2.3a.2); §8 (`fit_and_score`'s new
+    signature; the block rerun);
   - the handoff's §1–§2 and its checks;
   - this plan's status.
 - **Done when:** the doc blocks run as written and the links resolve.
