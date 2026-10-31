@@ -1,6 +1,6 @@
 # Plan: the metrics in `scoring`, the runs in a loop, the objective EDA
 
-**Status (2026-10-30):** PR 1 on `refactor/scoring-metrics`: 1.1 done, revised at the user's notes (`cohort=`, `y_proba=`, samples; then the notes on the helpers: `utils.check_paired_arrays` checks, `utils.column_position` finds a cohort's column, each metric selects it, no repeated-name guard; suite 1346 passed; Check C the 24 baselines), committed as `185285e`. 1.2 done (docs only; the three guides' blocks rerun as written with the same numbers; MODEL_INSPECTION.md's stale simulator line fixed with `from_config`, the user's choice), committed as `96c950b`. 1.3 done (the notebook's six inspection metrics from `scoring`, D² dropped; Check C the 24 baselines and the intervals equal, WMAPE and bias but for their last bit); committed as `0e9d0a1`. 1.4 done (the review's fixes in `scoring`: non-finite values and a lone cohort rejected, two docstrings; suite 1373 passed); PR 1 merged as #18 (`b1d8dbd`) into `feat/experiment-notebook`, and that branch into `main` as #19 (`3db1aa8`). PR 2 on `refactor/notebook-run-loop` from `main`: 2.1 done (2026-10-31; the sharing flags' test, a fitted model per flag pair; the Verify mutation moved to the build, at the user's choice), committed as `9463651`. 2.2 done (2026-10-31; Model 1's runs in one loop over `MODEL1_RUN_SETTINGS`, the flags per run; Check C both arms' baselines), committed as `b87e68b`. 2.3a.1 done (2026-10-31; Model 2 by coordinate descent measured against D20's joint studies at 400 trials: cv better or the same in 15 of 16 pairs, the one worse within noise; about 890 s against 2871 s; docs only), committed as `4c75172`. 2.3a.2 done (2026-10-31; `tune_total_component` and `tune_probability_component`, the other component fixed; the joint tuning stays, its draw now through `suggest_count_component` and `suggest_probability_component`, at the user's notes; they reproduce 2.3a.1's step values at 400 trials; suite 1381 passed; Check C the 24 baselines), committed as `a5a4234`. 2.3 done (2026-10-31; Model 2 by coordinate descent in three cells: step 1's 8 runs, step 2's 2 runs with the best total fixed, the 16 pairs scored; the 400-trial click reproduces 2.3a.1's 16 pairs in 752 s; Check C Model 1's 8 unchanged and Model 2's 16 re-recorded), committed as `9aed504`, its record as `04caa68`. 2.4 done (2026-10-31, revised at the user's notes: fit, predict and evaluate apart; `scoring.evaluate(y_true, y_pred, metrics, cohorts)` a cohort × metric table, `fit_and_score` deleted; `POISSON_DEVIANCE`, `LOG_LOSS`, `METRICS`, no `COHORT_` prefixes; the long score tables in `mo.ui.table`; Check C the primary metric's rows equal `04caa68`'s exactly). committed as `c2843e3`. 2.4b done (2026-10-31; `BaseAgeGroupModel.evaluate` removed, the callers call the metric; `BootstrapEvaluator.evaluate(y_true, y_pred, groups, *, metrics, cohorts)` takes the predictions and the cohorts and returns the interval alone; the notebook bootstraps every cohort; Check C equal to `c2843e3`'s run, the composite intervals exactly). Next: 2.5.
+**Status (2026-10-30):** PR 1 on `refactor/scoring-metrics`: 1.1 done, revised at the user's notes (`cohort=`, `y_proba=`, samples; then the notes on the helpers: `utils.check_paired_arrays` checks, `utils.column_position` finds a cohort's column, each metric selects it, no repeated-name guard; suite 1346 passed; Check C the 24 baselines), committed as `185285e`. 1.2 done (docs only; the three guides' blocks rerun as written with the same numbers; MODEL_INSPECTION.md's stale simulator line fixed with `from_config`, the user's choice), committed as `96c950b`. 1.3 done (the notebook's six inspection metrics from `scoring`, D² dropped; Check C the 24 baselines and the intervals equal, WMAPE and bias but for their last bit); committed as `0e9d0a1`. 1.4 done (the review's fixes in `scoring`: non-finite values and a lone cohort rejected, two docstrings; suite 1373 passed); PR 1 merged as #18 (`b1d8dbd`) into `feat/experiment-notebook`, and that branch into `main` as #19 (`3db1aa8`). PR 2 on `refactor/notebook-run-loop` from `main`: 2.1 done (2026-10-31; the sharing flags' test, a fitted model per flag pair; the Verify mutation moved to the build, at the user's choice), committed as `9463651`. 2.2 done (2026-10-31; Model 1's runs in one loop over `MODEL1_RUN_SETTINGS`, the flags per run; Check C both arms' baselines), committed as `b87e68b`. 2.3a.1 done (2026-10-31; Model 2 by coordinate descent measured against D20's joint studies at 400 trials: cv better or the same in 15 of 16 pairs, the one worse within noise; about 890 s against 2871 s; docs only), committed as `4c75172`. 2.3a.2 done (2026-10-31; `tune_total_component` and `tune_probability_component`, the other component fixed; the joint tuning stays, its draw now through `suggest_count_component` and `suggest_probability_component`, at the user's notes; they reproduce 2.3a.1's step values at 400 trials; suite 1381 passed; Check C the 24 baselines), committed as `a5a4234`. 2.3 done (2026-10-31; Model 2 by coordinate descent in three cells: step 1's 8 runs, step 2's 2 runs with the best total fixed, the 16 pairs scored; the 400-trial click reproduces 2.3a.1's 16 pairs in 752 s; Check C Model 1's 8 unchanged and Model 2's 16 re-recorded), committed as `9aed504`, its record as `04caa68`. 2.4 done (2026-10-31, revised at the user's notes: fit, predict and evaluate apart; `scoring.evaluate(y_true, y_pred, metrics, cohorts)` a cohort × metric table, `fit_and_score` deleted; `POISSON_DEVIANCE`, `LOG_LOSS`, `METRICS`, no `COHORT_` prefixes; the long score tables in `mo.ui.table`; Check C the primary metric's rows equal `04caa68`'s exactly). committed as `c2843e3`. 2.4b done (2026-10-31; `BaseAgeGroupModel.evaluate` removed, the callers call the metric; `BootstrapEvaluator.evaluate(y_true, y_pred, groups, *, metrics, cohorts)` takes the predictions and the cohorts and returns the interval alone; the notebook bootstraps every cohort; Check C equal to `c2843e3`'s run, the composite intervals exactly). 2.5 done (2026-10-31): the guides (`0a983cc`), the PR's review (no correctness bug; its fixes `9862669`), the decisions D27–D30 and the handoff for PR 3. **PR 2 is complete; the user opens it into `main`. Next: PR 3 (§5), from `main` after PR 2 is merged.**
 
 The user's notes of 2026-10-30 on the experiment notebook. They replace the order of
 [EXPERIMENT_NOTEBOOK_HANDOFF.md](EXPERIMENT_NOTEBOOK_HANDOFF.md) §6: MLflow and E11's final
@@ -754,7 +754,7 @@ model and no `X`, it takes the predictions; and during the work: a `cohorts` arg
     replicate's rows (3, before `score` was dropped); the replicates scored without
     `cohorts` (1); rerun after the drop, the three that apply still caught.
 
-### [ ] 2.5 Docs
+### [x] 2.5 Docs
 
 - **Change:**
   - NOTEBOOK_TUNING_PLAN.md §0: the new decisions (M6, M7) supersede D13/D14; Model 2's
@@ -769,7 +769,48 @@ model and no `X`, it takes the predictions; and during the work: a `cohorts` arg
   - this plan's status.
 - **Done when:** the doc blocks run as written and the links resolve.
 - **Before the stop:** the PR's review subagent.
-- **Commit:** `docs(notebook): the run loop and fit_and_score's metrics`
+- **Commits** (2.5 was split at its plan, each part its own commit):
+  - 2.5a `docs: the guides take scoring.evaluate, the bootstrap's predictions and the component tune methods` (`0a983cc`);
+  - the review's fixes `fix(review): coordinate descent is exact under a mean aggregator; composite wording; the component studies and run settings tested` (`9862669`);
+  - 2.5b `docs(notebook): PR 2's decisions, and the handoff for PR 3`.
+- **Done 2026-10-31.**
+  - **2.5a, the guides:** HYPERPARAMETER_TUNING.md (the parts table; the worked example's
+    metric `POISSON_DEVIANCE`, a new coordinate-descent block, the refit as fit, predict and
+    `scoring.evaluate`; §5, §6, §8, §9), MODEL_INSPECTION.md (`POISSON_DEVIANCE`, `LOG_LOSS`;
+    the bootstrap block on the predictions; §1, §3, the exposure hazard), the two model guides
+    (the metric called; `LOG_LOSS`), MODULE_REFERENCE.md (the `scoring`, `inspection/bootstrap`,
+    `modeling/base`, tuning rows; `evaluation.py` deleted; the dependencies from the imports).
+    Every changed block rerun as written under strict warnings: HYPERPARAMETER_TUNING 9/9,
+    MODEL_INSPECTION 5/5, the two model guides' blocks the numbers their prose quotes. The
+    refit table's 16 numbers equal `fit_and_score`'s exactly; the coordinate-descent block at
+    20 trials: step 1 2.2512, step 2 2.2478 against the joint 2.2520; the permutation table
+    unchanged but for one label.
+  - **The PR's review** (an independent subagent over `main..HEAD`; each finding reproduced
+    before it was shown): **no correctness bug** (it checked the seeds, the fixed components,
+    the pairs' runs and merged `best_params`, the best-run rule, pandas 3's `stack`/`concat`, and
+    the decomposition the design relies on). Six findings:
+    1. "the fixed part adds the same constant" holds under a mean aggregator only; a probe
+       flipped the winner under `UpperBound` (not under `Mean`, the notebook's) — **fixed**
+       (`9862669`: the two docstrings, HYPERPARAMETER_TUNING.md §6, 2.3a here);
+    2. `BootstrapEvaluator.evaluate` does not check `cohorts` (duplicates give two identical
+       rows, `[]` a confusing `TypeError`; reproduced) — **left as is**, the user's choice (no
+       caller passes either);
+    3. the handoff no longer matched the code, its style line included ("one cell per run") —
+       **2.5b** below;
+    4. "cohort Poisson deviance" where the composite row is meant — **fixed** (the notebook's
+       section 5, tuner comment, `best_df` caption);
+    5. tests a plausible bug would pass — **fixed**: the total study's test runs with the
+       exposure on and off, the probability study's with both classifiers; a notebook test pins
+       `MODEL1_RUN_SETTINGS` and Model 2's two lists (mutations caught: a dropped
+       `use_exposure`, a dropped family, a flipped flag). Not done: a stop rule on the pairs'
+       `cv_score` (it runs only after the stopped step cells);
+    6. stale wording (the intervals comment's "score"; section 5's "each run … refit";
+       `scoring.evaluate`'s ``y``) — **fixed**.
+
+    The fix commit's checks: the suite 1385 passed; mypy no issues; Check A (ruff 14, the two
+    hunks, the notebook test 13); Check C not rerun (no code behaviour changed).
+  - **2.5b:** NOTEBOOK_TUNING_PLAN.md §0 D27–D30 and its status line; this plan's status; the
+    handoff rewritten for PR 3.
 
 ## 5. PR 3: the objective EDA
 
