@@ -85,7 +85,7 @@ class CrossValidationTuner:
         )
         model.fit(X_train, Y_train, exposure=exposure_train)
         Y_val_pred = model.predict(X_val, exposure=exposure_val)
-        return model.evaluate(Y_val, Y_val_pred, self.metric)
+        return self.metric(Y_val, Y_val_pred)
 
     def cv_score(
         self,

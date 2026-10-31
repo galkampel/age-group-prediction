@@ -695,7 +695,8 @@ def _(mo):
     part and judged on the training rows and the validation rows (the test
     part waits for the final refit on training + validation). A bootstrap
     that resamples whole neighborhoods gives the interval of six metrics,
-    all paired on the same replicates: the cohort Poisson deviance (the
+    per cohort and for the composite, all paired on the same replicates:
+    the cohort Poisson deviance (the
     primary metric, the tuning's objective); the cohort log loss (the
     proportions between cohorts only, so it never selects); MAE and RMSE per
     (building, cohort) cell; WMAPE (the absolute error as a share of the
@@ -1638,6 +1639,7 @@ def _(
 @app.cell
 def _(
     BootstrapEvaluator,
+    COHORTS,
     METRICS,
     best_model1,
     mo,
@@ -1651,29 +1653,30 @@ def _(
     mo.stop(
         not run_inspection.value, mo.md("Click the button to inspect the best runs.")
     )
-    # The six metrics' intervals on the training rows and on the validation
-    # rows, resampling whole neighborhoods; every metric scores the same replicates.
+    # The six metrics' intervals per cohort and for the composite, on the
+    # training rows and on the validation rows, resampling whole neighborhoods;
+    # every cohort and metric scores the same replicates.
     _evaluator = BootstrapEvaluator(n_resamples, random_state=seed)
     model1_intervals = pd.concat(
         {
             "train": _evaluator.evaluate(
-                best_model1,
-                train_age_group.X,
                 train_age_group.Y,
+                best_model1.predict(
+                    train_age_group.X, exposure=train_age_group.exposure
+                ),
                 train_age_group.groups,
-                exposure=train_age_group.exposure,
                 metrics=METRICS,
+                cohorts=[*COHORTS, "composite"],
             ),
             "val": _evaluator.evaluate(
-                best_model1,
-                val_age_group.X,
                 val_age_group.Y,
+                best_model1.predict(val_age_group.X, exposure=val_age_group.exposure),
                 val_age_group.groups,
-                exposure=val_age_group.exposure,
                 metrics=METRICS,
+                cohorts=[*COHORTS, "composite"],
             ),
         },
-        names=["split", "metric"],
+        names=["split", "cohort", "metric"],
     )
     return (model1_intervals,)
 
@@ -1681,6 +1684,7 @@ def _(
 @app.cell
 def _(
     BootstrapEvaluator,
+    COHORTS,
     METRICS,
     best_model2,
     mo,
@@ -1698,23 +1702,23 @@ def _(
     model2_intervals = pd.concat(
         {
             "train": _evaluator.evaluate(
-                best_model2,
-                train_age_group.X,
                 train_age_group.Y,
+                best_model2.predict(
+                    train_age_group.X, exposure=train_age_group.exposure
+                ),
                 train_age_group.groups,
-                exposure=train_age_group.exposure,
                 metrics=METRICS,
+                cohorts=[*COHORTS, "composite"],
             ),
             "val": _evaluator.evaluate(
-                best_model2,
-                val_age_group.X,
                 val_age_group.Y,
+                best_model2.predict(val_age_group.X, exposure=val_age_group.exposure),
                 val_age_group.groups,
-                exposure=val_age_group.exposure,
                 metrics=METRICS,
+                cohorts=[*COHORTS, "composite"],
             ),
         },
-        names=["split", "metric"],
+        names=["split", "cohort", "metric"],
     )
     return (model2_intervals,)
 
@@ -1811,22 +1815,23 @@ def _(
 
 @app.cell
 def _(best_run1, best_run2, mo, model1_intervals, model2_intervals, pd):
-    # Each metric's score and interval per model and split; the caption names
-    # the two best runs.
+    # Each metric's score and interval per model, split and cohort; the
+    # caption names the two best runs.
     intervals_df = pd.concat(
         {"model1": model1_intervals, "model2": model2_intervals}, names=["model"]
     ).reset_index()
     mo.vstack(
         [
             mo.md(
-                "**The best runs' metrics** (score: the split's rows; mean, lower, "
-                "upper: the bootstrap over neighborhoods). model1, the "
+                "**The best runs' metrics: their intervals** (mean, lower, upper: "
+                "the bootstrap over neighborhoods; the scores themselves are the best "
+                "runs' rows of the score tables). model1, the "
                 f"independent cohorts model: `{best_run1['family']}`, exposure "
                 f"{best_run1['use_exposure']}; model2, the total times probability "
                 f"model: `{best_run2['total_family']}+{best_run2['probability_family']}`, "
                 f"exposure {best_run2['use_exposure']}."
             ),
-            mo.md(f"```text\n{intervals_df.round(4).to_string(index=False)}\n```"),
+            mo.ui.table(intervals_df.round(4)),
         ]
     )
     return

@@ -1,4 +1,4 @@
-"""The shared ``evaluate`` and feature helpers of every age-group model."""
+"""The shared feature helpers of every age-group model."""
 
 from __future__ import annotations
 
@@ -17,46 +17,6 @@ from age_group_prediction.feature_engineering import (
     Plan,
 )
 from age_group_prediction.modeling import BaseAgeGroupModel
-from age_group_prediction.scoring import Metric, mean_absolute_error_loss
-
-
-class _Model(BaseAgeGroupModel):
-    """A concrete stand-in, since the base class is abstract; only evaluate runs."""
-
-    def fit(
-        self, X: pd.DataFrame, y: pd.Series, exposure: ArrayLike | None = None
-    ) -> Self:
-        return self
-
-    def predict(self, X: pd.DataFrame, exposure: ArrayLike | None = None) -> np.ndarray:
-        raise NotImplementedError
-
-
-def _max_error(y_true: ArrayLike, y_pred: ArrayLike) -> np.floating:
-    return np.max(np.abs(np.asarray(y_true) - np.asarray(y_pred)))
-
-
-def test_evaluate_applies_a_custom_metric_to_y_true_and_y_pred() -> None:
-    metric = Metric("max_error", _max_error)
-
-    score = _Model().evaluate(
-        np.array([1.0, 4.0, 2.0]), np.array([1.5, 2.0, 2.0]), metric
-    )
-
-    assert score == 2.0
-    # The numpy scalar the metric returns is cast to a plain float.
-    assert type(score) is float
-
-
-def test_evaluate_passes_the_cohort_to_the_metric() -> None:
-    # A score table's cohort rows: evaluate must not drop the cohort, which
-    # would score the whole matrix under the cohort's name.
-    y_true = pd.DataFrame({"n_kindergarten": [1.0, 4.0], "n_elementary": [2.0, 2.0]})
-    y_pred = pd.DataFrame({"n_kindergarten": [1.5, 2.0], "n_elementary": [2.0, 3.0]})
-    metric = Metric("mae", mean_absolute_error_loss)
-
-    assert _Model().evaluate(y_true, y_pred, metric, cohort="n_elementary") == 0.5
-    assert _Model().evaluate(y_true, y_pred, metric) == 0.875
 
 
 class _FeatureModel(BaseAgeGroupModel):
