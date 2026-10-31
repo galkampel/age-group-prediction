@@ -4,14 +4,14 @@
 [NOTEBOOK_METRICS_LOOP_EDA_PLAN.md](NOTEBOOK_METRICS_LOOP_EDA_PLAN.md), the objective EDA. That
 plan has three PRs: the metrics in `scoring` (PR 1, merged as #18 into
 `feat/experiment-notebook`, which #19 merged into `main`), the runs in loops scored on every
-metric (PR 2, complete on `refactor/notebook-run-loop`, opened by the user into `main`), and
-the objective EDA (PR 3, from `main` after PR 2 is merged). MLflow and E11's final evaluation are
-deferred.
+metric (PR 2, **merged as #20**, squashed into `main` as `16773a5`), and the objective EDA
+(PR 3, on **`feat/objective-eda`**, created from `main` at `16773a5`). MLflow and E11's final
+evaluation are deferred.
 
 The next session starts at §6.
 
 **Written:** 2026-10-29 after the tuning plan's T5; **rewritten** 2026-10-31 at the end of PR 2
-(2.1–2.5). The detailed history is in the metrics plan (§2 M1–M9, §4 2.1–2.5 with each
+(2.1–2.5); **updated** 2026-10-31 after PR 2's merge (#20), for a new session. The detailed history is in the metrics plan (§2 M1–M9, §4 2.1–2.5 with each
 sub-task's "Done" note), in [NOTEBOOK_TUNING_PLAN.md](NOTEBOOK_TUNING_PLAN.md) (§0 D1–D30) and in
 git. Re-verify every fact here against the code of the day.
 
@@ -99,10 +99,13 @@ git. Re-verify every fact here against the code of the day.
 
 ## 2. State (2026-10-31, end of PR 2)
 
-- **Branches:** `main` at `3db1aa8` (`Merge pull request #19 …`). **`refactor/notebook-run-loop`**
-  holds PR 2 (13 commits from `main`); the user opens it into `main` and merges it. PR 3 branches
-  from `main` after that merge (`feat/objective-eda`). The user commits, pushes and merges.
-- **PR 2's commits** (each sub-task's "Done" note is in the metrics plan §4):
+- **Branches:** `main` at **`16773a5`** (`refactor(notebook): the runs in loops scored on every
+  metric; Model 2 by coordinate descent (#20)`), PR 2 squashed; its content is identical to the
+  branch's last commit `eb0da75`. **`feat/objective-eda`** (PR 3) was created from it; its first
+  commit is this handoff's update. `refactor/notebook-run-loop` is deleted, locally and on
+  GitHub. The user commits, pushes and merges.
+- **PR 2's commits** (each sub-task's "Done" note is in the metrics plan §4). They live inside
+  the squash commit `16773a5`; GitHub keeps them under #20, and the docs cite them by hash:
 
   | commit | sub-task |
   |---|---|
@@ -118,7 +121,7 @@ git. Re-verify every fact here against the code of the day.
   | `8195afc` | 2.4b `model.evaluate` gone; the bootstrap takes the predictions and the cohorts (D30) |
   | `0a983cc` | 2.5a the guides, every changed block rerun |
   | `9862669` | the PR review's fixes |
-  | (2.5b) | D27–D30, the metrics plan's status, this handoff |
+  | `eb0da75` | 2.5b D27–D30, the metrics plan's status, this handoff |
 
 - **The PR's review** (2.5, an independent subagent): no correctness bug; six findings, each
   reproduced; #1, #4–#6 fixed in `9862669`, #2 (the bootstrap does not check `cohorts` for
@@ -352,8 +355,8 @@ constructor, data in the call; fitting and evaluating as separate steps; no priv
 
 ## 6. Next, and the prompt
 
-**PR 3, the objective EDA** (the metrics plan §5), on `feat/objective-eda` from `main` after PR 2
-is merged. One sub-task per approval:
+**PR 3, the objective EDA** (the metrics plan §5), on `feat/objective-eda` (from `main` at
+`16773a5`, after PR 2's merge as #20). One sub-task per approval:
 1. **3.1 The EDA cells:** a button; `EDA_OBJECTIVES` (the log loss, the Poisson deviance, RMSE,
    each a `Metric` on the cohort matrix); one run per model with each objective
    (`dataclasses.replace(tuner, metric=objective)`, the same `study_seed`, M8), refit and scored
@@ -385,9 +388,11 @@ commands that delete the remote and local branch.
 
 ```text
 Read docs/EXPERIMENT_NOTEBOOK_HANDOFF.md in full (§2a, §4's iCloud notes and §6 first), then
-docs/NOTEBOOK_METRICS_LOOP_EDA_PLAN.md (§2 M8, §5 PR 3), and scoring.py's evaluate and
-hyperparameter_tuning/cross_validation.py. Verify the state first:
-- PR 2 merged into main; the branch feat/objective-eda, created by me from main, checked out;
+docs/NOTEBOOK_METRICS_LOOP_EDA_PLAN.md (§2 M8, §5 PR 3), and
+src/age_group_prediction/scoring.py's evaluate and
+src/age_group_prediction/hyperparameter_tuning/cross_validation.py. Verify the state first:
+- the branch feat/objective-eda, HEAD my commit of the handoff update on top of 16773a5 (#20,
+  PR 2 squashed into main); if the update is uncommitted, stop and tell me;
 - a clean tree;
 - the notebook md5 b93448f43085733915262656f6ad1387, read via `cat notebooks/02_experiments.py | md5`;
 - no iCloud-offloaded files where the work reads: `find .git src notebooks tests docs configs
