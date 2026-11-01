@@ -640,17 +640,20 @@ def _(mo):
     and only the objective differs. Each study's best model is refit on the
     training part and scored on validation on every metric, per cohort and
     for the composite; `cv_best` is the study's value in its own objective.
-    The independent cohorts model keeps the sharing flags of its runs in
-    section 6 (one set of hyperparameters, a transformer per cohort). The
-    total times probability model is tuned by coordinate descent, as its
-    runs in section 6: its total with the probabilities fixed at a plain
-    logistic model, then its logistic probabilities with that best total
-    fixed; its `cv_best` is the second study's value, the pair's, and its
-    seconds are the two studies'. The expected caveat: the log loss scores
-    each row's proportions only (the row divided by its sum), so under it
-    the independent cohorts model's scale and the total times probability
-    model's total get no signal (the total changes nothing in the log loss,
-    so every trial of its study scores the same).
+    Every trial is kept too, in the trials tables: its state, seconds,
+    parameters and cross-validated score on the six metrics, to see which
+    hyperparameters are good or bad on each. The independent cohorts model
+    keeps the sharing flags of its runs in section 6 (one set of
+    hyperparameters, a transformer per cohort). The total times probability
+    model is tuned by coordinate descent, as its runs in section 6: its
+    total with the probabilities fixed at a plain logistic model, then its
+    logistic probabilities with that best total fixed; its `cv_best` is the
+    second study's value, the pair's, and its seconds are the two studies'.
+    The expected caveat: the log loss scores each row's proportions only
+    (the row divided by its sum), so under it the independent cohorts
+    model's scale and the total times probability model's total get no
+    signal (the total changes nothing in the log loss, so every trial of its
+    study scores the same).
     """)
     return
 
@@ -762,6 +765,7 @@ def _(Y, np):
 @app.cell
 def _(
     CrossValidationTuner,
+    METRICS,
     POISSON_DEVIANCE,
     cv,
     n_splits,
@@ -771,13 +775,15 @@ def _(
     # The study's design, the same for every run: the Poisson deviance of the
     # composite on each fold, the plain mean over them, the first
     # n_startup_trials of n_trials at random; each trial fits its folds in
-    # n_splits processes (D13, D20, D26).
+    # n_splits processes (D13, D20, D26) and records its cross-validated score
+    # on every metric, from the same fold predictions.
     tuner = CrossValidationTuner(
         cv=cv,
         objective_metric=POISSON_DEVIANCE,
         n_trials=n_trials,
         n_startup_trials=n_startup_trials,
         n_jobs=n_splits,
+        recorded_metrics=METRICS,
     )
     return (tuner,)
 
@@ -797,6 +803,29 @@ def _(LogisticParams, PROBABILITY_FEATURE_TRANSFORMERS, ProbabilityComponent):
         feature_transformer=PROBABILITY_FEATURE_TRANSFORMERS["logistic"]["glm_base"],
     )
     return (MODEL2_FIXED_PROBABILITY_COMPONENT,)
+
+
+@app.cell
+def _(pd):
+    def trials_table(study, metric_names):
+        """Every trial of `study`: its number, state, seconds, cross-validated
+        score on each metric (in `metric_names`' order), then its parameters."""
+        trials = study.trials_dataframe()
+        return pd.concat(
+            [
+                trials[["number", "state"]],
+                trials["duration"].dt.total_seconds().rename("seconds"),
+                trials[[f"user_attrs_{name}" for name in metric_names]].rename(
+                    columns=lambda column: column.removeprefix("user_attrs_")
+                ),
+                trials.filter(like="params_").rename(
+                    columns=lambda column: column.removeprefix("params_")
+                ),
+            ],
+            axis=1,
+        )
+
+    return (trials_table,)
 
 
 @app.cell
@@ -826,6 +855,7 @@ def _(
     run_eda,
     seed,
     train_age_group,
+    trials_table,
     tuner,
     val_age_group,
 ):
@@ -834,7 +864,8 @@ def _(
     # seeded seed, so the three share their startup draws (M8); the tuner's
     # design but its metric. A failed trial is caught by the study.
     _family, _use_exposure = "lgbm_poisson", True
-    _scores_by_objective = {}
+    _metric_names = [metric.name for metric in METRICS]
+    _scores_by_objective, _trials_by_objective = {}, {}
     for _objective in EDA_OBJECTIVES:
         _objective_tuner = dataclasses.replace(tuner, objective_metric=_objective)
         _study, _seconds = _objective_tuner.tune_independent_cohorts_model(
@@ -852,6 +883,7 @@ def _(
             random_state=seed,
             study_seed=seed,
         )
+        _trials_by_objective[_objective.name] = trials_table(_study, _metric_names)
         _best_components = tuple(
             CountComponent.from_params(
                 _study.best_params,
@@ -874,7 +906,14 @@ def _(
             cohorts=[*COHORTS, "composite"],
         ).assign(cv_best=_study.best_value, seconds=_seconds)
     eda_model1_df = pd.concat(_scores_by_objective, names=["objective"]).reset_index()
-    return (eda_model1_df,)
+    # Every trial of the three studies: its parameters, seconds, state and
+    # cross-validated score on every metric.
+    eda_model1_trials_df = (
+        pd.concat(_trials_by_objective, names=["objective"])
+        .reset_index(level="objective")
+        .reset_index(drop=True)
+    )
+    return eda_model1_df, eda_model1_trials_df
 
 
 @app.cell
@@ -897,6 +936,7 @@ def _(
     run_eda,
     seed,
     train_age_group,
+    trials_table,
     tuner,
     val_age_group,
 ):
@@ -907,7 +947,8 @@ def _(
     # study seeded seed (M8). Step 2's value is the pair's cv: its fixed total
     # is the pair's.
     _total_family, _probability_family, _use_exposure = "lgbm_poisson", "logistic", True
-    _scores_by_objective = {}
+    _metric_names = [metric.name for metric in METRICS]
+    _scores_by_objective, _trials_by_study = {}, {}
     for _objective in EDA_OBJECTIVES:
         _objective_tuner = dataclasses.replace(tuner, objective_metric=_objective)
         _total_study, _total_seconds = _objective_tuner.tune_total_component(
@@ -922,6 +963,9 @@ def _(
             y_min=PREDICTION_FLOOR,
             random_state=seed,
             study_seed=seed,
+        )
+        _trials_by_study[_objective.name, "total"] = trials_table(
+            _total_study, _metric_names
         )
         _total_component = CountComponent.from_params(
             _total_study.best_params,
@@ -945,6 +989,9 @@ def _(
                 random_state=seed,
                 study_seed=seed,
             )
+        )
+        _trials_by_study[_objective.name, "probability"] = trials_table(
+            _probability_study, _metric_names
         )
         _probability_component = ProbabilityComponent.from_params(
             _probability_study.best_params,
@@ -973,11 +1020,18 @@ def _(
             seconds=_total_seconds + _probability_seconds,
         )
     eda_model2_df = pd.concat(_scores_by_objective, names=["objective"]).reset_index()
-    return (eda_model2_df,)
+    # Every trial of the six studies (each objective's two steps): its
+    # parameters, seconds, state and cross-validated score on every metric.
+    eda_model2_trials_df = (
+        pd.concat(_trials_by_study, names=["objective", "step"])
+        .reset_index(level=["objective", "step"])
+        .reset_index(drop=True)
+    )
+    return eda_model2_df, eda_model2_trials_df
 
 
 @app.cell
-def _(eda_model1_df, eda_model2_df, mo):
+def _(eda_model1_df, eda_model1_trials_df, eda_model2_df, eda_model2_trials_df, mo):
     mo.vstack(
         [
             mo.md(
@@ -993,6 +1047,18 @@ def _(eda_model1_df, eda_model2_df, mo):
                 "studies')"
             ),
             mo.ui.table(eda_model2_df.round(4)),
+            mo.md(
+                "**Every trial: the independent cohorts model** (one row per trial "
+                "of each objective's study: its state, seconds, parameters and "
+                "cross-validated score on every metric)"
+            ),
+            mo.ui.table(eda_model1_trials_df.round(4)),
+            mo.md(
+                "**Every trial: the total times probability model** (each "
+                "objective's two studies, step `total` then `probability`; a step's "
+                "rows leave the other step's parameters empty)"
+            ),
+            mo.ui.table(eda_model2_trials_df.round(4)),
         ]
     )
     return
