@@ -355,6 +355,11 @@ constructor, data in the call; fitting and evaluating as separate steps; no priv
 
 ## 6. Next, and the prompt
 
+**Status (2026-11-01):** 3.1 is done (`55dbb88`, `17680ac`, `1eab956`, and its docs): the
+objective EDA is the notebook's section 5, before the tuning (now section 6); its design and the
+answer to the question below are the metrics plan's M10–M11 (one setting for both models,
+`lgbm_poisson` with exposure on; Model 2 by coordinate descent, as the full tuning). Next: 3.2.
+
 **PR 3, the objective EDA** (the metrics plan §5), on `feat/objective-eda` (from `main` at
 `16773a5`, after PR 2's merge as #20). One sub-task per approval:
 1. **3.1 The EDA cells:** a button; `EDA_OBJECTIVES` (the log loss, the Poisson deviance, RMSE,
