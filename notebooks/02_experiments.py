@@ -774,7 +774,7 @@ def _(
     # n_splits processes (D13, D20, D26).
     tuner = CrossValidationTuner(
         cv=cv,
-        metric=POISSON_DEVIANCE,
+        objective_metric=POISSON_DEVIANCE,
         n_trials=n_trials,
         n_startup_trials=n_startup_trials,
         n_jobs=n_splits,
@@ -836,7 +836,7 @@ def _(
     _family, _use_exposure = "lgbm_poisson", True
     _scores_by_objective = {}
     for _objective in EDA_OBJECTIVES:
-        _objective_tuner = dataclasses.replace(tuner, metric=_objective)
+        _objective_tuner = dataclasses.replace(tuner, objective_metric=_objective)
         _study, _seconds = _objective_tuner.tune_independent_cohorts_model(
             train_age_group.X,
             train_age_group.Y,
@@ -909,7 +909,7 @@ def _(
     _total_family, _probability_family, _use_exposure = "lgbm_poisson", "logistic", True
     _scores_by_objective = {}
     for _objective in EDA_OBJECTIVES:
-        _objective_tuner = dataclasses.replace(tuner, metric=_objective)
+        _objective_tuner = dataclasses.replace(tuner, objective_metric=_objective)
         _total_study, _total_seconds = _objective_tuner.tune_total_component(
             train_age_group.X,
             train_age_group.Y,
@@ -1543,13 +1543,13 @@ def _(
             _model = build_total_times_probability_model(
                 *_best_components, y_min=PREDICTION_FLOOR, random_state=seed
             )
-            _cv_best = tuner.cv_score(
+            _cv_best = tuner.cross_validate(
                 _model,
                 train_age_group.X,
                 train_age_group.Y,
                 train_age_group.exposure,
                 cv_groups,
-            )
+            )[tuner.objective_metric.name]
             _model.fit(
                 train_age_group.X, train_age_group.Y, exposure=train_age_group.exposure
             )

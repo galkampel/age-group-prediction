@@ -5,7 +5,8 @@ methods runs one study of the model it names, whose objective draws the
 components, builds the model and scores it on the folds. The total times
 probability model has also a tune method per component, the other one fixed
 (coordinate descent). Each trial fits its folds in ``n_jobs`` parallel
-processes, and the trials run one after another (D13, D19).
+processes, and the trials run one after another (D13, D19). A trial also
+records its score on each of ``recorded_metrics``, from the same predictions.
 """
 
 from __future__ import annotations
@@ -48,22 +49,27 @@ __all__ = ["CrossValidationTuner"]
 class CrossValidationTuner:
     """One Optuna study per call on cross-validation folds; the study's design is fixed at construction.
 
-    ``metric`` scores each fold and gives the study its direction;
+    ``objective_metric`` scores each fold and gives the study its direction;
     ``aggregator`` combines a trial's fold scores into its value. The first
     ``n_startup_trials`` of the ``n_trials`` are drawn at random, before TPE's
-    model guides the draws. ``n_jobs`` processes fit a trial's folds.
+    model guides the draws. ``n_jobs`` processes fit a trial's folds. Each
+    trial records its cross-validated score on ``objective_metric`` and on
+    every metric of ``recorded_metrics`` as a user attribute named after the
+    metric.
     """
 
     cv: BaseCrossValidator
-    metric: Metric
+    objective_metric: Metric
     n_trials: int
     n_startup_trials: int
     # The aggregator decides the selection (D9); the plain mean by default,
     # since the folds differ by one row at most.
     aggregator: Aggregator = dataclasses.field(default_factory=Mean)
     n_jobs: int = 1
+    # Scored from the same fold predictions as `objective_metric`: no extra fit.
+    recorded_metrics: Sequence[Metric] = ()
 
-    def fold_score(
+    def score_fold(
         self,
         model: BaseAgeGroupModel,
         X: pd.DataFrame,
@@ -71,8 +77,12 @@ class CrossValidationTuner:
         exposure: pd.Series,
         train_index: np.ndarray,
         val_index: np.ndarray,
-    ) -> float:
-        """The score on one fold's validation rows of ``model`` fitted on its training rows."""
+    ) -> dict[str, float]:
+        """Each metric's score, by name, on one fold's validation rows of ``model`` fitted on its training rows.
+
+        The recorded metrics, then ``objective_metric``, so a recorded metric
+        of the same name never replaces the objective's score.
+        """
         X_train, Y_train, exposure_train = (
             X.iloc[train_index],
             Y.iloc[train_index],
@@ -85,17 +95,20 @@ class CrossValidationTuner:
         )
         model.fit(X_train, Y_train, exposure=exposure_train)
         Y_val_pred = model.predict(X_val, exposure=exposure_val)
-        return self.metric(Y_val, Y_val_pred)
+        return {
+            metric.name: metric(Y_val, Y_val_pred)
+            for metric in (*self.recorded_metrics, self.objective_metric)
+        }
 
-    def cv_score(
+    def cross_validate(
         self,
         model: BaseAgeGroupModel,
         X: pd.DataFrame,
         Y: pd.DataFrame,
         exposure: pd.Series,
         groups: Groups | None = None,
-    ) -> float:
-        """The aggregated fold score of ``model`` refit on each fold's training rows (``fit`` replaces all state).
+    ) -> dict[str, float]:
+        """Each metric's cross-validated score, by name: its fold scores of ``model`` refit on each fold's training rows (``fit`` replaces all state), aggregated.
 
         The folds are fitted in parallel; the scores are the same as one
         after another, so a seeded study is unchanged. The processes do not
@@ -103,12 +116,34 @@ class CrossValidationTuner:
         only under the environment's ``PYTHONWARNINGS`` (D15).
         """
         folds = list(self.cv.split(X, Y, groups))
-        scores = Parallel(n_jobs=self.n_jobs)(
-            delayed(self.fold_score)(model, X, Y, exposure, train_index, val_index)
+        # One dictionary per fold: each metric's name and its score on the fold.
+        scores_by_fold = Parallel(n_jobs=self.n_jobs)(
+            delayed(self.score_fold)(model, X, Y, exposure, train_index, val_index)
             for train_index, val_index in folds
         )
         fold_sizes = [len(val_index) for _, val_index in folds]
-        return self.aggregator.aggregate_scores(scores, fold_sizes)
+        return {
+            metric_name: self.aggregator.aggregate_scores(
+                [fold_scores[metric_name] for fold_scores in scores_by_fold],
+                fold_sizes,
+            )
+            for metric_name in scores_by_fold[0]
+        }
+
+    def score_trial(
+        self,
+        trial: optuna.Trial,
+        model: BaseAgeGroupModel,
+        X: pd.DataFrame,
+        Y: pd.DataFrame,
+        exposure: pd.Series,
+        groups: Groups | None = None,
+    ) -> float:
+        """The trial's value, ``model``'s cross-validated score on ``objective_metric``; every metric's is recorded on ``trial`` by name."""
+        cv_scores = self.cross_validate(model, X, Y, exposure, groups)
+        for metric_name, cv_score in cv_scores.items():
+            trial.set_user_attr(metric_name, cv_score)
+        return cv_scores[self.objective_metric.name]
 
     def tune_independent_cohorts_model(
         self,
@@ -146,7 +181,7 @@ class CrossValidationTuner:
             model = build_independent_cohorts_model(
                 components, y_min=y_min, random_state=random_state
             )
-            return self.cv_score(model, X, Y, exposure, groups)
+            return self.score_trial(trial, model, X, Y, exposure, groups)
 
         return self._optimize(objective, study_seed=study_seed)
 
@@ -190,7 +225,7 @@ class CrossValidationTuner:
                 y_min=y_min,
                 random_state=random_state,
             )
-            return self.cv_score(model, X, Y, exposure, groups)
+            return self.score_trial(trial, model, X, Y, exposure, groups)
 
         return self._optimize(objective, study_seed=study_seed)
 
@@ -233,7 +268,7 @@ class CrossValidationTuner:
                 y_min=y_min,
                 random_state=random_state,
             )
-            return self.cv_score(model, X, Y, exposure, groups)
+            return self.score_trial(trial, model, X, Y, exposure, groups)
 
         return self._optimize(objective, study_seed=study_seed)
 
@@ -273,7 +308,7 @@ class CrossValidationTuner:
                 y_min=y_min,
                 random_state=random_state,
             )
-            return self.cv_score(model, X, Y, exposure, groups)
+            return self.score_trial(trial, model, X, Y, exposure, groups)
 
         return self._optimize(objective, study_seed=study_seed)
 
@@ -288,7 +323,7 @@ class CrossValidationTuner:
         study.
         """
         study = optuna.create_study(
-            direction=self.metric.direction,
+            direction=self.objective_metric.direction,
             sampler=TPESampler(seed=study_seed, n_startup_trials=self.n_startup_trials),
         )
         start = time.perf_counter()

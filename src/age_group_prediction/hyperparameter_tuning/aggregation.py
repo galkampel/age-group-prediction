@@ -1,8 +1,8 @@
 """How a trial's fold scores are combined into the one value the study minimizes.
 
 An aggregation knows nothing about the data: it receives each fold's score
-(lower is better) and size (its validation rows), computed by
-``cv_score``, and returns a number.
+(lower is better) and size (its validation rows), computed for each metric by
+``CrossValidationTuner.cross_validate``, and returns a number.
 
 - :class:`WeightedMean`: the size-weighted mean. For a metric
   that is a mean over rows (MAE, Poisson deviance) it equals the pooled

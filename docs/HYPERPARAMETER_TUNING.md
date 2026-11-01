@@ -153,7 +153,7 @@ glm_candidates = {
 POISSON_DEVIANCE = Metric("poisson_deviance", mean_poisson_deviance_loss)
 tuner = CrossValidationTuner(
     cv=splitter.cv(n_splits=5, random_state=42),
-    metric=POISSON_DEVIANCE,
+    objective_metric=POISSON_DEVIANCE,
     n_trials=20,
     n_startup_trials=10,
     n_jobs=5,
@@ -474,20 +474,28 @@ refit share these two functions, so the model scored in a trial is the model ref
 
 ## 6. The Tuner
 
-`CrossValidationTuner(cv, metric, n_trials, n_startup_trials, aggregator=Mean(), n_jobs=1)`
-is a frozen dataclass holding what every run shares: the folds, the metric (it scores each
-fold and gives the study its direction), the budget, TPE's random start, how fold scores
-combine (§7) and how many processes fit a trial's folds. Each call takes the data, the
-groups, the composite's settings and the study's seed (D26):
+`CrossValidationTuner(cv, objective_metric, n_trials, n_startup_trials, aggregator=Mean(),
+n_jobs=1, recorded_metrics=())` is a frozen dataclass holding what every run shares: the
+folds, the objective metric (it scores each fold and gives the study its direction), the
+budget, TPE's random start, how fold scores combine (§7), how many processes fit a trial's
+folds, and the metrics each trial also records (none by default). Each call takes the data,
+the groups, the composite's settings and the study's seed (D26):
 
-- `cv_score(model, X, Y, exposure, groups=None)` refits `model` on each fold's training rows
-  (`fit` replaces all state) and aggregates the validation scores. The folds are fitted in
-  `n_jobs` processes; the scores are the same as one after another, so a seeded study does
-  not depend on `n_jobs` (D13: ×2.3–3.3 per trial with 5 processes).
+- `cross_validate(model, X, Y, exposure, groups=None)` refits `model` on each fold's
+  training rows (`fit` replaces all state) and returns each metric's cross-validated score
+  by name: `score_fold` scores a fold's validation rows on `objective_metric` and each
+  recorded metric (the same predictions, no extra fit), and the aggregator combines each
+  metric's fold scores. A recorded metric named as the objective never replaces its score.
+  The folds are fitted in `n_jobs` processes; the scores are the same as one after another,
+  so a seeded study does not depend on `n_jobs` (D13: ×2.3–3.3 per trial with 5 processes).
+- `score_trial(trial, model, X, Y, exposure, groups=None)` stores each of those scores on the
+  trial as a user attribute named after its metric (the trials table's `user_attrs_<name>`
+  columns) and returns the objective's: a trial is the cv of every metric, its value the
+  objective's.
 - `tune_independent_cohorts_model(X, Y, exposure, groups=None, *, <the builder's
   settings>, y_min, random_state, study_seed)` and `tune_total_times_probability_model(...)`
   each run one study whose objective draws the components, builds the composite and
-  returns its `cv_score`; they return the study and its seconds. The method names the
+  returns `score_trial`'s value; they return the study and its seconds. The method names the
   model, so no callable is passed in.
 - `tune_total_component(..., total_family, use_exposure, total_feature_transformer_dict,
   probability_component, ...)` and `tune_probability_component(..., total_component,
@@ -571,11 +579,11 @@ Fitting and scoring are the caller's two steps: the best model is rebuilt from
 metric (a column, by name) for each cohort asked for (a row): a column of `y_true`, scored
 alone through `cohort=`, or `"composite"`, the whole matrix. No fitted model or Optuna study
 needs to be kept. A notebook run keeps a record: its settings, `study.trials_dataframe()`
-(every trial, about 1.7 KiB each), `[c.to_dict() for c in best_components]`, `best_params`,
+(every trial, about 1.7 KiB each, with its cv on every recorded metric), `[c.to_dict() for c in best_components]`, `best_params`,
 `best_value`, `train_scores` and `val_scores` (the two tables), the seconds, the seed and
 `y_min`. Model 2's coordinate descent keeps a record per step study (its trials, its best
 component and the fixed one) and one per pair (its components, the merged `best_params`,
-its `cv_score` as `cv_best`, its two tables). To save it as JSON use `trials.to_json(orient="records")`: `json.dumps(record,
+its cross-validated objective as `cv_best`, its two tables). To save it as JSON use `trials.to_json(orient="records")`: `json.dumps(record,
 default=str)` writes a bare `NaN`, which strict readers reject.
 
 ## 9. Reproducibility
@@ -605,7 +613,7 @@ default=str)` writes a bare `NaN`, which strict readers reject.
   parameter names at the first `__`, and `shared__` is the shared choices' prefix. Nothing
   checks it.
 - **A function sent to joblib must pickle**: in a notebook, a callable that captures the
-  notebook's globals fails (`_thread.lock`). The tuner sends its bound `fold_score`, the
+  notebook's globals fails (`_thread.lock`). The tuner sends its bound `score_fold`, the
   model and the data, all of which pickle.
 - **pandas turns a `None` calibration into NaN** in the trials table, and `value_counts()`
   drops it: count by label after `fillna("None")` (D16).
