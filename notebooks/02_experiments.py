@@ -638,10 +638,16 @@ def _(mo):
     Every trial is kept too, in the trials tables, as a row of the whole
     model it scored: its id, state, seconds, cross-validated score on the
     six metrics, and each component's feature transformer and
-    hyperparameters, to see which are good or bad on each. The independent
-    cohorts model keeps the sharing flags of its runs in section 6 (one set
-    of hyperparameters, a transformer per cohort). The total times probability
-    model is tuned by coordinate descent, as its runs in section 6: its
+    hyperparameters, to see which are good or bad on each. A summary table
+    holds each model's best model per objective: its best trial's id, its
+    cross-validated scores and the refit's composite on validation. The
+    figures show, per model and objective, every metric per trial in
+    stacked panels sharing the trial axis: the best trial a red star in
+    each, the best so far a line on the objective's panel, and a rule where
+    the total times probability model's probability step starts. The
+    independent cohorts model keeps the sharing flags of its runs in section
+    6 (one set of hyperparameters, a transformer per cohort). The total times
+    probability model is tuned by coordinate descent, as its runs in section 6: its
     total with the probabilities fixed at a plain logistic model, then its
     logistic probabilities with that best total fixed; its `cv_best` is the
     second study's value, the pair's, and its seconds are the two studies'.
@@ -660,6 +666,8 @@ def _():
 
     import numpy as np
     import optuna
+    import plotly.graph_objects as go
+    from plotly.subplots import make_subplots
 
     from age_group_prediction.hyperparameter_tuning import (
         CountComponent,
@@ -702,6 +710,8 @@ def _():
         build_total_times_probability_model,
         dataclasses,
         evaluate,
+        go,
+        make_subplots,
         mean_absolute_error_loss,
         mean_bias_error,
         mean_poisson_deviance_loss,
@@ -1112,6 +1122,210 @@ def _(
     # the whole model it scored: its step's drawn component and fixed one.
     eda_model2_trials_df = pd.concat(_trials, ignore_index=True)
     return eda_model2_df, eda_model2_trials_df
+
+
+@app.cell
+def _(
+    METRICS,
+    eda_model1_df,
+    eda_model1_trials_df,
+    eda_model2_df,
+    eda_model2_trials_df,
+    mo,
+    pd,
+):
+    # Each model's best trial per objective: its study's minimum on the
+    # objective (the first on ties, as Optuna's best trial; the total times
+    # probability model's in its probability step, the pair the refit holds),
+    # its cross-validated score on every metric, and the refit's composite on
+    # validation.
+    _metric_names = [metric.name for metric in METRICS]
+    _rows = []
+    for _model, _trials, _scores in (
+        ("model1", eda_model1_trials_df, eda_model1_df),
+        (
+            "model2",
+            eda_model2_trials_df[eda_model2_trials_df["step"] == "probability"],
+            eda_model2_df,
+        ),
+    ):
+        for _objective, _study_trials in _trials.groupby("objective", sort=False):
+            _best = _study_trials.loc[_study_trials[_objective].idxmin()]
+            _composite = _scores[
+                (_scores["objective"] == _objective)
+                & (_scores["cohort"] == "composite")
+            ].iloc[0]
+            _rows.append(
+                {
+                    "model": _model,
+                    "objective": _objective,
+                    "best_id": _best["id"],
+                    **{
+                        f"cv_{metric_name}": _best[metric_name]
+                        for metric_name in _metric_names
+                    },
+                    **{
+                        f"val_{metric_name}": _composite[metric_name]
+                        for metric_name in _metric_names
+                    },
+                }
+            )
+    eda_best_df = pd.DataFrame(_rows)
+    mo.vstack(
+        [
+            mo.md(
+                "**The objective EDA: the best model per objective** (each study's "
+                "best trial, the total times probability model's in its probability "
+                "step; cv_: its cross-validated scores; val_: the refit's composite "
+                "on validation)"
+            ),
+            mo.ui.table(eda_best_df.round(4)),
+        ]
+    )
+    return (eda_best_df,)
+
+
+@app.cell
+def _(
+    METRICS,
+    eda_best_df,
+    eda_model1_trials_df,
+    eda_model2_trials_df,
+    go,
+    make_subplots,
+    mo,
+):
+    # Per model and objective, every metric per trial, a panel each on its own
+    # scale, the trials in order on a shared axis (the total times probability
+    # model's total step, then its probability step): the best trial a red star
+    # in every panel, the best so far on the objective's panel. The colors are
+    # the dataviz reference palette's (the trials series 1, the best series 8,
+    # the line and the rule secondary ink, the chart surface).
+    _metric_names = [metric.name for metric in METRICS]
+    _surface, _ink = "#fcfcfb", "#52514e"
+    eda_figures = {}
+    for _model, _trials in (
+        ("model1", eda_model1_trials_df),
+        ("model2", eda_model2_trials_df),
+    ):
+        for _objective, _study_trials in _trials.groupby("objective", sort=False):
+            _study_trials = _study_trials.reset_index(drop=True)
+            _best_id = eda_best_df.loc[
+                (eda_best_df["model"] == _model)
+                & (eda_best_df["objective"] == _objective),
+                "best_id",
+            ].iloc[0]
+            if _model == "model1":
+                _labels = "trial " + _study_trials["id"].astype(str)
+                _is_best = _study_trials["id"] == _best_id
+                _probability_start = None
+            elif _model == "model2":
+                _labels = (
+                    _study_trials["step"] + " trial " + _study_trials["id"].astype(str)
+                )
+                _is_best = (_study_trials["step"] == "probability") & (
+                    _study_trials["id"] == _best_id
+                )
+                _probability_start = (_study_trials["step"] == "total").sum()
+            else:
+                raise ValueError(f"unknown model {_model!r}")
+            _best_position = _study_trials.index[_is_best][0]
+            _figure = make_subplots(
+                rows=len(_metric_names),
+                cols=1,
+                shared_xaxes=True,
+                subplot_titles=_metric_names,
+                vertical_spacing=0.04,
+            )
+            for _row, _metric_name in enumerate(_metric_names, start=1):
+                _figure.add_trace(
+                    go.Scatter(
+                        x=_study_trials.index,
+                        y=_study_trials[_metric_name],
+                        mode="markers",
+                        marker={
+                            "size": 8,
+                            "color": "#2a78d6",
+                            "line": {"width": 2, "color": _surface},
+                        },
+                        text=_labels,
+                        hovertemplate=f"%{{text}}<br>{_metric_name} %{{y:.4f}}<extra></extra>",
+                        name="trials",
+                        legendgroup="trials",
+                        showlegend=_row == 1,
+                    ),
+                    row=_row,
+                    col=1,
+                )
+                if _metric_name == _objective:
+                    _figure.add_trace(
+                        go.Scatter(
+                            x=_study_trials.index,
+                            y=_study_trials[_metric_name].cummin(),
+                            mode="lines",
+                            line={"width": 2, "color": _ink},
+                            hoverinfo="skip",
+                            name="best so far",
+                        ),
+                        row=_row,
+                        col=1,
+                    )
+                _figure.add_trace(
+                    go.Scatter(
+                        x=[_best_position],
+                        y=[_study_trials.loc[_best_position, _metric_name]],
+                        mode="markers",
+                        marker={
+                            "symbol": "star",
+                            "size": 14,
+                            "color": "#e34948",
+                            "line": {"width": 2, "color": _surface},
+                        },
+                        text=[_labels[_best_position]],
+                        hovertemplate=f"best: %{{text}}<br>{_metric_name} %{{y:.4f}}<extra></extra>",
+                        name=f"best: {_labels[_best_position]}",
+                        legendgroup="best",
+                        showlegend=_row == 1,
+                    ),
+                    row=_row,
+                    col=1,
+                )
+            if _probability_start is not None:
+                _figure.add_vline(
+                    x=_probability_start - 0.5,
+                    line_width=1,
+                    line_color=_ink,
+                    annotation_text="probability step",
+                )
+            _figure.update_layout(
+                title=f"tuned on {_objective}",
+                height=1000,
+                template="plotly_white",
+                paper_bgcolor=_surface,
+                plot_bgcolor=_surface,
+                legend={"orientation": "h", "y": -0.06},
+                hovermode="closest",
+            )
+            _figure.update_xaxes(title_text="trial", row=len(_metric_names), col=1)
+            eda_figures[_model, _objective] = _figure
+    _objectives = list(eda_best_df["objective"].unique())
+    mo.vstack(
+        [
+            mo.md(
+                "**The independent cohorts model: every metric per trial** (a "
+                "figure per objective; the star its best trial, the line the best so "
+                "far on its objective)"
+            ),
+            mo.hstack([eda_figures["model1", objective] for objective in _objectives]),
+            mo.md(
+                "**The total times probability model: every metric per trial** (the "
+                "total step's trials, then the probability step's; the star its best "
+                "trial, in the probability step)"
+            ),
+            mo.hstack([eda_figures["model2", objective] for objective in _objectives]),
+        ]
+    )
+    return (eda_figures,)
 
 
 @app.cell
