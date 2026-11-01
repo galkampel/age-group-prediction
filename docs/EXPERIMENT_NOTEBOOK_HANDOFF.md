@@ -358,7 +358,9 @@ constructor, data in the call; fitting and evaluating as separate steps; no priv
 **Status (2026-11-01):** 3.1 is done (`55dbb88`, `17680ac`, `1eab956`, and its docs): the
 objective EDA is the notebook's section 5, before the tuning (now section 6); its design and the
 answer to the question below are the metrics plan's M10–M11 (one setting for both models,
-`lgbm_poisson` with exposure on; Model 2 by coordinate descent, as the full tuning). Next: 3.2.
+`lgbm_poisson` with exposure on; Model 2 by coordinate descent, as the full tuning). 3.2 is done
+(the 400-trial click and its reading in the metrics plan's 3.2; the user keeps the Poisson
+deviance as the objective). Next: 3.3, the docs, the PR's review and the PR.
 
 **PR 3, the objective EDA** (the metrics plan §5), on `feat/objective-eda` (from `main` at
 `16773a5`, after PR 2's merge as #20). One sub-task per approval:
