@@ -1,7 +1,8 @@
-# Handoff: the experiment notebook, after PR 2 (the runs in loops, every metric)
+# Handoff: the experiment notebook, PR 3 in progress (the objective EDA)
 
-**For:** the session that starts PR 3 of
-[NOTEBOOK_METRICS_LOOP_EDA_PLAN.md](NOTEBOOK_METRICS_LOOP_EDA_PLAN.md), the objective EDA. That
+**For:** the session that continues PR 3 of
+[NOTEBOOK_METRICS_LOOP_EDA_PLAN.md](NOTEBOOK_METRICS_LOOP_EDA_PLAN.md), the objective EDA, at its
+sub-task 3.1h (§2b, §6). That
 plan has three PRs: the metrics in `scoring` (PR 1, merged as #18 into
 `feat/experiment-notebook`, which #19 merged into `main`), the runs in loops scored on every
 metric (PR 2, **merged as #20**, squashed into `main` as `16773a5`), and the objective EDA
@@ -11,7 +12,8 @@ evaluation are deferred.
 The next session starts at §6.
 
 **Written:** 2026-10-29 after the tuning plan's T5; **rewritten** 2026-10-31 at the end of PR 2
-(2.1–2.5); **updated** 2026-10-31 after PR 2's merge (#20), for a new session. The detailed history is in the metrics plan (§2 M1–M9, §4 2.1–2.5 with each
+(2.1–2.5); **updated** 2026-10-31 after PR 2's merge (#20), for a new session; **updated**
+2026-11-01 in PR 3 (§2b, §6), for a new session. The detailed history is in the metrics plan (§2 M1–M9, §4 2.1–2.5 with each
 sub-task's "Done" note), in [NOTEBOOK_TUNING_PLAN.md](NOTEBOOK_TUNING_PLAN.md) (§0 D1–D30) and in
 git. Re-verify every fact here against the code of the day.
 
@@ -30,14 +32,26 @@ git. Re-verify every fact here against the code of the day.
 4. **Feature variants:** the declarations of FEATURE_TRANSFORMATIONS.md §8, and each family's
    candidates as data: `COUNT_FEATURE_TRANSFORMERS` and `PROBABILITY_FEATURE_TRANSFORMERS`
    (family → `{name: FeatureTransformer}`).
-5. **Tuning and inspection:**
+5. **Section 5, the objective EDA** (PR 3; the metrics plan's 3.1, M10–M13): its text; the
+   tuning imports, the metrics cell (also `RMSE` and `EDA_OBJECTIVES = (LOG_LOSS,
+   POISSON_DEVIANCE, RMSE)`), `COHORTS` / `PREDICTION_FLOOR`, the `tuner` and
+   `MODEL2_FIXED_PROBABILITY_COMPONENT` (moved up from section 6, so every name is defined above
+   where it is read); `trials_table`; the button "Run the objective EDA"; Model 1's EDA run
+   (`lgbm_poisson`, exposure on, the notebook's flags) and Model 2's (`lgbm_poisson+logistic`,
+   exposure on, by coordinate descent), each one study (Model 2: two) per objective through
+   `dataclasses.replace(tuner, objective_metric=objective)`, every study seeded `seed`; each best
+   refit and scored on validation (`eda_model1_df`, `eda_model2_df`, 12 rows each), every trial
+   kept (`eda_model1_trials_df`, `eda_model2_trials_df`); a table cell. Its rework is next (§6).
+6. **Section 6, tuning and inspection:**
    - **the metrics cell:** `POISSON_DEVIANCE = Metric("poisson_deviance",
      mean_poisson_deviance_loss)` (the tuner's objective, the best-run rule, the permutation
      importance's score), `LOG_LOSS`, and `METRICS`, the six (`poisson_deviance`, `log_loss`,
      `mae`, `rmse`, `wmape`, `bias`; the primary first) for the score tables and the bootstrap;
      `COHORTS`, `PREDICTION_FLOOR`;
-   - **the `tuner` cell:** `CrossValidationTuner(cv=cv, metric=POISSON_DEVIANCE,
-     n_trials=n_trials, n_startup_trials=n_startup_trials, n_jobs=n_splits)`;
+   - **the `tuner` cell** (in section 5): `CrossValidationTuner(cv=cv,
+     objective_metric=POISSON_DEVIANCE, n_trials=n_trials, n_startup_trials=n_startup_trials,
+     n_jobs=n_splits, recorded_metrics=METRICS)`: every trial also records its cross-validated
+     score on the six metrics (M12);
    - **Model 1:** `MODEL1_RUN_SETTINGS` (8 entries: 4 count families × exposure on / off, each
      with `share_hyperparams=True`, `share_feature_transformer=False`), a button (marimo's
      clickable control; the cells behind it run only when it is clicked), one loop cell
@@ -52,7 +66,8 @@ git. Re-verify every fact here against the code of the day.
      - step 2 (step 1's best total by cv read back and fixed; `tuner.tune_probability_component`,
        `seed + 8`, `seed + 9`) → `MODEL2_PROBABILITY_RUNS`;
      - the 16 pairs (each total run × each probability run, read back from their
-       `best_params`; `tuner.cv_score` as `cv_best`; refit and scored; no search) → `MODEL2_RUNS`;
+       `best_params`; `tuner.cross_validate(...)[tuner.objective_metric.name]` as `cv_best`;
+       refit and scored; no search) → `MODEL2_RUNS`;
    - **the refit and the scores** (Model 1's loop and Model 2's pairs): the best model fitted on
      the training part, each part predicted, and `scoring.evaluate(<part>.Y, y_pred, METRICS,
      cohorts=[*COHORTS, "composite"])`: a cohort × metric DataFrame per part (D30);
@@ -208,6 +223,41 @@ results:
 - Optuna's `PartialFixedSampler` raises `ExperimentalWarning` under `-W error`, so the fixing is
   done in the package's code.
 
+## 2b. PR 3 so far (2026-11-01)
+
+- **Commits on `feat/objective-eda`** (each sub-task's Done note is in the metrics plan §5):
+
+  | commit | sub-task |
+  |---|---|
+  | `55a9196` | the handoff after PR #20's merge |
+  | `55dbb88` | 3.1a `RMSE` named; `EDA_OBJECTIVES` |
+  | `17680ac` | 3.1b the EDA as section 5; Model 1's EDA run |
+  | `1eab956` | 3.1c Model 2's EDA run, by coordinate descent |
+  | `fecac25` | 3.1d the EDA's design and evidence (M10, M11) |
+  | `c1cad4a` | 3.2 the 400-trial click and its reading; the deviance stays the objective |
+  | `40ea139` | the log loss checked; the objectives cross-validated on every metric |
+  | `ed9b5d5` | 3.1e every trial records every metric (`src`; M12) |
+  | `4afb834` | 3.1f the trials tables |
+  | (this handoff) | the handoff for 3.1h–3.1j |
+
+- **The working tree is not clean, on purpose:** `notebooks/02_experiments.py` holds 3.1g
+  (matplotlib plots, slices and a rank table; superseded by M13, never to be committed: its plot
+  cell, the `Figure` import, a sentence in the EDA text) and the user's editor saves (marimo's
+  stamp 0.25.2, one empty cell removed, two cells displaying `eda_model1_trials_df` and
+  `eda_model2_trials_df`, the table cell's parameters reflowed). Its md5 at this handoff:
+  `812fdb31b46b8ebb7ddf9d279688f981`. 3.1i removes 3.1g and keeps the user's edits.
+- **Checks at 3.1g** (3.1e's suite and mypy still hold: `src` unchanged since): the non-slow
+  suite 1387 passed, 1 skipped, 1 xfailed, 19 deselected; mypy no issues (28 files); Check A: the
+  notebook test 13 passed, **ruff 16** (14 + 2 × PLR1711 on the EDA's bare-`return` text and
+  table cells, which marimo writes), the two format hunks, `marimo check` 1.
+- **The EDA's Check C values** (3 trials, `cv_best` by objective log loss / deviance / RMSE):
+  Model 1 1.0855 / 2.1812 / 4.4406; Model 2 1.0833 / 2.1340 / 4.3941 (its deviance step 1
+  2.1361; under the log loss its total step's trials all tie). Model 2's EDA equals an
+  independent recomputation from the two tune methods exactly.
+- **The 400-trial EDA (3.2)** and the cross-validated comparison are in the metrics plan's 3.2:
+  the deviance-tuned models win every count metric on cv; the Poisson deviance stays the
+  objective.
+
 ## 3. Decisions (do not re-ask)
 
 The decisions and their evidence are in [NOTEBOOK_TUNING_PLAN.md](NOTEBOOK_TUNING_PLAN.md) §0 (D1–D30)
@@ -228,6 +278,13 @@ and the metrics plan §2 (M1–M9); a later one supersedes an earlier one where 
   run settings (supersedes one cell per run); **D29** Model 2 by coordinate descent, the joint
   method kept; **D30** fitting and evaluating apart (`scoring.evaluate`, no `fit_and_score`, no
   `model.evaluate`; the bootstrap on the predictions, per cohort, the interval alone).
+- **PR 3 (2026-11-01), the metrics plan's M10–M13:** M10 the EDA tunes one setting per model
+  (`lgbm_poisson`, exposure on), Model 2 by coordinate descent as the full tuning, logistic in its
+  step 2, every study seeded `seed`; M11 the EDA is section 5, before the tuning; M12 every trial
+  records every metric (`objective_metric`, `recorded_metrics`, `score_fold`, `cross_validate`,
+  `score_trial`; `cv_score` removed); M13 the EDA's outputs (a row per trial of the whole model,
+  a summary, plotly figures with stacked panels; no slices, no rank table). The Poisson
+  deviance stays the tuner's objective (3.2). The button stays.
 - **The user's choices in PR 2:** step 2 fixes step 1's best total (two loops in sequence), in
   three cells (step 1, step 2, the pairs); the pairs are not timed (`seconds` is a study's
   time); the score tables long, in `mo.ui.table`; the list named `METRICS`; `scoring.evaluate`
@@ -271,16 +328,20 @@ md5, the commit message. Tick the sub-task and update the status lines.
 - No new ruff finding. A cell lists every notebook name it uses as a parameter, sorted.
 
 **The checks:**
-- **Check A:** the notebook test, ruff (14), the format diff (the two hunks), `marimo check`
-  (one empty cell).
+- **Check A:** the notebook test, ruff (16 since 3.1b: 14 + the EDA's two bare `return`s; none
+  new), the format diff (the two hunks), `marimo check` (one empty cell).
 - **Check B:** the names a script run defines (`app.run()`'s defs); nothing fitted.
 - **Check C:** the clicked run on a copy. Build `<scratch>/project/notebooks/02_experiments.py`
   from the notebook with the line `    n_trials = 400` replaced by `    n_trials = 3` (by line),
   and each of the 8 lines `            "share_hyperparams": True,` (in `MODEL1_RUN_SETTINGS`)
   replaced by `False` (assert both counts); make `<scratch>/project/configs` a symlink to the
   repo's `configs`; run it with `marimo.ui.run_button` patched to a clicked value,
-  `PYTHONWARNINGS=error`, `PYTHONPATH=<repo>/src`, in the background. About 55–80 s with the
-  inspection; the 24 `cv_best` must equal §2's.
+  `PYTHONWARNINGS=error`, `PYTHONPATH=<repo>/src`, in the background. About 75–180 s with the
+  inspection and the EDA; the 24 `cv_best` must equal §2's. Since 3.1c it also asserts the EDA:
+  the summaries' 12 rows and §2b's `cv_best`, and Model 2's EDA recomputed from the two tune
+  methods (`dataclasses.replace(tuner, objective_metric=...)`) must equal its table exactly;
+  since 3.1f the trials tables (rows, columns, each study's objective column's minimum its
+  `cv_best`). The script lives in the scratchpad and must be rewritten in a new session (below).
 - **A reference-run comparison** (used since 2.4): before a change, run Check C on HEAD and
   pickle `model1_df`, `model2_df`, `best_df`, `intervals_df`, `importance_df` and the records
   without `trials`; after it, compare frame by frame. Only Model 1's `seconds` (a study's wall
@@ -315,6 +376,16 @@ read, seconds to 30+ s each).
   on the folder, turning off Optimize Mac Storage, or moving the repo out of `~/Desktop`.
 
 **Traps:**
+- **The scratchpad can vanish:** `/private/tmp` was emptied when the machine restarted
+  (2026-11-01), taking the check scripts. Keep every number in the docs; rewrite the scripts.
+- **A copy of the notebook run in the project's `.venv`** (the marimo kernel's environment)
+  needs `src` beside it: its first cell adds `<notebook dir>/../src` to `sys.path`, and that
+  environment does not import the package otherwise. Symlink `<scratch>/project/src` too.
+- **A run button is "on" only for the run its click triggers:** a click runs every cell that
+  reads it, one after another (the EDA's Model 2 cell starts after Model 1's), then resets; a
+  cell run by hand sees it unclicked and stops at `mo.stop`. Cells added in between change
+  nothing unless they read the button, define a name already defined, or close a cycle.
+- In zsh, `echo ====` fails (`=` expansion): use `echo ----` in check scripts.
 - Never run two tuner calls at once from threads in one process: joblib mixes their inputs (D19).
   Never edit `src` while a run that imports it is going: its fold processes re-import modules.
 - Fold processes do not inherit `-W`; a warning there raises only under `PYTHONWARNINGS`.
@@ -355,59 +426,53 @@ constructor, data in the call; fitting and evaluating as separate steps; no priv
 
 ## 6. Next, and the prompt
 
-**Status (2026-11-01):** 3.1 is done (`55dbb88`, `17680ac`, `1eab956`, and its docs): the
-objective EDA is the notebook's section 5, before the tuning (now section 6); its design and the
-answer to the question below are the metrics plan's M10–M11 (one setting for both models,
-`lgbm_poisson` with exposure on; Model 2 by coordinate descent, as the full tuning). 3.2 is done
-(the 400-trial click and its reading in the metrics plan's 3.2; the user keeps the Poisson
-deviance as the objective). Next: 3.3, the docs, the PR's review and the PR.
-
-**PR 3, the objective EDA** (the metrics plan §5), on `feat/objective-eda` (from `main` at
-`16773a5`, after PR 2's merge as #20). One sub-task per approval:
-1. **3.1 The EDA cells:** a button; `EDA_OBJECTIVES` (the log loss, the Poisson deviance, RMSE,
-   each a `Metric` on the cohort matrix); one run per model with each objective
-   (`dataclasses.replace(tuner, metric=objective)`, the same `study_seed`, M8), refit and scored
-   on every metric with `scoring.evaluate`; a table per model (objective × metric on validation,
-   the composite and each cohort, plus `cv_best` in its own metric and the seconds); markdown
-   with the expected caveat (the cross-entropy normalizes the rows, so Model 2's total and
-   Model 1's scale get no signal).
-   **A question for 3.1's plan (new since PR 2):** the plan named Model 2's joint
-   `lgbm_gaussian+lgbm` study. The notebook now tunes Model 2 by coordinate descent, which is
-   exact for the Poisson deviance only (§2a): under RMSE or the log loss the composite does not
-   split, so a coordinate pass is an approximation there. Options: the joint study per
-   objective (the method stays in `src`; about 250 s each at 400 trials), or one coordinate
-   pass per objective (cheaper, approximate off the deviance). Bring the evidence and a
-   recommendation.
-2. **3.2 The EDA click and its reading:** 400 trials, in the background; the tables into the plan
-   with what they show; the user then chooses the tuner's objective.
-3. **3.3 The chosen objective, and the docs;** the PR's review subagent before the stop; the user
-   opens PR 3.
-4. **Deferred:** the MLflow runs (the D1e guard first: with `MLFLOW_TRACKING_URI` unset, MLflow
+**Status (2026-11-01):** PR 3's EDA is built (3.1a–3.1f) and read once (3.2: the Poisson deviance
+stays the objective). The user's notes asked for every trial, then for the trials as rows of the
+whole model, a summary and plotly figures (M12, M13). Next, one sub-task per approval, as the
+metrics plan §5 details them:
+1. **3.1h plotly** in the `notebook` dependency group (pyproject.toml, uv.lock; the same version
+   into `~/.venvs/age-group-prediction`; the user runs `uv sync --all-groups`). The user commits
+   only those two files.
+2. **3.1i every trial as a row of the whole model:** 3.1g's leftovers removed (the user's edits
+   kept, §2b); `trials_table(study, objective, metric_names, components_of,
+   feature_transformer_dict, first_id=0)`; Model 2's ids running across its two steps.
+3. **3.1j the summary and the plotly figures:** `eda_best_df` (6 rows); per model three figures
+   side by side, six stacked panels each, hover, the best trial a red star with a legend entry,
+   Model 2's step line.
+4. **3.2b the 400-trial click again**, and the trials read into the plan's 3.2.
+5. **3.3:** the suite and the PR's independent review subagent (findings reproduced before any
+   fix); the handoff rewritten for the deferred work (also README.md's and SPLITTING.md's "section
+   5", now section 6 for the tuning); in the chat, the PR's title and description, the
+   squash-merge title and description, and the commands that delete the remote and local
+   branch.
+6. **Deferred:** the MLflow runs (the D1e guard first: with `MLFLOW_TRACKING_URI` unset, MLflow
    3.16 writes to the repo's canonical `mlflow.db` and its artifacts to `./mlruns`), D4's
    comparison table, and E11's final evaluation.
 
 The user's preferences: plan docs in `docs/`, split into sub-tasks validated one at a time;
-explain marimo's UI terms; keep the implementation simple; when a PR is ready to merge, write in
-the chat the PR's title and description, the squash-merge title and description, and the
-commands that delete the remote and local branch.
+each sub-task planned first (the facts re-verified with read-only probes, design questions with
+evidence and a recommendation, the steps and the commit message in the chat), then implemented
+after approval and stopped with a file-by-file summary, the checks, the notebook's md5 and the
+commit message; explain marimo's UI terms; keep the implementation simple; meaningful names
+(no `name` / `scores` placeholders); the user commits.
 
 **The prompt for the next session:**
 
 ```text
-Read docs/EXPERIMENT_NOTEBOOK_HANDOFF.md in full (§2a, §4's iCloud notes and §6 first), then
-docs/NOTEBOOK_METRICS_LOOP_EDA_PLAN.md (§2 M8, §5 PR 3), and
-src/age_group_prediction/scoring.py's evaluate and
+Read docs/EXPERIMENT_NOTEBOOK_HANDOFF.md in full (§2b, §4's checks, traps and iCloud notes, and
+§6 first), then docs/NOTEBOOK_METRICS_LOOP_EDA_PLAN.md (§2 M10–M13, §5 3.1e–3.3), then section 5
+of notebooks/02_experiments.py and
 src/age_group_prediction/hyperparameter_tuning/cross_validation.py. Verify the state first:
-- the branch feat/objective-eda, HEAD my commit of the handoff update on top of 16773a5 (#20,
-  PR 2 squashed into main); if the update is uncommitted, stop and tell me;
-- a clean tree;
-- the notebook md5 b93448f43085733915262656f6ad1387, read via `cat notebooks/02_experiments.py | md5`;
-- no iCloud-offloaded files where the work reads: `find .git src notebooks tests docs configs
-  -flags +dataless -type f | grep -vc __pycache__` is 0; otherwise stop and tell me.
-If anything differs, stop and show me the diff. Then plan 3.1 in plan mode: re-verify the facts
-with read-only probes, bring the question of §6 (joint study or coordinate descent per objective
-for Model 2) with evidence and a recommendation, write the steps and the commit message in the
-chat, and wait for my approval before editing. Keep the implementation simple. Then each later
-sub-task in order, one per approval. I commit myself: never commit, no Co-Authored-By line, no
-"Generated with Claude Code" in PR text, never git checkout/stash/reset/mv.
+- the branch feat/objective-eda, HEAD my commit of this handoff on top of 4afb834; if the
+  handoff is uncommitted, stop and tell me;
+- the only uncommitted file is notebooks/02_experiments.py (3.1g's leftovers and my editor
+  saves, §2b), md5 812fdb31b46b8ebb7ddf9d279688f981 via `cat notebooks/02_experiments.py | md5`;
+- no iCloud-offloaded files: `find .git src notebooks tests docs configs -flags +dataless -type f
+  | grep -vc __pycache__` is 0.
+If anything differs, stop and show me the diff. The scratchpad from the last session is gone:
+rewrite the check scripts (§4) as needed. Then plan 3.1h in plan mode (re-verify the facts with
+read-only probes, write the steps and the commit message in the chat) and wait for my approval
+before editing. Then 3.1i, 3.1j, 3.2b and 3.3 in order, one per approval, each planned before
+it is implemented. Keep the implementation simple. I commit myself: never commit, no
+Co-Authored-By line, no "Generated with Claude Code" in PR text, never git checkout/stash/reset/mv.
 ```
