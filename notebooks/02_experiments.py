@@ -785,6 +785,7 @@ def _(
         "poisson_deviance", mean_poisson_deviance_loss, direction="minimize"
     )
     LOG_LOSS = Metric("log_loss", multinomial_log_loss, direction="minimize")
+    RMSE = Metric("rmse", root_mean_squared_error_loss, direction="minimize")
 
     # Every metric, the primary first: each run's score table (each cohort
     # through `cohort=`, then the composite) and the bootstrap of the best
@@ -795,11 +796,13 @@ def _(
         POISSON_DEVIANCE,
         LOG_LOSS,
         Metric("mae", mean_absolute_error_loss, direction="minimize"),
-        Metric("rmse", root_mean_squared_error_loss, direction="minimize"),
+        RMSE,
         Metric("wmape", wmape_loss, direction="minimize"),
         Metric("bias", mean_bias_error, direction="minimize"),
     )
-    return METRICS, POISSON_DEVIANCE
+    # The objective EDA's objectives (section 6), the same objects as in METRICS.
+    EDA_OBJECTIVES = (LOG_LOSS, POISSON_DEVIANCE, RMSE)
+    return EDA_OBJECTIVES, METRICS, POISSON_DEVIANCE
 
 
 @app.cell
