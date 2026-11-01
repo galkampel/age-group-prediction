@@ -1,6 +1,6 @@
 import marimo
 
-__generated_with = "0.25.1"
+__generated_with = "0.25.2"
 app = marimo.App()
 
 
@@ -622,11 +622,6 @@ def _(
     return COUNT_FEATURE_TRANSFORMERS, PROBABILITY_FEATURE_TRANSFORMERS
 
 
-@app.cell
-def _():
-    return
-
-
 @app.cell(hide_code=True)
 def _(mo):
     mo.md(r"""
@@ -640,11 +635,12 @@ def _(mo):
     and only the objective differs. Each study's best model is refit on the
     training part and scored on validation on every metric, per cohort and
     for the composite; `cv_best` is the study's value in its own objective.
-    Every trial is kept too, in the trials tables: its state, seconds,
-    parameters and cross-validated score on the six metrics, to see which
-    hyperparameters are good or bad on each. The independent cohorts model
-    keeps the sharing flags of its runs in section 6 (one set of
-    hyperparameters, a transformer per cohort). The total times probability
+    Every trial is kept too, in the trials tables, as a row of the whole
+    model it scored: its id, state, seconds, cross-validated score on the
+    six metrics, and each component's feature transformer and
+    hyperparameters, to see which are good or bad on each. The independent
+    cohorts model keeps the sharing flags of its runs in section 6 (one set
+    of hyperparameters, a transformer per cohort). The total times probability
     model is tuned by coordinate descent, as its runs in section 6: its
     total with the probabilities fixed at a plain logistic model, then its
     logistic probabilities with that best total fixed; its `cv_best` is the
@@ -806,24 +802,50 @@ def _(LogisticParams, PROBABILITY_FEATURE_TRANSFORMERS, ProbabilityComponent):
 
 
 @app.cell
-def _(pd):
-    def trials_table(study, metric_names):
-        """Every trial of `study`: its number, state, seconds, cross-validated
-        score on each metric (in `metric_names`' order), then its parameters."""
-        trials = study.trials_dataframe()
-        return pd.concat(
-            [
-                trials[["number", "state"]],
-                trials["duration"].dt.total_seconds().rename("seconds"),
-                trials[[f"user_attrs_{name}" for name in metric_names]].rename(
-                    columns=lambda column: column.removeprefix("user_attrs_")
-                ),
-                trials.filter(like="params_").rename(
-                    columns=lambda column: column.removeprefix("params_")
-                ),
-            ],
-            axis=1,
-        )
+def _(ProbabilityComponent, pd):
+    def trials_table(
+        study, objective, metric_names, components_by_trial, feature_transformer_dict
+    ):
+        """Every trial of `study` as a row of the whole model it scored: its id
+        (its number), `objective`, seconds, state, cross-validated score on
+        each metric (in `metric_names`' order), and each component's feature
+        transformer and hyperparameters (the classifier's with its
+        calibration). `components_by_trial` holds the components of each
+        trial's model, in the study's order; `feature_transformer_dict` maps a
+        component's name to its family's candidates, in which its
+        transformer's name is found by identity."""
+        rows = []
+        for trial, components in zip(study.trials, components_by_trial, strict=True):
+            feature_transformers, hyperparameters = {}, {}
+            for component in components:
+                candidates = feature_transformer_dict[component.name]
+                feature_transformers[component.name] = next(
+                    transformer_name
+                    for transformer_name, transformer in candidates.items()
+                    if transformer is component.feature_transformer
+                )
+                estimator_params = component.to_dict()["estimator_params"]
+                if isinstance(component, ProbabilityComponent):
+                    estimator_params["calibration_method"] = (
+                        component.calibration_method
+                    )
+                hyperparameters[component.name] = estimator_params
+            rows.append(
+                {
+                    "id": trial.number,
+                    "objective": objective,
+                    "seconds": trial.duration.total_seconds(),
+                    "state": trial.state.name,
+                    # A failed trial records no score: NaN.
+                    **{
+                        metric_name: trial.user_attrs.get(metric_name)
+                        for metric_name in metric_names
+                    },
+                    "feature_transformers": feature_transformers,
+                    "hyperparameters": hyperparameters,
+                }
+            )
+        return pd.DataFrame(rows)
 
     return (trials_table,)
 
@@ -865,7 +887,11 @@ def _(
     # design but its metric. A failed trial is caught by the study.
     _family, _use_exposure = "lgbm_poisson", True
     _metric_names = [metric.name for metric in METRICS]
-    _scores_by_objective, _trials_by_objective = {}, {}
+    # Every cohort's component draws from the family's candidates.
+    _feature_transformer_dict = {
+        cohort: COUNT_FEATURE_TRANSFORMERS[_family] for cohort in COHORTS
+    }
+    _scores_by_objective, _trials = {}, []
     for _objective in EDA_OBJECTIVES:
         _objective_tuner = dataclasses.replace(tuner, objective_metric=_objective)
         _study, _seconds = _objective_tuner.tune_independent_cohorts_model(
@@ -883,7 +909,29 @@ def _(
             random_state=seed,
             study_seed=seed,
         )
-        _trials_by_objective[_objective.name] = trials_table(_study, _metric_names)
+        # Each trial's model: the cohorts' components its parameters build.
+        _components_by_trial = [
+            tuple(
+                CountComponent.from_params(
+                    trial.params,
+                    name=cohort,
+                    family=_family,
+                    use_exposure=_use_exposure,
+                    feature_transformer_dict=COUNT_FEATURE_TRANSFORMERS[_family],
+                )
+                for cohort in COHORTS
+            )
+            for trial in _study.trials
+        ]
+        _trials.append(
+            trials_table(
+                _study,
+                _objective.name,
+                _metric_names,
+                _components_by_trial,
+                _feature_transformer_dict,
+            )
+        )
         _best_components = tuple(
             CountComponent.from_params(
                 _study.best_params,
@@ -906,13 +954,8 @@ def _(
             cohorts=[*COHORTS, "composite"],
         ).assign(cv_best=_study.best_value, seconds=_seconds)
     eda_model1_df = pd.concat(_scores_by_objective, names=["objective"]).reset_index()
-    # Every trial of the three studies: its parameters, seconds, state and
-    # cross-validated score on every metric.
-    eda_model1_trials_df = (
-        pd.concat(_trials_by_objective, names=["objective"])
-        .reset_index(level="objective")
-        .reset_index(drop=True)
-    )
+    # Every trial of the three studies, as a row of the whole model it scored.
+    eda_model1_trials_df = pd.concat(_trials, ignore_index=True)
     return eda_model1_df, eda_model1_trials_df
 
 
@@ -948,7 +991,11 @@ def _(
     # is the pair's.
     _total_family, _probability_family, _use_exposure = "lgbm_poisson", "logistic", True
     _metric_names = [metric.name for metric in METRICS]
-    _scores_by_objective, _trials_by_study = {}, {}
+    _feature_transformer_dict = {
+        "total": COUNT_FEATURE_TRANSFORMERS[_total_family],
+        "probability": PROBABILITY_FEATURE_TRANSFORMERS[_probability_family],
+    }
+    _scores_by_objective, _trials = {}, []
     for _objective in EDA_OBJECTIVES:
         _objective_tuner = dataclasses.replace(tuner, objective_metric=_objective)
         _total_study, _total_seconds = _objective_tuner.tune_total_component(
@@ -964,8 +1011,28 @@ def _(
             random_state=seed,
             study_seed=seed,
         )
-        _trials_by_study[_objective.name, "total"] = trials_table(
-            _total_study, _metric_names
+        # Step 1's trials: each drawn total, with the fixed classifier.
+        _total_components_by_trial = [
+            (
+                CountComponent.from_params(
+                    trial.params,
+                    name="total",
+                    family=_total_family,
+                    use_exposure=_use_exposure,
+                    feature_transformer_dict=COUNT_FEATURE_TRANSFORMERS[_total_family],
+                ),
+                MODEL2_FIXED_PROBABILITY_COMPONENT,
+            )
+            for trial in _total_study.trials
+        ]
+        _trials.append(
+            trials_table(
+                _total_study,
+                _objective.name,
+                _metric_names,
+                _total_components_by_trial,
+                _feature_transformer_dict,
+            ).assign(step="total")
         )
         _total_component = CountComponent.from_params(
             _total_study.best_params,
@@ -990,8 +1057,29 @@ def _(
                 study_seed=seed,
             )
         )
-        _trials_by_study[_objective.name, "probability"] = trials_table(
-            _probability_study, _metric_names
+        # Step 2's trials: step 1's best total, with each drawn classifier.
+        _probability_components_by_trial = [
+            (
+                _total_component,
+                ProbabilityComponent.from_params(
+                    trial.params,
+                    name="probability",
+                    family=_probability_family,
+                    feature_transformer_dict=PROBABILITY_FEATURE_TRANSFORMERS[
+                        _probability_family
+                    ],
+                ),
+            )
+            for trial in _probability_study.trials
+        ]
+        _trials.append(
+            trials_table(
+                _probability_study,
+                _objective.name,
+                _metric_names,
+                _probability_components_by_trial,
+                _feature_transformer_dict,
+            ).assign(step="probability")
         )
         _probability_component = ProbabilityComponent.from_params(
             _probability_study.best_params,
@@ -1020,18 +1108,20 @@ def _(
             seconds=_total_seconds + _probability_seconds,
         )
     eda_model2_df = pd.concat(_scores_by_objective, names=["objective"]).reset_index()
-    # Every trial of the six studies (each objective's two steps): its
-    # parameters, seconds, state and cross-validated score on every metric.
-    eda_model2_trials_df = (
-        pd.concat(_trials_by_study, names=["objective", "step"])
-        .reset_index(level=["objective", "step"])
-        .reset_index(drop=True)
-    )
+    # Every trial of the six studies (each objective's two steps), as a row of
+    # the whole model it scored: its step's drawn component and fixed one.
+    eda_model2_trials_df = pd.concat(_trials, ignore_index=True)
     return eda_model2_df, eda_model2_trials_df
 
 
 @app.cell
-def _(eda_model1_df, eda_model1_trials_df, eda_model2_df, eda_model2_trials_df, mo):
+def _(
+    eda_model1_df,
+    eda_model1_trials_df,
+    eda_model2_df,
+    eda_model2_trials_df,
+    mo,
+):
     mo.vstack(
         [
             mo.md(
@@ -1049,14 +1139,16 @@ def _(eda_model1_df, eda_model1_trials_df, eda_model2_df, eda_model2_trials_df, 
             mo.ui.table(eda_model2_df.round(4)),
             mo.md(
                 "**Every trial: the independent cohorts model** (one row per trial "
-                "of each objective's study: its state, seconds, parameters and "
-                "cross-validated score on every metric)"
+                "of each objective's study, the whole model it scored: its state, "
+                "seconds, cross-validated score on every metric, and each cohort's "
+                "feature transformer and hyperparameters)"
             ),
             mo.ui.table(eda_model1_trials_df.round(4)),
             mo.md(
                 "**Every trial: the total times probability model** (each "
-                "objective's two studies, step `total` then `probability`; a step's "
-                "rows leave the other step's parameters empty)"
+                "objective's two studies, each trial by its step and number: step "
+                "`total`, each drawn total with the fixed classifier; step "
+                "`probability`, step 1's best total with each drawn classifier)"
             ),
             mo.ui.table(eda_model2_trials_df.round(4)),
         ]

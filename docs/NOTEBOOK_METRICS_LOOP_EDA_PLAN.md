@@ -1,6 +1,6 @@
 # Plan: the metrics in `scoring`, the runs in a loop, the objective EDA
 
-**Status (2026-10-30):** PR 1 on `refactor/scoring-metrics`: 1.1 done, revised at the user's notes (`cohort=`, `y_proba=`, samples; then the notes on the helpers: `utils.check_paired_arrays` checks, `utils.column_position` finds a cohort's column, each metric selects it, no repeated-name guard; suite 1346 passed; Check C the 24 baselines), committed as `185285e`. 1.2 done (docs only; the three guides' blocks rerun as written with the same numbers; MODEL_INSPECTION.md's stale simulator line fixed with `from_config`, the user's choice), committed as `96c950b`. 1.3 done (the notebook's six inspection metrics from `scoring`, D² dropped; Check C the 24 baselines and the intervals equal, WMAPE and bias but for their last bit); committed as `0e9d0a1`. 1.4 done (the review's fixes in `scoring`: non-finite values and a lone cohort rejected, two docstrings; suite 1373 passed); PR 1 merged as #18 (`b1d8dbd`) into `feat/experiment-notebook`, and that branch into `main` as #19 (`3db1aa8`). PR 2 on `refactor/notebook-run-loop` from `main`: 2.1 done (2026-10-31; the sharing flags' test, a fitted model per flag pair; the Verify mutation moved to the build, at the user's choice), committed as `9463651`. 2.2 done (2026-10-31; Model 1's runs in one loop over `MODEL1_RUN_SETTINGS`, the flags per run; Check C both arms' baselines), committed as `b87e68b`. 2.3a.1 done (2026-10-31; Model 2 by coordinate descent measured against D20's joint studies at 400 trials: cv better or the same in 15 of 16 pairs, the one worse within noise; about 890 s against 2871 s; docs only), committed as `4c75172`. 2.3a.2 done (2026-10-31; `tune_total_component` and `tune_probability_component`, the other component fixed; the joint tuning stays, its draw now through `suggest_count_component` and `suggest_probability_component`, at the user's notes; they reproduce 2.3a.1's step values at 400 trials; suite 1381 passed; Check C the 24 baselines), committed as `a5a4234`. 2.3 done (2026-10-31; Model 2 by coordinate descent in three cells: step 1's 8 runs, step 2's 2 runs with the best total fixed, the 16 pairs scored; the 400-trial click reproduces 2.3a.1's 16 pairs in 752 s; Check C Model 1's 8 unchanged and Model 2's 16 re-recorded), committed as `9aed504`, its record as `04caa68`. 2.4 done (2026-10-31, revised at the user's notes: fit, predict and evaluate apart; `scoring.evaluate(y_true, y_pred, metrics, cohorts)` a cohort × metric table, `fit_and_score` deleted; `POISSON_DEVIANCE`, `LOG_LOSS`, `METRICS`, no `COHORT_` prefixes; the long score tables in `mo.ui.table`; Check C the primary metric's rows equal `04caa68`'s exactly). committed as `c2843e3`. 2.4b done (2026-10-31; `BaseAgeGroupModel.evaluate` removed, the callers call the metric; `BootstrapEvaluator.evaluate(y_true, y_pred, groups, *, metrics, cohorts)` takes the predictions and the cohorts and returns the interval alone; the notebook bootstraps every cohort; Check C equal to `c2843e3`'s run, the composite intervals exactly). 2.5 done (2026-10-31): the guides (`0a983cc`), the PR's review (no correctness bug; its fixes `9862669`), the decisions D27–D30 and the handoff for PR 3. **PR 2 merged as #20 (squashed into `main` as `16773a5`). PR 3 (§5) on `feat/objective-eda`, from the handoff's §6.** PR 3: 3.1 done (2026-11-01; the objective EDA as the notebook's section 5, before tuning: one setting for both models, `lgbm_poisson` with exposure on, Model 2 by coordinate descent, M10–M11), committed as `55dbb88` (3.1a), `17680ac` (3.1b), `1eab956` (3.1c) and the docs (3.1d). 3.2 done (2026-11-01; the 400-trial click: the objectives' validation differences within one holdout's noise; the user keeps the Poisson deviance). Then the user's notes on the EDA (2026-11-01: "I wanted to investigate all the trials"): 3.1e done (every trial records every metric, M12), committed as `ed9b5d5`; 3.1f done (the trials tables), committed as `4afb834`; 3.1g (matplotlib plots, slices, a rank table) done but superseded by the user's next notes and never committed (M13). **Next: 3.1h–3.1j (the approved design of M13), then 3.2b and 3.3, from the handoff's §6.**
+**Status (2026-10-30):** PR 1 on `refactor/scoring-metrics`: 1.1 done, revised at the user's notes (`cohort=`, `y_proba=`, samples; then the notes on the helpers: `utils.check_paired_arrays` checks, `utils.column_position` finds a cohort's column, each metric selects it, no repeated-name guard; suite 1346 passed; Check C the 24 baselines), committed as `185285e`. 1.2 done (docs only; the three guides' blocks rerun as written with the same numbers; MODEL_INSPECTION.md's stale simulator line fixed with `from_config`, the user's choice), committed as `96c950b`. 1.3 done (the notebook's six inspection metrics from `scoring`, D² dropped; Check C the 24 baselines and the intervals equal, WMAPE and bias but for their last bit); committed as `0e9d0a1`. 1.4 done (the review's fixes in `scoring`: non-finite values and a lone cohort rejected, two docstrings; suite 1373 passed); PR 1 merged as #18 (`b1d8dbd`) into `feat/experiment-notebook`, and that branch into `main` as #19 (`3db1aa8`). PR 2 on `refactor/notebook-run-loop` from `main`: 2.1 done (2026-10-31; the sharing flags' test, a fitted model per flag pair; the Verify mutation moved to the build, at the user's choice), committed as `9463651`. 2.2 done (2026-10-31; Model 1's runs in one loop over `MODEL1_RUN_SETTINGS`, the flags per run; Check C both arms' baselines), committed as `b87e68b`. 2.3a.1 done (2026-10-31; Model 2 by coordinate descent measured against D20's joint studies at 400 trials: cv better or the same in 15 of 16 pairs, the one worse within noise; about 890 s against 2871 s; docs only), committed as `4c75172`. 2.3a.2 done (2026-10-31; `tune_total_component` and `tune_probability_component`, the other component fixed; the joint tuning stays, its draw now through `suggest_count_component` and `suggest_probability_component`, at the user's notes; they reproduce 2.3a.1's step values at 400 trials; suite 1381 passed; Check C the 24 baselines), committed as `a5a4234`. 2.3 done (2026-10-31; Model 2 by coordinate descent in three cells: step 1's 8 runs, step 2's 2 runs with the best total fixed, the 16 pairs scored; the 400-trial click reproduces 2.3a.1's 16 pairs in 752 s; Check C Model 1's 8 unchanged and Model 2's 16 re-recorded), committed as `9aed504`, its record as `04caa68`. 2.4 done (2026-10-31, revised at the user's notes: fit, predict and evaluate apart; `scoring.evaluate(y_true, y_pred, metrics, cohorts)` a cohort × metric table, `fit_and_score` deleted; `POISSON_DEVIANCE`, `LOG_LOSS`, `METRICS`, no `COHORT_` prefixes; the long score tables in `mo.ui.table`; Check C the primary metric's rows equal `04caa68`'s exactly). committed as `c2843e3`. 2.4b done (2026-10-31; `BaseAgeGroupModel.evaluate` removed, the callers call the metric; `BootstrapEvaluator.evaluate(y_true, y_pred, groups, *, metrics, cohorts)` takes the predictions and the cohorts and returns the interval alone; the notebook bootstraps every cohort; Check C equal to `c2843e3`'s run, the composite intervals exactly). 2.5 done (2026-10-31): the guides (`0a983cc`), the PR's review (no correctness bug; its fixes `9862669`), the decisions D27–D30 and the handoff for PR 3. **PR 2 merged as #20 (squashed into `main` as `16773a5`). PR 3 (§5) on `feat/objective-eda`, from the handoff's §6.** PR 3: 3.1 done (2026-11-01; the objective EDA as the notebook's section 5, before tuning: one setting for both models, `lgbm_poisson` with exposure on, Model 2 by coordinate descent, M10–M11), committed as `55dbb88` (3.1a), `17680ac` (3.1b), `1eab956` (3.1c) and the docs (3.1d). 3.2 done (2026-11-01; the 400-trial click: the objectives' validation differences within one holdout's noise; the user keeps the Poisson deviance). Then the user's notes on the EDA (2026-11-01: "I wanted to investigate all the trials"): 3.1e done (every trial records every metric, M12), committed as `ed9b5d5`; 3.1f done (the trials tables), committed as `4afb834`; 3.1g (matplotlib plots, slices, a rank table) done but superseded by the user's next notes and never committed (M13). 3.1h done (plotly 7.1.0 in the `notebook` group), committed as `b3b2b4b`. 3.1i done (every trial as a row of the whole model; 3.1g removed). **Next: 3.1j (the summary and the plotly figures), then 3.2b and 3.3, from the handoff's §6.**
 
 The user's notes of 2026-10-30 on the experiment notebook. They replace the order of
 [EXPERIMENT_NOTEBOOK_HANDOFF.md](EXPERIMENT_NOTEBOOK_HANDOFF.md) §6: MLflow and E11's final
@@ -169,8 +169,9 @@ The standing rules are those of [EXPERIMENT_NOTEBOOK_PLAN.md](EXPERIMENT_NOTEBOO
     model the trial scored ("the results are w.r.t. tuning all components"): Model 1's three
     cohort components; Model 2 by coordinate descent (kept), a total-step row with its drawn
     total and the fixed classifier, a probability-step row with the step's best total and its
-    drawn classifier, the ids running across the two steps (`0..n_trials-1` the totals,
-    `n_trials..2·n_trials-1` the probabilities), no `step` column. `FeatureTransformer` has no
+    drawn classifier, each row identified by its `step` (`total`, `probability`) and its own
+    study's trial number (the user's choice in 3.1i, superseding one id sequence across the
+    steps). `FeatureTransformer` has no
     name: the name is its key in the family's candidates, found by identity;
   - **a summary table of the best models and their scores:** a row per model × objective (6):
     the best trial's id, its cv on the six metrics, the refit's validation scores on the six
@@ -1008,18 +1009,51 @@ mutations passed. The user's next notes replaced them (M13): whole-model rows, a
 figures, no slices, no rank table. Its edits are still in the working tree (the plot cell, the
 `Figure` import, a sentence in the EDA text); 3.1i removes them.
 
-#### [ ] 3.1h plotly in the notebook group (build only)
+#### [x] 3.1h plotly in the notebook group (build only)
 
-- **Change:** `uv add --group notebook plotly` (pyproject.toml, uv.lock); the same version into
+- **Change:** `uv add --group notebook plotly --no-sync` (pyproject.toml `plotly>=7.1.0`; uv.lock
+  plotly 7.1.0 and the group's two lists, no other version changed); the same version into
   `~/.venvs/age-group-prediction` for the checks; the user runs `uv sync --all-groups` for the
   kernel's `.venv`.
-- **Checks:** plotly imports under `-W error`; a `make_subplots` figure renders through
-  `mo.hstack`; the non-slow suite unchanged.
+- **Checks:** plotly imports under `-W error`; three 6-panel `make_subplots` figures in
+  `mo.hstack`, run in a marimo kernel (`marimo export html`; marimo's formatter registers only in
+  a kernel), render as three `<marimo-plotly>` elements, no iframe; the non-slow suite 1387
+  passed, 1 skipped, 1 xfailed, 19 deselected.
+- **A version gap, measured:** marimo 0.24.0's frontend bundles plotly.js 3.8.2, plotly.py 7 is
+  built for plotly.js 4.1.1. The JSON of the same figure (stacked panels, a red-star trace, a
+  dashed vline, hover) from plotly 6.9.0 and 7.1.0 differs only in the default template's
+  `mapbox` / `scattermapbox` entries (mapbox left plotly.js 4), so 7.1.0 is kept.
 - **Commit** (pyproject.toml and uv.lock only; the notebook stays uncommitted):
-  `build(notebook): plotly in the notebook group, for the EDA's interactive figures`
+  `build(notebook): plotly in the notebook group, for the EDA's interactive figures` (`b3b2b4b`)
 
-#### [ ] 3.1i Every trial as a row of the whole model (notebook)
+#### [x] 3.1i Every trial as a row of the whole model (notebook)
 
+**Done (2026-11-01), revised three times at the user's notes.** The first version passed a
+`components_of(params)` callable and `first_id`; the second set the components explicitly with
+Model 2's two steps in one id sequence; the third merged Model 2's two step studies into one
+Optuna study. The user then chose to keep each original trial, with the component its step held
+fixed, in the table rows (notebook only, no `src` change), identified by its step and its own
+study's number:
+- `trials_table(study, objective, metric_names, components_by_trial, feature_transformer_dict)`:
+  `components_by_trial` one tuple per trial in the study's order (`zip(..., strict=True)`), the
+  `id` the trial's number;
+- in each objective's iteration the run cell sets the components explicitly with
+  `from_params(trial.params, ...)` in a comprehension before the call (no B023, unlike a lambda):
+  Model 1 the three cohorts'; Model 2 a table per step, `.assign(step=...)` (the last column):
+  `total`, each drawn total with `MODEL2_FIXED_PROBABILITY_COMPONENT`; `probability`, step 1's
+  best total with each drawn classifier, ids 0..n-1 in each;
+- the fixed classifier's cell, the imports and the refit as before 3.1i.
+Checks: the notebook test 13 passed; ruff 20 (HEAD's 16 + the user's two display cells, a B018 and
+a PLR1711 each; 3.1g's one gone; none new); the format diff the two hunks; `marimo check` no issue;
+Check B `trials_table` defined, `Figure` and the EDA's frames not; Check C the 24 baselines,
+the six `cv_best`, Model 2's recomputation, 9 and 18 rows in M13's columns, Model 2's ids 0–2 per
+objective and step, `total` rows the fixed classifier, `probability` rows step 1's best total, the drawn
+hyperparameters equal to the studies' params, each study's minimum its `cv_best`; against a
+reference run before the change every frame and record equal (without `seconds`). Mutations, each
+caught: the fixed classifier given sigmoid calibration in the `total` rows; the two step labels
+swapped. Check B: the fixed classifier equals HEAD's.
+
+The first plan (its `trials_table` superseded by the note above):
 - **Change:**
   - 3.1g's plot cell, its `Figure` import and its text sentence removed; the user's edits kept
     (marimo's stamp 0.25.2, the empty cell removed, the cells displaying the two trials tables,

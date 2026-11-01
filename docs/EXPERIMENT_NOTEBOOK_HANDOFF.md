@@ -238,14 +238,17 @@ results:
   | `40ea139` | the log loss checked; the objectives cross-validated on every metric |
   | `ed9b5d5` | 3.1e every trial records every metric (`src`; M12) |
   | `4afb834` | 3.1f the trials tables |
-  | (this handoff) | the handoff for 3.1h–3.1j |
+  | `5c52a8a` | the handoff for 3.1h–3.1j |
+  | `b3b2b4b` | 3.1h plotly 7.1.0 in the `notebook` group |
+  | (next) | 3.1i every trial as a row of the whole model; 3.1g removed |
 
 - **The working tree is not clean, on purpose:** `notebooks/02_experiments.py` holds 3.1g
   (matplotlib plots, slices and a rank table; superseded by M13, never to be committed: its plot
   cell, the `Figure` import, a sentence in the EDA text) and the user's editor saves (marimo's
   stamp 0.25.2, one empty cell removed, two cells displaying `eda_model1_trials_df` and
   `eda_model2_trials_df`, the table cell's parameters reflowed). Its md5 at this handoff:
-  `812fdb31b46b8ebb7ddf9d279688f981`. 3.1i removes 3.1g and keeps the user's edits.
+  `812fdb31b46b8ebb7ddf9d279688f981`. 3.1i removes 3.1g and keeps the user's edits (committed
+  with 3.1i).
 - **Checks at 3.1g** (3.1e's suite and mypy still hold: `src` unchanged since): the non-slow
   suite 1387 passed, 1 skipped, 1 xfailed, 19 deselected; mypy no issues (28 files); Check A: the
   notebook test 13 passed, **ruff 16** (14 + 2 × PLR1711 on the EDA's bare-`return` text and
@@ -328,8 +331,9 @@ md5, the commit message. Tick the sub-task and update the status lines.
 - No new ruff finding. A cell lists every notebook name it uses as a parameter, sorted.
 
 **The checks:**
-- **Check A:** the notebook test, ruff (16 since 3.1b: 14 + the EDA's two bare `return`s; none
-  new), the format diff (the two hunks), `marimo check` (one empty cell).
+- **Check A:** the notebook test, ruff (20 since 3.1i: 14 + the EDA's two bare `return`s + the
+  user's two cells displaying the trials tables, a B018 and a PLR1711 each; none new), the format
+  diff (the two hunks), `marimo check` (no issue since the user removed the empty cell).
 - **Check B:** the names a script run defines (`app.run()`'s defs); nothing fitted.
 - **Check C:** the clicked run on a copy. Build `<scratch>/project/notebooks/02_experiments.py`
   from the notebook with the line `    n_trials = 400` replaced by `    n_trials = 3` (by line),
