@@ -642,9 +642,15 @@ def _(mo):
     for the composite; `cv_best` is the study's value in its own objective.
     The independent cohorts model keeps the sharing flags of its runs in
     section 6 (one set of hyperparameters, a transformer per cohort). The
-    expected caveat: the log loss scores each row's proportions only (the
-    row divided by its sum), so under it the independent cohorts model's
-    scale gets no signal.
+    total times probability model is tuned by coordinate descent, as its
+    runs in section 6: its total with the probabilities fixed at a plain
+    logistic model, then its logistic probabilities with that best total
+    fixed; its `cv_best` is the second study's value, the pair's, and its
+    seconds are the two studies'. The expected caveat: the log loss scores
+    each row's proportions only (the row divided by its sum), so under it
+    the independent cohorts model's scale and the total times probability
+    model's total get no signal (the total changes nothing in the log loss,
+    so every trial of its study scores the same).
     """)
     return
 
@@ -777,6 +783,23 @@ def _(
 
 
 @app.cell
+def _(LogisticParams, PROBABILITY_FEATURE_TRANSFORMERS, ProbabilityComponent):
+    # The total times probability model's fixed probabilities in coordinate
+    # descent's step 1, in the objective EDA and in section 6. The composite
+    # deviance is the total's deviance plus the probabilities' log loss, so a
+    # fixed classifier adds the same constant to every trial and any one finds
+    # the same best total: the cheapest.
+    MODEL2_FIXED_PROBABILITY_COMPONENT = ProbabilityComponent(
+        name="probability",
+        family="logistic",
+        calibration_method=None,
+        estimator_params=LogisticParams(C=1.0),
+        feature_transformer=PROBABILITY_FEATURE_TRANSFORMERS["logistic"]["glm_base"],
+    )
+    return (MODEL2_FIXED_PROBABILITY_COMPONENT,)
+
+
+@app.cell
 def _(mo):
     run_eda = mo.ui.run_button(label="Run the objective EDA")
     mo.md(
@@ -813,8 +836,8 @@ def _(
     _family, _use_exposure = "lgbm_poisson", True
     _scores_by_objective = {}
     for _objective in EDA_OBJECTIVES:
-        _tuner = dataclasses.replace(tuner, metric=_objective)
-        _study, _seconds = _tuner.tune_independent_cohorts_model(
+        _objective_tuner = dataclasses.replace(tuner, metric=_objective)
+        _study, _seconds = _objective_tuner.tune_independent_cohorts_model(
             train_age_group.X,
             train_age_group.Y,
             train_age_group.exposure,
@@ -855,7 +878,106 @@ def _(
 
 
 @app.cell
-def _(eda_model1_df, mo):
+def _(
+    COHORTS,
+    COUNT_FEATURE_TRANSFORMERS,
+    CountComponent,
+    EDA_OBJECTIVES,
+    METRICS,
+    MODEL2_FIXED_PROBABILITY_COMPONENT,
+    PREDICTION_FLOOR,
+    PROBABILITY_FEATURE_TRANSFORMERS,
+    ProbabilityComponent,
+    build_total_times_probability_model,
+    cv_groups,
+    dataclasses,
+    evaluate,
+    mo,
+    pd,
+    run_eda,
+    seed,
+    train_age_group,
+    tuner,
+    val_age_group,
+):
+    mo.stop(not run_eda.value, mo.md("Click the button to run the objective EDA."))
+    # The total times probability model's EDA run, by coordinate descent as its
+    # runs in section 6: per objective, step 1 tunes the total with the fixed
+    # classifier, step 2 the probabilities with step 1's best total; every
+    # study seeded seed (M8). Step 2's value is the pair's cv: its fixed total
+    # is the pair's.
+    _total_family, _probability_family, _use_exposure = "lgbm_poisson", "logistic", True
+    _scores_by_objective = {}
+    for _objective in EDA_OBJECTIVES:
+        _objective_tuner = dataclasses.replace(tuner, metric=_objective)
+        _total_study, _total_seconds = _objective_tuner.tune_total_component(
+            train_age_group.X,
+            train_age_group.Y,
+            train_age_group.exposure,
+            cv_groups,
+            total_family=_total_family,
+            use_exposure=_use_exposure,
+            total_feature_transformer_dict=COUNT_FEATURE_TRANSFORMERS[_total_family],
+            probability_component=MODEL2_FIXED_PROBABILITY_COMPONENT,
+            y_min=PREDICTION_FLOOR,
+            random_state=seed,
+            study_seed=seed,
+        )
+        _total_component = CountComponent.from_params(
+            _total_study.best_params,
+            name="total",
+            family=_total_family,
+            use_exposure=_use_exposure,
+            feature_transformer_dict=COUNT_FEATURE_TRANSFORMERS[_total_family],
+        )
+        _probability_study, _probability_seconds = (
+            _objective_tuner.tune_probability_component(
+                train_age_group.X,
+                train_age_group.Y,
+                train_age_group.exposure,
+                cv_groups,
+                total_component=_total_component,
+                probability_family=_probability_family,
+                probability_feature_transformer_dict=PROBABILITY_FEATURE_TRANSFORMERS[
+                    _probability_family
+                ],
+                y_min=PREDICTION_FLOOR,
+                random_state=seed,
+                study_seed=seed,
+            )
+        )
+        _probability_component = ProbabilityComponent.from_params(
+            _probability_study.best_params,
+            name="probability",
+            family=_probability_family,
+            feature_transformer_dict=PROBABILITY_FEATURE_TRANSFORMERS[
+                _probability_family
+            ],
+        )
+        _model = build_total_times_probability_model(
+            _total_component,
+            _probability_component,
+            y_min=PREDICTION_FLOOR,
+            random_state=seed,
+        ).fit(train_age_group.X, train_age_group.Y, exposure=train_age_group.exposure)
+        # Every metric on validation, per cohort and for the composite; the
+        # pair's value (in its own objective) and the two studies' seconds on
+        # each row.
+        _scores_by_objective[_objective.name] = evaluate(
+            val_age_group.Y,
+            _model.predict(val_age_group.X, exposure=val_age_group.exposure),
+            METRICS,
+            cohorts=[*COHORTS, "composite"],
+        ).assign(
+            cv_best=_probability_study.best_value,
+            seconds=_total_seconds + _probability_seconds,
+        )
+    eda_model2_df = pd.concat(_scores_by_objective, names=["objective"]).reset_index()
+    return (eda_model2_df,)
+
+
+@app.cell
+def _(eda_model1_df, eda_model2_df, mo):
     mo.vstack(
         [
             mo.md(
@@ -865,6 +987,12 @@ def _(eda_model1_df, mo):
                 "own objective; seconds: the study's)"
             ),
             mo.ui.table(eda_model1_df.round(4)),
+            mo.md(
+                "**The total times probability model** (the same; cv_best: step "
+                "2's value, the pair's, in its own objective; seconds: the two "
+                "studies')"
+            ),
+            mo.ui.table(eda_model2_df.round(4)),
         ]
     )
     return
@@ -1194,7 +1322,7 @@ def _(mo, model1_arms_df, model1_df):
 
 
 @app.cell
-def _(LogisticParams, PROBABILITY_FEATURE_TRANSFORMERS, ProbabilityComponent):
+def _():
     # The total times probability model by coordinate descent (2.3a). Step 1
     # tunes the total, one run per count family × exposure on or off, in the
     # order of their seeds (the i-th study gets seed + i); step 2 tunes the
@@ -1213,22 +1341,7 @@ def _(LogisticParams, PROBABILITY_FEATURE_TRANSFORMERS, ProbabilityComponent):
         {"probability_family": "logistic"},
         {"probability_family": "lgbm"},
     ]
-    # Step 1's fixed probabilities. The composite deviance is the total's
-    # deviance plus the probabilities' log loss, so a fixed classifier adds the
-    # same constant to every trial and any one finds the same best total: the
-    # cheapest.
-    MODEL2_FIXED_PROBABILITY_COMPONENT = ProbabilityComponent(
-        name="probability",
-        family="logistic",
-        calibration_method=None,
-        estimator_params=LogisticParams(C=1.0),
-        feature_transformer=PROBABILITY_FEATURE_TRANSFORMERS["logistic"]["glm_base"],
-    )
-    return (
-        MODEL2_FIXED_PROBABILITY_COMPONENT,
-        MODEL2_PROBABILITY_RUN_SETTINGS,
-        MODEL2_TOTAL_RUN_SETTINGS,
-    )
+    return MODEL2_PROBABILITY_RUN_SETTINGS, MODEL2_TOTAL_RUN_SETTINGS
 
 
 @app.cell
