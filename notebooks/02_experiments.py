@@ -630,7 +630,250 @@ def _():
 @app.cell(hide_code=True)
 def _(mo):
     mo.md(r"""
-    ## 5) Hyperparameter tuning
+    ## 5) The objective EDA
+
+    Which objective should the tuner minimize? One run per model of section
+    6, with the same setting for both (`lgbm_poisson`, exposure on), is
+    tuned three times, once on each of `EDA_OBJECTIVES`: the log loss, the
+    Poisson deviance and RMSE of the composite. The three studies of a run
+    share their seed, so their 20 random startup trials are the same draws
+    and only the objective differs. Each study's best model is refit on the
+    training part and scored on validation on every metric, per cohort and
+    for the composite; `cv_best` is the study's value in its own objective.
+    The independent cohorts model keeps the sharing flags of its runs in
+    section 6 (one set of hyperparameters, a transformer per cohort). The
+    expected caveat: the log loss scores each row's proportions only (the
+    row divided by its sum), so under it the independent cohorts model's
+    scale gets no signal.
+    """)
+    return
+
+
+@app.cell
+def _():
+    import dataclasses
+
+    import numpy as np
+    import optuna
+
+    from age_group_prediction.hyperparameter_tuning import (
+        CountComponent,
+        CrossValidationTuner,
+        LogisticParams,
+        ProbabilityComponent,
+        ProbabilitySearchSpace,
+        build_independent_cohorts_model,
+        build_total_times_probability_model,
+    )
+    from age_group_prediction.inspection import (
+        BootstrapEvaluator,
+        PermutationImportance,
+        ShapExplainer,
+    )
+    from age_group_prediction.scoring import (
+        Metric,
+        evaluate,
+        mean_absolute_error_loss,
+        mean_bias_error,
+        mean_poisson_deviance_loss,
+        multinomial_log_loss,
+        root_mean_squared_error_loss,
+        wmape_loss,
+    )
+
+    # Optuna logs every trial at INFO; the studies run in this process.
+    optuna.logging.set_verbosity(optuna.logging.WARNING)
+    return (
+        BootstrapEvaluator,
+        CountComponent,
+        CrossValidationTuner,
+        LogisticParams,
+        Metric,
+        PermutationImportance,
+        ProbabilityComponent,
+        ProbabilitySearchSpace,
+        ShapExplainer,
+        build_independent_cohorts_model,
+        build_total_times_probability_model,
+        dataclasses,
+        evaluate,
+        mean_absolute_error_loss,
+        mean_bias_error,
+        mean_poisson_deviance_loss,
+        multinomial_log_loss,
+        np,
+        root_mean_squared_error_loss,
+        wmape_loss,
+    )
+
+
+@app.cell
+def _(
+    Metric,
+    mean_absolute_error_loss,
+    mean_bias_error,
+    mean_poisson_deviance_loss,
+    multinomial_log_loss,
+    root_mean_squared_error_loss,
+    wmape_loss,
+):
+    # The primary metric: the study's objective, the best run's rule and the
+    # permutation importance's score, with the direction Optuna is given; a
+    # loss, so "minimize".
+    POISSON_DEVIANCE = Metric(
+        "poisson_deviance", mean_poisson_deviance_loss, direction="minimize"
+    )
+    LOG_LOSS = Metric("log_loss", multinomial_log_loss, direction="minimize")
+    RMSE = Metric("rmse", root_mean_squared_error_loss, direction="minimize")
+
+    # Every metric, the primary first: each run's score table (each cohort
+    # through `cohort=`, then the composite) and the bootstrap of the best
+    # runs. The count metrics pool the (building, cohort) cells. Bias is
+    # signed, so its direction is nominal: only the permutation importance
+    # reads one.
+    METRICS = (
+        POISSON_DEVIANCE,
+        LOG_LOSS,
+        Metric("mae", mean_absolute_error_loss, direction="minimize"),
+        RMSE,
+        Metric("wmape", wmape_loss, direction="minimize"),
+        Metric("bias", mean_bias_error, direction="minimize"),
+    )
+    # The objective EDA's objectives (section 5), the same objects as in METRICS.
+    EDA_OBJECTIVES = (LOG_LOSS, POISSON_DEVIANCE, RMSE)
+    return EDA_OBJECTIVES, METRICS, POISSON_DEVIANCE
+
+
+@app.cell
+def _(Y, np):
+    COHORTS = list(Y.columns)
+    # The smallest mean a CountModel predicts: a Gaussian loss can predict a
+    # negative count, the Poisson deviance raises at 0 and stays finite at eps.
+    PREDICTION_FLOOR = float(np.finfo(float).eps)
+    return COHORTS, PREDICTION_FLOOR
+
+
+@app.cell
+def _(
+    CrossValidationTuner,
+    POISSON_DEVIANCE,
+    cv,
+    n_splits,
+    n_startup_trials,
+    n_trials,
+):
+    # The study's design, the same for every run: the Poisson deviance of the
+    # composite on each fold, the plain mean over them, the first
+    # n_startup_trials of n_trials at random; each trial fits its folds in
+    # n_splits processes (D13, D20, D26).
+    tuner = CrossValidationTuner(
+        cv=cv,
+        metric=POISSON_DEVIANCE,
+        n_trials=n_trials,
+        n_startup_trials=n_startup_trials,
+        n_jobs=n_splits,
+    )
+    return (tuner,)
+
+
+@app.cell
+def _(mo):
+    run_eda = mo.ui.run_button(label="Run the objective EDA")
+    mo.md(
+        f"{run_eda} One run per model, tuned once on each of `EDA_OBJECTIVES`; "
+        "each trial fits its folds in parallel."
+    )
+    return (run_eda,)
+
+
+@app.cell
+def _(
+    COHORTS,
+    COUNT_FEATURE_TRANSFORMERS,
+    CountComponent,
+    EDA_OBJECTIVES,
+    METRICS,
+    PREDICTION_FLOOR,
+    build_independent_cohorts_model,
+    cv_groups,
+    dataclasses,
+    evaluate,
+    mo,
+    pd,
+    run_eda,
+    seed,
+    train_age_group,
+    tuner,
+    val_age_group,
+):
+    mo.stop(not run_eda.value, mo.md("Click the button to run the objective EDA."))
+    # The independent cohorts model's EDA run: one study per objective, each
+    # seeded seed, so the three share their startup draws (M8); the tuner's
+    # design but its metric. A failed trial is caught by the study.
+    _family, _use_exposure = "lgbm_poisson", True
+    _scores_by_objective = {}
+    for _objective in EDA_OBJECTIVES:
+        _tuner = dataclasses.replace(tuner, metric=_objective)
+        _study, _seconds = _tuner.tune_independent_cohorts_model(
+            train_age_group.X,
+            train_age_group.Y,
+            train_age_group.exposure,
+            cv_groups,
+            family=_family,
+            use_exposure=_use_exposure,
+            cohorts=COHORTS,
+            feature_transformer_dict=COUNT_FEATURE_TRANSFORMERS[_family],
+            share_hyperparams=True,
+            share_feature_transformer=False,
+            y_min=PREDICTION_FLOOR,
+            random_state=seed,
+            study_seed=seed,
+        )
+        _best_components = tuple(
+            CountComponent.from_params(
+                _study.best_params,
+                name=cohort,
+                family=_family,
+                use_exposure=_use_exposure,
+                feature_transformer_dict=COUNT_FEATURE_TRANSFORMERS[_family],
+            )
+            for cohort in COHORTS
+        )
+        _model = build_independent_cohorts_model(
+            _best_components, y_min=PREDICTION_FLOOR, random_state=seed
+        ).fit(train_age_group.X, train_age_group.Y, exposure=train_age_group.exposure)
+        # Every metric on validation, per cohort and for the composite; the
+        # study's value (in its own objective) and its seconds on each row.
+        _scores_by_objective[_objective.name] = evaluate(
+            val_age_group.Y,
+            _model.predict(val_age_group.X, exposure=val_age_group.exposure),
+            METRICS,
+            cohorts=[*COHORTS, "composite"],
+        ).assign(cv_best=_study.best_value, seconds=_seconds)
+    eda_model1_df = pd.concat(_scores_by_objective, names=["objective"]).reset_index()
+    return (eda_model1_df,)
+
+
+@app.cell
+def _(eda_model1_df, mo):
+    mo.vstack(
+        [
+            mo.md(
+                "**The objective EDA: the independent cohorts model** (each "
+                "objective's best model refit; every metric on validation, per "
+                "cohort and for the composite; cv_best: the study's value in its "
+                "own objective; seconds: the study's)"
+            ),
+            mo.ui.table(eda_model1_df.round(4)),
+        ]
+    )
+    return
+
+
+@app.cell(hide_code=True)
+def _(mo):
+    mo.md(r"""
+    ## 6) Hyperparameter tuning
 
     Two models: the independent cohorts model (Model 1, one count model per
     cohort) and the total times probability model (Model 2, a count model of
@@ -711,130 +954,6 @@ def _(mo):
     importances' rankings side by side.
     """)
     return
-
-
-@app.cell
-def _():
-    import numpy as np
-    import optuna
-
-    from age_group_prediction.hyperparameter_tuning import (
-        CountComponent,
-        CrossValidationTuner,
-        LogisticParams,
-        ProbabilityComponent,
-        ProbabilitySearchSpace,
-        build_independent_cohorts_model,
-        build_total_times_probability_model,
-    )
-    from age_group_prediction.inspection import (
-        BootstrapEvaluator,
-        PermutationImportance,
-        ShapExplainer,
-    )
-    from age_group_prediction.scoring import (
-        Metric,
-        evaluate,
-        mean_absolute_error_loss,
-        mean_bias_error,
-        mean_poisson_deviance_loss,
-        multinomial_log_loss,
-        root_mean_squared_error_loss,
-        wmape_loss,
-    )
-
-    # Optuna logs every trial at INFO; the studies run in this process.
-    optuna.logging.set_verbosity(optuna.logging.WARNING)
-    return (
-        BootstrapEvaluator,
-        CountComponent,
-        CrossValidationTuner,
-        LogisticParams,
-        Metric,
-        PermutationImportance,
-        ProbabilityComponent,
-        ProbabilitySearchSpace,
-        ShapExplainer,
-        build_independent_cohorts_model,
-        build_total_times_probability_model,
-        evaluate,
-        mean_absolute_error_loss,
-        mean_bias_error,
-        mean_poisson_deviance_loss,
-        multinomial_log_loss,
-        np,
-        root_mean_squared_error_loss,
-        wmape_loss,
-    )
-
-
-@app.cell
-def _(
-    Metric,
-    mean_absolute_error_loss,
-    mean_bias_error,
-    mean_poisson_deviance_loss,
-    multinomial_log_loss,
-    root_mean_squared_error_loss,
-    wmape_loss,
-):
-    # The primary metric: the study's objective, the best run's rule and the
-    # permutation importance's score, with the direction Optuna is given; a
-    # loss, so "minimize".
-    POISSON_DEVIANCE = Metric(
-        "poisson_deviance", mean_poisson_deviance_loss, direction="minimize"
-    )
-    LOG_LOSS = Metric("log_loss", multinomial_log_loss, direction="minimize")
-    RMSE = Metric("rmse", root_mean_squared_error_loss, direction="minimize")
-
-    # Every metric, the primary first: each run's score table (each cohort
-    # through `cohort=`, then the composite) and the bootstrap of the best
-    # runs. The count metrics pool the (building, cohort) cells. Bias is
-    # signed, so its direction is nominal: only the permutation importance
-    # reads one.
-    METRICS = (
-        POISSON_DEVIANCE,
-        LOG_LOSS,
-        Metric("mae", mean_absolute_error_loss, direction="minimize"),
-        RMSE,
-        Metric("wmape", wmape_loss, direction="minimize"),
-        Metric("bias", mean_bias_error, direction="minimize"),
-    )
-    # The objective EDA's objectives (section 6), the same objects as in METRICS.
-    EDA_OBJECTIVES = (LOG_LOSS, POISSON_DEVIANCE, RMSE)
-    return EDA_OBJECTIVES, METRICS, POISSON_DEVIANCE
-
-
-@app.cell
-def _(Y, np):
-    COHORTS = list(Y.columns)
-    # The smallest mean a CountModel predicts: a Gaussian loss can predict a
-    # negative count, the Poisson deviance raises at 0 and stays finite at eps.
-    PREDICTION_FLOOR = float(np.finfo(float).eps)
-    return COHORTS, PREDICTION_FLOOR
-
-
-@app.cell
-def _(
-    CrossValidationTuner,
-    POISSON_DEVIANCE,
-    cv,
-    n_splits,
-    n_startup_trials,
-    n_trials,
-):
-    # The study's design, the same for every run: the Poisson deviance of the
-    # composite on each fold, the plain mean over them, the first
-    # n_startup_trials of n_trials at random; each trial fits its folds in
-    # n_splits processes (D13, D20, D26).
-    tuner = CrossValidationTuner(
-        cv=cv,
-        metric=POISSON_DEVIANCE,
-        n_trials=n_trials,
-        n_startup_trials=n_startup_trials,
-        n_jobs=n_splits,
-    )
-    return (tuner,)
 
 
 @app.cell
