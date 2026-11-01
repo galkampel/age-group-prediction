@@ -974,14 +974,40 @@ the tuning).
     left to chance. Its good validation row for Model 1 is one holdout, with the same noise.
   - **RMSE is last or close to last on every metric, its own included,** for both models (Model
     1's RMSE 4.6070 against 4.5115 and 4.5393).
-  - **`cv_best` is in each objective's own metric,** so it ranks nothing across objectives; a
-    comparison beyond the holdout's noise would need each study's best model cross-validated on
-    every metric (the same folds, not one holdout).
+  - **`cv_best` is in each objective's own metric,** so it ranks nothing across objectives; the
+    cross-validated comparison below does.
+- **The log loss checked, at the user's question** ("how come the CE loss is a bad metric? is
+  the implementation correct?"; a read-only probe, 2026-11-01):
+  - **The implementation is correct.** `multinomial_log_loss` equals `−Σ n log p / Σ n` written by
+    hand (2e-16); rows scaled by random positive factors give the same value (0.0); `cohort=`
+    equals the binary cross-entropy (0.0); on Model 2's validation predictions the composite
+    deviance equals `D_total / K + 2 (C + N · log_loss) / (n K)` (3e-15). The deviance holds the
+    log loss and the total's term besides.
+  - **It is a proper score of the proportions, not a complete objective for counts:** it cannot
+    see a row's total or scale. Model 2's log-loss step 1 had one distinct value over its 400
+    trials, and its best was trial 0. The logistic step finds nearly the same classifier under
+    either objective (`C` 0.1075 against 0.1076, `sigmoid`, `room_share_x_median_age`).
+  - **Cross-validated on every metric** (the EDA's log-loss and deviance models rebuilt, their
+    validation rows equal to the table above; the mean over the tuner's 5 folds):
+
+    | Model | Tuned on | Deviance | Log loss | MAE | RMSE | WMAPE | Bias |
+    |---|---|---|---|---|---|---|---|
+    | 2 | log loss | 2.1536 | 1.0828 | 3.2165 | 4.4195 | 0.4063 | −0.0096 |
+    | 2 | Poisson deviance | **2.0622** | 1.0828 | **3.1556** | **4.3019** | **0.3987** | −0.0691 |
+    | 1 | log loss | 2.1853 | **1.0846** | 3.2376 | 4.4418 | 0.4090 | −0.0205 |
+    | 1 | Poisson deviance | **2.1246** | 1.0858 | **3.2007** | **4.3722** | **0.4044** | −0.0835 |
+
+    The deviance-tuned models win the deviance by 0.06–0.09 (3–4× the cv noise of about 0.02)
+    and MAE, RMSE and WMAPE, on which neither study was selected; the log-loss models have the
+    smaller bias, and Model 1's wins its own metric. Each study chose its best on these folds, so
+    each is favoured on its own metric; the other count metrics are the fairer evidence.
+  - **Why validation said the opposite:** every model's bias is about −0.45 on validation against
+    about 0 on cv: the validation part has more children per building than the training part
+    predicts. The log-loss models' lead rests on that one holdout (306 rows).
 - **The session's recommendation:** keep the Poisson deviance. It scores the counts the models
   predict (the total and the proportions alike), coordinate descent is exact under it (§2a), the
-  log loss leaves Model 2's total untuned, RMSE is no better anywhere, and the validation
-  differences do not exceed the holdout's noise. If the user wants evidence beyond one holdout,
-  the next step is the cross-validated comparison above, before 3.3.
+  log loss leaves Model 2's total untuned and loses every count metric on cv, and RMSE is no
+  better anywhere.
 - **The user's choice (2026-11-01): the Poisson deviance stays the tuner's objective.** 3.3
   changes no code: its docs, the PR's review and the PR.
 - **Commit:** `docs(notebook): the objective EDA's results`
