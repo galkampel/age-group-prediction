@@ -1,8 +1,9 @@
 # Handoff: the experiment notebook, PR 3 in progress (the objective EDA)
 
-**For:** the session that continues PR 3 of
-[NOTEBOOK_METRICS_LOOP_EDA_PLAN.md](NOTEBOOK_METRICS_LOOP_EDA_PLAN.md), the objective EDA, after its
-sub-task 3.1j: 3.1j's validation, then 3.2b and 3.3 (§2b, §6). That
+**For:** the session that makes the user's changes in the notebook's section 6 (hyperparameter
+tuning; the user describes them), then finishes PR 3 of
+[NOTEBOOK_METRICS_LOOP_EDA_PLAN.md](NOTEBOOK_METRICS_LOOP_EDA_PLAN.md), the objective EDA, with
+3.3 (§2b, §6). PR 3's EDA is built and read (3.1a–3.1l, 3.2, 3.2b). That
 plan has three PRs: the metrics in `scoring` (PR 1, merged as #18 into
 `feat/experiment-notebook`, which #19 merged into `main`), the runs in loops scored on every
 metric (PR 2, **merged as #20**, squashed into `main` as `16773a5`), and the objective EDA
@@ -14,7 +15,8 @@ The next session starts at §6.
 **Written:** 2026-10-29 after the tuning plan's T5; **rewritten** 2026-10-31 at the end of PR 2
 (2.1–2.5); **updated** 2026-10-31 after PR 2's merge (#20), for a new session; **updated**
 2026-11-01 in PR 3 (§2b, §6), for a new session; **updated** 2026-11-01 after 3.1h–3.1j (§1, §2b,
-§3, §4, §6), for a new session. The detailed history is in the metrics plan (§2 M1–M9, §4 2.1–2.5 with each
+§3, §4, §6), for a new session; **updated** 2026-11-02 after 3.1k, 3.1l and 3.2b (§1, §2b, §4,
+§5, §6), for a new session on section 6. The detailed history is in the metrics plan (§2 M1–M13, §4 2.1–2.5, §5 3.1–3.2b with each
 sub-task's "Done" note), in [NOTEBOOK_TUNING_PLAN.md](NOTEBOOK_TUNING_PLAN.md) (§0 D1–D30) and in
 git. Re-verify every fact here against the code of the day.
 
@@ -235,7 +237,7 @@ results:
 - Optuna's `PartialFixedSampler` raises `ExperimentalWarning` under `-W error`, so the fixing is
   done in the package's code.
 
-## 2b. PR 3 so far (2026-11-01)
+## 2b. PR 3 so far (2026-11-02)
 
 - **Commits on `feat/objective-eda`** (each sub-task's Done note is in the metrics plan §5):
 
@@ -255,7 +257,8 @@ results:
   | `b3b1c49` | 3.1i every trial as a row of the whole model; 3.1g removed |
   | `b4a0b77` | 3.1j the summary of the best models and the plotly figures; the handoff |
   | `52fa06d` | 3.1k the figures one column per model, the objective in a dropdown; 3.1l the objectives compared on a recorded metric |
-  | (the user's) | 3.2b the trials read (docs) |
+  | `2d159c4` | 3.2b the trials read (docs) |
+  | (the user's) | this handoff, for the section-6 session |
 
 - **3.1i took four versions at the user's notes** (the metrics plan's 3.1i Done note): a
   `components_of` callable with `first_id`; the components set explicitly with one id sequence; a
@@ -270,6 +273,14 @@ results:
   3.1i's and 3.1j's assertions (§4); every frame and record equal to a reference run made before
   3.1i; the six figures render in a marimo kernel. The user looked at them (2026-11-02) and asked
   for 3.1k: its checks (the metrics plan's 3.1k) rerun everything above against 3.1j's run.
+- **Checks at 3.1l (2026-11-02, the last notebook change):** the notebook test 13 passed; ruff 16
+  (none new); the two format hunks; `marimo check` no issue; Check B; Check C (99 s) with every
+  assertion of 3.1i–3.1l (§4); every frame and record equal to 3.1j's run exactly; the two
+  dropdowns and four figures render; two mutations per sub-task caught. The non-slow suite was
+  last run at 3.1h (`src` unchanged since 3.1e): 3.3 reruns it.
+- **The 400-trial EDA of 3.2b:** rerun on `52fa06d` (709 s, no warning; 1200 + 2400 trials);
+  its reading is the metrics plan's 3.2b. The user saw its figures through a small viewer app
+  that loads the figures' JSON (`marimo edit <app>`, no tuning; §4).
 - **The EDA's Check C values** (3 trials, `cv_best` by objective log loss / deviance / RMSE):
   Model 1 1.0855 / 2.1812 / 4.4406; Model 2 1.0833 / 2.1340 / 4.3941 (its deviance step 1
   2.1361; under the log loss its total step's trials all tie). Model 2's EDA equals an
@@ -390,10 +401,26 @@ md5, the commit message. Tick the sub-task and update the status lines.
   percentile and every star; `eda_recorded_metric` `poisson_deviance` by default; the display the
   two `poisson_deviance by objective` figures only. The script lives in the scratchpad and must be
   rewritten in a new session (below).
+- **The scripts of 2026-11-02** (if the scratchpad survived; check before rewriting), in
+  `/private/tmp/claude-501/-Users-galkampel-Desktop-Projects-age-group-prediction/b6fef19f-9c0f-4e5f-b31f-4d53156a429c/scratchpad`:
+  `checks/make_copy.py` (the 3-trial copy, both counts asserted), `checks/check_c.py` (every
+  assertion above; `outputs, defs = app.run()`; pickles the frames and writes the figures' JSON),
+  `checks/check_b.py`, `checks/compare.py` (two pickles, exact, `seconds` dropped),
+  `checks/run_check_c.sh` and `checks/run_all.sh`; `run_eda400.py` (the 400-trial EDA on a copy
+  with the EDA's stops opened); `read_trials_3_2b.py` and its log; `viewer/eda_figures_400.py`
+  (the viewer app). The reference pickle of 3.1l's Check C is `check_c_3_1l.pkl` there.
+- **A display's content:** `app.run()` returns `(outputs, defs)`; a cell's output is in
+  `outputs` (its `.text`), so Check C can assert what a cell shows (3.1k, 3.1l). Match whole
+  titles: "tuned **on**ce on" in the EDA button's label contains "tuned on".
 - **A figure's rendering:** marimo registers its plotly formatter only inside a kernel
   (`running_in_notebook()`), so a script shows plotly's own iframe; run a small app through
-  `marimo export html` and count the `<marimo-plotly data-figure=` elements (3.1j: Check C wrote
-  the six figures with `to_json()`, the app read them back with `plotly.io.from_json`).
+  `marimo export html` and count `marimo-plotly data-figure=` (3.1j: Check C wrote the figures
+  with `to_json()`, the app read them back with `plotly.io.from_json`). Count it without the
+  `<`: inside an `mo.vstack` the export escapes it as `<`.
+- **For the user to look at figures without a click:** run the cells on a copy (3 trials for the
+  layout, or the 400-trial EDA), save the figures' JSON, and give the user a small marimo app that
+  loads them (`.venv/bin/marimo edit <app>`): it opens in seconds and tunes nothing. marimo does
+  not store outputs in the `.py`.
 - **A reference-run comparison** (used since 2.4): before a change, run Check C on HEAD and
   pickle `eda_model1_df`, `eda_model2_df`, `model1_df`, `model2_df`, `model2_steps_df`, the two
   `*_arms_df`, `best_df`, `intervals_df`, `importance_df` and the records without `trials`,
@@ -431,6 +458,12 @@ read, seconds to 30+ s each).
 **Traps:**
 - **The scratchpad can vanish:** `/private/tmp` was emptied when the machine restarted
   (2026-11-01), taking the check scripts. Keep every number in the docs; rewrite the scripts.
+  Another session's scratchpad may survive (2026-11-02: the previous one did); read its scripts,
+  and copy them into the new session's scratchpad rather than writing there.
+- **The user's open marimo session** holds the code it loaded: if it was not started with
+  `--watch`, saving from it overwrites the edits on disk. Tell the user before editing the
+  notebook while they have it open; a cell rerun in it keeps the EDA's results, a reopened
+  notebook needs the click again.
 - **A copy of the notebook run in the project's `.venv`** (the marimo kernel's environment)
   needs `src` beside it: its first cell adds `<notebook dir>/../src` to `sys.path`, and that
   environment does not import the package otherwise. Symlink `<scratch>/project/src` too.
@@ -481,8 +514,8 @@ constructor, data in the call; fitting and evaluating as separate steps; no priv
   with T1's F7 below: Optuna's `multivariate=True`, more startup trials, a narrower space; not
   asked for.
 - **The EDA figures:** dark mode not selected (the dataviz skill asks for it; marimo's dark theme
-  shows them on the light surface); not looked at by the assistant. The user looked at 3.1j's and
-  asked for 3.1k (2026-11-02); the points at 400 trials are to be judged on 3.2b's figures.
+  shows them on the light surface); not looked at by the assistant (no browser). The user looked
+  at 3.1j's, asked for 3.1k and 3.1l, and approved 3.1k's at 400 trials ("Looks good!").
 - **A `log(n_apartments)` plan for the GLMs** (FEATURE_TRANSFORMATIONS.md §4.4); not asked for.
 - **What would shorten a click further** (about 26 min now), not asked for: dropping the GLM
   exposure-off arms (structurally worse by about 0.6); narrowing LightGBM's search after its
@@ -490,19 +523,34 @@ constructor, data in the call; fitting and evaluating as separate steps; no priv
 
 ## 6. Next, and the prompt
 
-**Status (2026-11-02):** PR 3's EDA is built (3.1a–3.1l) and read (3.2, 3.2b: the Poisson
-deviance stays the objective). 3.1j (`b4a0b77`) was validated within 3.1k's checks; the user
-looked at the figures and asked for 3.1k (one column per model, an objective dropdown) and 3.1l
-(the objectives compared on a recorded metric), committed as `52fa06d`; 3.2b (docs) is the
-user's to commit. Next, one step per approval, as the metrics plan §5 details them:
-1. **Done:** 3.1j's validation, 3.1k, 3.1l, 3.2b.
-2. **Done:** 3.2b (the 400-trial EDA rerun on `52fa06d` and its trials read).
-3. **3.3:** the suite and the PR's independent review subagent (findings reproduced before any
-   fix); the handoff rewritten for the deferred work (also README.md's and SPLITTING.md's "section
-   5", now section 6 for the tuning); in the chat, the PR's title and description, the
-   squash-merge title and description, and the commands that delete the remote and local
-   branch.
-4. **Deferred:** the MLflow runs (the D1e guard first: with `MLFLOW_TRACKING_URI` unset, MLflow
+**Status (2026-11-02, end of the session):** PR 3's EDA is built (3.1a–3.1l) and read (3.2,
+3.2b): the Poisson deviance stays the objective. Committed on `feat/objective-eda`: 3.1j
+(`b4a0b77`), 3.1k and 3.1l (`52fa06d`), 3.2b (`2d159c4`), then this handoff (the user's). The
+notebook's md5 is `affd69836a6d72cd453d862c2a2bb527`. Next, one step per approval:
+1. **The user's changes in section 6** (hyperparameter tuning, from line 1516 of the notebook):
+   the user describes them at the start of the session. First ask (AskUserQuestion, with a
+   recommendation) whether they go on this branch as PR 3's sub-tasks before 3.3 (the default:
+   numbered 3.4, 3.5, … in the metrics plan's §5), or in a new PR from `main` after PR 3's merge
+   (then 3.3 first). Then each change planned in plan mode: the facts re-verified with read-only
+   probes, a design question with evidence and a recommendation, the steps and the commit message
+   in the chat. What a section-6 change touches:
+   - **the pinned settings:** the notebook test pins `MODEL1_RUN_SETTINGS` (its
+     `test_the_run_settings_are_the_ones_the_baselines_were_recorded_with`) and needs every cell
+     holding `tuner.tune_` to hold `mo.stop(not `;
+   - **Check C's baselines:** the 24 `cv_best` of §2 are recorded with both sharing flags off at
+     3 trials; a change to the runs, the search or the `tuner` cell (it lives in section 5 and the
+     EDA uses it too: the EDA's Check C values of §2b) changes them: re-record them in the docs,
+     say so in the chat, and keep the reference-run comparison (§4) for what must not change;
+   - **the 400-trial click** of section 6 is about 26 min (Model 1 821 s, Model 2 752 s);
+   - **open items that belong to section 6** (§5): univariate TPE locking onto one region (3.2b),
+     T1's F7 (`num_leaves` above `2**max_depth`), T2.3's F5 (the two arms tables' idioms), and
+     what would shorten a click; none asked for yet.
+2. **3.3:** the non-slow suite (last run at 3.1h) and mypy; the PR's independent review subagent
+   (findings reproduced before any fix); the handoff rewritten for the deferred work (also
+   README.md's and SPLITTING.md's "section 5", now section 6 for the tuning); in the chat, the
+   PR's title and description, the squash-merge title and description, and the commands that
+   delete the remote and local branch.
+3. **Deferred:** the MLflow runs (the D1e guard first: with `MLFLOW_TRACKING_URI` unset, MLflow
    3.16 writes to the repo's canonical `mlflow.db` and its artifacts to `./mlruns`), D4's
    comparison table, and E11's final evaluation.
 
@@ -516,21 +564,23 @@ commit message; explain marimo's UI terms; keep the implementation simple; meani
 **The prompt for the next session:**
 
 ```text
-Read docs/EXPERIMENT_NOTEBOOK_HANDOFF.md in full (§2b, §3's PR 3 choices, §4's checks, traps and
-iCloud notes, and §6 first), then docs/NOTEBOOK_METRICS_LOOP_EDA_PLAN.md (§2 M10–M13, §5
-3.1h–3.3), then section 5 of notebooks/02_experiments.py. Verify the state first:
-- the branch feat/objective-eda, HEAD my commit of 3.1j and this handoff on top of b3b1c49; if
-  3.1j or the handoff is uncommitted, stop and tell me;
-- the working tree clean, and the notebook's md5 e14384d3ae57cb8b9d44eeffad1e811a via
+Read docs/EXPERIMENT_NOTEBOOK_HANDOFF.md in full (§1's section 6, §2b, §3, §4's checks, traps and
+iCloud notes, §5, and §6 first), then docs/NOTEBOOK_METRICS_LOOP_EDA_PLAN.md (§2 M10–M13, §5
+3.2b and 3.3) and docs/NOTEBOOK_TUNING_PLAN.md §0 (D1–D30), then sections 5 and 6 of
+notebooks/02_experiments.py. Verify the state first:
+- the branch feat/objective-eda, HEAD my commit of this handoff on top of 2d159c4; if the
+  handoff is uncommitted, stop and tell me;
+- the working tree clean, and the notebook's md5 affd69836a6d72cd453d862c2a2bb527 via
   `cat notebooks/02_experiments.py | md5`;
 - no iCloud-offloaded files: `find .git src notebooks tests docs configs -flags +dataless -type f
   | grep -vc __pycache__` is 0.
-If anything differs, stop and show me the diff. Then validate 3.1j (§6 step 1): rewrite the check
-scripts (§4) in the scratchpad, rerun Check A, Check B, Check C with 3.1i's and 3.1j's assertions
-and the rendering check, and report the results; I will look at the figures in marimo and may ask
-for changes, each planned in plan mode first. Then plan 3.2b in plan mode (re-verify the facts with
-read-only probes, write the steps and the commit message in the chat) and wait for my approval;
-then 3.3, planned the same way. Keep the implementation simple. I commit myself: never commit, no
-Co-Authored-By line, no "Generated with Claude Code" in PR text, never git
-checkout/stash/reset/mv.
+If anything differs, stop and show me the diff. Then I will describe the changes I want in
+section 6 (hyperparameter tuning). Ask me first whether they go on this branch before 3.3 or in a
+new PR after PR 3's merge, with your recommendation. Plan each change in plan mode (re-verify the
+facts with read-only probes, design questions with evidence and a recommendation, the steps and
+the commit message in the chat) and wait for my approval; stop after each with a file-by-file
+summary, the checks (§4), the notebook's md5 and the commit message. If the check scripts are
+gone, rewrite them in the scratchpad from §4. Then 3.3, planned the same way. Keep the
+implementation simple. I commit myself: never commit, no Co-Authored-By line, no "Generated with
+Claude Code" in PR text, never git checkout/stash/reset/mv.
 ```
