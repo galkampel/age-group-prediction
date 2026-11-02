@@ -82,34 +82,40 @@ git. Re-verify every fact here against the code of the day.
      - the 16 pairs (each total run × each probability run, read back from their
        `best_params`; `tuner.cross_validate(...)[tuner.objective_metric.name]` as `cv_best`;
        refit and scored; no search) → `MODEL2_RUNS`;
-   - **the refit and the scores** (Model 1's loop and Model 2's pairs): the best model fitted on
-     the training part, each part predicted, and `scoring.evaluate(<part>.Y, y_pred, METRICS,
-     cohorts=[*COHORTS, "composite"])`: a cohort × metric DataFrame per part (D30);
-   - **the tables:** `model1_df` and `model2_df`, long (one row per run × cohort × metric, with
-     `train` and `val`; `cv_best` and Model 1's trial counts and seconds on the primary metric's
-     composite row), shown with `mo.ui.table` (marimo's interactive table: sort, filter, pages);
-     `model2_steps_df` (one row per step study: `step`, `family`, `use_exposure`, `cv_best`,
-     `n_complete`, `n_failed`, `seconds`); `model1_arms_df` and `model2_arms_df` (trials per
-     categorical choice; Model 2's counted on the 10 step studies); `best_df` (each model's best
-     run on validation, by the primary metric's composite row);
-   - **behind "Inspect the best runs":** each model's best run rebuilt from its `best_params` and
-     refit on training; the bootstrap of the six metrics per cohort and for the composite, on
-     training and validation (`intervals_df`, 96 rows: model, split, cohort, metric, `mean`,
-     `lower`, `upper`, shown with `mo.ui.table`); the permutation importance and exact SHAP
-     (`importance_df`).
+   - **the bootstrap evaluator cell** (3.4, M14): `bootstrap_evaluator =
+     BootstrapEvaluator(n_resamples, alpha=alpha, random_state=seed)` (`alpha = 0.05` in section
+     2) and `CI_BOUND_NAMES` (`lower` → `ci95_lower`, `upper` → `ci95_upper`), for both models;
+   - **the refit and the scores** (Model 1's loop and Model 2's pairs): the best model fitted
+     on the training part; per dataset (`_dataset_name`, `_dataset`: train, val) predicted once,
+     `_dataset_scores = scoring.evaluate(...)`, `_dataset_intervals =
+     bootstrap_evaluator.evaluate(..., _dataset.groups, ...)` renamed, then joined: `scores` per
+     dataset, cohort and metric, `score, mean, ci95_lower, ci95_upper`; one evaluator, so every
+     model's replicates are the same rows (D30, M14);
+   - **the tables**, two per model, shown with `mo.ui.table` (marimo's interactive table: sort,
+     filter, pages): the runs (`model1_runs_df` 8 rows, `model2_runs_df` 16: the settings,
+     `feature_transformers`, `hyperparameters` per component, `cv_poisson_deviance`,
+     `n_complete`, `n_failed`, `seconds`; a pair's counts and seconds its two studies' summed)
+     and their scores (`model1_scores_df` 384 rows, `model2_scores_df` 768: a row per run ×
+     dataset × cohort × metric);
+   - **behind "Inspect the best runs":** each model's stored best model by the validation
+     composite deviance (no rebuild; the cell names the two runs); the permutation importance
+     and exact SHAP (`importance_df`).
 
-**The run records** (the input of the MLflow runs):
+**The run records** (the input of the MLflow runs; the best model only since 3.4, M14):
 - **Model 1** (`MODEL1_RUNS`): the run settings (`family`, `use_exposure`, the two sharing
-  flags), `trials` (`study.trials_dataframe()`), `components` (each best component's
-  `to_dict()`), `cv_best`, `best_params`, `train_scores`, `val_scores`, `seconds` (the study's),
-  `seed`, `y_min`.
+  flags), `feature_transformers` ({cohort: candidate name}), `model` (fitted on training),
+  `components` (the objects; `to_dict()` writes each transformer's declaration), `cv_best`,
+  `n_complete`, `n_failed`, `seconds` (the study's), `scores` (dataset × cohort × metric:
+  `score, mean, ci95_lower, ci95_upper`).
 - **Model 2's step runs** (`MODEL2_TOTAL_RUNS`, `MODEL2_PROBABILITY_RUNS`): their settings,
-  `trials`, `component` (the best), `fixed_component` (the other part, as the study held it),
-  `cv_best`, `best_params`, `seconds`, `seed`, `y_min`.
+  `feature_transformers`, `component` (the best, the object step 2 and the pairs take),
+  `cv_best`, `n_complete`, `n_failed`, `seconds`.
 - **Model 2's pairs** (`MODEL2_RUNS`): `total_family`, `probability_family`, `use_exposure`,
-  `components`, `cv_best` (the pair's `cv_score`), `best_params` (the two runs' merged),
-  `train_scores`, `val_scores`, `seed`, `y_min`. No `trials` or `seconds`: the step runs hold
-  them, and `seconds` is a study's time in both models.
+  `feature_transformers` (the two steps'), `model`, `components`, `cv_best` (the pair's
+  cross-validated objective), `n_complete`, `n_failed`, `seconds` (its two studies' summed),
+  `scores`.
+- No `trials`, `best_params`, `seed` or `y_min`: section 5 studies the trials; the model holds
+  the rest.
 
 **The packages it uses**, each with its guide:
 - [`hyperparameter_tuning`](HYPERPARAMETER_TUNING.md): records, search spaces, builders (the
@@ -368,7 +374,7 @@ md5, the commit message. Tick the sub-task and update the status lines.
 - No new ruff finding. A cell lists every notebook name it uses as a parameter, sorted.
 
 **The checks:**
-- **Check A:** the notebook test, ruff (16: 14 + the EDA's two bare `return`s; none new), the
+- **Check A:** the notebook test, ruff (14 since 3.4: 12 PLR1711, a B018, a RUF059; none new), the
   format diff (the two hunks), `marimo check` (no issue since the user removed the empty cell).
 - **Check B:** the names a script run defines (`app.run()`'s defs); nothing fitted.
 - **Check C:** the clicked run on a copy. Build `<scratch>/project/notebooks/02_experiments.py`
@@ -399,8 +405,18 @@ md5, the commit message. Tick the sub-task and update the status lines.
   the palette's colors and symbols, each box's y its study's column (Model 2's x the `step`), 3
   stars at each best trial (Model 2's in `probability`), the y-range holding the 2nd–98th
   percentile and every star; `eda_recorded_metric` `poisson_deviance` by default; the display the
-  two `poisson_deviance by objective` figures only. The script lives in the scratchpad and must be
-  rewritten in a new session (below).
+  two `poisson_deviance by objective` figures only. Since 3.4 (M14), against 3.1l's reference
+  pickle (`check_c_3_1l.pkl`, the run before 3.4): the EDA's frames exactly; each record's keys;
+  the components equal those `from_params` reads from 3.1l's `best_params`, the names its
+  transformer entries; each `scores` 48 rows (2 datasets × 4 cohorts × 6 metrics), `score`
+  equal 3.1l's `train_scores` / `val_scores` and the stored model's predictions, `ci95_lower ≤
+  mean ≤ ci95_upper`; a pair's counts and seconds its two studies' sums; the runs tables 8 and
+  16 rows (the hyperparameters the components' `estimator_params`), the scores tables 384 and
+  768 rows equal to the records' `scores`; the two best runs' intervals and `importance_df`
+  equal 3.1l's `intervals_df` and `importance_df` exactly; each model's last run's intervals
+  recomputed with `random_state=seed`; every record's `scores` equal 3.4's first version's
+  run (`check_c_3_4_first.pkl`) with the renames. The script lives in the scratchpad and must be rewritten in a new session
+  (below).
 - **The scripts of 2026-11-02** (if the scratchpad survived; check before rewriting), in
   `/private/tmp/claude-501/-Users-galkampel-Desktop-Projects-age-group-prediction/b6fef19f-9c0f-4e5f-b31f-4d53156a429c/scratchpad`:
   `checks/make_copy.py` (the 3-trial copy, both counts asserted), `checks/check_c.py` (every
@@ -523,7 +539,7 @@ constructor, data in the call; fitting and evaluating as separate steps; no priv
 
 ## 6. Next, and the prompt
 
-**Status (2026-11-02, end of the session):** PR 3's EDA is built (3.1a–3.1l) and read (3.2,
+**Status (2026-11-02, 3.4 done):** section 6 keeps each run's best model only, its feature transformers' names and its scores with the bootstrap's 95% interval per dataset, in a runs table and a scores table per model (3.4, M14; `alpha = 0.05` a setting; notebook md5 `676212a808f6c1f87f7926a58b3bffe6`, Check C 405–500 s); next 3.3. Before it: PR 3's EDA is built (3.1a–3.1l) and read (3.2,
 3.2b): the Poisson deviance stays the objective. Committed on `feat/objective-eda`: 3.1j
 (`b4a0b77`), 3.1k and 3.1l (`52fa06d`), 3.2b (`2d159c4`), then this handoff (the user's). The
 notebook's md5 is `affd69836a6d72cd453d862c2a2bb527`. Next, one step per approval:

@@ -244,6 +244,8 @@ def _(mo, pd):
     # TPE's random start: the trials drawn at random before its model guides the draws.
     n_startup_trials = 20
     n_resamples = 1000
+    # The bootstrap interval's level is 1 - alpha: 95%.
+    alpha = 0.05
     # The inspection of the best runs: permutation repeats per column, and the
     # validation rows SHAP explains against the training rows it averages over.
     n_repeats = 10
@@ -260,6 +262,7 @@ def _(mo, pd):
         "n_trials": n_trials,
         "n_startup_trials": n_startup_trials,
         "n_resamples": n_resamples,
+        "alpha": alpha,
         "n_repeats": n_repeats,
         "n_shap_rows": n_shap_rows,
         "n_shap_background": n_shap_background,
@@ -270,6 +273,7 @@ def _(mo, pd):
     )
     mo.md(f"```text\n{pd.DataFrame([EXPERIMENT_SETTINGS]).to_string(index=False)}\n```")
     return (
+        alpha,
         n_repeats,
         n_resamples,
         n_shap_background,
@@ -678,7 +682,6 @@ def _():
         CrossValidationTuner,
         LogisticParams,
         ProbabilityComponent,
-        ProbabilitySearchSpace,
         build_independent_cohorts_model,
         build_total_times_probability_model,
     )
@@ -708,7 +711,6 @@ def _():
         Metric,
         PermutationImportance,
         ProbabilityComponent,
-        ProbabilitySearchSpace,
         ShapExplainer,
         build_independent_cohorts_model,
         build_total_times_probability_model,
@@ -1540,18 +1542,31 @@ def _(mo):
     separate families, and the exposure a run setting: a study that sampled
     the loss split 30 trials 10/20 and did worse than either loss alone, and
     the exposure changes the target (a count or a weighted rate).
-    `n_trials = 400`, the first `n_startup_trials = 20` drawn at random; the
-    tables of trials per choice show whether any was tried too rarely to be
-    judged. The runs go one after another, seeded
+    `n_trials = 400`, the first `n_startup_trials = 20` drawn at random.
+    The runs go one after another, seeded
     `seed + 0`, `seed + 1`, … in order (each model's in loops over its run
     settings), and each trial fits its 5 folds in
     parallel. A trial whose fit raises (an NB2 fit that does not converge) is
     marked failed and the run goes on; the tables count them. Each run keeps
-    every trial and its best components, which alone are read back from the
-    best trial's parameters; the independent cohorts model's best, and the
-    total times probability model's pairs (below), are refit on the training
-    part and scored on training and validation on every metric, per cohort
-    and for the composite. A Gaussian loss can predict a negative count,
+    its best model only, not its trials (section 5 studies them): its
+    components, read back from the best trial's parameters, their feature
+    transformers' names, its value, its trial counts and seconds. The
+    independent cohorts model's best, and the total times probability
+    model's pairs (below), are refit on the training part, kept, and scored
+    on the training rows and on the validation rows (the test part waits for
+    the final refit on training + validation) on every metric, per cohort
+    and for the composite, each score with its bootstrap mean and
+    `1 - alpha` (95%) interval, `ci95_lower` to `ci95_upper`: the
+    replicates resample whole neighborhoods, and every model is scored on
+    the same replicates, so the intervals compare across models. Each model
+    has two tables: its runs (each kept model's feature transformers and
+    hyperparameters per component, its cross-validated objective, its trials
+    and seconds) and their scores (a row per dataset, cohort and metric). The six
+    metrics: the Poisson deviance (the primary metric, the tuning's
+    objective); the log loss (the proportions between cohorts only, so it
+    never selects); MAE and RMSE per (building, cohort) cell; WMAPE (the
+    absolute error as a share of the children); and the bias (mean
+    predicted minus true count, signed, so 0 is best). A Gaussian loss can predict a negative count,
     which `CountModel` floors at `y_min` (eps). The total times probability
     model is tuned by coordinate descent, under `total__…` and
     `probability__…`. First its total: one run per total family and exposure
@@ -1565,27 +1580,19 @@ def _(mo):
     every trial, and one round finds what tuning both at once finds, about 3×
     faster (`docs/NOTEBOOK_METRICS_LOOP_EDA_PLAN.md` 2.3a). The 16 pairs, each
     total run's best with each classifier run's best, are then
-    cross-validated and scored, with no search. Its replication of the
+    cross-validated and scored, with no search; a pair's trials and seconds
+    are its two runs'. Its replication of the
     counts into classifier
     rows is fixed at `weighted`, not searched: for the logistic classifier
     the two replications are the same fit, and for LightGBM they differed
     within noise while `per_child` is 2-3× slower
     (`docs/TOTAL_TIMES_PROBABILITY_MODEL.md` §3.1).
-    The last table shows each model's best run on validation. The run
+    The run
     cells sit behind buttons: opening the notebook fits nothing.
 
-    Each model's best run is then inspected, behind its own button: its
-    model is rebuilt from the best trial's parameters, refit on the training
-    part and judged on the training rows and the validation rows (the test
-    part waits for the final refit on training + validation). A bootstrap
-    that resamples whole neighborhoods gives the interval of six metrics,
-    per cohort and for the composite, all paired on the same replicates:
-    the Poisson deviance (the
-    primary metric, the tuning's objective); the log loss (the
-    proportions between cohorts only, so it never selects); MAE and RMSE per
-    (building, cohort) cell; WMAPE (the absolute error as a share of the
-    children); and the bias (mean predicted minus true count, signed, so 0
-    is best). The permutation importance of the primary metric on validation
+    Each model's best run, by the Poisson deviance of the composite on
+    validation, is then inspected, behind its own button, with its stored
+    model. The permutation importance of the primary metric on validation
     says what the shipped prediction depends on, and on training what the
     model fitted (a column important there only is overfit). Exact SHAP of
     `n_shap_rows` validation rows against `n_shap_background` training rows
@@ -1594,6 +1601,19 @@ def _(mo):
     importances' rankings side by side.
     """)
     return
+
+
+@app.cell
+def _(BootstrapEvaluator, alpha, n_resamples, seed):
+    # The bootstrap of every kept model, over neighborhoods: one seed, so every
+    # model scores the same replicate rows and the intervals compare; its bounds
+    # named by their level (95% at alpha 0.05).
+    bootstrap_evaluator = BootstrapEvaluator(
+        n_resamples, alpha=alpha, random_state=seed
+    )
+    _level = round(100 * (1 - alpha))
+    CI_BOUND_NAMES = {"lower": f"ci{_level}_lower", "upper": f"ci{_level}_upper"}
+    return CI_BOUND_NAMES, bootstrap_evaluator
 
 
 @app.cell
@@ -1667,16 +1687,19 @@ def _(mo):
 
 @app.cell
 def _(
+    CI_BOUND_NAMES,
     COHORTS,
     COUNT_FEATURE_TRANSFORMERS,
     CountComponent,
     METRICS,
     MODEL1_RUN_SETTINGS,
     PREDICTION_FLOOR,
+    bootstrap_evaluator,
     build_independent_cohorts_model,
     cv_groups,
     evaluate,
     mo,
+    pd,
     run_model1,
     seed,
     train_age_group,
@@ -1710,7 +1733,7 @@ def _(
             study_seed=seed + _i,
         )
         # The best components, read from the best trial's parameters by their
-        # type, are the model scored and the record kept (D10-D12, D14, D25).
+        # type, are the model scored and the record kept (D10-D12, D25).
         _best_components = tuple(
             CountComponent.from_params(
                 _study.best_params,
@@ -1722,44 +1745,63 @@ def _(
             for cohort in COHORTS
         )
         # The best model refit on the training part; every metric on training
-        # and validation, per cohort and for the composite.
+        # and validation, per cohort and for the composite: its score and its
+        # bootstrap interval over neighborhoods.
         _model = build_independent_cohorts_model(
             _best_components, y_min=PREDICTION_FLOOR, random_state=seed
         ).fit(train_age_group.X, train_age_group.Y, exposure=train_age_group.exposure)
-        _train_scores = evaluate(
-            train_age_group.Y,
-            _model.predict(train_age_group.X, exposure=train_age_group.exposure),
-            METRICS,
-            cohorts=[*COHORTS, "composite"],
-        )
-        _val_scores = evaluate(
-            val_age_group.Y,
-            _model.predict(val_age_group.X, exposure=val_age_group.exposure),
-            METRICS,
-            cohorts=[*COHORTS, "composite"],
-        )
-        # The run's settings, every trial and the best (D14); the study object
-        # is not kept.
+        _scores_by_dataset = {}
+        for _dataset_name, _dataset in (
+            ("train", train_age_group),
+            ("val", val_age_group),
+        ):
+            _y_pred = _model.predict(_dataset.X, exposure=_dataset.exposure)
+            _dataset_scores = evaluate(
+                _dataset.Y, _y_pred, METRICS, cohorts=[*COHORTS, "composite"]
+            ).stack()
+            _dataset_intervals = bootstrap_evaluator.evaluate(
+                _dataset.Y,
+                _y_pred,
+                _dataset.groups,
+                metrics=METRICS,
+                cohorts=[*COHORTS, "composite"],
+            ).rename(columns=CI_BOUND_NAMES)
+            _scores_by_dataset[_dataset_name] = (
+                _dataset_scores.rename("score").to_frame().join(_dataset_intervals)
+            )
+        # The run's settings and its best model: the fitted model, its
+        # components and their transformers' names (found by identity among
+        # the family's candidates); its value, trial counts and seconds. The
+        # trials are not kept: section 5 studies them.
+        _states = [trial.state.name for trial in _study.trials]
         MODEL1_RUNS.append(
             {
                 **_run_settings,
-                "trials": _study.trials_dataframe(),
-                "components": [component.to_dict() for component in _best_components],
+                "feature_transformers": {
+                    component.name: next(
+                        transformer_name
+                        for transformer_name, transformer in COUNT_FEATURE_TRANSFORMERS[
+                            _family
+                        ].items()
+                        if transformer is component.feature_transformer
+                    )
+                    for component in _best_components
+                },
+                "model": _model,
+                "components": _best_components,
                 "cv_best": _study.best_value,
-                "best_params": _study.best_params,
-                "train_scores": _train_scores,
-                "val_scores": _val_scores,
+                "n_complete": _states.count("COMPLETE"),
+                "n_failed": _states.count("FAIL"),
                 "seconds": _seconds,
-                "seed": seed,
-                "y_min": PREDICTION_FLOOR,
+                "scores": pd.concat(_scores_by_dataset, names=["dataset"]),
             }
         )
     return (MODEL1_RUNS,)
 
 
 @app.cell
-def _(COUNT_FEATURE_TRANSFORMERS, MODEL1_RUNS, POISSON_DEVIANCE, pd):
-    _score_rows, _arm_rows = [], []
+def _(MODEL1_RUNS, dataclasses, pd, tuner):
+    _run_rows, _score_rows = [], []
     for _run in MODEL1_RUNS:
         _settings = {
             "family": _run["family"],
@@ -1767,67 +1809,47 @@ def _(COUNT_FEATURE_TRANSFORMERS, MODEL1_RUNS, POISSON_DEVIANCE, pd):
             "share_hyperparams": _run["share_hyperparams"],
             "share_feature_transformer": _run["share_feature_transformer"],
         }
-        _trials = _run["trials"]
-        _complete = _trials[_trials["state"] == "COMPLETE"]
-        # Every metric per cohort and for the composite, a row each with its
-        # training and validation scores; the run's value and its trials on its
-        # primary metric's composite row.
-        _scores = pd.concat(
-            {"train": _run["train_scores"].stack(), "val": _run["val_scores"].stack()},
-            axis=1,
-        ).reset_index()
-        for _row in _scores.to_dict("records"):
-            if (
-                _row["cohort"] == "composite"
-                and _row["metric"] == POISSON_DEVIANCE.name
-            ):
-                _score_rows.append(
-                    {
-                        **_settings,
-                        **_row,
-                        "cv_best": _run["cv_best"],
-                        "n_complete": len(_complete),
-                        "n_failed": int((_trials["state"] == "FAIL").sum()),
-                        "seconds": _run["seconds"],
-                    }
-                )
-            else:
-                _score_rows.append({**_settings, **_row})
-        # The completed trials per feature transformer, the model's categorical
-        # choice (one column per cohort, or `shared__`): TPE concentrates on what looked good early, so a transformer
-        # tried a few times has not been judged (D14). Every candidate of the
-        # family is listed, so one never tried shows 0 rather than nothing.
-        _candidates = list(COUNT_FEATURE_TRANSFORMERS[_run["family"]])
-        for _column in _trials.columns:
-            if _column.endswith("__feature_transformer"):
-                _counts = (
-                    _complete[_column].value_counts().reindex(_candidates, fill_value=0)
-                )
-                for _value, _n in _counts.items():
-                    _arm_rows.append(
-                        {
-                            **_settings,
-                            "parameter": _column.removeprefix("params_"),
-                            "value": _value,
-                            "n_trials": int(_n),
-                        }
-                    )
-    model1_df, model1_arms_df = pd.DataFrame(_score_rows), pd.DataFrame(_arm_rows)
-    return model1_arms_df, model1_df
+        # The kept model: each cohort's feature transformer and hyperparameters,
+        # its cross-validated objective, its trials and seconds.
+        _run_rows.append(
+            {
+                **_settings,
+                "feature_transformers": _run["feature_transformers"],
+                "hyperparameters": {
+                    component.name: dataclasses.asdict(component.estimator_params)
+                    for component in _run["components"]
+                },
+                f"cv_{tuner.objective_metric.name}": _run["cv_best"],
+                "n_complete": _run["n_complete"],
+                "n_failed": _run["n_failed"],
+                "seconds": _run["seconds"],
+            }
+        )
+        # Its scores: a row per dataset, cohort (and the composite) and metric.
+        _score_rows.extend(
+            {**_settings, **_row}
+            for _row in _run["scores"].reset_index().to_dict("records")
+        )
+    model1_runs_df = pd.DataFrame(_run_rows)
+    model1_scores_df = pd.DataFrame(_score_rows)
+    return model1_runs_df, model1_scores_df
 
 
 @app.cell
-def _(mo, model1_arms_df, model1_df):
+def _(mo, model1_runs_df, model1_scores_df):
     mo.vstack(
         [
             mo.md(
-                "**The independent cohorts model: every metric, per cohort and for the "
-                "composite** (cv_best: the run's value; n_complete / n_failed: its "
-                "trials; on the primary metric's composite row)"
+                "**The independent cohorts model: each run's best model** (its "
+                "feature transformers and hyperparameters per cohort; its "
+                "cross-validated objective; its trials and seconds)"
             ),
-            mo.ui.table(model1_df.round(4)),
-            mo.md("**Trials per feature transformer**"),
-            mo.md(f"```text\n{model1_arms_df.to_string(index=False)}\n```"),
+            mo.ui.table(model1_runs_df.round(4)),
+            mo.md(
+                "**Its scores, per dataset, cohort and for the composite** (score, "
+                "and the bootstrap's mean and 95% interval)"
+            ),
+            mo.ui.table(model1_scores_df.round(4)),
         ]
     )
     return
@@ -1907,8 +1929,8 @@ def _(
             study_seed=seed + _i,
         )
         # The best total, read from the best trial's parameters by its type
-        # (D25); the run keeps every trial and the best (D14), the study object
-        # is not kept.
+        # (D25); the run keeps it, its transformer's name, its value, trial
+        # counts and seconds. The trials are not kept: section 5 studies them.
         _total_component = CountComponent.from_params(
             _study.best_params,
             name="total",
@@ -1916,17 +1938,24 @@ def _(
             use_exposure=_use_exposure,
             feature_transformer_dict=COUNT_FEATURE_TRANSFORMERS[_total_family],
         )
+        _states = [trial.state.name for trial in _study.trials]
         MODEL2_TOTAL_RUNS.append(
             {
                 **_run_settings,
-                "trials": _study.trials_dataframe(),
-                "component": _total_component.to_dict(),
-                "fixed_component": MODEL2_FIXED_PROBABILITY_COMPONENT.to_dict(),
+                "feature_transformers": {
+                    "total": next(
+                        transformer_name
+                        for transformer_name, transformer in COUNT_FEATURE_TRANSFORMERS[
+                            _total_family
+                        ].items()
+                        if transformer is _total_component.feature_transformer
+                    )
+                },
+                "component": _total_component,
                 "cv_best": _study.best_value,
-                "best_params": _study.best_params,
+                "n_complete": _states.count("COMPLETE"),
+                "n_failed": _states.count("FAIL"),
                 "seconds": _seconds,
-                "seed": seed,
-                "y_min": PREDICTION_FLOOR,
             }
         )
     return (MODEL2_TOTAL_RUNS,)
@@ -1934,8 +1963,6 @@ def _(
 
 @app.cell
 def _(
-    COUNT_FEATURE_TRANSFORMERS,
-    CountComponent,
     MODEL2_PROBABILITY_RUN_SETTINGS,
     MODEL2_TOTAL_RUNS,
     MODEL2_TOTAL_RUN_SETTINGS,
@@ -1957,16 +1984,9 @@ def _(
     # step 1's best total by cv fixed. The total adds the same constant to
     # every trial, so each run's best value is the cv of its pair with that
     # total.
-    _best_total_run = min(MODEL2_TOTAL_RUNS, key=lambda run: run["cv_best"])
-    _best_total_component = CountComponent.from_params(
-        _best_total_run["best_params"],
-        name="total",
-        family=_best_total_run["total_family"],
-        use_exposure=_best_total_run["use_exposure"],
-        feature_transformer_dict=COUNT_FEATURE_TRANSFORMERS[
-            _best_total_run["total_family"]
-        ],
-    )
+    _best_total_component = min(MODEL2_TOTAL_RUNS, key=lambda run: run["cv_best"])[
+        "component"
+    ]
     MODEL2_PROBABILITY_RUNS = []
     for _j, _run_settings in enumerate(MODEL2_PROBABILITY_RUN_SETTINGS):
         _probability_family = _run_settings["probability_family"]
@@ -1992,17 +2012,24 @@ def _(
                 _probability_family
             ],
         )
+        _states = [trial.state.name for trial in _study.trials]
         MODEL2_PROBABILITY_RUNS.append(
             {
                 **_run_settings,
-                "trials": _study.trials_dataframe(),
-                "component": _probability_component.to_dict(),
-                "fixed_component": _best_total_component.to_dict(),
+                "feature_transformers": {
+                    "probability": next(
+                        transformer_name
+                        for transformer_name, transformer in PROBABILITY_FEATURE_TRANSFORMERS[
+                            _probability_family
+                        ].items()
+                        if transformer is _probability_component.feature_transformer
+                    )
+                },
+                "component": _probability_component,
                 "cv_best": _study.best_value,
-                "best_params": _study.best_params,
+                "n_complete": _states.count("COMPLETE"),
+                "n_failed": _states.count("FAIL"),
                 "seconds": _seconds,
-                "seed": seed,
-                "y_min": PREDICTION_FLOOR,
             }
         )
     return (MODEL2_PROBABILITY_RUNS,)
@@ -2010,48 +2037,34 @@ def _(
 
 @app.cell
 def _(
+    CI_BOUND_NAMES,
     COHORTS,
-    COUNT_FEATURE_TRANSFORMERS,
-    CountComponent,
     METRICS,
     MODEL2_PROBABILITY_RUNS,
     MODEL2_TOTAL_RUNS,
     PREDICTION_FLOOR,
-    PROBABILITY_FEATURE_TRANSFORMERS,
-    ProbabilityComponent,
+    bootstrap_evaluator,
     build_total_times_probability_model,
     cv_groups,
     evaluate,
+    pd,
     seed,
     train_age_group,
     tuner,
     val_age_group,
 ):
-    # The 16 pairs, each step-1 total with each step-2 classifier, read back
-    # from their runs' best parameters by the component types (D25) and scored
-    # with no search: the pair's cross-validated value, then the refit on the
-    # training part scored on training and validation.
+    # The 16 pairs, each step-1 total with each step-2 classifier, their runs'
+    # best components, scored with no search: the pair's cross-validated
+    # value, then the refit on the training part scored on training and
+    # validation, with the bootstrap of the independent cohorts model's runs
+    # (the same evaluator, so the same replicates).
     MODEL2_RUNS = []
     for _total_run in MODEL2_TOTAL_RUNS:
-        _total_component = CountComponent.from_params(
-            _total_run["best_params"],
-            name="total",
-            family=_total_run["total_family"],
-            use_exposure=_total_run["use_exposure"],
-            feature_transformer_dict=COUNT_FEATURE_TRANSFORMERS[
-                _total_run["total_family"]
-            ],
-        )
         for _probability_run in MODEL2_PROBABILITY_RUNS:
-            _probability_component = ProbabilityComponent.from_params(
-                _probability_run["best_params"],
-                name="probability",
-                family=_probability_run["probability_family"],
-                feature_transformer_dict=PROBABILITY_FEATURE_TRANSFORMERS[
-                    _probability_run["probability_family"]
-                ],
+            _best_components = (
+                _total_run["component"],
+                _probability_run["component"],
             )
-            _best_components = (_total_component, _probability_component)
             _model = build_total_times_probability_model(
                 *_best_components, y_min=PREDICTION_FLOOR, random_state=seed
             )
@@ -2065,55 +2078,54 @@ def _(
             _model.fit(
                 train_age_group.X, train_age_group.Y, exposure=train_age_group.exposure
             )
-            _train_scores = evaluate(
-                train_age_group.Y,
-                _model.predict(train_age_group.X, exposure=train_age_group.exposure),
-                METRICS,
-                cohorts=[*COHORTS, "composite"],
-            )
-            _val_scores = evaluate(
-                val_age_group.Y,
-                _model.predict(val_age_group.X, exposure=val_age_group.exposure),
-                METRICS,
-                cohorts=[*COHORTS, "composite"],
-            )
-            # The pair's settings, its components and their merged parameters
-            # (the `total__` and `probability__` names never clash); its runs'
-            # trials are in their step records.
+            _scores_by_dataset = {}
+            for _dataset_name, _dataset in (
+                ("train", train_age_group),
+                ("val", val_age_group),
+            ):
+                _y_pred = _model.predict(_dataset.X, exposure=_dataset.exposure)
+                _dataset_scores = evaluate(
+                    _dataset.Y, _y_pred, METRICS, cohorts=[*COHORTS, "composite"]
+                ).stack()
+                _dataset_intervals = bootstrap_evaluator.evaluate(
+                    _dataset.Y,
+                    _y_pred,
+                    _dataset.groups,
+                    metrics=METRICS,
+                    cohorts=[*COHORTS, "composite"],
+                ).rename(columns=CI_BOUND_NAMES)
+                _scores_by_dataset[_dataset_name] = (
+                    _dataset_scores.rename("score").to_frame().join(_dataset_intervals)
+                )
+            # The pair's settings and its best model: the fitted model, its
+            # components and their transformers' names; its value, and its two
+            # studies' trial counts and seconds summed (a study shared by
+            # several pairs counts in each).
             MODEL2_RUNS.append(
                 {
                     "total_family": _total_run["total_family"],
                     "probability_family": _probability_run["probability_family"],
                     "use_exposure": _total_run["use_exposure"],
-                    "components": [
-                        component.to_dict() for component in _best_components
-                    ],
-                    "cv_best": _cv_best,
-                    "best_params": {
-                        **_total_run["best_params"],
-                        **_probability_run["best_params"],
+                    "feature_transformers": {
+                        **_total_run["feature_transformers"],
+                        **_probability_run["feature_transformers"],
                     },
-                    "train_scores": _train_scores,
-                    "val_scores": _val_scores,
-                    "seed": seed,
-                    "y_min": PREDICTION_FLOOR,
+                    "model": _model,
+                    "components": _best_components,
+                    "cv_best": _cv_best,
+                    "n_complete": _total_run["n_complete"]
+                    + _probability_run["n_complete"],
+                    "n_failed": _total_run["n_failed"] + _probability_run["n_failed"],
+                    "seconds": _total_run["seconds"] + _probability_run["seconds"],
+                    "scores": pd.concat(_scores_by_dataset, names=["dataset"]),
                 }
             )
     return (MODEL2_RUNS,)
 
 
 @app.cell
-def _(
-    COUNT_FEATURE_TRANSFORMERS,
-    MODEL2_PROBABILITY_RUNS,
-    MODEL2_RUNS,
-    MODEL2_TOTAL_RUNS,
-    POISSON_DEVIANCE,
-    PROBABILITY_FEATURE_TRANSFORMERS,
-    ProbabilitySearchSpace,
-    pd,
-):
-    _score_rows, _step_rows, _arm_rows = [], [], []
+def _(MODEL2_RUNS, ProbabilityComponent, dataclasses, pd, tuner):
+    _run_rows, _score_rows = [], []
     for _run in MODEL2_RUNS:
         # A family pair reads as one family, so both models' tables have the same
         # settings columns; the record keeps the two families (D16).
@@ -2121,145 +2133,57 @@ def _(
             "family": f"{_run['total_family']}+{_run['probability_family']}",
             "use_exposure": _run["use_exposure"],
         }
-        # Every metric per cohort and for the composite, a row each with its
-        # training and validation scores; the pair's value on its primary
-        # metric's composite row.
-        _scores = pd.concat(
-            {"train": _run["train_scores"].stack(), "val": _run["val_scores"].stack()},
-            axis=1,
-        ).reset_index()
-        for _row in _scores.to_dict("records"):
-            if (
-                _row["cohort"] == "composite"
-                and _row["metric"] == POISSON_DEVIANCE.name
-            ):
-                _score_rows.append({**_settings, **_row, "cv_best": _run["cv_best"]})
-            else:
-                _score_rows.append({**_settings, **_row})
-    # The 10 studies, each with its categorical choices and their candidates:
-    # the total's transformer in step 1; the probabilities' transformer and
-    # calibration in step 2. Every candidate is listed, so one never tried
-    # shows 0 (D15).
-    _studies = [
-        (
-            {
-                "step": "total",
-                "family": _run["total_family"],
-                "use_exposure": _run["use_exposure"],
-            },
-            _run,
-            {
-                "params_total__feature_transformer": list(
-                    COUNT_FEATURE_TRANSFORMERS[_run["total_family"]]
+        # The kept model, its two studies merged: each component's feature
+        # transformer and hyperparameters (the classifier's with its
+        # calibration), the pair's cross-validated objective, the two studies'
+        # trials and seconds.
+        _hyperparameters = {}
+        for _component in _run["components"]:
+            _hyperparameters[_component.name] = dataclasses.asdict(
+                _component.estimator_params
+            )
+            if isinstance(_component, ProbabilityComponent):
+                _hyperparameters[_component.name]["calibration_method"] = (
+                    _component.calibration_method
                 )
-            },
-        )
-        for _run in MODEL2_TOTAL_RUNS
-    ] + [
-        (
-            {
-                "step": "probability",
-                "family": _run["probability_family"],
-                "use_exposure": None,
-            },
-            _run,
-            {
-                "params_probability__feature_transformer": list(
-                    PROBABILITY_FEATURE_TRANSFORMERS[_run["probability_family"]]
-                ),
-                "params_probability__calibration_method": (
-                    ProbabilitySearchSpace.CALIBRATION_METHODS
-                ),
-            },
-        )
-        for _run in MODEL2_PROBABILITY_RUNS
-    ]
-    for _settings, _run, _candidates in _studies:
-        _trials = _run["trials"]
-        _complete = _trials[_trials["state"] == "COMPLETE"]
-        _step_rows.append(
+        _run_rows.append(
             {
                 **_settings,
-                "cv_best": _run["cv_best"],
-                "n_complete": len(_complete),
-                "n_failed": int((_trials["state"] == "FAIL").sum()),
+                "feature_transformers": _run["feature_transformers"],
+                "hyperparameters": _hyperparameters,
+                f"cv_{tuner.objective_metric.name}": _run["cv_best"],
+                "n_complete": _run["n_complete"],
+                "n_failed": _run["n_failed"],
                 "seconds": _run["seconds"],
             }
         )
-        for _column, _values in _candidates.items():
-            # Counted by label: the trials table holds the None calibration as NaN
-            # in a str column, or as None in an object column when every trial
-            # drew it, and reindex on None misses the latter (D16).
-            _labels = [str(_value) for _value in _values]
-            _counts = (
-                _complete[_column]
-                .fillna("None")
-                .value_counts()
-                .reindex(_labels, fill_value=0)
-            )
-            for _value, _n in _counts.items():
-                _arm_rows.append(
-                    {
-                        **_settings,
-                        "parameter": _column.removeprefix("params_"),
-                        "value": _value,
-                        "n_trials": int(_n),
-                    }
-                )
-    model2_df = pd.DataFrame(_score_rows)
-    model2_steps_df = pd.DataFrame(_step_rows)
-    model2_arms_df = pd.DataFrame(_arm_rows)
-    return model2_arms_df, model2_df, model2_steps_df
+        # Its scores: a row per dataset, cohort (and the composite) and metric.
+        _score_rows.extend(
+            {**_settings, **_row}
+            for _row in _run["scores"].reset_index().to_dict("records")
+        )
+    model2_runs_df = pd.DataFrame(_run_rows)
+    model2_scores_df = pd.DataFrame(_score_rows)
+    return model2_runs_df, model2_scores_df
 
 
 @app.cell
-def _(mo, model2_arms_df, model2_df, model2_steps_df):
+def _(mo, model2_runs_df, model2_scores_df):
     mo.vstack(
         [
             mo.md(
-                "**The total times probability model by coordinate descent: its 10 runs** "
-                "(step 1 the totals, step 2 the probabilities; cv_best: the run's value; "
-                "n_complete / n_failed: its trials)"
+                "**The total times probability model by coordinate descent: each "
+                "pair's model** (family: the total's + the probabilities'; each "
+                "component's feature transformer and hyperparameters; the pair's "
+                "cross-validated objective; its two studies' trials and seconds, "
+                "summed)"
             ),
-            mo.md(f"```text\n{model2_steps_df.round(4).to_string(index=False)}\n```"),
+            mo.ui.table(model2_runs_df.round(4)),
             mo.md(
-                "**Its 16 pairs: every metric, per cohort and for the composite** "
-                "(family: the total's + the probabilities'; cv_best: the pair's "
-                "cross-validated value, on the primary metric's composite row)"
+                "**Its scores, per dataset, cohort and for the composite** (score, "
+                "and the bootstrap's mean and 95% interval)"
             ),
-            mo.ui.table(model2_df.round(4)),
-            mo.md("**Trials per choice**"),
-            mo.md(f"```text\n{model2_arms_df.to_string(index=False)}\n```"),
-        ]
-    )
-    return
-
-
-@app.cell
-def _(POISSON_DEVIANCE, mo, model1_df, model2_df, pd):
-    # Each model's best run on validation, from the primary metric's composite
-    # rows. A fresh index: the two frames' labels overlap, and idxmin + loc
-    # would return both.
-    _composites = pd.concat(
-        [
-            _df[
-                (_df["cohort"] == "composite")
-                & (_df["metric"] == POISSON_DEVIANCE.name)
-            ].assign(model=_model)
-            for _model, _df in (("model1", model1_df), ("model2", model2_df))
-        ],
-        ignore_index=True,
-    )
-    best_df = _composites.loc[
-        _composites.groupby("model")["val"].idxmin(),
-        ["model", "family", "use_exposure", "cv_best", "train", "val"],
-    ]
-    mo.vstack(
-        [
-            mo.md(
-                "**Best run per model** (validation Poisson deviance of the composite)"
-            ),
-            mo.md(f"```text\n{best_df.round(4).to_string(index=False)}\n```"),
+            mo.ui.table(model2_scores_df.round(4)),
         ]
     )
     return
@@ -2269,9 +2193,8 @@ def _(POISSON_DEVIANCE, mo, model1_df, model2_df, pd):
 def _(mo):
     run_inspection = mo.ui.run_button(label="Inspect the best runs")
     mo.md(
-        f"{run_inspection} each model's best run: refit on the training part, the "
-        "bootstrap of six metrics, the permutation importance and SHAP (about two "
-        "minutes)."
+        f"{run_inspection} each model's best run: the permutation importance and "
+        "SHAP (about two minutes)."
     )
     return (run_inspection,)
 
@@ -2299,178 +2222,33 @@ def _(
 
 
 @app.cell
-def _(
-    COHORTS,
-    COUNT_FEATURE_TRANSFORMERS,
-    CountComponent,
-    MODEL1_RUNS,
-    POISSON_DEVIANCE,
-    build_independent_cohorts_model,
-    mo,
-    run_inspection,
-    train_age_group,
-):
+def _(MODEL1_RUNS, MODEL2_RUNS, POISSON_DEVIANCE, mo, run_inspection):
     mo.stop(
         not run_inspection.value, mo.md("Click the button to inspect the best runs.")
     )
-    # The independent cohorts model's best run on validation (best_df's rule),
-    # its model rebuilt from the best trial's parameters by the component
-    # types and refit on the
-    # training part.
-    best_run1 = min(
+    # Each model's best run, by the Poisson deviance of the composite on
+    # validation: its stored model, fitted on the training part.
+    _best_run1 = min(
         MODEL1_RUNS,
-        key=lambda run: run["val_scores"].loc["composite", POISSON_DEVIANCE.name],
+        key=lambda run: run["scores"].loc[
+            ("val", "composite", POISSON_DEVIANCE.name), "score"
+        ],
     )
-    best_model1 = build_independent_cohorts_model(
-        tuple(
-            CountComponent.from_params(
-                best_run1["best_params"],
-                name=cohort,
-                family=best_run1["family"],
-                use_exposure=best_run1["use_exposure"],
-                feature_transformer_dict=COUNT_FEATURE_TRANSFORMERS[
-                    best_run1["family"]
-                ],
-            )
-            for cohort in COHORTS
-        ),
-        y_min=best_run1["y_min"],
-        random_state=best_run1["seed"],
-    ).fit(train_age_group.X, train_age_group.Y, exposure=train_age_group.exposure)
-    return best_model1, best_run1
-
-
-@app.cell
-def _(
-    COUNT_FEATURE_TRANSFORMERS,
-    CountComponent,
-    MODEL2_RUNS,
-    POISSON_DEVIANCE,
-    PROBABILITY_FEATURE_TRANSFORMERS,
-    ProbabilityComponent,
-    build_total_times_probability_model,
-    mo,
-    run_inspection,
-    train_age_group,
-):
-    mo.stop(
-        not run_inspection.value, mo.md("Click the button to inspect the best runs.")
-    )
-    # The total times probability model's best run on validation, rebuilt and
-    # refit the same way.
-    best_run2 = min(
+    _best_run2 = min(
         MODEL2_RUNS,
-        key=lambda run: run["val_scores"].loc["composite", POISSON_DEVIANCE.name],
+        key=lambda run: run["scores"].loc[
+            ("val", "composite", POISSON_DEVIANCE.name), "score"
+        ],
     )
-    best_model2 = build_total_times_probability_model(
-        CountComponent.from_params(
-            best_run2["best_params"],
-            name="total",
-            family=best_run2["total_family"],
-            use_exposure=best_run2["use_exposure"],
-            feature_transformer_dict=COUNT_FEATURE_TRANSFORMERS[
-                best_run2["total_family"]
-            ],
-        ),
-        ProbabilityComponent.from_params(
-            best_run2["best_params"],
-            name="probability",
-            family=best_run2["probability_family"],
-            feature_transformer_dict=PROBABILITY_FEATURE_TRANSFORMERS[
-                best_run2["probability_family"]
-            ],
-        ),
-        y_min=best_run2["y_min"],
-        random_state=best_run2["seed"],
-    ).fit(train_age_group.X, train_age_group.Y, exposure=train_age_group.exposure)
-    return best_model2, best_run2
-
-
-@app.cell
-def _(
-    BootstrapEvaluator,
-    COHORTS,
-    METRICS,
-    best_model1,
-    mo,
-    n_resamples,
-    pd,
-    run_inspection,
-    seed,
-    train_age_group,
-    val_age_group,
-):
-    mo.stop(
-        not run_inspection.value, mo.md("Click the button to inspect the best runs.")
+    best_model1, best_model2 = _best_run1["model"], _best_run2["model"]
+    mo.md(
+        "Inspected, each model's best run by the Poisson deviance of the composite "
+        f"on validation: the independent cohorts model's `{_best_run1['family']}`, "
+        f"exposure {_best_run1['use_exposure']}; the total times probability "
+        f"model's `{_best_run2['total_family']}+{_best_run2['probability_family']}`, "
+        f"exposure {_best_run2['use_exposure']}."
     )
-    # The six metrics' intervals per cohort and for the composite, on the
-    # training rows and on the validation rows, resampling whole neighborhoods;
-    # every cohort and metric scores the same replicates.
-    _evaluator = BootstrapEvaluator(n_resamples, random_state=seed)
-    model1_intervals = pd.concat(
-        {
-            "train": _evaluator.evaluate(
-                train_age_group.Y,
-                best_model1.predict(
-                    train_age_group.X, exposure=train_age_group.exposure
-                ),
-                train_age_group.groups,
-                metrics=METRICS,
-                cohorts=[*COHORTS, "composite"],
-            ),
-            "val": _evaluator.evaluate(
-                val_age_group.Y,
-                best_model1.predict(val_age_group.X, exposure=val_age_group.exposure),
-                val_age_group.groups,
-                metrics=METRICS,
-                cohorts=[*COHORTS, "composite"],
-            ),
-        },
-        names=["split", "cohort", "metric"],
-    )
-    return (model1_intervals,)
-
-
-@app.cell
-def _(
-    BootstrapEvaluator,
-    COHORTS,
-    METRICS,
-    best_model2,
-    mo,
-    n_resamples,
-    pd,
-    run_inspection,
-    seed,
-    train_age_group,
-    val_age_group,
-):
-    mo.stop(
-        not run_inspection.value, mo.md("Click the button to inspect the best runs.")
-    )
-    _evaluator = BootstrapEvaluator(n_resamples, random_state=seed)
-    model2_intervals = pd.concat(
-        {
-            "train": _evaluator.evaluate(
-                train_age_group.Y,
-                best_model2.predict(
-                    train_age_group.X, exposure=train_age_group.exposure
-                ),
-                train_age_group.groups,
-                metrics=METRICS,
-                cohorts=[*COHORTS, "composite"],
-            ),
-            "val": _evaluator.evaluate(
-                val_age_group.Y,
-                best_model2.predict(val_age_group.X, exposure=val_age_group.exposure),
-                val_age_group.groups,
-                metrics=METRICS,
-                cohorts=[*COHORTS, "composite"],
-            ),
-        },
-        names=["split", "cohort", "metric"],
-    )
-    return (model2_intervals,)
+    return best_model1, best_model2
 
 
 @app.cell
@@ -2561,30 +2339,6 @@ def _(
         best_model2, shap_rows.X, shap_background, exposure=shap_rows.exposure
     )
     return model2_permutation, model2_shap
-
-
-@app.cell
-def _(best_run1, best_run2, mo, model1_intervals, model2_intervals, pd):
-    # Each metric's interval per model, split and cohort; the caption names
-    # the two best runs.
-    intervals_df = pd.concat(
-        {"model1": model1_intervals, "model2": model2_intervals}, names=["model"]
-    ).reset_index()
-    mo.vstack(
-        [
-            mo.md(
-                "**The best runs' metrics: their intervals** (mean, lower, upper: "
-                "the bootstrap over neighborhoods; the scores themselves are the best "
-                "runs' rows of the score tables). model1, the "
-                f"independent cohorts model: `{best_run1['family']}`, exposure "
-                f"{best_run1['use_exposure']}; model2, the total times probability "
-                f"model: `{best_run2['total_family']}+{best_run2['probability_family']}`, "
-                f"exposure {best_run2['use_exposure']}."
-            ),
-            mo.ui.table(intervals_df.round(4)),
-        ]
-    )
-    return
 
 
 @app.cell

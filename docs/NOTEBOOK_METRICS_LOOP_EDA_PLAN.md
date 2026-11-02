@@ -1,6 +1,6 @@
 # Plan: the metrics in `scoring`, the runs in a loop, the objective EDA
 
-**Status (2026-10-30):** PR 1 on `refactor/scoring-metrics`: 1.1 done, revised at the user's notes (`cohort=`, `y_proba=`, samples; then the notes on the helpers: `utils.check_paired_arrays` checks, `utils.column_position` finds a cohort's column, each metric selects it, no repeated-name guard; suite 1346 passed; Check C the 24 baselines), committed as `185285e`. 1.2 done (docs only; the three guides' blocks rerun as written with the same numbers; MODEL_INSPECTION.md's stale simulator line fixed with `from_config`, the user's choice), committed as `96c950b`. 1.3 done (the notebook's six inspection metrics from `scoring`, D² dropped; Check C the 24 baselines and the intervals equal, WMAPE and bias but for their last bit); committed as `0e9d0a1`. 1.4 done (the review's fixes in `scoring`: non-finite values and a lone cohort rejected, two docstrings; suite 1373 passed); PR 1 merged as #18 (`b1d8dbd`) into `feat/experiment-notebook`, and that branch into `main` as #19 (`3db1aa8`). PR 2 on `refactor/notebook-run-loop` from `main`: 2.1 done (2026-10-31; the sharing flags' test, a fitted model per flag pair; the Verify mutation moved to the build, at the user's choice), committed as `9463651`. 2.2 done (2026-10-31; Model 1's runs in one loop over `MODEL1_RUN_SETTINGS`, the flags per run; Check C both arms' baselines), committed as `b87e68b`. 2.3a.1 done (2026-10-31; Model 2 by coordinate descent measured against D20's joint studies at 400 trials: cv better or the same in 15 of 16 pairs, the one worse within noise; about 890 s against 2871 s; docs only), committed as `4c75172`. 2.3a.2 done (2026-10-31; `tune_total_component` and `tune_probability_component`, the other component fixed; the joint tuning stays, its draw now through `suggest_count_component` and `suggest_probability_component`, at the user's notes; they reproduce 2.3a.1's step values at 400 trials; suite 1381 passed; Check C the 24 baselines), committed as `a5a4234`. 2.3 done (2026-10-31; Model 2 by coordinate descent in three cells: step 1's 8 runs, step 2's 2 runs with the best total fixed, the 16 pairs scored; the 400-trial click reproduces 2.3a.1's 16 pairs in 752 s; Check C Model 1's 8 unchanged and Model 2's 16 re-recorded), committed as `9aed504`, its record as `04caa68`. 2.4 done (2026-10-31, revised at the user's notes: fit, predict and evaluate apart; `scoring.evaluate(y_true, y_pred, metrics, cohorts)` a cohort × metric table, `fit_and_score` deleted; `POISSON_DEVIANCE`, `LOG_LOSS`, `METRICS`, no `COHORT_` prefixes; the long score tables in `mo.ui.table`; Check C the primary metric's rows equal `04caa68`'s exactly). committed as `c2843e3`. 2.4b done (2026-10-31; `BaseAgeGroupModel.evaluate` removed, the callers call the metric; `BootstrapEvaluator.evaluate(y_true, y_pred, groups, *, metrics, cohorts)` takes the predictions and the cohorts and returns the interval alone; the notebook bootstraps every cohort; Check C equal to `c2843e3`'s run, the composite intervals exactly). 2.5 done (2026-10-31): the guides (`0a983cc`), the PR's review (no correctness bug; its fixes `9862669`), the decisions D27–D30 and the handoff for PR 3. **PR 2 merged as #20 (squashed into `main` as `16773a5`). PR 3 (§5) on `feat/objective-eda`, from the handoff's §6.** PR 3: 3.1 done (2026-11-01; the objective EDA as the notebook's section 5, before tuning: one setting for both models, `lgbm_poisson` with exposure on, Model 2 by coordinate descent, M10–M11), committed as `55dbb88` (3.1a), `17680ac` (3.1b), `1eab956` (3.1c) and the docs (3.1d). 3.2 done (2026-11-01; the 400-trial click: the objectives' validation differences within one holdout's noise; the user keeps the Poisson deviance). Then the user's notes on the EDA (2026-11-01: "I wanted to investigate all the trials"): 3.1e done (every trial records every metric, M12), committed as `ed9b5d5`; 3.1f done (the trials tables), committed as `4afb834`; 3.1g (matplotlib plots, slices, a rank table) done but superseded by the user's next notes and never committed (M13). 3.1h done (plotly 7.1.0 in the `notebook` group), committed as `b3b2b4b`. 3.1i done (every trial as a row of the whole model; 3.1g removed). 3.1i committed as `b3b1c49`. 3.1j done (the summary of the best models and the plotly figures), committed as `b4a0b77`. 3.1k done (2026-11-02; at the user's notes on the figures: one full-width figure per model, an "Objective" dropdown, small translucent points, no best-so-far line; 3.1j's validation folded into its checks). 3.1l done (2026-11-02; the objectives compared on a recorded metric: a box per objective's study with every trial, its best a star, a "Recorded metric" dropdown); 3.1k and 3.1l committed as `52fa06d`. 3.2b done (2026-11-02; the 400-trial EDA rerun on `52fa06d` and its trials read: the deviance's best good on every count metric, the regions of the transformers, the classifier and LightGBM, Model 2's RMSE-tuned pair's lower cv deviance the sampler's exploration; the Poisson deviance stays the objective). 3.2b committed as `2d159c4`. **Next (a new session): the user's changes in the notebook's section 6 (hyperparameter tuning), then 3.3 (the suite, the PR's review, the handoff, the PR), from the handoff's §6.**
+**Status (2026-10-30):** PR 1 on `refactor/scoring-metrics`: 1.1 done, revised at the user's notes (`cohort=`, `y_proba=`, samples; then the notes on the helpers: `utils.check_paired_arrays` checks, `utils.column_position` finds a cohort's column, each metric selects it, no repeated-name guard; suite 1346 passed; Check C the 24 baselines), committed as `185285e`. 1.2 done (docs only; the three guides' blocks rerun as written with the same numbers; MODEL_INSPECTION.md's stale simulator line fixed with `from_config`, the user's choice), committed as `96c950b`. 1.3 done (the notebook's six inspection metrics from `scoring`, D² dropped; Check C the 24 baselines and the intervals equal, WMAPE and bias but for their last bit); committed as `0e9d0a1`. 1.4 done (the review's fixes in `scoring`: non-finite values and a lone cohort rejected, two docstrings; suite 1373 passed); PR 1 merged as #18 (`b1d8dbd`) into `feat/experiment-notebook`, and that branch into `main` as #19 (`3db1aa8`). PR 2 on `refactor/notebook-run-loop` from `main`: 2.1 done (2026-10-31; the sharing flags' test, a fitted model per flag pair; the Verify mutation moved to the build, at the user's choice), committed as `9463651`. 2.2 done (2026-10-31; Model 1's runs in one loop over `MODEL1_RUN_SETTINGS`, the flags per run; Check C both arms' baselines), committed as `b87e68b`. 2.3a.1 done (2026-10-31; Model 2 by coordinate descent measured against D20's joint studies at 400 trials: cv better or the same in 15 of 16 pairs, the one worse within noise; about 890 s against 2871 s; docs only), committed as `4c75172`. 2.3a.2 done (2026-10-31; `tune_total_component` and `tune_probability_component`, the other component fixed; the joint tuning stays, its draw now through `suggest_count_component` and `suggest_probability_component`, at the user's notes; they reproduce 2.3a.1's step values at 400 trials; suite 1381 passed; Check C the 24 baselines), committed as `a5a4234`. 2.3 done (2026-10-31; Model 2 by coordinate descent in three cells: step 1's 8 runs, step 2's 2 runs with the best total fixed, the 16 pairs scored; the 400-trial click reproduces 2.3a.1's 16 pairs in 752 s; Check C Model 1's 8 unchanged and Model 2's 16 re-recorded), committed as `9aed504`, its record as `04caa68`. 2.4 done (2026-10-31, revised at the user's notes: fit, predict and evaluate apart; `scoring.evaluate(y_true, y_pred, metrics, cohorts)` a cohort × metric table, `fit_and_score` deleted; `POISSON_DEVIANCE`, `LOG_LOSS`, `METRICS`, no `COHORT_` prefixes; the long score tables in `mo.ui.table`; Check C the primary metric's rows equal `04caa68`'s exactly). committed as `c2843e3`. 2.4b done (2026-10-31; `BaseAgeGroupModel.evaluate` removed, the callers call the metric; `BootstrapEvaluator.evaluate(y_true, y_pred, groups, *, metrics, cohorts)` takes the predictions and the cohorts and returns the interval alone; the notebook bootstraps every cohort; Check C equal to `c2843e3`'s run, the composite intervals exactly). 2.5 done (2026-10-31): the guides (`0a983cc`), the PR's review (no correctness bug; its fixes `9862669`), the decisions D27–D30 and the handoff for PR 3. **PR 2 merged as #20 (squashed into `main` as `16773a5`). PR 3 (§5) on `feat/objective-eda`, from the handoff's §6.** PR 3: 3.1 done (2026-11-01; the objective EDA as the notebook's section 5, before tuning: one setting for both models, `lgbm_poisson` with exposure on, Model 2 by coordinate descent, M10–M11), committed as `55dbb88` (3.1a), `17680ac` (3.1b), `1eab956` (3.1c) and the docs (3.1d). 3.2 done (2026-11-01; the 400-trial click: the objectives' validation differences within one holdout's noise; the user keeps the Poisson deviance). Then the user's notes on the EDA (2026-11-01: "I wanted to investigate all the trials"): 3.1e done (every trial records every metric, M12), committed as `ed9b5d5`; 3.1f done (the trials tables), committed as `4afb834`; 3.1g (matplotlib plots, slices, a rank table) done but superseded by the user's next notes and never committed (M13). 3.1h done (plotly 7.1.0 in the `notebook` group), committed as `b3b2b4b`. 3.1i done (every trial as a row of the whole model; 3.1g removed). 3.1i committed as `b3b1c49`. 3.1j done (the summary of the best models and the plotly figures), committed as `b4a0b77`. 3.1k done (2026-11-02; at the user's notes on the figures: one full-width figure per model, an "Objective" dropdown, small translucent points, no best-so-far line; 3.1j's validation folded into its checks). 3.1l done (2026-11-02; the objectives compared on a recorded metric: a box per objective's study with every trial, its best a star, a "Recorded metric" dropdown); 3.1k and 3.1l committed as `52fa06d`. 3.2b done (2026-11-02; the 400-trial EDA rerun on `52fa06d` and its trials read: the deviance's best good on every count metric, the regions of the transformers, the classifier and LightGBM, Model 2's RMSE-tuned pair's lower cv deviance the sampler's exploration; the Poisson deviance stays the objective). 3.2b committed as `2d159c4`. 3.4 done (2026-11-02; at the user's notes on section 6, before 3.3, then revised at their notes on it: each tuning run keeps its best model only, its transformers' names and its scores with the bootstrap's 95% interval per dataset; a runs table and a scores table per model; `alpha` a setting; M14; Check C every value equal to 3.1l's run, the two best runs' intervals and the importances exactly). **Next: 3.3 (the suite, the PR's review, the handoff, the PR), from the handoff's §6.**
 
 The user's notes of 2026-10-30 on the experiment notebook. They replace the order of
 [EXPERIMENT_NOTEBOOK_HANDOFF.md](EXPERIMENT_NOTEBOOK_HANDOFF.md) §6: MLflow and E11's final
@@ -188,6 +188,39 @@ The standing rules are those of [EXPERIMENT_NOTEBOOK_PLAN.md](EXPERIMENT_NOTEBOO
     objective in its own color and marker (the reference palette's slots 1–3, validated), the
     legend hiding one; the y-axis over the trials' 2nd–98th percentile and every star;
   - **not shown:** the objectives against the hyperparameters (slices) and the rank table.
+- **M14. A tuning run keeps its best model only, with its transformers' names and its
+  bootstrap intervals** (the user's notes and choices, 2026-11-02, 3.4; revises D14's "every
+  trial kept" and D18/D22's bootstrap of the two best runs only):
+  - **the record:** the run settings, `feature_transformers` {component: candidate name}, the
+    fitted `model`, its `components` (objects; `to_dict()` writes each transformer's
+    declaration for MLflow later), `cv_best`, `n_complete`, `n_failed`, `seconds`, `scores`;
+    Model 2's step records keep their best `component` (step 2 and the pairs take it as it is),
+    its name, `cv_best`, the counts and the seconds; no `trials`, `best_params`, `seed`, `y_min`,
+    `fixed_component`. Best practice: the search object keeps the history (`study.trials`,
+    scikit-learn's `cv_results_`), the experiment record the best configuration, its scores and
+    the fitted model; section 5 studies the trials. The trials-per-choice tables go with the
+    trials (at 400 trials every choice got at least 11, D20);
+  - **the scores:** each kept model (Model 1's 8 runs, Model 2's 16 pairs), fitted on the
+    training part, is scored and bootstrapped over neighborhoods on the training rows and on the
+    validation rows: `scores` per dataset, cohort and metric, `score` beside `mean`,
+    `ci95_lower`, `ci95_upper`; `alpha = 0.05` an experiment setting; one
+    `bootstrap_evaluator = BootstrapEvaluator(n_resamples, alpha=alpha, random_state=seed)` for
+    both models, so every model draws the same replicate rows per dataset and the intervals
+    compare; `CI_BOUND_NAMES` names the bounds from `alpha` (`src` keeps `lower` / `upper`). In
+    each loop the two outputs are separate steps (`_dataset_scores`, `_dataset_intervals`), then
+    joined;
+  - **two tables per model** (the user's notes on 3.4's first version): the runs
+    (`model1_runs_df` 8 rows, `model2_runs_df` 16: the settings, `feature_transformers`,
+    `hyperparameters` per component (the classifier's with its calibration),
+    `cv_poisson_deviance`, `n_complete`, `n_failed`, `seconds`; a pair merges its two studies:
+    their counts and seconds summed, its own cv) and their scores (`model1_scores_df` 384 rows,
+    `model2_scores_df` 768: a row per run × dataset × cohort × metric); `model2_steps_df` and
+    `best_df` removed (a filter of the scores tables). Like Model 1's 8, Model 2's 16 pairs are
+    one best model per combination (the classifier's best does not depend on the fixed total,
+    2.3a);
+  - **the inspection** takes each model's stored best model by the validation composite
+    deviance (no rebuild, no refit) and names the two runs; its bootstrap cells and
+    `intervals_df` are gone (the tables hold every model's intervals).
 
 ## 3. PR 1: the metrics in `scoring`
 
@@ -1307,6 +1340,39 @@ The plan:
   each best trial is also good on the other metrics; the objective stays the Poisson deviance
   unless the trials say otherwise (the user's choice).
 - **Commit:** `docs(notebook): the objective EDA's trials read`
+
+### [x] 3.4 Section 6 keeps each run's best model, its transformers' names and its bootstrap intervals
+
+At the user's notes on section 6 (2026-11-02), before 3.3 (the user's choice); the design is
+M14. Revised at the user's notes on its first version (names `_dataset_name` / `_dataset`, the
+two outputs in steps, a runs table and a scores table per model, `ci95_lower` / `ci95_upper`,
+`alpha` a setting); not committed in between.
+
+- **Change:** `notebooks/02_experiments.py`: Model 1's run cell and Model 2's three cells keep
+  M14's records (the bootstrap per split in Model 1's loop and the pairs' loop); the tables
+  cells a row per split, the names, no arms tables; `best_df` from the validation rows; the
+  inspection takes the stored models, its two bootstrap cells and the intervals cell removed;
+  `ProbabilitySearchSpace` leaves the imports (no reader); section 6's text; `alpha` in section
+  2 and the notebook test's pinned settings. HYPERPARAMETER_TUNING.md §8 (the run record).
+- **Checks:** Check A; Check B (the removed names absent); Check C (3 trials) against 3.1l's
+  reference run: the 24 baselines; the EDA's frames exactly; each record's keys; the components
+  equal those `from_params` reads from 3.1l's `best_params`, the names its transformer entries;
+  each `scores` 48 rows, its `score` 3.1l's `train_scores` / `val_scores` exactly and the stored
+  model's predictions again, `lower ≤ mean ≤ upper`; the tables 384 and 768 rows; the two best
+  runs' intervals and `importance_df` equal 3.1l's exactly; two mutations caught.
+- **Done (2026-11-02), with the revision:** Check A (the notebook test 13 passed with `alpha`
+  pinned; ruff 14, two fewer than 3.1l: the removed intervals and `best_df` cells' bare
+  `return`s; the two format hunks; `marimo check` no issue); Check B (`alpha`, the evaluator,
+  `CI_BOUND_NAMES`; the removed names absent); Check C 405–500 s by the load (99 s at 3.1l:
+  the bootstrap of 24 models on two datasets, less the inspection's two), every assertion
+  above, each model's last run's intervals recomputed with `random_state=seed`, every record's
+  `scores` equal to the first version's run with the renames; mutations each caught: the first
+  version's (the pairs' bootstrap seeded `seed + 1`; Model 1's name lookup inverted) and the
+  revision's (the bounds' names swapped; a pair's seconds from one study). A 400-trial click
+  gains about 5.5 min (about 7 s per bootstrap call). The notebook's md5
+  `676212a808f6c1f87f7926a58b3bffe6`.
+- **Commit:** `feat(notebook): each tuned run keeps its best model, its feature transformers and
+  its bootstrap intervals`
 
 ### [ ] 3.3 The chosen objective, and the docs
 

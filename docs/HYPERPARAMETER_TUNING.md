@@ -577,14 +577,21 @@ Fitting and scoring are the caller's two steps: the best model is rebuilt from
 `best_params` (§3) and fitted on the training part, each part is predicted, and
 `scoring.evaluate(y_true, y_pred, metrics, cohorts="composite")` returns a table of every
 metric (a column, by name) for each cohort asked for (a row): a column of `y_true`, scored
-alone through `cohort=`, or `"composite"`, the whole matrix. No fitted model or Optuna study
-needs to be kept. A notebook run keeps a record: its settings, `study.trials_dataframe()`
-(every trial, about 1.7 KiB each, with its cv on every recorded metric), `[c.to_dict() for c in best_components]`, `best_params`,
-`best_value`, `train_scores` and `val_scores` (the two tables), the seconds, the seed and
-`y_min`. Model 2's coordinate descent keeps a record per step study (its trials, its best
-component and the fixed one) and one per pair (its components, the merged `best_params`,
-its cross-validated objective as `cv_best`, its two tables). To save it as JSON use `trials.to_json(orient="records")`: `json.dumps(record,
-default=str)` writes a bare `NaN`, which strict readers reject.
+alone through `cohort=`, or `"composite"`, the whole matrix. The Optuna study need not be
+kept. A notebook run keeps its best model only (the trials are studied in the notebook's
+objective EDA, section 5): its settings, `feature_transformers` (each component's candidate
+name), the fitted `model`, its `components` (`to_dict()` writes each one's transformer
+declaration), `cv_best`, `n_complete`, `n_failed`, the seconds, and `scores`: per dataset
+(`train`, `val`), cohort and metric, `scoring.evaluate`'s `score` beside
+`BootstrapEvaluator.evaluate`'s `mean` and bounds, which the notebook names after their level
+(`ci95_lower`, `ci95_upper` at its setting `alpha = 0.05`); one evaluator resamples every
+model with one seed, so their intervals compare. Model 2's coordinate descent keeps a record
+per step study (its best component and its name, `cv_best`, the trial counts, the seconds)
+and one per pair (its model, components, names, its cross-validated objective as `cv_best`,
+its two studies' trial counts and seconds summed, its `scores`). The notebook shows two
+tables per model: the kept models (settings, each component's transformer and
+hyperparameters, the cross-validated objective, trials, seconds) and their scores. To save a trials table as JSON use `trials.to_json(orient="records")`:
+`json.dumps(record, default=str)` writes a bare `NaN`, which strict readers reject.
 
 ## 9. Reproducibility
 
