@@ -48,8 +48,12 @@ git. Re-verify every fact here against the code of the day.
    `feature_transformers` and `hyperparameters` per component; Model 2's with `step`, `total` rows
    holding the fixed classifier, `probability` rows step 1's best total, `id` each study's own
    number); `eda_best_df` (6 rows: model × objective, `best_id`, `cv_<metric>`, `val_<metric>`);
-   `eda_figures` (per model three plotly figures side by side, six stacked panels each); a table
-   cell with the two summaries and the two trials tables.
+   `eda_figures` (a plotly figure per model and objective, six stacked panels each);
+   `eda_objective`, an "Objective" dropdown (the tuner's objective by default) choosing which
+   objective's two figures are shown, one per model, full width, stacked (3.1k);
+   `eda_recorded_metric`, a "Recorded metric" dropdown, and `eda_metric_figures[model, metric]`
+   (a box per objective's study with every trial and its best as a star, Model 2's steps grouped,
+   the y-axis over the bulk; 3.1l); a table cell with the two summaries and the two trials tables.
 6. **Section 6, tuning and inspection:**
    - **the metrics cell:** `POISSON_DEVIANCE = Metric("poisson_deviance",
      mean_poisson_deviance_loss)` (the tuner's objective, the best-run rule, the permutation
@@ -249,22 +253,23 @@ results:
   | `5c52a8a` | the handoff for 3.1h–3.1j |
   | `b3b2b4b` | 3.1h plotly 7.1.0 in the `notebook` group |
   | `b3b1c49` | 3.1i every trial as a row of the whole model; 3.1g removed |
-  | (the user's) | 3.1j the summary of the best models and the plotly figures; this handoff |
+  | `b4a0b77` | 3.1j the summary of the best models and the plotly figures; the handoff |
+  | (the user's) | 3.1k the figures one column per model, the objective in a dropdown |
+  | (the user's) | 3.1l the objectives compared on a recorded metric |
 
 - **3.1i took four versions at the user's notes** (the metrics plan's 3.1i Done note): a
   `components_of` callable with `first_id`; the components set explicitly with one id sequence; a
   merged Optuna study of Model 2's two steps; finally each original trial kept, in the table rows,
   with the component its step held fixed, identified by `step` and its own study's number (§3).
   The user removed the two cells that displayed the trials tables before committing 3.1i.
-- **The notebook at 3.1j:** md5 `e14384d3ae57cb8b9d44eeffad1e811a` (`cat
+- **The notebook at 3.1l:** md5 `affd69836a6d72cd453d862c2a2bb527` (3.1k's `8f14ab06395954d3fa6c7772e9de1f18`, 3.1j's `e14384d3ae57cb8b9d44eeffad1e811a`; `cat
   notebooks/02_experiments.py | md5`); `src` unchanged since 3.1e (`ed9b5d5`).
 - **Checks at 3.1j:** the non-slow suite 1387 passed, 1 skipped, 1 xfailed, 19 deselected (at
   3.1h; `src` unchanged since); Check A: the notebook test 13 passed, **ruff 16** (14 PLR1711, a
   B018, a RUF059), the two format hunks, `marimo check` no issue; Check B; Check C (78 s) with
   3.1i's and 3.1j's assertions (§4); every frame and record equal to a reference run made before
-  3.1i; the six figures render in a marimo kernel. **Not done:** nobody has looked at the figures
-  yet (the assistant has no browser; plotly's image export needs kaleido, not installed): the
-  user looks at them in marimo.
+  3.1i; the six figures render in a marimo kernel. The user looked at them (2026-11-02) and asked
+  for 3.1k: its checks (the metrics plan's 3.1k) rerun everything above against 3.1j's run.
 - **The EDA's Check C values** (3 trials, `cv_best` by objective log loss / deviance / RMSE):
   Model 1 1.0855 / 2.1812 / 4.4406; Model 2 1.0833 / 2.1340 / 4.3941 (its deviance step 1
   2.1361; under the log loss its total step's trials all tie). Model 2's EDA equals an
@@ -374,9 +379,17 @@ md5, the commit message. Tick the sub-task and update the status lines.
   objectives in order), each `best_id` its study's `idxmin` (Model 2's in `probability`, equal to
   the recomputed study's `best_trial.number`), `cv_<objective>` its `cv_best`, `val_*` the
   composite rows; `eda_figures` 6 figures, each 6 y-axes titled in `METRICS`' order, each panel's
-  `trials` trace its column, the `best: …` star at the best's position, one `best so far` line on
-  the objective's axis (its `cummin`), Model 2's rule at 2.5 in 6 shapes, none in Model 1's. The
-  script lives in the scratchpad and must be rewritten in a new session (below).
+  `trials` trace its column, the `best: …` star at the best's position, Model 2's rule at 2.5 in
+  6 shapes, none in Model 1's. Since 3.1k: no `best so far` trace; the trials' markers 5 px at
+  opacity 0.6 without a ring, the stars 12 px; `eda_objective` a dropdown of the three objectives,
+  `poisson_deviance` by default; the figures cell's output (from `app.run()`'s outputs) holds the
+  two `tuned on poisson_deviance` figures and no other objective's. Since 3.1l:
+  `eda_metric_figures` 12 keys (model × `METRICS`), each 3 boxes named the objectives in order with
+  the palette's colors and symbols, each box's y its study's column (Model 2's x the `step`), 3
+  stars at each best trial (Model 2's in `probability`), the y-range holding the 2nd–98th
+  percentile and every star; `eda_recorded_metric` `poisson_deviance` by default; the display the
+  two `poisson_deviance by objective` figures only. The script lives in the scratchpad and must be
+  rewritten in a new session (below).
 - **A figure's rendering:** marimo registers its plotly formatter only inside a kernel
   (`running_in_notebook()`), so a script shows plotly's own iframe; run a small app through
   `marimo export html` and count the `<marimo-plotly data-figure=` elements (3.1j: Check C wrote
@@ -463,7 +476,8 @@ constructor, data in the call; fitting and evaluating as separate steps; no priv
 - **SPLITTING.md §3** and the simulator plan's Stop 4 doc examples (`.run()` → `simulate()`), and
   the simulator plan's cleanup stop (dead code) and format-only commit.
 - **The EDA figures:** dark mode not selected (the dataviz skill asks for it; marimo's dark theme
-  shows them on the light surface); not looked at by the assistant.
+  shows them on the light surface); not looked at by the assistant. The user looked at 3.1j's and
+  asked for 3.1k (2026-11-02); the points at 400 trials are to be judged on 3.2b's figures.
 - **A `log(n_apartments)` plan for the GLMs** (FEATURE_TRANSFORMATIONS.md §4.4); not asked for.
 - **What would shorten a click further** (about 26 min now), not asked for: dropping the GLM
   exposure-off arms (structurally worse by about 0.6); narrowing LightGBM's search after its
