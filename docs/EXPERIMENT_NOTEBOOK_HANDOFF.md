@@ -254,8 +254,8 @@ results:
   | `b3b2b4b` | 3.1h plotly 7.1.0 in the `notebook` group |
   | `b3b1c49` | 3.1i every trial as a row of the whole model; 3.1g removed |
   | `b4a0b77` | 3.1j the summary of the best models and the plotly figures; the handoff |
-  | (the user's) | 3.1k the figures one column per model, the objective in a dropdown |
-  | (the user's) | 3.1l the objectives compared on a recorded metric |
+  | `52fa06d` | 3.1k the figures one column per model, the objective in a dropdown; 3.1l the objectives compared on a recorded metric |
+  | (the user's) | 3.2b the trials read (docs) |
 
 - **3.1i took four versions at the user's notes** (the metrics plan's 3.1i Done note): a
   `components_of` callable with `first_id`; the components set explicitly with one id sequence; a
@@ -475,6 +475,11 @@ constructor, data in the call; fitting and evaluating as separate steps; no priv
   as a check", but the check cell is gone. The user's text; ask.
 - **SPLITTING.md §3** and the simulator plan's Stop 4 doc examples (`.run()` → `simulate()`), and
   the simulator plan's cleanup stop (dead code) and format-only commit.
+- **Univariate TPE can lock onto one region** (3.2b): under the deviance Model 2's step-1 total
+  study spent 280 of 400 trials at `max_depth` 4 and 8 at depth 8, where the RMSE study found 15
+  totals with a lower deviance (best 2.0601 against 2.0718). Candidates for a search-space pass,
+  with T1's F7 below: Optuna's `multivariate=True`, more startup trials, a narrower space; not
+  asked for.
 - **The EDA figures:** dark mode not selected (the dataviz skill asks for it; marimo's dark theme
   shows them on the light surface); not looked at by the assistant. The user looked at 3.1j's and
   asked for 3.1k (2026-11-02); the points at 400 trials are to be judged on 3.2b's figures.
@@ -485,20 +490,13 @@ constructor, data in the call; fitting and evaluating as separate steps; no priv
 
 ## 6. Next, and the prompt
 
-**Status (2026-11-01, end of the day):** PR 3's EDA is built (3.1a–3.1j) and was read once at
-400 trials before the rework (3.2: the Poisson deviance stays the objective). 3.1h (`b3b2b4b`)
-and 3.1i (`b3b1c49`) are committed; 3.1j is committed by the user with this handoff. Next, one
-step per approval, as the metrics plan §5 details them:
-1. **Validate 3.1j:** rewrite the check scripts (§4; the scratchpad may be gone), rerun Check A,
-   Check B and Check C with 3.1i's and 3.1j's assertions and the rendering check on HEAD, and
-   report; the user looks at the figures in marimo (a 3-trial click on a copy, or the 400-trial
-   one of 3.2b) and may ask for changes, each planned first.
-2. **3.2b the 400-trial click again** on a copy with only the EDA's two stops opened
-   (`mo.stop(not run_eda.value,` → `mo.stop(False,`), `n_trials = 400`, `PYTHONWARNINGS=error`
-   (about 10–20 min by the load); keep `eda_best_df`, the trials tables and the figures' JSON;
-   read the trials into the plan's 3.2 (good and bad regions, whether each best trial is also good
-   on the other metrics); the objective stays the Poisson deviance unless the trials say
-   otherwise (the user's choice).
+**Status (2026-11-02):** PR 3's EDA is built (3.1a–3.1l) and read (3.2, 3.2b: the Poisson
+deviance stays the objective). 3.1j (`b4a0b77`) was validated within 3.1k's checks; the user
+looked at the figures and asked for 3.1k (one column per model, an objective dropdown) and 3.1l
+(the objectives compared on a recorded metric), committed as `52fa06d`; 3.2b (docs) is the
+user's to commit. Next, one step per approval, as the metrics plan §5 details them:
+1. **Done:** 3.1j's validation, 3.1k, 3.1l, 3.2b.
+2. **Done:** 3.2b (the 400-trial EDA rerun on `52fa06d` and its trials read).
 3. **3.3:** the suite and the PR's independent review subagent (findings reproduced before any
    fix); the handoff rewritten for the deferred work (also README.md's and SPLITTING.md's "section
    5", now section 6 for the tuning); in the chat, the PR's title and description, the
