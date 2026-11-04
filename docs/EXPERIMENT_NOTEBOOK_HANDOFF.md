@@ -1,9 +1,10 @@
 # Handoff: the experiment notebook, PR 3 in progress (the objective EDA)
 
-**For:** the session that makes the user's changes in the notebook's section 6 (hyperparameter
-tuning; the user describes them), then finishes PR 3 of
+**For:** the session that makes the user's additional changes (the user describes them), then
+finishes PR 3 of
 [NOTEBOOK_METRICS_LOOP_EDA_PLAN.md](NOTEBOOK_METRICS_LOOP_EDA_PLAN.md), the objective EDA, with
-3.3 (§2b, §6). PR 3's EDA is built and read (3.1a–3.1l, 3.2, 3.2b). That
+3.3 (§2b, §6). PR 3's EDA is built and read (3.1a–3.1l, 3.2, 3.2b); section 6 keeps each run's
+best model and its bootstrap intervals (3.4). That
 plan has three PRs: the metrics in `scoring` (PR 1, merged as #18 into
 `feat/experiment-notebook`, which #19 merged into `main`), the runs in loops scored on every
 metric (PR 2, **merged as #20**, squashed into `main` as `16773a5`), and the objective EDA
@@ -16,7 +17,9 @@ The next session starts at §6.
 (2.1–2.5); **updated** 2026-10-31 after PR 2's merge (#20), for a new session; **updated**
 2026-11-01 in PR 3 (§2b, §6), for a new session; **updated** 2026-11-01 after 3.1h–3.1j (§1, §2b,
 §3, §4, §6), for a new session; **updated** 2026-11-02 after 3.1k, 3.1l and 3.2b (§1, §2b, §4,
-§5, §6), for a new session on section 6. The detailed history is in the metrics plan (§2 M1–M13, §4 2.1–2.5, §5 3.1–3.2b with each
+§5, §6), for a new session on section 6; **updated** 2026-11-04 after 3.4 (§2b, §4, §5, §6), for
+a new session on the user's additional changes. The detailed history is in the metrics plan (§2
+M1–M14, §4 2.1–2.5, §5 3.1–3.4 with each
 sub-task's "Done" note), in [NOTEBOOK_TUNING_PLAN.md](NOTEBOOK_TUNING_PLAN.md) (§0 D1–D30) and in
 git. Re-verify every fact here against the code of the day.
 
@@ -243,7 +246,7 @@ results:
 - Optuna's `PartialFixedSampler` raises `ExperimentalWarning` under `-W error`, so the fixing is
   done in the package's code.
 
-## 2b. PR 3 so far (2026-11-02)
+## 2b. PR 3 so far (2026-11-04)
 
 - **Commits on `feat/objective-eda`** (each sub-task's Done note is in the metrics plan §5):
 
@@ -264,7 +267,18 @@ results:
   | `b4a0b77` | 3.1j the summary of the best models and the plotly figures; the handoff |
   | `52fa06d` | 3.1k the figures one column per model, the objective in a dropdown; 3.1l the objectives compared on a recorded metric |
   | `2d159c4` | 3.2b the trials read (docs) |
-  | (the user's) | this handoff, for the section-6 session |
+  | `36c6bbc` | the handoff for the section-6 session |
+  | `afcd6f9` | 3.4 each run's best model, its transformers' names and its bootstrap intervals; a runs table and a scores table per model (M14) |
+  | (the user's) | this handoff, for the session on the user's additional changes |
+
+- **3.4 (2026-11-02–04, `afcd6f9`):** notebook md5 `676212a808f6c1f87f7926a58b3bffe6`. Its
+  checks: the notebook test 13 passed; ruff 14 (none new); the two format hunks; `marimo check`
+  no issue; Check B; Check C (3 trials, 405–500 s) with 3.4's assertions (§4); four mutations
+  caught (the pairs' seed + 1, the transformer-name lookup inverted, the bounds swapped, a
+  pair's seconds from one study). The user ran section 6 in marimo and approved it ("looks
+  good"); a `KeyError: 'n_complete'` they saw first was stale kernel state (a `MODEL2_RUNS` built
+  by the cell's older version), gone after a rerun. A 400-trial click is about 5.5 min longer
+  than before 3.4 (the bootstrap about 7 s per call: train and val for each of the 24 kept models).
 
 - **3.1i took four versions at the user's notes** (the metrics plan's 3.1i Done note): a
   `components_of` callable with `first_id`; the components set explicitly with one id sequence; a
@@ -416,7 +430,14 @@ md5, the commit message. Tick the sub-task and update the status lines.
   equal 3.1l's `intervals_df` and `importance_df` exactly; each model's last run's intervals
   recomputed with `random_state=seed`; every record's `scores` equal 3.4's first version's
   run (`check_c_3_4_first.pkl`) with the renames. The script lives in the scratchpad and must be rewritten in a new session
-  (below).
+  (below). **For a change after 3.4,** the reference is 3.4's final run, `check_c_3_4b.pkl`
+  (`afcd6f9`); if it is gone, run Check C on HEAD before the first edit and keep that pickle.
+- **The scripts of 2026-11-04** (3.4's; if the scratchpad survived, copy them, check before
+  rewriting), in
+  `/private/tmp/claude-501/-Users-galkampel-Desktop-Projects-age-group-prediction/d5d309c8-a5ca-4f61-9fb4-e32eeb7a25f3/scratchpad`:
+  `checks/` as below, with 3.4's assertions in `check_c.py`; `run_check_c.sh` passes the two
+  references; the pickles `check_c_3_1l.pkl`, `check_c_3_4_first.pkl` and `check_c_3_4b.pkl`
+  (3.4's final run); the mutants `mutant_*.py`.
 - **The scripts of 2026-11-02** (if the scratchpad survived; check before rewriting), in
   `/private/tmp/claude-501/-Users-galkampel-Desktop-Projects-age-group-prediction/b6fef19f-9c0f-4e5f-b31f-4d53156a429c/scratchpad`:
   `checks/make_copy.py` (the 3-trial copy, both counts asserted), `checks/check_c.py` (every
@@ -516,7 +537,7 @@ constructor, data in the call; fitting and evaluating as separate steps; no priv
 
 - **The review's #2:** `BootstrapEvaluator.evaluate` does not check `cohorts` (duplicates give
   identical rows, `[]` a confusing `TypeError`); left as is by the user.
-- **T2.3's F5:** the two tables cells count arms with different idioms; left as is.
+- **T2.3's F5:** gone with 3.4 (the two arms tables were removed).
 - **T1's F7:** `num_leaves` above `2**max_depth` changes nothing in LightGBM; revisit in a
   search-space pass.
 - **The user's:** two empty cells and the bare `return`s marimo writes; ask before changing.
@@ -533,34 +554,50 @@ constructor, data in the call; fitting and evaluating as separate steps; no priv
   shows them on the light surface); not looked at by the assistant (no browser). The user looked
   at 3.1j's, asked for 3.1k and 3.1l, and approved 3.1k's at 400 trials ("Looks good!").
 - **A `log(n_apartments)` plan for the GLMs** (FEATURE_TRANSFORMATIONS.md §4.4); not asked for.
-- **What would shorten a click further** (about 26 min now), not asked for: dropping the GLM
+- **The package imports the old stack eagerly:** `age_group_prediction/__init__.py` imports the
+  old modeling stack, which imports pyro; pyro's `SyntaxWarning` (an invalid escape sequence in
+  its own source) shows at the notebook's first import, and each import costs about 3 s. The
+  fix belongs to the roadmap's "delete the old stack" (a later PR); the user was told and left it.
+- **What would shorten a click further** (about 31 min since 3.4), not asked for: dropping the GLM
   exposure-off arms (structurally worse by about 0.6); narrowing LightGBM's search after its
   fANOVA importances; fewer trials once the space is narrower.
 
 ## 6. Next, and the prompt
 
-**Status (2026-11-02, 3.4 done):** section 6 keeps each run's best model only, its feature transformers' names and its scores with the bootstrap's 95% interval per dataset, in a runs table and a scores table per model (3.4, M14; `alpha = 0.05` a setting; notebook md5 `676212a808f6c1f87f7926a58b3bffe6`, Check C 405–500 s); next 3.3. Before it: PR 3's EDA is built (3.1a–3.1l) and read (3.2,
-3.2b): the Poisson deviance stays the objective. Committed on `feat/objective-eda`: 3.1j
-(`b4a0b77`), 3.1k and 3.1l (`52fa06d`), 3.2b (`2d159c4`), then this handoff (the user's). The
-notebook's md5 is `affd69836a6d72cd453d862c2a2bb527`. Next, one step per approval:
-1. **The user's changes in section 6** (hyperparameter tuning, from line 1516 of the notebook):
-   the user describes them at the start of the session. First ask (AskUserQuestion, with a
-   recommendation) whether they go on this branch as PR 3's sub-tasks before 3.3 (the default:
-   numbered 3.4, 3.5, … in the metrics plan's §5), or in a new PR from `main` after PR 3's merge
-   (then 3.3 first). Then each change planned in plan mode: the facts re-verified with read-only
-   probes, a design question with evidence and a recommendation, the steps and the commit message
-   in the chat. What a section-6 change touches:
-   - **the pinned settings:** the notebook test pins `MODEL1_RUN_SETTINGS` (its
+**Status (2026-11-04, 3.4 committed as `afcd6f9`):** section 6 keeps each run's best model
+only, its feature transformers' names and its scores with the bootstrap's 95% interval per
+dataset, in a runs table and a scores table per model (3.4, M14; `alpha = 0.05` a section-2
+setting). Before it: PR 3's EDA is built (3.1a–3.1l) and read (3.2, 3.2b): the Poisson deviance
+stays the objective. Committed on `feat/objective-eda`: 3.1j (`b4a0b77`), 3.1k and 3.1l
+(`52fa06d`), 3.2b (`2d159c4`), the section-6 handoff (`36c6bbc`), 3.4 (`afcd6f9`), then this
+handoff (the user's). The notebook's md5 is `676212a808f6c1f87f7926a58b3bffe6`. Next, one step
+per approval:
+1. **The user's additional changes:** the user describes them at the start of the session. First
+   ask (AskUserQuestion, with a recommendation) whether they go on this branch as PR 3's
+   sub-tasks before 3.3 (the default: numbered 3.5, 3.6, … in the metrics plan's §5), or in a new
+   PR from `main` after PR 3's merge (then 3.3 first). Then each change planned in plan mode: the
+   facts re-verified with read-only probes, a design question with evidence and a
+   recommendation, the steps and the commit message in the chat. What a change in sections 5–6
+   touches:
+   - **the pinned settings:** the notebook test pins the experiment settings (`alpha` among them
+     since 3.4) and `MODEL1_RUN_SETTINGS` (its
      `test_the_run_settings_are_the_ones_the_baselines_were_recorded_with`) and needs every cell
      holding `tuner.tune_` to hold `mo.stop(not `;
    - **Check C's baselines:** the 24 `cv_best` of §2 are recorded with both sharing flags off at
      3 trials; a change to the runs, the search or the `tuner` cell (it lives in section 5 and the
      EDA uses it too: the EDA's Check C values of §2b) changes them: re-record them in the docs,
-     say so in the chat, and keep the reference-run comparison (§4) for what must not change;
-   - **the 400-trial click** of section 6 is about 26 min (Model 1 821 s, Model 2 752 s);
-   - **open items that belong to section 6** (§5): univariate TPE locking onto one region (3.2b),
-     T1's F7 (`num_leaves` above `2**max_depth`), T2.3's F5 (the two arms tables' idioms), and
-     what would shorten a click; none asked for yet.
+     say so in the chat, and keep the reference-run comparison (§4, against 3.4's final run) for
+     what must not change;
+   - **the run records and tables** (§1, M14): the records feed the runs and scores tables, the
+     inspection's choice and later the MLflow runs; Model 2's pair record merges its two studies;
+   - **the 400-trial click** of section 6 is about 31 min since 3.4 (Model 1 821 s, Model 2
+     752 s before it, plus about 5.5 min of bootstrap);
+   - **a marimo session the user has open:** a cell's older outputs stay in the kernel; after an
+     edit the user reruns the changed cell and those after it, or restarts the kernel (3.4's
+     `KeyError`, §2b). The user must not save over an edit from an open editor;
+   - **open items** (§5): univariate TPE locking onto one region (3.2b), T1's F7 (`num_leaves`
+     above `2**max_depth`), what would shorten a click, the old stack's eager import (pyro's
+     warning); none asked for yet.
 2. **3.3:** the non-slow suite (last run at 3.1h) and mypy; the PR's independent review subagent
    (findings reproduced before any fix); the handoff rewritten for the deferred work (also
    README.md's and SPLITTING.md's "section 5", now section 6 for the tuning); in the chat, the
@@ -580,23 +617,24 @@ commit message; explain marimo's UI terms; keep the implementation simple; meani
 **The prompt for the next session:**
 
 ```text
-Read docs/EXPERIMENT_NOTEBOOK_HANDOFF.md in full (§1's section 6, §2b, §3, §4's checks, traps and
-iCloud notes, §5, and §6 first), then docs/NOTEBOOK_METRICS_LOOP_EDA_PLAN.md (§2 M10–M13, §5
-3.2b and 3.3) and docs/NOTEBOOK_TUNING_PLAN.md §0 (D1–D30), then sections 5 and 6 of
-notebooks/02_experiments.py. Verify the state first:
-- the branch feat/objective-eda, HEAD my commit of this handoff on top of 2d159c4; if the
+Read docs/EXPERIMENT_NOTEBOOK_HANDOFF.md in full (§1's sections 5 and 6, §2b, §3, §4's checks,
+traps and iCloud notes, §5, and §6 first), then docs/NOTEBOOK_METRICS_LOOP_EDA_PLAN.md (§2
+M10–M14, §5 3.2b, 3.4 and 3.3) and docs/NOTEBOOK_TUNING_PLAN.md §0 (D1–D30), then sections 5 and
+6 of notebooks/02_experiments.py. Verify the state first:
+- the branch feat/objective-eda, HEAD my commit of this handoff on top of afcd6f9; if the
   handoff is uncommitted, stop and tell me;
-- the working tree clean, and the notebook's md5 affd69836a6d72cd453d862c2a2bb527 via
+- the working tree clean, and the notebook's md5 676212a808f6c1f87f7926a58b3bffe6 via
   `cat notebooks/02_experiments.py | md5`;
 - no iCloud-offloaded files: `find .git src notebooks tests docs configs -flags +dataless -type f
   | grep -vc __pycache__` is 0.
-If anything differs, stop and show me the diff. Then I will describe the changes I want in
-section 6 (hyperparameter tuning). Ask me first whether they go on this branch before 3.3 or in a
-new PR after PR 3's merge, with your recommendation. Plan each change in plan mode (re-verify the
-facts with read-only probes, design questions with evidence and a recommendation, the steps and
-the commit message in the chat) and wait for my approval; stop after each with a file-by-file
-summary, the checks (§4), the notebook's md5 and the commit message. If the check scripts are
-gone, rewrite them in the scratchpad from §4. Then 3.3, planned the same way. Keep the
-implementation simple. I commit myself: never commit, no Co-Authored-By line, no "Generated with
-Claude Code" in PR text, never git checkout/stash/reset/mv.
+If anything differs, stop and show me the diff. Then I will describe the additional changes I
+want. Ask me first whether they go on this branch before 3.3 (as 3.5, 3.6, …) or in a new PR
+after PR 3's merge, with your recommendation. Plan each change in plan mode (re-verify the facts
+with read-only probes, design questions with evidence and a recommendation, the steps and the
+commit message in the chat) and wait for my approval; stop after each with a file-by-file
+summary, the checks (§4, against 3.4's final run as the reference), the notebook's md5 and the
+commit message. If the check scripts are gone, copy them from the previous session's scratchpad
+(§4) or rewrite them from §4. Then 3.3, planned the same way. Keep the implementation simple. I
+commit myself: never commit, no Co-Authored-By line, no "Generated with Claude Code" in PR text,
+never git checkout/stash/reset/mv.
 ```
