@@ -5,7 +5,8 @@
 > with plain Optuna and a cross-validation loop written out in full. A trial draws each
 > component's choices, the components are set as complete records, and the composite is
 > built from them with constructor calls: there are no `set_params` paths. The code was
-> rebuilt from section 5 of the experiment notebook (`notebooks/02_experiments.py`), which
+> rebuilt from the tuning section (then 5, now 6) of the experiment notebook
+> (`notebooks/02_experiments.py`), which
 > is its first client. The decisions and their measured evidence are D1–D26 of the
 > [notebook tuning plan](NOTEBOOK_TUNING_PLAN.md), above all D21 (what lives in the package),
 > D25 (components read back from `best_params`) and D26 (the tuner), and those of the
@@ -324,10 +325,11 @@ n_kindergarten 2.3719 2.4573
 ```
 
 The refit's training scores are in-sample; the validation column is the one that compares
-runs (the notebook's `best_df`). What a run keeps:
+runs (the `val` rows of the notebook's scores tables). What the study and a run's record
+keep:
 
 ```python
-# What a run keeps: every trial, and each best component as plain data.
+# The study keeps every trial; a run's record keeps each best component as plain data.
 record = json.loads(json.dumps(best_total.to_dict()))
 print(sorted(record))
 print(record["estimator_params"], record["feature_transformer"]["column_plans"][0]["plan"]["name"])

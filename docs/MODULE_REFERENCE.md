@@ -113,7 +113,7 @@ Model descriptions: Model 1, [INDEPENDENT_COHORT_MODELS.md](INDEPENDENT_COHORT_M
 ## `age_group_prediction.hyperparameter_tuning` — Tuning The Rebuilt Models
 
 Plain Optuna over the two `modeling` composites, rebuilt from the experiment notebook's
-section 5, which imports it: a trial draws each component's choices, the components are
+tuning section (then 5, now 6), which imports it: a trial draws each component's choices, the components are
 complete records, and the composite is built from them with constructor calls; a
 `CrossValidationTuner` runs one study per call. The candidate transformers, metrics,
 run settings, loops and tables stay in the notebook, which also fits, predicts and scores

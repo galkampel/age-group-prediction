@@ -1,17 +1,27 @@
-# Handoff: the experiment notebook, PR 3 in progress (the objective EDA)
+# Handoff: the experiment notebook, PR 3 closed (the objective EDA); PR 4 next
 
-**For:** the session that closes PR 3 of
-[NOTEBOOK_METRICS_LOOP_EDA_PLAN.md](NOTEBOOK_METRICS_LOOP_EDA_PLAN.md), the objective EDA, with
-3.3, then starts PR 4 of [NOTEBOOK_CACHE_EVALUATION_PLAN.md](NOTEBOOK_CACHE_EVALUATION_PLAN.md)
-(the user's additional changes, planned 2026-11-04 as PRs 4–7: the tuning budget and the study
-cache, the bootstrap replicates and RMSE as the comparison metric, the notebook split, SHAP per
-cohort and the test evaluation; decisions D31–D39). PR 3's EDA is built and read (3.1a–3.1l, 3.2,
-3.2b); section 6 keeps each run's best model and its bootstrap intervals (3.4). The metrics
-plan has three PRs: the metrics in `scoring` (PR 1, merged as #18 into
-`feat/experiment-notebook`, which #19 merged into `main`), the runs in loops scored on every
-metric (PR 2, **merged as #20**, squashed into `main` as `16773a5`), and the objective EDA
-(PR 3, on **`feat/objective-eda`**, created from `main` at `16773a5`). MLflow and E11's final
-evaluation are deferred.
+**For:** the session that starts PR 4 of
+[NOTEBOOK_CACHE_EVALUATION_PLAN.md](NOTEBOOK_CACHE_EVALUATION_PLAN.md), the tuning budget and
+the study cache (4.1–4.3), from `main` after PR 3's merge. That plan holds the user's additional
+changes, planned 2026-11-04 as PRs 4–7: the tuning budget and the study cache, the bootstrap
+replicates and RMSE as the comparison metric, the notebook split, SHAP per cohort and the test
+evaluation; decisions D31–D39.
+
+PR 3 of [NOTEBOOK_METRICS_LOOP_EDA_PLAN.md](NOTEBOOK_METRICS_LOOP_EDA_PLAN.md) is closed (3.3,
+2026-11-05):
+- its EDA is built and read (3.1a–3.1l, 3.2, 3.2b);
+- section 6 keeps each run's best model and its bootstrap intervals (3.4);
+- the review's F2 is fixed; F1 and F5 are fixed in the docs.
+
+The metrics plan's three PRs:
+- PR 1, the metrics in `scoring`: merged as #18 into `feat/experiment-notebook`, which #19
+  merged into `main`;
+- PR 2, the runs in loops scored on every metric: merged as #20, squashed into `main` as
+  `16773a5`;
+- PR 3, the objective EDA: on `feat/objective-eda`, created from `main` at `16773a5`, to be
+  squash-merged by the user.
+
+MLflow stays deferred; E11's final evaluation is the cache plan's PR 7.
 
 The next session starts at §6.
 
@@ -22,8 +32,9 @@ The next session starts at §6.
 §5, §6), for a new session on section 6; **updated** 2026-11-04 after 3.4 (§2b, §4, §5, §6), for
 a new session on the user's additional changes; **updated** 2026-11-04 again after those changes
 were planned (§1's "For", §2b, §4, §6; the plan is NOTEBOOK_CACHE_EVALUATION_PLAN.md), for the
-session that does 3.3 and starts PR 4. The detailed history is in the metrics plan (§2
-M1–M14, §4 2.1–2.5, §5 3.1–3.4 with each
+session that does 3.3 and starts PR 4; **updated** 2026-11-05 at PR 3's close (3.3: the header,
+§2, §2b, §4, §5, §6), for the session that starts PR 4. The detailed history is in the metrics
+plan (§2 M1–M14, §4 2.1–2.5, §5 3.1–3.4 and 3.3 with each
 sub-task's "Done" note), in [NOTEBOOK_TUNING_PLAN.md](NOTEBOOK_TUNING_PLAN.md) (§0 D1–D30) and in
 git. Re-verify every fact here against the code of the day.
 
@@ -139,13 +150,28 @@ git. Re-verify every fact here against the code of the day.
 - [`splitting`](SPLITTING.md), `feature_engineering` ([FEATURE_TRANSFORMATIONS.md](FEATURE_TRANSFORMATIONS.md)).
   MLflow is not used yet; the old `tracking/` package belongs to the old stack.
 
-## 2. State (2026-10-31, end of PR 2)
+## 2. State (2026-11-05, end of PR 3)
 
-- **Branches:** `main` at **`16773a5`** (`refactor(notebook): the runs in loops scored on every
-  metric; Model 2 by coordinate descent (#20)`), PR 2 squashed; its content is identical to the
-  branch's last commit `eb0da75`. **`feat/objective-eda`** (PR 3) was created from it; its first
-  commit is this handoff's update. `refactor/notebook-run-loop` is deleted, locally and on
-  GitHub. The user commits, pushes and merges.
+- **Branches, once the user has merged PR 3:**
+  - `main` holds PR 3 squashed (the PR's title with its number; read the number and the hash
+    from `git log --oneline -3 main`). Its content is identical to `feat/objective-eda`'s last
+    commit, 3.3b's docs commit, which carries this handoff.
+  - `feat/objective-eda` is deleted, locally and on GitHub (`git push -d origin
+    feat/objective-eda`, `git branch -d feat/objective-eda`).
+  - PR 4 goes on `feat/study-cache`, which the user creates from `main`.
+  - The user commits, pushes and merges.
+- **The notebook's md5 at PR 3's close:** `95261326e5368bd451607d083a5ab366`.
+- **Checks at the end of PR 3** (2.x's numbers below are PR 2's):
+  - the non-slow suite 1387 passed, 1 skipped, 1 xfailed, 19 deselected (7 warnings, the old
+    stack's);
+  - mypy 28 files, no issue;
+  - Check A: the notebook test 13 passed, ruff 14 (12 PLR1711, a B018, a RUF059), the user's two
+    format hunks (`@@ -158`, `@@ -208`), `marimo check` no issue;
+  - Check B;
+  - Check C: the 24 baselines below and every assertion of §4, equal to 3.4's run.
+- **PR 2 (history):** `main` was at `16773a5` (`refactor(notebook): the runs in loops scored on
+  every metric; Model 2 by coordinate descent (#20)`), PR 2 squashed; its content was identical
+  to the branch's last commit `eb0da75`. `feat/objective-eda` (PR 3) was created from it.
 - **PR 2's commits** (each sub-task's "Done" note is in the metrics plan §4). They live inside
   the squash commit `16773a5`; GitHub keeps them under #20, and the docs cite them by hash:
 
@@ -250,9 +276,10 @@ results:
 - Optuna's `PartialFixedSampler` raises `ExperimentalWarning` under `-W error`, so the fixing is
   done in the package's code.
 
-## 2b. PR 3 so far (2026-11-04)
+## 2b. PR 3 (closed 2026-11-05)
 
-- **Commits on `feat/objective-eda`** (each sub-task's Done note is in the metrics plan §5):
+- **Commits on `feat/objective-eda`** (each sub-task's Done note is in the metrics plan §5; after
+  the squash-merge GitHub keeps them under the PR, and the docs cite them by hash):
 
   | commit | sub-task |
   |---|---|
@@ -274,7 +301,29 @@ results:
   | `36c6bbc` | the handoff for the section-6 session |
   | `afcd6f9` | 3.4 each run's best model, its transformers' names and its bootstrap intervals; a runs table and a scores table per model (M14) |
   | `b7da88d` | the handoff for the session on the user's additional changes |
-  | (the user's) | the plan for PRs 4–7, the docs index, this handoff: for the session that does 3.3 |
+  | `a006995` | the plan for PRs 4–7, the docs index, this handoff: for the session that does 3.3 |
+  | `aa1e267` | 3.3a the review's F2: the "probability step" label once (subject typed `ix(notebook): …`) |
+  | (3.3b) | PR 3 closed: the deviance kept; F1, F5; the stale sections; this handoff for PR 4 |
+
+- **3.3 (2026-11-05):** no code change (D34). The review (3.3a), an independent subagent over
+  `main..HEAD` at `a006995`, found no correctness bug and five findings, each reproduced twice:
+  - F1: HYPERPARAMETER_TUNING.md named the removed `best_df` and said a run keeps every trial;
+    fixed in 3.3b;
+  - F2: Model 2's EDA figures printed the "probability step" label in all six panels; fixed in
+    `aa1e267`, one `add_annotation` in the top panel;
+  - F3, F4: left for PR 6 (§5);
+  - F5: 3.1k's and 3.1l's commit lines named commits that do not exist; fixed in 3.3b.
+
+  3.3b also replaced the stale "section 5" for the tuning: sections 5 and 6 run the tuner; the
+  package was rebuilt from "the tuning section (then 5, now 6)", in README.md, docs/README.md,
+  SPLITTING.md, HYPERPARAMETER_TUNING.md, MODULE_REFERENCE.md and the package's docstring.
+  Checks on `a006995`: Check A, B, and Check C (396 s) equal to `check_c_3_4b.pkl` exactly. On
+  `aa1e267`:
+  - Check A, B;
+  - Check C (400 s) every frame and record equal, Model 2's figures' labels 6 → 1;
+  - both mutations caught by the new assertion.
+
+  The notebook's md5 is `95261326e5368bd451607d083a5ab366`.
 
 - **The planning session (2026-11-04, after `b7da88d`):** the user's seven changes were planned
   as PRs 4–7 in NOTEBOOK_CACHE_EVALUATION_PLAN.md with the decisions D31–D39 (its §0: the budget
@@ -283,8 +332,8 @@ results:
   returning its replicates, two notebooks, SHAP per cohort, the test evaluation per E11). 3.3's
   checks ran on `b7da88d`: the non-slow suite 1387 passed, 1 skipped, 1 xfailed, 19 deselected
   (7 warnings, the old stack's); mypy 28 files, no issue; notebook md5
-  `676212a808f6c1f87f7926a58b3bffe6`. Nothing was implemented; the review subagent (3.3a) has not
-  run. The objective's evidence is D34; the user leaned to RMSE for both and chose the deviance
+  `676212a808f6c1f87f7926a58b3bffe6`. Nothing was implemented then; 3.3 followed on 2026-11-05
+  (above). The objective's evidence is D34; the user leaned to RMSE for both and chose the deviance
   on the EDA's numbers.
 
 - **3.4 (2026-11-02–04, `afcd6f9`):** notebook md5 `676212a808f6c1f87f7926a58b3bffe6`. Its
@@ -446,10 +495,26 @@ md5, the commit message. Tick the sub-task and update the status lines.
   equal 3.1l's `intervals_df` and `importance_df` exactly; each model's last run's intervals
   recomputed with `random_state=seed`; every record's `scores` equal 3.4's first version's
   run (`check_c_3_4_first.pkl`) with the renames. The script lives in the scratchpad and must be rewritten in a new session
-  (below). **For a change after 3.4,** the reference is 3.4's final run, `check_c_3_4b.pkl`
-  (`afcd6f9`); if it is gone, run Check C on HEAD before the first edit and keep that pickle.
-- **The scripts of the planning session (2026-11-04, the latest copy;** if it survived, copy
-  from here first), in
+  (below). Since 3.3 (`aa1e267`) it also asserts the F2 fix: Model 2's EDA figures hold one
+  "probability step" annotation (`x` the rule's, `yref` `"y domain"`, the top panel), Model 1's
+  none. **For PR 4's first change,** the reference is 3.3's run of `aa1e267`,
+  `check_c_3_3_fix.pkl` (every frame and record equal to 3.4's `check_c_3_4b.pkl`); if it is
+  gone, run Check C on HEAD before the first edit and keep that pickle.
+- **The scripts of the 3.3 session (2026-11-05, the latest copy;** if it survived, copy from
+  here first), in
+  `/private/tmp/claude-501/-Users-galkampel-Desktop-Projects-age-group-prediction/99f2beed-010f-4e31-a210-84ca1344c999/scratchpad`:
+  - `checks/`: the planning session's scripts, with F2's assertion in `check_c.py`;
+    `run_check_c.sh` with `S=` this scratchpad; `run_3_3a.sh` (Check A, B, C and the
+    comparison on HEAD) and `run_fix.sh` (the same, then the mutants); its figures-JSON step
+    has a quoting bug, so the comparison was run on its own;
+  - the pickles `check_c_3_1l.pkl`, `check_c_3_4_first.pkl` (`check_c.py`'s two references),
+    `check_c_3_4b.pkl`, `check_c_3_3a.pkl` (`a006995`'s run) and `check_c_3_3_fix.pkl`
+    (`aa1e267`'s run: the reference for 4.1), each with its figures' JSON;
+  - the review's probes in `review/`.
+
+  `run_check_c.sh`'s `S=` must name the new session's scratchpad.
+- **The scripts of the planning session (2026-11-04;** if it survived, copy from here first),
+  in
   `/private/tmp/claude-501/-Users-galkampel-Desktop-Projects-age-group-prediction/65d10f12-872b-4ac3-a313-b2749802a1a3/scratchpad`:
   `checks/` (3.4's scripts, unchanged: `make_copy.py`, `check_b.py`, `check_c.py`, `compare.py`,
   `run_check_c.sh`, `run_all.sh`), the pickles `check_c_3_1l.pkl`, `check_c_3_4_first.pkl`,
@@ -561,6 +626,16 @@ constructor, data in the call; fitting and evaluating as separate steps; no priv
 
 - **The review's #2:** `BootstrapEvaluator.evaluate` does not check `cohorts` (duplicates give
   identical rows, `[]` a confusing `TypeError`); left as is by the user.
+- **PR 3's review, F3 (for PR 6):** no repo test covers `trials_table`, `eda_best_df`, the EDA
+  figures or section 6's records and tables; only Check C (a scratchpad script) does. A
+  characterization test of `notebook_defs["trials_table"]` on a 3-trial study fits PR 6's test
+  split (6.2: `test_objective_eda_notebook.py`).
+- **PR 3's review, F4 (for PR 6):**
+  - the lookup of a transformer's name by identity is written four times (`trials_table`,
+    Model 1's run cell, Model 2's step 1 and step 2);
+  - the hyperparameters are read two ways: `to_dict()["estimator_params"]` in `trials_table`,
+    `dataclasses.asdict(component.estimator_params)` in section 6; the output is the same;
+  - one shared function belongs with 6.1's shared setup, once the two notebooks exist.
 - **T2.3's F5:** gone with 3.4 (the two arms tables were removed).
 - **T1's F7:** `num_leaves` above `2**max_depth` changes nothing in LightGBM; revisit in a
   search-space pass.
@@ -588,65 +663,73 @@ constructor, data in the call; fitting and evaluating as separate steps; no priv
 
 ## 6. Next, and the prompt
 
-**Status (2026-11-04, the user's changes planned):** PR 3's EDA is built (3.1a–3.1l) and read
-(3.2, 3.2b); section 6 keeps each run's best model, its transformers' names and its scores with
-the bootstrap's 95% interval (3.4, `afcd6f9`). Committed on `feat/objective-eda`: up to the
-handoff `b7da88d`, then the user's commit of the plan for PRs 4–7, the docs index and this
-handoff. The notebook's md5 is `676212a808f6c1f87f7926a58b3bffe6`. 3.3's suite and mypy already
-passed on `b7da88d` (§2b). Next, one step per approval, each planned in plan mode (the facts
-re-verified with read-only probes, design questions with evidence and a recommendation, the
-steps and the commit message in the chat) and stopped with a file-by-file summary, the checks,
-the notebook's md5 and the commit message:
-1. **3.3a, the review** (NOTEBOOK_CACHE_EVALUATION_PLAN.md §2): an independent subagent over
-   `git diff main..HEAD`, given the diff, the metrics plan's §2 M10–M14 and §5 and this
-   handoff's §3 (not the session's conclusions); every finding reproduced with a read-only probe
-   before it is reported; no fix without the user's approval; fixes in their own commit with
-   Check A–C.
-2. **3.3b, the docs and the PR:** the metrics plan's 3.3 ticked with its Done note (the
-   deviance kept, D34, the checks' numbers, the review's findings) and its status line; this
-   handoff rewritten for the session that starts PR 4 (§2 the state after the merge, §2b, §6
-   with 4.1 and the prompt); the "section 5" references (`README.md:39`, `docs/README.md:24`,
-   `docs/SPLITTING.md:267`; `docs/HYPERPARAMETER_TUNING.md:8` "then 5, now 6"); in the chat the
-   PR's title and description (no "Generated with Claude Code"), the squash-merge title and
-   description, and the branch-delete commands for after the merge. The user opens the PR,
-   merges it and deletes the branch.
-3. **PR 4 from `main`** (`feat/study-cache`): 4.1 the budget, 4.2 the tuner's storage, 4.3 the
-   notebook's cache; then PRs 5–7, each sub-task as the plan writes it. A change to the runs,
-   the search or the `tuner` cell re-records Check C's baselines (§2); the reference-run
-   comparison (§4) holds for what must not change.
-4. **Deferred, unchanged:** the MLflow runs (the D1e guard first) and D4's comparison table;
+**Status (2026-11-05, PR 3 closed):**
+- PR 3's EDA is built (3.1a–3.1l) and read (3.2, 3.2b).
+- Section 6 keeps each run's best model, its transformers' names and its scores with the
+  bootstrap's 95% interval (3.4, `afcd6f9`).
+- 3.3 is done: the deviance stays the objective, and the review's findings are handled (§2b; F3
+  and F4 are open, §5).
+- The last commit on `feat/objective-eda` is 3.3b's docs commit; the user opens the PR,
+  squash-merges it into `main` and deletes the branch.
+- The notebook's md5 is `95261326e5368bd451607d083a5ab366`.
+
+Next, one step per approval. Each is planned in plan mode (the facts re-verified with read-only
+probes, design questions with evidence and a recommendation, the steps and the commit message in
+the chat) and stopped with a file-by-file summary, the checks, the notebook's md5 and the commit
+message:
+1. **PR 4 from `main`** (`feat/study-cache`, created by the user; NOTEBOOK_CACHE_EVALUATION_PLAN.md
+   §3), in three steps:
+   - **4.1 the budget:** `n_trials = 100`, `n_startup_trials = 10` in section 2 (D31); section 6's
+     text; the notebook test's pins (`tests/characterization/test_experiments_notebook.py`,
+     `"n_trials": "400"`, `"n_startup_trials": "20"` today); `make_copy.py` replacing
+     `    n_trials = 100\n`; D31 and D32 in NOTEBOOK_TUNING_PLAN.md §0. Check C against
+     `check_c_3_3_fix.pkl`: every frame equal (D20: a 3-trial study draws the same points at a
+     random start of 10 or 20).
+   - **4.2 the tuner's storage:** `src`, Optuna's journal file, with its tests.
+   - **4.3 the notebook's runs through the cache.**
+2. **Then PRs 5–7**, each sub-task as the plan writes it:
+   - a change to the runs, the search or the `tuner` cell re-records Check C's baselines (§2);
+   - the reference-run comparison (§4) holds for what must not change;
+   - F3 and F4 (§5) belong to PR 6.
+3. **Deferred, unchanged:** the MLflow runs (the D1e guard first) and D4's comparison table.
    E11 is PR 7.
 
-The user's preferences: plan docs in `docs/`, split into sub-tasks validated one at a time;
-each sub-task planned first (the facts re-verified with read-only probes, design questions with
-evidence and a recommendation, the steps and the commit message in the chat), then implemented
-after approval and stopped with a file-by-file summary, the checks, the notebook's md5 and the
-commit message; explain marimo's UI terms; keep the implementation simple; meaningful names
-(no `name` / `scores` placeholders); the user commits.
+The user's preferences:
+- plan docs in `docs/`, split into sub-tasks validated one at a time;
+- each sub-task planned first (the facts re-verified with read-only probes, design questions
+  with evidence and a recommendation, the steps and the commit message in the chat), then
+  implemented after approval;
+- each sub-task stopped with a file-by-file summary, the checks, the notebook's md5 and the
+  commit message;
+- marimo's UI terms explained, and the context of a design question explained in the chat
+  before asking it (the user could not follow a question about F2 asked without it);
+- the implementation kept simple, with meaningful names (no `name` / `scores` placeholders);
+- the user commits.
 
 **The prompt for the next session:**
 
 ```text
 Read docs/NOTEBOOK_CACHE_EVALUATION_PLAN.md in full, then docs/EXPERIMENT_NOTEBOOK_HANDOFF.md in
-full (§1's sections 5 and 6, §2b, §3, §4's checks, traps and iCloud notes, §5, and §6 first),
-then docs/NOTEBOOK_METRICS_LOOP_EDA_PLAN.md (§2 M10–M14, §5 3.2, 3.2b, 3.4 and 3.3) and
-docs/NOTEBOOK_TUNING_PLAN.md §0 (D1–D30), then sections 5 and 6 of notebooks/02_experiments.py.
+full (§1, §2, §2b, §3, §4's checks, traps and iCloud notes, §5, and §6 first), then
+docs/NOTEBOOK_TUNING_PLAN.md §0 (D1–D30) and the metrics plan's §2 M10–M14, then sections 2, 5
+and 6 of notebooks/02_experiments.py, src/age_group_prediction/hyperparameter_tuning/cross_validation.py
+and tests/characterization/test_experiments_notebook.py.
 Verify the state first:
-- the branch feat/objective-eda, HEAD my commit of the plan, the docs index and the handoff on
-  top of b7da88d; if they are uncommitted, stop and tell me;
-- the working tree clean, and the notebook's md5 676212a808f6c1f87f7926a58b3bffe6 via
+- main holds PR 3 squash-merged (`git log --oneline -3 main`), and its content equals
+  feat/objective-eda's last commit (the 3.3b docs commit);
+- the branch is feat/study-cache, created by me from that main, with no commit of its own; if
+  it does not exist, stop and tell me;
+- the working tree clean, and the notebook's md5 95261326e5368bd451607d083a5ab366 via
   `cat notebooks/02_experiments.py | md5`;
 - no iCloud-offloaded files: `find .git src notebooks tests docs configs -flags +dataless -type f
   | grep -vc __pycache__` is 0.
-If anything differs, stop and show me the diff. Then do the plan's §2 (PR 3's close), one
-sub-task per approval: 3.3a the review subagent (findings reproduced before any is reported; no
-fix without my approval), then 3.3b the docs and the PR text. Plan each sub-task in plan mode
+If anything differs, stop and show me the diff. Then do the plan's §3 (PR 4), one sub-task per
+approval, starting with 4.1 the budget, then 4.2 and 4.3. Plan each sub-task in plan mode
 (re-verify the facts with read-only probes, design questions with evidence and a recommendation,
-the steps and the commit message in the chat) and wait for my approval; stop after each with a
-file-by-file summary, the checks (§4, against 3.4's final run check_c_3_4b.pkl as the reference),
-the notebook's md5 and the commit message. Copy the check scripts from the planning session's
-scratchpad (handoff §4) or rewrite them from §4. After PR 3's merge, PR 4 from main (the plan's
-§3), the same way, starting with 4.1. Keep the implementation simple. I commit myself: never
-commit, no Co-Authored-By line, no "Generated with Claude Code" in PR text, never git
-checkout/stash/reset/mv.
+the context explained in the chat, the steps and the commit message in the chat) and wait for my
+approval; stop after each with a file-by-file summary, the checks (§4, against 3.3's run of
+aa1e267, check_c_3_3_fix.pkl, as the reference), the notebook's md5 and the commit message. Copy
+the check scripts and pickles from the 3.3 session's scratchpad (handoff §4) or rewrite them
+from §4. Keep the implementation simple. I commit myself: never commit, no Co-Authored-By line,
+no "Generated with Claude Code" in PR text, never git checkout/stash/reset/mv.
 ```

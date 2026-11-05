@@ -21,7 +21,7 @@ implementation details conflict, the model specification controls behavior.
     library estimators as `TotalTimesProbabilityModel`, without torch (PR #13;
     see the [plan](TOTAL_TIMES_PROBABILITY_MODEL_PLAN.md));
   - the `hyperparameter_tuning` package, rebuilt from the experiment notebook's
-    section 5, which imports it (PR #17; the [user guide](HYPERPARAMETER_TUNING.md);
+    tuning section (then 5, now 6), which imports it (PR #17; the [user guide](HYPERPARAMETER_TUNING.md);
     decisions in the [plan](NOTEBOOK_TUNING_PLAN.md));
   - the `splitting` package (built and tested, not yet wired);
   - the `inspection` package is complete (PRs #14 and C; the

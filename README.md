@@ -36,8 +36,9 @@ building-level DataFrame:
 - [Hyperparameter tuning of the rebuilt models](docs/HYPERPARAMETER_TUNING.md):
   the `hyperparameter_tuning` package, plain Optuna over both rebuilt models:
   components drawn per trial, the composite built from them, a
-  `CrossValidationTuner`; section 5 of `notebooks/02_experiments.py` runs it
-  (decisions in the [plan](docs/NOTEBOOK_TUNING_PLAN.md)).
+  `CrossValidationTuner`; sections 5 (the objective EDA) and 6 (the tuning) of
+  `notebooks/02_experiments.py` run it (decisions in the
+  [plan](docs/NOTEBOOK_TUNING_PLAN.md)).
 - [Model inspection](docs/MODEL_INSPECTION.md): the `inspection` package for
   the rebuilt models: bootstrap intervals of a metric, permutation importance
   per raw column and SHAP values of the predicted rate or count, with a

@@ -6,7 +6,10 @@ Kept updated with each sub-task's Done note; tick the sub-task and update the st
 **Status (2026-11-04):** written after 3.4 (`afcd6f9`) and the handoff (`b7da88d`), with the user's
 list of changes and their answers (§0). 3.3's checks already run: the non-slow suite 1387 passed,
 1 skipped, 1 xfailed, 19 deselected (7 warnings, the old stack's); mypy 28 files, no issue. The
-notebook's md5 is `676212a808f6c1f87f7926a58b3bffe6`. **Next: 3.3 (§2).**
+notebook's md5 is `676212a808f6c1f87f7926a58b3bffe6`. **Updated 2026-11-05:** 3.3 done (§2): the
+review found no correctness bug; its F2 fixed in `aa1e267`, F1 and F5 in 3.3b's docs, F3 and F4
+left for PR 6. The notebook's md5 is `95261326e5368bd451607d083a5ab366`. PR 3 closed. **Next:
+PR 4 from `main` after PR 3's merge, starting with 4.1 (§3).**
 
 The companion docs: [EXPERIMENT_NOTEBOOK_HANDOFF.md](EXPERIMENT_NOTEBOOK_HANDOFF.md) (the state,
 how to work, the checks, the traps, iCloud), [NOTEBOOK_METRICS_LOOP_EDA_PLAN.md](NOTEBOOK_METRICS_LOOP_EDA_PLAN.md)
@@ -103,13 +106,15 @@ private helpers; settings in the constructor, data in the call.
   baselines (the handoff's §2) and every assertion since 3.1c, compared frame by frame with the
   reference pickle of the previous commit's run (`compare.py`, exact, `seconds` dropped). Before
   the first edit of a sub-task that changes `src` or a run cell, run Check C on HEAD and keep the
-  pickle as the next reference. The reference for the first change after 3.4 is `check_c_3_4b.pkl`.
+  pickle as the next reference. The reference for the first change after 3.4 was
+  `check_c_3_4b.pkl`; since 3.3 it is `check_c_3_3_fix.pkl` (the run of `aa1e267`, the F2 fix:
+  every frame and record equal to `check_c_3_4b.pkl`'s, Model 2's EDA figures one label each).
 - **`src` changes:** the unit tests of the module, the non-slow suite (`pytest -m "not slow"`,
   about 2 min) and mypy (`--cache-dir <scratch>/mypy_cache`); two mutations caught per sub-task.
 - **The scripts:** copied into the session's scratchpad from
-  `/private/tmp/claude-501/-Users-galkampel-Desktop-Projects-age-group-prediction/65d10f12-872b-4ac3-a313-b2749802a1a3/scratchpad/checks`
-  (the 2026-11-04 session's copy; the earlier copies are named in the handoff's §4); if gone,
-  rewritten from the handoff's §4.
+  `/private/tmp/claude-501/-Users-galkampel-Desktop-Projects-age-group-prediction/99f2beed-010f-4e31-a210-84ca1344c999/scratchpad/checks`
+  (the 3.3 session's copy, 2026-11-05, with F2's assertion in `check_c.py`; the earlier copies
+  are named in the handoff's §4); if gone, rewritten from the handoff's §4.
 - **Settings pinned by the notebook test:** `n_trials`, `n_startup_trials`, `n_resamples`,
   `alpha` and the run-settings lists; a sub-task that changes one updates the test in the same
   commit.
@@ -121,8 +126,27 @@ private helpers; settings in the constructor, data in the call.
 
 No code change (D34). One commit for the docs, one more if the review's findings are fixed.
 
-### [ ] 3.3a The checks and the review
-- **Done already (2026-11-04):** the non-slow suite 1387 passed, 1 skipped, 1 xfailed, 19
+### [x] 3.3a The checks and the review
+- **Done (2026-11-05).** The review covered `main..HEAD` at `a006995` (19 commits, 13 files,
+  +2598/−797, this plan's facts included) and found no correctness bug. Five findings, each
+  reproduced by the subagent and again in the session:
+  - F1: HYPERPARAMETER_TUNING.md:327/330 named the removed `best_df` and said a run keeps every
+    trial;
+  - F2: Model 2's EDA figures printed the "probability step" label in all six panels;
+  - F3: no repo test of `trials_table` or section 6's records and tables;
+  - F4: the transformer-name lookup written four times, the hyperparameters read two ways;
+  - F5: 3.1k's and 3.1l's commit lines named commits that do not exist.
+
+  The user chose F2 for a fix, F1 and F5 for 3.3b, and F3 and F4 for PR 6 (the handoff's §5).
+  F2 was fixed in `aa1e267`: one `add_annotation` in the top panel. Its checks:
+  - Check A: the notebook test 13 passed, ruff 14, the two format hunks, `marimo check` no issue;
+  - Check B;
+  - Check C (400 s): every frame and record equal to `a006995`'s run (`check_c_3_3a.pkl`, itself
+    equal to `check_c_3_4b.pkl`), the figures' JSON equal but Model 2's labels (6 → 1);
+  - a new assertion (one label, top panel; none in Model 1's) caught both mutations.
+
+  The notebook's md5 is `95261326e5368bd451607d083a5ab366`.
+- **Checks already run (2026-11-04):** the non-slow suite 1387 passed, 1 skipped, 1 xfailed, 19
   deselected; mypy 28 files, no issue; notebook md5 `676212a808f6c1f87f7926a58b3bffe6`.
 - **The review:** an independent subagent over `git diff main..HEAD` (18 commits, 11 files,
   +2196/−794: the notebook's sections 5–6, `cross_validation.py`'s recorded metrics, the docs),
@@ -133,7 +157,16 @@ No code change (D34). One commit for the docs, one more if the review's findings
 - **Done when:** the findings are listed in the chat with their reproductions; the user has
   chosen what to fix.
 
-### [ ] 3.3b The docs and the PR
+### [x] 3.3b The docs and the PR
+- **Done (2026-11-05).** The changes below, plus:
+  - F1 and F5;
+  - the stale sections, with wording by role: where the notebook runs the tuner, "sections 5
+    (the objective EDA) and 6 (the tuning)"; where the package was rebuilt from it, "the tuning
+    section (then 5, now 6)";
+  - two more places found by grep: `docs/MODULE_REFERENCE.md:116` and the package docstring
+    `hyperparameter_tuning/__init__.py:20`.
+
+  The PR's text is given in the chat.
 - **Change:**
   - this plan copied to `docs/NOTEBOOK_CACHE_EVALUATION_PLAN.md`, listed in `docs/README.md`'s
     plans;
@@ -162,7 +195,7 @@ No code change (D34). One commit for the docs, one more if the review's findings
   first `n_startup_trials = 20`" → the new values); `tests/characterization/test_experiments_notebook.py:124-125`
   pinned to `"100"`, `"10"`; the scratchpad's `make_copy.py` replaces `    n_trials = 100\n`
   (assert the count). D31 and D32 in NOTEBOOK_TUNING_PLAN.md §0 (one line each, pointing here).
-- **Checks:** Check A (the test with the new pins); Check B; Check C against `check_c_3_4b.pkl`:
+- **Checks:** Check A (the test with the new pins); Check B; Check C against `check_c_3_3_fix.pkl`:
   every frame equal (a 3-trial study draws the same points at a random start of 10 or 20: D20).
 - **Done when:** the pinned settings pass and Check C's frames equal 3.4's.
 - **Commit:** `feat(notebook): 100 trials, 10 at random`
