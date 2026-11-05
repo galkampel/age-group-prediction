@@ -1292,11 +1292,19 @@ def _(
                     col=1,
                 )
             if _probability_start is not None:
+                # The rule in every panel; its label once, in the top panel.
                 _figure.add_vline(
+                    x=_probability_start - 0.5, line_width=1, line_color=_ink
+                )
+                _figure.add_annotation(
+                    text="probability step",
                     x=_probability_start - 0.5,
-                    line_width=1,
-                    line_color=_ink,
-                    annotation_text="probability step",
+                    xref="x",
+                    y=1,
+                    yref="y domain",
+                    xanchor="left",
+                    yanchor="top",
+                    showarrow=False,
                 )
             _figure.update_layout(
                 title=f"tuned on {_objective}",
