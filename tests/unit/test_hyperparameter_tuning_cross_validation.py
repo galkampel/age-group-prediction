@@ -27,7 +27,12 @@ from age_group_prediction.hyperparameter_tuning import (
     build_total_times_probability_model,
 )
 from age_group_prediction.modeling import IndependentCohortModels
-from age_group_prediction.scoring import Metric, mean_poisson_deviance_loss
+from age_group_prediction.scoring import (
+    Metric,
+    mean_absolute_error_loss,
+    mean_poisson_deviance_loss,
+    root_mean_squared_error_loss,
+)
 from age_group_prediction.splitting import Splitter
 
 PASSTHROUGH = Plan(name="passthrough")
@@ -42,7 +47,9 @@ METRIC = Metric(
     "cohort_poisson_deviance", mean_poisson_deviance_loss, direction="minimize"
 )
 CV = Splitter("random").cv(n_splits=3, random_state=0)
-TUNER = CrossValidationTuner(cv=CV, metric=METRIC, n_trials=3, n_startup_trials=2)
+TUNER = CrossValidationTuner(
+    cv=CV, objective_metric=METRIC, n_trials=3, n_startup_trials=2
+)
 # The independent cohorts model's settings, GLMs for speed.
 INDEPENDENT_COHORTS = {
     "family": "poisson_glm",
@@ -94,10 +101,10 @@ def test_the_folds_fitted_in_parallel_score_as_one_after_another() -> None:
     # D13: the folds of a trial in processes give the same value, so a seeded
     # study is unchanged by n_jobs.
     X, Y, exposure = _table()
-    one_after_another = TUNER.cv_score(_model(), X, Y, exposure)
-    in_parallel = dataclasses.replace(TUNER, n_jobs=2).cv_score(
+    one_after_another = TUNER.cross_validate(_model(), X, Y, exposure)[METRIC.name]
+    in_parallel = dataclasses.replace(TUNER, n_jobs=2).cross_validate(
         _model(), X, Y, exposure
-    )
+    )[METRIC.name]
     assert in_parallel == one_after_another
 
 
@@ -113,11 +120,13 @@ def _not_converged(y_true: object, y_pred: object) -> float:
 def test_the_folds_are_fitted_in_n_jobs_processes() -> None:
     # Equal scores cannot show n_jobs ignored; the scoring process can.
     X, Y, exposure = _table()
-    tuner = dataclasses.replace(TUNER, metric=Metric("process_id", _process_id))
-    assert tuner.cv_score(_model(), X, Y, exposure) == os.getpid()
-    in_parallel = dataclasses.replace(tuner, n_jobs=2).cv_score(
-        _model(), X, Y, exposure
+    tuner = dataclasses.replace(
+        TUNER, objective_metric=Metric("process_id", _process_id)
     )
+    assert tuner.cross_validate(_model(), X, Y, exposure)["process_id"] == os.getpid()
+    in_parallel = dataclasses.replace(tuner, n_jobs=2).cross_validate(
+        _model(), X, Y, exposure
+    )["process_id"]
     assert in_parallel != os.getpid()
 
 
@@ -130,8 +139,10 @@ def test_the_groups_reach_the_split() -> None:
         TUNER, cv=Splitter("grouped").cv(n_splits=3, random_state=0)
     )
     with pytest.raises(ValueError, match="groups"):
-        tuner.cv_score(_model(), X, Y, exposure)
-    assert np.isfinite(tuner.cv_score(_model(), X, Y, exposure, groups))
+        tuner.cross_validate(_model(), X, Y, exposure)[METRIC.name]
+    assert np.isfinite(
+        tuner.cross_validate(_model(), X, Y, exposure, groups)[METRIC.name]
+    )
 
 
 def test_a_runtime_error_in_a_folds_process_fails_its_trial() -> None:
@@ -139,7 +150,10 @@ def test_a_runtime_error_in_a_folds_process_fails_its_trial() -> None:
     # RuntimeError, so `catch` marks the trial FAIL there too (D13).
     X, Y, exposure = _table()
     tuner = dataclasses.replace(
-        TUNER, metric=Metric("not_converged", _not_converged), n_trials=2, n_jobs=2
+        TUNER,
+        objective_metric=Metric("not_converged", _not_converged),
+        n_trials=2,
+        n_jobs=2,
     )
     study, _ = tuner.tune_independent_cohorts_model(
         X,
@@ -159,16 +173,63 @@ def test_the_fold_scores_are_combined_by_the_aggregator_the_plain_mean_by_defaul
     X, Y, exposure = _table()
     folds = list(CV.split(X, Y))
     scores = [
-        TUNER.fold_score(_model(), X, Y, exposure, train_index, val_index)
+        TUNER.score_fold(_model(), X, Y, exposure, train_index, val_index)[METRIC.name]
         for train_index, val_index in folds
     ]
     sizes = [len(val_index) for _, val_index in folds]
     assert len(set(sizes)) > 1  # unequal folds, so the two means differ
     assert TUNER.aggregator == Mean()
-    assert TUNER.cv_score(_model(), X, Y, exposure) == pytest.approx(np.mean(scores))
+    cv_scores = TUNER.cross_validate(_model(), X, Y, exposure)
+    assert cv_scores[METRIC.name] == pytest.approx(np.mean(scores))
     weighted = dataclasses.replace(TUNER, aggregator=WeightedMean())
-    assert weighted.cv_score(_model(), X, Y, exposure) == pytest.approx(
+    weighted_cv_scores = weighted.cross_validate(_model(), X, Y, exposure)
+    assert weighted_cv_scores[METRIC.name] == pytest.approx(
         np.average(scores, weights=sizes)
+    )
+
+
+def test_a_trial_records_every_metric_and_its_value_is_the_objectives() -> None:
+    # Each recorded metric's user attribute is the cv a study on that metric
+    # would score, from the same folds; the value is the objective's.
+    X, Y, exposure = _table()
+    recorded = (
+        Metric("mae", mean_absolute_error_loss),
+        Metric("rmse", root_mean_squared_error_loss),
+    )
+    tuner = dataclasses.replace(TUNER, n_trials=2, recorded_metrics=recorded)
+    study, _ = tuner.tune_independent_cohorts_model(
+        X, Y, exposure, **INDEPENDENT_COHORTS, y_min=1e-9, random_state=0, study_seed=0
+    )
+    for trial in _completed(study):
+        components = [
+            CountComponent.from_params(
+                trial.params,
+                name=cohort,
+                family="poisson_glm",
+                use_exposure=True,
+                feature_transformer_dict=TRANSFORMERS,
+            )
+            for cohort in COHORTS
+        ]
+        model = build_independent_cohorts_model(components, y_min=1e-9, random_state=0)
+        assert set(trial.user_attrs) == {"mae", "rmse", METRIC.name}
+        for metric in (*recorded, METRIC):
+            assert (
+                trial.user_attrs[metric.name]
+                == dataclasses.replace(TUNER, objective_metric=metric).cross_validate(
+                    model, X, Y, exposure
+                )[metric.name]
+            )
+        assert trial.value == trial.user_attrs[METRIC.name]
+
+
+def test_a_recorded_metric_named_as_the_objective_does_not_replace_its_score() -> None:
+    X, Y, exposure = _table()
+    namesake = Metric(METRIC.name, mean_absolute_error_loss)
+    tuner = dataclasses.replace(TUNER, recorded_metrics=(namesake,))
+    assert (
+        tuner.cross_validate(_model(), X, Y, exposure)[METRIC.name]
+        == TUNER.cross_validate(_model(), X, Y, exposure)[METRIC.name]
     )
 
 
@@ -184,7 +245,9 @@ def test_a_trial_whose_fit_raises_runtime_error_fails_and_the_study_goes_on() ->
             raise RuntimeError("the fit did not converge")
         return mean_poisson_deviance_loss(y_true, y_pred)
 
-    tuner = dataclasses.replace(TUNER, metric=Metric("fails_once", fails_once))
+    tuner = dataclasses.replace(
+        TUNER, objective_metric=Metric("fails_once", fails_once)
+    )
     study, seconds = tuner.tune_independent_cohorts_model(
         X,
         Y,
@@ -209,7 +272,7 @@ def test_any_other_error_in_a_trial_ends_the_study() -> None:
     def a_bug(y_true: object, y_pred: object) -> float:
         raise ValueError("a bug")
 
-    tuner = dataclasses.replace(TUNER, metric=Metric("a_bug", a_bug))
+    tuner = dataclasses.replace(TUNER, objective_metric=Metric("a_bug", a_bug))
     with pytest.raises(ValueError, match="a bug"):
         tuner.tune_independent_cohorts_model(
             X,
@@ -229,7 +292,9 @@ def test_the_study_takes_the_metrics_direction_and_the_sampler_its_settings(
     X, Y, exposure = _table()
     tuner = dataclasses.replace(
         TUNER,
-        metric=Metric("cohort_poisson_deviance", mean_poisson_deviance_loss, direction),  # type: ignore[arg-type]
+        objective_metric=Metric(
+            "cohort_poisson_deviance", mean_poisson_deviance_loss, direction
+        ),  # type: ignore[arg-type]
         n_trials=2,
         n_startup_trials=5,
     )
@@ -291,7 +356,7 @@ def test_the_independent_cohorts_study_scores_the_model_its_components_build() -
             for cohort in COHORTS
         ]
         model = build_independent_cohorts_model(components, y_min=2.0, random_state=3)
-        assert trial.value == TUNER.cv_score(model, X, Y, exposure)
+        assert trial.value == TUNER.cross_validate(model, X, Y, exposure)[METRIC.name]
 
 
 def test_the_total_times_probability_study_scores_the_model_its_components_build() -> (
@@ -329,7 +394,7 @@ def test_the_total_times_probability_study_scores_the_model_its_components_build
             y_min=2.0,
             random_state=3,
         )
-        assert trial.value == TUNER.cv_score(model, X, Y, exposure)
+        assert trial.value == TUNER.cross_validate(model, X, Y, exposure)[METRIC.name]
 
 
 @pytest.mark.parametrize("use_exposure", [True, False])
@@ -372,7 +437,7 @@ def test_the_total_study_scores_its_total_with_the_fixed_probability_component(
         model = build_total_times_probability_model(
             total, probability, y_min=2.0, random_state=3
         )
-        assert trial.value == TUNER.cv_score(model, X, Y, exposure)
+        assert trial.value == TUNER.cross_validate(model, X, Y, exposure)[METRIC.name]
 
 
 @pytest.mark.parametrize("probability_family", ["lgbm", "logistic"])
@@ -411,4 +476,4 @@ def test_the_probability_study_scores_its_probabilities_with_the_fixed_total_com
         model = build_total_times_probability_model(
             total, probability, y_min=2.0, random_state=3
         )
-        assert trial.value == TUNER.cv_score(model, X, Y, exposure)
+        assert trial.value == TUNER.cross_validate(model, X, Y, exposure)[METRIC.name]

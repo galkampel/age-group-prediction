@@ -17,7 +17,7 @@
 :mod:`~age_group_prediction.hyperparameter_tuning.aggregation`
     How a trial's fold scores are combined into its value.
 
-The code comes from the experiment notebook's section 5
+The code comes from the experiment notebook's tuning section (then 5, now 6)
 (``notebooks/02_experiments.py``); the design and its decisions are in
 ``docs/NOTEBOOK_TUNING_PLAN.md`` (D21, D25, D26).
 """

@@ -21,7 +21,7 @@ implementation details conflict, the model specification controls behavior.
     library estimators as `TotalTimesProbabilityModel`, without torch (PR #13;
     see the [plan](TOTAL_TIMES_PROBABILITY_MODEL_PLAN.md));
   - the `hyperparameter_tuning` package, rebuilt from the experiment notebook's
-    section 5, which imports it (PR #17; the [user guide](HYPERPARAMETER_TUNING.md);
+    tuning section (then 5, now 6), which imports it (PR #17; the [user guide](HYPERPARAMETER_TUNING.md);
     decisions in the [plan](NOTEBOOK_TUNING_PLAN.md));
   - the `splitting` package (built and tested, not yet wired);
   - the `inspection` package is complete (PRs #14 and C; the
@@ -75,6 +75,8 @@ implementation details conflict, the model specification controls behavior.
 | [Experiment notebook plan](EXPERIMENT_NOTEBOOK_PLAN.md) | The MLflow experiment notebook and the work before it, as four PRs: the tuning study (A), the three-way split and the cohort count metric (B), feature importance (C), the notebook with the data and MLflow (D); decisions E1–E12, sub-tasks with done-when lists. PRs A–C done; in D the tuning was re-planned and done (the notebook tuning plan), the MLflow runs, the comparison and E11's final evaluation are open |
 | [Experiment notebook handoff](EXPERIMENT_NOTEBOOK_HANDOFF.md) | Where the notebook stands after the tuning rebuild (2026-10-29): what exists, the state and checks with the 24 regression baselines and the 400-trial results, the decisions D1–D26 in brief with the dataclass-vs-TypedDict table, how to work, open items, and the prompt for the next items (MLflow runs, the comparison table, E11's final evaluation) |
 | [Notebook tuning plan](NOTEBOOK_TUNING_PLAN.md) | The tuning re-implemented in the experiment notebook with plain Optuna, then moved into the new `hyperparameter_tuning` package: decisions D1–D26 with their measured evidence, the sub-tasks T1–T5, the checks and the 24 regression baselines |
+| [Notebook metrics, loop and EDA plan](NOTEBOOK_METRICS_LOOP_EDA_PLAN.md) | The experiment notebook's three PRs: the six metrics in `scoring` (PR #18), the runs in loops scored on every metric with Model 2 by coordinate descent (PR #20), and the objective EDA with each run's best model and its bootstrap intervals (PR 3); decisions M1–M14, the sub-task records |
+| [Notebook cache and evaluation plan](NOTEBOOK_CACHE_EVALUATION_PLAN.md) | After PR 3: the tuning budget and the study cache (PR 4), the bootstrap replicates and RMSE as the comparison metric (PR 5), the notebook split in two (PR 6), SHAP per cohort and the test evaluation (PR 7); decisions D31–D39, sub-tasks with their checks and commits |
 | [Notebook component redesign plan](NOTEBOOK_COMPONENT_REDESIGN_PLAN.md) | The history of D23–D24 (components holding the transformer, the builders named after the models, the sharing flags); its code blocks are superseded by the package |
 | [T4 handoff](NOTEBOOK_T4_HANDOFF.md) | The old package deleted (T4a), the new one built and imported by the notebook (T4b), the docs (T5): each sub-task's steps, result and commit, the checks and the 24 baselines |
 | [Model inspection plan](MODEL_INSPECTION_PLAN.md) | Implemented (PR #14): decisions I1–I2, I7, I12–I13 and the test record of `BootstrapEvaluator`; the user guide is above |
