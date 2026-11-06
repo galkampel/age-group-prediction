@@ -11,7 +11,8 @@ review found no correctness bug; its F2 fixed in `aa1e267`, F1 and F5 in 3.3b's 
 left for PR 6. The notebook's md5 is `95261326e5368bd451607d083a5ab366`. PR 3 closed and merged
 as #21 (`0c94f16` on `main`); PR 4's branch `feat/study-cache` created from it. **Updated
 2026-11-06:** 4.1 done (§3, the budget 100 / 10); the notebook's md5 is
-`78b08bd7936dba06d65f18bd52da5cbb`. **Next: 4.2 (§3).**
+`78b08bd7936dba06d65f18bd52da5cbb`. 4.2 done (the tuner's journal storage: a partial study
+started fresh, the seconds the study's run). **Next: 4.3 (§3).**
 
 The companion docs: [EXPERIMENT_NOTEBOOK_HANDOFF.md](EXPERIMENT_NOTEBOOK_HANDOFF.md) (the state,
 how to work, the checks, the traps, iCloud), [NOTEBOOK_METRICS_LOOP_EDA_PLAN.md](NOTEBOOK_METRICS_LOOP_EDA_PLAN.md)
@@ -213,26 +214,56 @@ No code change (D34). One commit for the docs, one more if the review's findings
 - **Done when:** the pinned settings pass and Check C's frames equal 3.4's.
 - **Commit:** `feat(notebook): 100 trials, 10 at random`
 
-### [ ] 4.2 The tuner takes a study storage (`src`, tests, HYPERPARAMETER_TUNING.md)
+### [x] 4.2 The tuner takes a study storage (`src`, tests, HYPERPARAMETER_TUNING.md)
+- **Done (2026-11-06).** As below, with the user's two answers.
+  - **Docs:** HYPERPARAMETER_TUNING.md §6 (the signature, "The stored studies") and §10 (a
+    stored study found by its name only).
+  - **Tests:** the module 21 passed (+4) under `-W error`; the non-slow suite 1391 passed, 1
+    skipped, 1 xfailed, 19 deselected (6 warnings, none from the module); mypy 28 files, no
+    issue.
+  - **Revised at the user's notes** (the explicit branch for a loaded study): every check below
+    rerun on the revision, with the numbers given.
+  - **Mutations,** each caught by its test (a sentinel first): the partial check `<=`; 0.0
+    returned in place of the stored seconds; the delete removed. The partial test first stored 2 of 3 trials and missed
+    the third mutation: at a random start of 2, the third trial is TPE's first draw whichever
+    way the study goes on. It stores 1 now, so the resumed second trial repeats the first's
+    draw.
+  - **The load probe** (the real tuner, `lgbm_poisson`, shared hyperparameters, 13
+    parameters, 3 recorded metrics, `PYTHONWARNINGS=error`): two 100-trial studies, 438 KiB
+    each, loaded in 0.024 s and 0.025 s with their stored seconds (8.2, 6.0) and the same
+    trials.
+  - **Check A, B; Check C** (460 s, the notebook unchanged, its tuner in memory): every frame
+    and record equal to `check_c_4_1.pkl`, both figures' JSON files byte-identical.
+
+  The notebook's md5 is unchanged, `78b08bd7936dba06d65f18bd52da5cbb`.
 - **Change:** `src/age_group_prediction/hyperparameter_tuning/cross_validation.py`:
   `CrossValidationTuner` gains `storage_dir: Path | None = None`; each tune method gains a
   keyword `study_name: str | None = None` passed to `_optimize`. In `_optimize`: without
   `storage_dir`, today's in-memory study; with it, `JournalStorage(JournalFileBackend(storage_dir /
-  f"{study_name}.log"))`, `optuna.create_study(..., storage=, study_name=, load_if_exists=True)`;
-  if the loaded study already holds `n_trials` trials, return it with 0.0 seconds (the cached
-  run); else `optimize` the remaining trials (`n_trials - len(study.trials)`; a resumed study's
-  later draws differ from a fresh run's, the sampler's state not being stored: say so in the
-  docstring). `study_name` required when `storage_dir` is given (raise `ValueError` otherwise).
-- **Design question (recommendation first):** resume a partial file (above) or ignore it and
-  start fresh (delete the file)? Recommended: resume, Optuna's own semantics, one fewer branch;
-  the notebook's runs never stop midway except on an error, and then a resume is what the user
-  wants.
+  f"{study_name}.log"))` (the directory created), `optuna.create_study(..., storage=,
+  study_name=, load_if_exists=True)`; a new study (no trials) runs `n_trials` and stores its
+  run time (`set_user_attr("seconds", …)`), a loaded complete study skips `optimize`; the
+  stored seconds are returned either way. A partial
+  file (fewer than `n_trials` trials) is deleted (`optuna.delete_study`) and the study run again
+  from its seed. `study_name` required when `storage_dir` is given (raise `ValueError`
+  otherwise).
+- **The user's answers (2026-11-06), on probes:** a partial file **starts fresh**, not resumed (the
+  plan's first recommendation): a resumed study draws differently from the seeded run (the
+  sampler's random state is not stored), and an interrupted trial stays as FAIL, while delete
+  and rerun reproduces the seeded run exactly. **The seconds are how long the study took to
+  run**, stored with it, not the load time (the plan's 0.0). **At the user's notes on the
+  first version:** a loaded study skips `optimize` by an explicit branch (`if not
+  study.trials:`), in place of `optimize(n_trials=0)`, which Optuna's loop exits at once but
+  only a reader of that loop would know; no save switch: the cache is always used ("to keep
+  track and save the runs"), the package keeping `storage_dir=None` as its in-memory default.
 - **Tests** (`tests/unit/test_hyperparameter_tuning_cross_validation.py`): a second call with the
-  same dir and name returns the stored trials and 0.0 seconds without calling the objective (a
-  counting objective); a file with fewer trials resumes to `n_trials`; `storage_dir` without a
-  name raises; no dir behaves as before (the existing tests).
-- **Checks:** the module's tests, the suite, mypy; two mutations (the trial count compared with
-  `>=` 1 off; the cached branch returning the fresh seconds).
+  same dir and name returns the stored trials and the first call's seconds without scoring a fold
+  (a counting metric), the dir created; a partial file is run again and equals the seeded
+  study; `storage_dir` without a name raises; each of the four tune methods stores its study
+  under its name; no dir behaves as before (the existing tests).
+- **Checks:** the module's tests, the suite, mypy; three mutations (the partial check `<=`; 0.0
+  returned in place of the stored seconds; the delete removed, a resume); Check C against 4.1's
+  run.
 - **Done when:** the tests pass; a probe shows two notebook-sized studies loading in under a
   second.
 - **Commit:** `feat(tuning): a study is stored in a journal file and loaded when complete`
@@ -252,7 +283,8 @@ No code change (D34). One commit for the docs, one more if the review's findings
 - **Design question:** the name's parts above, or a shorter hash of the settings dict? Recommended:
   the readable parts (the user: "easy to check if the study exists").
 - **Checks:** Check A, B; Check C twice on the same copy: the first run writes 22 files and equals
-  3.4's frames; the second loads them (every `seconds` 0.0, every frame equal, under 2 min);
+  3.4's frames; the second loads them (every `seconds` equal to the first run's, every frame
+  equal, under 2 min);
   the 100-trial click on the real notebook (both buttons, `PYTHONWARNINGS=error`): the seconds,
   the best runs, recorded in this plan's Done note and the handoff's §2.
 - **Done when:** a second click of the notebook is seconds, not minutes.

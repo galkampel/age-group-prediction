@@ -5,6 +5,7 @@ from __future__ import annotations
 import dataclasses
 import itertools
 import os
+from pathlib import Path
 
 import numpy as np
 import optuna
@@ -477,3 +478,138 @@ def test_the_probability_study_scores_its_probabilities_with_the_fixed_total_com
             total, probability, y_min=2.0, random_state=3
         )
         assert trial.value == TUNER.cross_validate(model, X, Y, exposure)[METRIC.name]
+
+
+def test_a_stored_study_is_loaded_and_not_tuned_again(tmp_path: Path) -> None:
+    # A second call with the same dir and name loads the study: no fold is
+    # scored again, and the trials and the seconds are the first call's. The
+    # dir does not exist yet, so the tuner creates it.
+    X, Y, exposure = _table()
+    calls = itertools.count()
+
+    def counting(y_true: pd.DataFrame, y_pred: pd.DataFrame) -> float:
+        next(calls)
+        return mean_poisson_deviance_loss(y_true, y_pred)
+
+    storage_dir = tmp_path / "studies" / "run"
+    tuner = dataclasses.replace(
+        TUNER, objective_metric=Metric("counting", counting), storage_dir=storage_dir
+    )
+    settings = INDEPENDENT_COHORTS | {
+        "y_min": 1e-9,
+        "random_state": 0,
+        "study_seed": 0,
+        "study_name": "glm",
+    }
+    study, seconds = tuner.tune_independent_cohorts_model(X, Y, exposure, **settings)
+    assert sorted(path.name for path in storage_dir.iterdir()) == ["glm.log"]
+    n_scored = TUNER.n_trials * CV.get_n_splits()
+    assert next(calls) == n_scored
+
+    loaded, loaded_seconds = tuner.tune_independent_cohorts_model(
+        X, Y, exposure, **settings
+    )
+    assert next(calls) == n_scored + 1
+    assert [(trial.params, trial.value) for trial in loaded.trials] == [
+        (trial.params, trial.value) for trial in study.trials
+    ]
+    assert loaded_seconds == seconds > 0
+
+
+def test_a_partial_study_is_run_again_from_its_seed(tmp_path: Path) -> None:
+    # A stored study with fewer than n_trials trials (an interrupted run) is
+    # deleted and run again, so it is the seeded study. A resumed one would
+    # not be: its sampler starts over at the seed, so its second random trial
+    # would repeat the first's draw.
+    X, Y, exposure = _table()
+    settings = INDEPENDENT_COHORTS | {"y_min": 1e-9, "random_state": 0, "study_seed": 0}
+    dataclasses.replace(
+        TUNER, n_trials=1, storage_dir=tmp_path
+    ).tune_independent_cohorts_model(X, Y, exposure, **settings, study_name="glm")
+    study, _ = dataclasses.replace(
+        TUNER, storage_dir=tmp_path
+    ).tune_independent_cohorts_model(X, Y, exposure, **settings, study_name="glm")
+    seeded, _ = TUNER.tune_independent_cohorts_model(X, Y, exposure, **settings)
+    assert len(study.trials) == TUNER.n_trials
+    assert [trial.params for trial in study.trials] == [
+        trial.params for trial in seeded.trials
+    ]
+
+
+def test_a_storage_dir_without_a_study_name_raises(tmp_path: Path) -> None:
+    X, Y, exposure = _table()
+    tuner = dataclasses.replace(TUNER, storage_dir=tmp_path)
+    with pytest.raises(ValueError, match="study_name"):
+        tuner.tune_independent_cohorts_model(
+            X,
+            Y,
+            exposure,
+            **INDEPENDENT_COHORTS,
+            y_min=1e-9,
+            random_state=0,
+            study_seed=0,
+        )
+
+
+def test_each_tune_method_stores_its_study_under_its_name(tmp_path: Path) -> None:
+    # A tune method that does not pass its study_name on raises with a
+    # storage_dir (above), so each is called once.
+    X, Y, exposure = _table()
+    tuner = dataclasses.replace(TUNER, n_trials=1, storage_dir=tmp_path)
+    total = CountComponent(
+        name="total",
+        family="poisson_glm",
+        use_exposure=True,
+        estimator_params=PoissonGLMParams(alpha=0.1),
+        feature_transformer=TRANSFORMERS["ses_only"],
+    )
+    probability = ProbabilityComponent(
+        name="probability",
+        family="logistic",
+        calibration_method=None,
+        estimator_params=LogisticParams(C=1.0),
+        feature_transformer=TRANSFORMERS["median_age_only"],
+    )
+    seeds = {"y_min": 1e-9, "random_state": 0, "study_seed": 0}
+    tuner.tune_independent_cohorts_model(
+        X, Y, exposure, **INDEPENDENT_COHORTS, **seeds, study_name="independent"
+    )
+    tuner.tune_total_times_probability_model(
+        X,
+        Y,
+        exposure,
+        total_family="poisson_glm",
+        probability_family="logistic",
+        use_exposure=True,
+        total_feature_transformer_dict=TRANSFORMERS,
+        probability_feature_transformer_dict=TRANSFORMERS,
+        **seeds,
+        study_name="joint",
+    )
+    tuner.tune_total_component(
+        X,
+        Y,
+        exposure,
+        total_family="poisson_glm",
+        use_exposure=True,
+        total_feature_transformer_dict=TRANSFORMERS,
+        probability_component=probability,
+        **seeds,
+        study_name="total",
+    )
+    tuner.tune_probability_component(
+        X,
+        Y,
+        exposure,
+        total_component=total,
+        probability_family="logistic",
+        probability_feature_transformer_dict=TRANSFORMERS,
+        **seeds,
+        study_name="probability",
+    )
+    assert sorted(path.name for path in tmp_path.iterdir()) == [
+        "independent.log",
+        "joint.log",
+        "probability.log",
+        "total.log",
+    ]

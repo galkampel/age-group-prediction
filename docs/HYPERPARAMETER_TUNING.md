@@ -477,11 +477,12 @@ refit share these two functions, so the model scored in a trial is the model ref
 ## 6. The Tuner
 
 `CrossValidationTuner(cv, objective_metric, n_trials, n_startup_trials, aggregator=Mean(),
-n_jobs=1, recorded_metrics=())` is a frozen dataclass holding what every run shares: the
-folds, the objective metric (it scores each fold and gives the study its direction), the
-budget, TPE's random start, how fold scores combine (§7), how many processes fit a trial's
-folds, and the metrics each trial also records (none by default). Each call takes the data,
-the groups, the composite's settings and the study's seed (D26):
+n_jobs=1, recorded_metrics=(), storage_dir=None)` is a frozen dataclass holding what every run
+shares: the folds, the objective metric (it scores each fold and gives the study its
+direction), the budget, TPE's random start, how fold scores combine (§7), how many processes
+fit a trial's folds, the metrics each trial also records (none by default), and where the
+studies are stored (in memory by default). Each call takes the data, the groups, the
+composite's settings, the study's seed (D26) and, to store the study, its `study_name`:
 
 - `cross_validate(model, X, Y, exposure, groups=None)` refits `model` on each fold's
   training rows (`fit` replaces all state) and returns each metric's cross-validated score
@@ -519,6 +520,19 @@ marks a trial FAIL when its fit raises `RuntimeError` (NB2 that does not converg
 from a fold's process as such) and goes on; any other error ends the study, so a bug is not
 hidden (D7, D19). There is no pruning: `WilcoxonPruner` needs the folds one after another,
 which costs more than it saves (D19).
+
+**The stored studies** (D33). With `storage_dir`, each study is Optuna's journal file
+`<storage_dir>/<study_name>.log` (`JournalStorage(JournalFileBackend(path))`, a JSON-lines
+file; the directory is created), and a tune call needs its `study_name` (`ValueError`
+otherwise). A call whose file holds `n_trials` trials loads the study and runs no trial: a
+real `Study`, with every trial's params, values, recorded metrics and durations (a 100-trial
+study of 30 parameters is about 1 MiB and loads in a few hundredths of a second). The
+seconds a call returns are always the study's run, stored in the study as its `seconds`
+user attribute when it ran. A partial file (an interrupted run, or a study ended by an
+error) is deleted and the study run again from its seed: a resumed study would draw
+differently from the seeded run (the sampler's random state is not stored), and an
+interrupted trial stays in the file as FAIL. So a stored study is always the seeded run's.
+Delete a file to run its study again.
 
 ## 7. Aggregation
 
@@ -632,6 +646,9 @@ hyperparameters, the cross-validated objective, trials, seconds) and their score
   declaration, so its candidates are the GLM declarations.
 - **NB2 can fail to converge**: its trial is marked FAIL and counted in the notebook's
   tables; a run whose trials all fail raises in its own cell.
+- **A stored study is found by its name only** (§6): a change to the data, the folds, the
+  search space or the code is not detected, and the stored study is loaded as it is. Delete
+  its file, or change the name or the directory.
 
 ## 11. What Remains
 
