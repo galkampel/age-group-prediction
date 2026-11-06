@@ -12,7 +12,7 @@ left for PR 6. The notebook's md5 is `95261326e5368bd451607d083a5ab366`. PR 3 cl
 as #21 (`0c94f16` on `main`); PR 4's branch `feat/study-cache` created from it. **Updated
 2026-11-06:** 4.1 done (§3, the budget 100 / 10); the notebook's md5 is
 `78b08bd7936dba06d65f18bd52da5cbb`. 4.2 done (the tuner's journal storage: a partial study
-started fresh, the seconds the study's run). **Updated 2026-11-06 (paused):** 4.3 implemented, uncommitted; its Check C was running, the clicks remain (the handoff's §2 "PR 4"); the notebook's md5 `3ac16ed8995efa3899a6b37746cc99d4`. **Updated 2026-11-06:** 4.3 done (§3): the user's renames kept, a stored study loaded without writing to its file (a fix in `src`), the two clicks; the notebook's md5 `91d1c96cdd227a137163cd072235c64a`. **PR 4 done; next: close it, then PR 5 (§4).**
+started fresh, the seconds the study's run). **Updated 2026-11-06 (paused):** 4.3 implemented, uncommitted; its Check C was running, the clicks remain (the handoff's §2 "PR 4"); the notebook's md5 `3ac16ed8995efa3899a6b37746cc99d4`. **Updated 2026-11-06:** 4.3 done (§3): the user's renames kept, a stored study loaded without writing to its file (a fix in `src`), the two clicks; the notebook's md5 `91d1c96cdd227a137163cd072235c64a`. **Updated 2026-11-06:** PR 4 merged as #22 (`30bd4f7` on `main`); PR 5's branch `feat/bootstrap-replicates` created from it; 5.1 planned and approved. **Next: 5.1 (§4).**
 
 The companion docs: [EXPERIMENT_NOTEBOOK_HANDOFF.md](EXPERIMENT_NOTEBOOK_HANDOFF.md) (the state,
 how to work, the checks, the traps, iCloud), [NOTEBOOK_METRICS_LOOP_EDA_PLAN.md](NOTEBOOK_METRICS_LOOP_EDA_PLAN.md)
@@ -352,6 +352,32 @@ No code change (D34). One commit for the docs, one more if the review's findings
 ## 4. PR 5: the bootstrap replicates and the comparison metric (`feat/bootstrap-replicates`)
 
 ### [ ] 5.1 `scoring.evaluate` → `compute_metrics` (`src`, tests, docs, notebook)
+- **Planned and approved (2026-11-06; the line numbers read on `383ee53` by grep, re-verify
+  them).** A rename only: no behaviour, signature or output changes; no alias.
+  - `scoring.py`: `def evaluate` (:205) → `compute_metrics`, `__all__` (:41, kept sorted), the
+    module docstring's ``evaluate`` (:13);
+  - `inspection/bootstrap.py`: the call `scoring.evaluate(...)` (:102) and the docstrings (:37,
+    :59, :62); the bootstrap's own `evaluate` method stays (5.2 reshapes it);
+  - `tests/unit/test_scoring.py`: the import (:14), the section comment (:367), three calls
+    (:384, :406, :408);
+  - the notebook: the import cell's import (:708) and return (:731); the four cells' parameter
+    lists (:950, :1063, :1793, :2165) re-sorted (`compute_metrics` before `cv_groups`); the four
+    calls (:1036, :1200, :1859, :2203); each edited line to `ruff format`'s hunk;
+  - the current guides: HYPERPARAMETER_TUNING.md (:35, :64, :271, the block at :300, :598,
+    :605), MODEL_INSPECTION.md (:303, :311), MODULE_REFERENCE.md (:69 twice and its export
+    list, :75, :120), INDEPENDENT_COHORT_MODELS.md (:325), TOTAL_TIMES_PROBABILITY_MODEL.md
+    (:355), the handoff's current-state lines (§1);
+  - history stays as written: D30 (NOTEBOOK_TUNING_PLAN.md) gets one note ("renamed
+    `compute_metrics` in 5.1, D35"); closed plans and commit tables are not rewritten;
+  - the scratchpad's Check C reads `d["compute_metrics"]` (`check_c.py:93`, `:315`); Check B
+    asserts `compute_metrics` in the defs and `evaluate` not.
+
+  Its checks: the grep below finds only the history left on purpose, and
+  `hasattr(age_group_prediction.scoring, "evaluate")` is False; `test_scoring.py` and
+  `test_inspection_bootstrap.py` under `-W error`; the suite; mypy; HYPERPARAMETER_TUNING.md's
+  blocks rerun; Check A (the notebook test 14, ruff 15, the two hunks, `marimo check`), B, C
+  equal to `check_c_4_3.pkl` exactly. No mutations: a rename changes no behaviour a test could
+  tell apart; the grep and the `hasattr` probe stand in.
 - **Change:** the rename in `scoring.py`, `inspection/bootstrap.py`, the notebook's four calls,
   `tests/unit/test_scoring.py`, `test_inspection_bootstrap.py`, `test_hyperparameter_tuning_cross_validation.py`
   (if it names it), `docs/HYPERPARAMETER_TUNING.md`, `MODEL_INSPECTION.md`, the handoff, D30's

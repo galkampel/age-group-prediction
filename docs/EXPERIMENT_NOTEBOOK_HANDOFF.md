@@ -1,19 +1,21 @@
-# Handoff: the experiment notebook, PR 4 (the study cache) done, to close
+# Handoff: the experiment notebook, PR 5 (the bootstrap replicates and the comparison metric) to start
 
-**Status (2026-11-06, 4.3 done; the next session starts at §6):**
-- PR 4 is on `feat/study-cache`. The user committed 4.1 (`a16c218`, `feat(notebook): 100
-  trials, 10 at random`) and 4.2 (`3806c70`, `feat(tuning): a study is stored in a journal file
-  and loaded when complete`).
-- **4.3 is done** (two commits for the user: the loading fix in `src`, then the notebook's
-  cache): the notebook's tuner stores and loads every study; a loaded study's file is left
-  unchanged. §2's "PR 4" holds the checks and the clicks.
-- The notebook's md5 is `91d1c96cdd227a137163cd072235c64a` (4.2's
-  `78b08bd7936dba06d65f18bd52da5cbb`).
+**Status (2026-11-06, PR 4 merged; the next session starts at §6):**
+- **PR 4 is merged** as **#22**, squashed into `main` as **`30bd4f7`** (`feat(notebook): the
+  study cache: 100 trials, every study stored and loaded (#22)`); its content is identical to
+  the branch's last commit `383ee53` (`git diff` empty). `feat/study-cache` is deleted, locally
+  and on GitHub.
+- **PR 5 is on `feat/bootstrap-replicates`**, created by the user from `main` at `30bd4f7`; its
+  first commit is this handoff's update.
+- **5.1 is planned and approved** (2026-11-06; the cache plan's 5.1 holds the plan): a rename
+  only, `scoring.evaluate` → `compute_metrics`. Not started.
+- The notebook's md5 is `91d1c96cdd227a137163cd072235c64a`. The user's real study cache is
+  `studies/` in the repo (git-ignored; 25 studies at 100 trials): a click loads it in about 7 min.
 
 
-**For:** the session that starts PR 4 of
-[NOTEBOOK_CACHE_EVALUATION_PLAN.md](NOTEBOOK_CACHE_EVALUATION_PLAN.md), the tuning budget and
-the study cache (4.1–4.3), from `main` after PR 3's merge. That plan holds the user's additional
+**For:** the session that starts PR 5 of
+[NOTEBOOK_CACHE_EVALUATION_PLAN.md](NOTEBOOK_CACHE_EVALUATION_PLAN.md), the bootstrap
+replicates and the comparison metric (5.1–5.4), from `main` after PR 4's merge. That plan holds the user's additional
 changes, planned 2026-11-04 as PRs 4–7: the tuning budget and the study cache, the bootstrap
 replicates and RMSE as the comparison metric, the notebook split, SHAP per cohort and the test
 evaluation; decisions D31–D39.
@@ -31,7 +33,8 @@ The metrics plan's three PRs:
   `16773a5`;
 - PR 3, the objective EDA: merged as #21, squashed into `main` as `0c94f16`.
 
-PR 4 is on **`feat/study-cache`**, created from `main` at `0c94f16`.
+The cache plan's PR 4, the study cache: merged as #22, squashed into `main` as `30bd4f7`.
+PR 5 is on **`feat/bootstrap-replicates`**, created from `main` at `30bd4f7`.
 
 MLflow stays deferred; E11's final evaluation is the cache plan's PR 7.
 
@@ -169,15 +172,22 @@ git. Re-verify every fact here against the code of the day.
 
 ## 2. State
 
-### PR 4 (2026-11-06, in progress)
+### PR 4 (2026-11-06, closed: merged as #22, `30bd4f7`)
 
-- **Commits on `feat/study-cache`** (from `main` at `0c94f16`):
+- **Commits on `feat/study-cache`** (from `main` at `0c94f16`; after the squash-merge GitHub
+  keeps them under #22, and the docs cite them by hash):
 
   | commit | sub-task |
   |---|---|
   | `9662010` | the handoff after PR #21's merge (the branch's first commit) |
   | `a16c218` | 4.1 the budget: `n_trials = 100`, `n_startup_trials = 10` (D31, D32) |
   | `3806c70` | 4.2 `CrossValidationTuner.storage_dir` and each tune method's `study_name` |
+  | `6e5aa3a` | the fix: a stored study is loaded without writing to its file (`load_study`) |
+  | `383ee53` | 4.3 every study cached in a journal file named by its run settings |
+
+- **The merge:** #22, squashed into `main` as `30bd4f7`, identical to `383ee53`;
+  `feat/study-cache` deleted locally and on GitHub. A squash-merged branch is deleted with
+  `git branch -D` (`-d` refuses).
 
 - **4.1's checks:** Check A, B; Check C (410 s) equal to `check_c_3_3_fix.pkl` (`check_c_4_1.pkl`).
 - **4.2** (the user's answers, the cache plan's 4.2):
@@ -190,8 +200,8 @@ git. Re-verify every fact here against the code of the day.
   Its checks: the module 21 passed under `-W error`; the non-slow suite 1391 passed, 1 skipped,
   1 xfailed, 19 deselected; mypy 28 files; three mutations caught; two 100-trial studies load
   in 0.02–0.03 s; Check C (460 s) equal to 4.1's (`check_c_4_2b.pkl`).
-- **4.3, done** (the cache plan's 4.3 has the design, the user's answers and the Done note). The
-  working tree changes:
+- **4.3, done** (the cache plan's 4.3 has the design, the user's answers and the Done note),
+  committed as `6e5aa3a` and `383ee53`. The changes:
   - `notebooks/02_experiments.py`:
     - section 1's two cells export `project_root` and `config_hash`;
     - the tuner cell builds `studies_dir` (`studies/data=<hash8>__split_method=…__test_size=…__val_size=…__n_splits=…__seed=…__n_trials=…__n_startup_trials=…`),
@@ -762,20 +772,23 @@ constructor, data in the call; fitting and evaluating as separate steps; no priv
 
 ## 6. Next, and the prompt
 
-**Status (2026-11-06, 4.3 done):**
-- PR 4: 4.1 (`a16c218`) and 4.2 (`3806c70`) committed; 4.3 done, for the user's two commits
-  (§2's "PR 4"). The notebook's md5 is `91d1c96cdd227a137163cd072235c64a`.
+**Status (2026-11-06, PR 4 merged as #22, `30bd4f7`):**
+- PR 5 is on `feat/bootstrap-replicates` from `main` at `30bd4f7`; its first commit is this
+  handoff's update. The notebook's md5 is `91d1c96cdd227a137163cd072235c64a`.
+- 5.1 is planned and approved (the cache plan's 5.1, "Planned"); nothing implemented yet.
 
 Next, one step per approval, each stopped with a file-by-file summary, the checks, the
 notebook's md5 and the commit message:
-1. **Close PR 4:** the PR's title and description in the chat (no "Generated with Claude
-   Code"), the squash-merge text; after the merge, the user creates `feat/bootstrap-replicates`
-   from `main`.
-2. **PR 5** (the cache plan's §4, 5.1–5.4): 5.1 `scoring.evaluate` → `compute_metrics` (planned
-   and approved 2026-11-06: `src`, `test_scoring.py`, the notebook's import cell, four
-   parameter lists and four calls, five current guides, a note on D30, Check C against
-   `check_c_4_3.pkl`); then the bootstrap's replicates, `n_resamples` measured, RMSE compares.
-3. **Then PRs 6–7.** F3 and F4 (§5) belong to PR 6. MLflow and D4 stay deferred.
+1. **5.1** `scoring.evaluate` → `compute_metrics` (the approved plan, the cache plan's 5.1):
+   re-verify its line numbers by grep first (they were read on `383ee53`); Check C's reference
+   is 4.3's run, `check_c_4_3.pkl` (§2's "PR 4": this session's scratchpad); if it is gone, run
+   Check C on HEAD before the first edit and keep that pickle.
+2. **5.2–5.4** (the cache plan's §4): the bootstrap returns its replicates (the resampling-unit
+   question with measured widths), the statistics in the notebook with `n_resamples` measured,
+   RMSE compares with the paired difference. Each planned in plan mode.
+3. **Close PR 5:** the PR's title and description in the chat (no "Generated with Claude Code"),
+   the squash-merge text, the branch deletion. **Then PRs 6–7.** F3 and F4 (§5) belong to PR 6.
+   MLflow and D4 stay deferred.
 
 The user's preferences:
 - plan docs in `docs/`, split into sub-tasks validated one at a time;
@@ -793,17 +806,23 @@ The user's preferences:
 ```text
 Read docs/EXPERIMENT_NOTEBOOK_HANDOFF.md in full (the status at the top, §2's "PR 4" block,
 §4's checks, traps, iCloud notes and the latest scripts, §6 first), then
-docs/NOTEBOOK_CACHE_EVALUATION_PLAN.md in full (§0 D31–D39, §3's 4.3 Done note, §4 PR 5), then
-src/age_group_prediction/scoring.py, src/age_group_prediction/inspection/bootstrap.py and the
-notebook's import cell and run cells of sections 5 and 6.
-Verify the state first: PR 4 merged into main; the branch feat/bootstrap-replicates from it;
-`git status` clean; the notebook's md5 91d1c96cdd227a137163cd072235c64a via
-`cat notebooks/02_experiments.py | md5`; no iCloud-offloaded files (`find .git src notebooks
-tests docs configs -flags +dataless -type f | grep -vc __pycache__` is 0).
-If anything differs, stop and show me the diff. Then PR 5 (the plan's §4), one sub-task per
-approval, starting with 5.1, each planned in plan mode (re-verify the facts with read-only
-probes, design questions with evidence and a recommendation, the context explained in the
+docs/NOTEBOOK_CACHE_EVALUATION_PLAN.md in full (§0 D31–D39, §3's 4.3 Done note, §4 PR 5 with
+5.1's approved plan), then src/age_group_prediction/scoring.py,
+src/age_group_prediction/inspection/bootstrap.py, tests/unit/test_scoring.py and the
+notebook's import cell and the run cells of sections 5 and 6.
+Verify the state first:
+- the branch feat/bootstrap-replicates, HEAD the handoff's commit on 30bd4f7 (PR #22's merge);
+- `git status` clean; the notebook's md5 91d1c96cdd227a137163cd072235c64a via
+  `cat notebooks/02_experiments.py | md5`;
+- no iCloud-offloaded files: `find .git src notebooks tests docs configs -flags +dataless -type f
+  | grep -vc __pycache__` is 0.
+If anything differs, stop and show me the diff. Then implement 5.1 as approved (re-verify its
+line numbers by grep first; copy the check scripts and check_c_4_3.pkl from the scratchpad the
+handoff names, or rewrite them from §4); stop with a file-by-file summary, the checks, the
+notebook's md5 and the commit message. Then continue with 5.2–5.4, one sub-task per approval,
+each planned in plan mode (re-verify the facts with read-only probes, design questions with
+evidence and a recommendation, the context and each option explained in plain terms in the
 chat, the steps and the commit message in the chat). Keep the implementation simple. I commit
-myself: never commit, no Co-Authored-By line, no "Generated with Claude Code" in PR text,
-never git checkout/stash/reset/mv.
+myself: never commit, no Co-Authored-By line, no "Generated with Claude Code" in PR text, never
+git checkout/stash/reset/mv.
 ```
