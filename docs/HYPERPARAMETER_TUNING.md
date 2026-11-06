@@ -603,10 +603,10 @@ objective EDA, section 5): its settings, `feature_transformers` (each component'
 name), the fitted `model`, its `components` (`to_dict()` writes each one's transformer
 declaration), `cv_best`, `n_complete`, `n_failed`, the seconds, and `scores`: per dataset
 (`train`, `val`), cohort and metric, `scoring.compute_metrics`'s `score` beside
-`BootstrapEvaluator.evaluate`'s `mean` and bounds, which the notebook names after their level
-(`ci95_lower`, `ci95_upper` at its setting `alpha = 0.05`); one evaluator resamples every
-model with one seed, so their intervals compare. Model 2's coordinate descent keeps a record
-per step study (its best component and its name, `cv_best`, the trial counts, the seconds)
+the mean, median, SD and percentile bounds of `BootstrapEvaluator.evaluate`'s replicates, the
+bounds named after their level (`ci95_lower`, `ci95_upper` at its setting `alpha = 0.05`); one
+evaluator resamples every model with one seed, so their intervals compare. Model 2's coordinate descent
+keeps a record per step study (its best component and its name, `cv_best`, the trial counts, the seconds)
 and one per pair (its model, components, names, its cross-validated objective as `cv_best`,
 its two studies' trial counts and seconds summed, its `scores`). The notebook shows two
 tables per model: the kept models (settings, each component's transformer and

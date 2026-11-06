@@ -10,8 +10,14 @@
 - **5.1 is done** (2026-11-06; the cache plan's 5.1 Done note): a rename only,
   `scoring.evaluate` → `compute_metrics`. Check C's pickle `check_c_5_1.pkl` is in
   `/private/tmp/claude-501/-Users-galkampel-Desktop-Projects-age-group-prediction/6399f8d3-96a2-49b3-a707-91be30c7b8b4/scratchpad`
-  (with `checks/`: `run_5_1.sh`, `run_guide_blocks.py`). Next: 5.2.
-- The notebook's md5 is `6edc34aa4cc93d05fcf34b106515dd9c`. The user's real study cache is
+  (with `checks/`: `run_5_1.sh`, `run_guide_blocks.py`). Committed as `571f721`.
+- **5.2 is done** (the cache plan's 5.2 Done note): the bootstrap evaluator returns its
+  replicates; the two resampling designs kept (the user's answer, on measured widths). Each
+  score's `median` and `sd` added at the user's review. Check C's pickle `check_c_5_2b.pkl`
+  (the same scratchpad; `run_5_2b.sh`) is 5.3's reference;
+  `probe_5_2.pkl` there holds the 100-trial runs' fitted models (cloudpickle) for 5.3's
+  `n_resamples` probe. Next: 5.3.
+- The notebook's md5 is `d4a361a5535aaefd89b9dccd4f99e282`. The user's real study cache is
   `studies/` in the repo (git-ignored; 25 studies at 100 trials): a click loads it in about 7 min.
 
 
@@ -122,14 +128,17 @@ git. Re-verify every fact here against the code of the day.
        `best_params`; `tuner.cross_validate(...)[tuner.objective_metric.name]` as `cv_best`;
        refit and scored; no search) → `MODEL2_RUNS`;
    - **the bootstrap evaluator cell** (3.4, M14): `bootstrap_evaluator =
-     BootstrapEvaluator(n_resamples, alpha=alpha, random_state=seed)` (`alpha = 0.05` in section
-     2) and `CI_BOUND_NAMES` (`lower` → `ci95_lower`, `upper` → `ci95_upper`), for both models;
+     BootstrapEvaluator(n_resamples, random_state=seed)` (5.2: no `alpha`; `alpha = 0.05` in
+     section 2 is the loops') and `CI_BOUND_NAMES` (`lower` → `ci95_lower`, `upper` →
+     `ci95_upper`), for both models;
    - **the refit and the scores** (Model 1's loop and Model 2's pairs): the best model fitted
      on the training part; per dataset (`_dataset_name`, `_dataset`: train, val) predicted once,
-     `_dataset_scores = compute_metrics(...)`, `_dataset_intervals =
-     bootstrap_evaluator.evaluate(..., _dataset.groups, ...)` renamed, then joined: `scores` per
-     dataset, cohort and metric, `score, mean, ci95_lower, ci95_upper`; one evaluator, so every
-     model's replicates are the same rows (D30, M14);
+     `_dataset_scores = compute_metrics(...)`, `_replicate_scores =
+     bootstrap_evaluator.evaluate(..., _dataset.groups, ...)` (1000 rows × (cohort, metric),
+     5.2), then one frame: `scores` per dataset, cohort and metric, `score`, the replicate
+     scores' `mean`, `median`, `sd` and their `alpha / 2`, `1 - alpha / 2` quantiles as
+     `ci95_lower, ci95_upper`; one evaluator, so every model's replicates are the same rows
+     (D30, M14);
    - **the tables**, two per model, shown with `mo.ui.table` (marimo's interactive table: sort,
      filter, pages): the runs (`model1_runs_df` 8 rows, `model2_runs_df` 16: the settings,
      `feature_transformers`, `hyperparameters` per component, `cv_poisson_deviance`,
@@ -145,7 +154,7 @@ git. Re-verify every fact here against the code of the day.
   flags), `feature_transformers` ({cohort: candidate name}), `model` (fitted on training),
   `components` (the objects; `to_dict()` writes each transformer's declaration), `cv_best`,
   `n_complete`, `n_failed`, `seconds` (the study's), `scores` (dataset × cohort × metric:
-  `score, mean, ci95_lower, ci95_upper`).
+  `score, mean, median, sd, ci95_lower, ci95_upper`; `median`, `sd` since 5.2).
 - **Model 2's step runs** (`MODEL2_TOTAL_RUNS`, `MODEL2_PROBABILITY_RUNS`): their settings,
   `feature_transformers`, `component` (the best, the object step 2 and the pairs take),
   `cv_best`, `n_complete`, `n_failed`, `seconds`.
@@ -165,7 +174,8 @@ git. Re-verify every fact here against the code of the day.
 - `scoring`: the six metric functions, `Metric`, and `compute_metrics(y_true, y_pred,
   metrics, cohorts="composite")` (D35, 5.1; `evaluate` until then).
 - [`inspection`](MODEL_INSPECTION.md): `BootstrapEvaluator.evaluate(y_true, y_pred, groups=None,
-  *, metrics, cohorts="composite")` (the caller predicts; the interval alone),
+  *, metrics, cohorts="composite")` (the caller predicts; since 5.2 the replicates, one row
+  each, the caller computing the statistics),
   `PermutationImportance`, `ShapExplainer`.
 - `modeling` ([Model 1](INDEPENDENT_COHORT_MODELS.md), [Model 2](TOTAL_TIMES_PROBABILITY_MODEL.md)):
   fit and predict; no `evaluate` (D30).
@@ -776,8 +786,8 @@ constructor, data in the call; fitting and evaluating as separate steps; no priv
 
 **Status (2026-11-06, PR 4 merged as #22, `30bd4f7`):**
 - PR 5 is on `feat/bootstrap-replicates` from `main` at `30bd4f7`; its first commit is this
-  handoff's update. The notebook's md5 is `6edc34aa4cc93d05fcf34b106515dd9c`.
-- 5.1 is done (the cache plan's 5.1 Done note); 5.2 is next.
+  handoff's update. The notebook's md5 is `d4a361a5535aaefd89b9dccd4f99e282`.
+- 5.1 is done and committed (`571f721`); 5.2 is done (the cache plan's Done note); 5.3 is next.
 
 Next, one step per approval, each stopped with a file-by-file summary, the checks, the
 notebook's md5 and the commit message:

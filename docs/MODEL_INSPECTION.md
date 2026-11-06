@@ -2,8 +2,8 @@
 
 > The `age_group_prediction.inspection` package: what a **fitted** model does
 > and how sure its score is, in three independent parts. `BootstrapEvaluator`
-> gives a metric's mean and percentile interval on an evaluation set, from the
-> model's predictions;
+> gives a metric's bootstrap replicates on an evaluation set, from the model's
+> predictions (the caller takes their mean and percentile interval);
 > `PermutationImportance` scores each raw input column by the metric's drop
 > when it is shuffled; `ShapExplainer` gives Shapley values of each row's
 > prediction per raw column. Built on PRs #14 and C of the
@@ -20,7 +20,7 @@ build on each other in order.
 
 | part | answers | class |
 |---|---|---|
-| bootstrap | how sure is the validation score? | `BootstrapEvaluator(n_resamples, alpha=0.05, random_state=None).evaluate(y_true, y_pred, groups=None, *, metrics=[...], cohorts="composite")` → a DataFrame, one row per (cohort, metric): `mean`, `lower`, `upper` |
+| bootstrap | how sure is the validation score? | `BootstrapEvaluator(n_resamples, random_state=None).evaluate(y_true, y_pred, groups=None, *, metrics=[...], cohorts="composite")` → a DataFrame, one row per replicate, one column per (cohort, metric) |
 | permutation importance | which columns does the score depend on? | `PermutationImportance(metric, n_repeats, random_state=None)` → a DataFrame per column |
 | SHAP | how does each column move each row's prediction? | `ShapExplainer(method, max_evals=None, random_state=None, n_jobs=1)` → a `shap.Explanation` |
 
@@ -134,11 +134,13 @@ metrics = [POISSON_DEVIANCE]
 for name, model in models.items():
     # The model predicts once; the bootstrap resamples the predictions' rows.
     Y_val_pred = model.predict(X_val, exposure=exposure_val)
-    rows = bootstrap.evaluate(Y_val, Y_val_pred, metrics=metrics)
-    by_group = bootstrap.evaluate(Y_val, Y_val_pred, groups_val, metrics=metrics)
-    rows, by_group = rows.iloc[0], by_group.iloc[0]
-    print(f"{name}  rows: {rows['mean']:.3f} [{rows['lower']:.3f}, {rows['upper']:.3f}]"
-          f"  neighborhoods: {by_group['mean']:.3f} [{by_group['lower']:.3f}, {by_group['upper']:.3f}]")
+    line = name
+    for unit, groups in [("rows", None), ("neighborhoods", groups_val)]:
+        # A column of replicates per (cohort, metric): here the composite's deviance.
+        replicates = bootstrap.evaluate(Y_val, Y_val_pred, groups, metrics=metrics).iloc[:, 0]
+        lower, upper = replicates.quantile([0.025, 0.975])
+        line += f"  {unit}: {replicates.mean():.3f} [{lower:.3f}, {upper:.3f}]"
+    print(line)
 ```
 
 ```text
@@ -303,12 +305,15 @@ replacement and recomputes every metric on each, for every cohort asked for
 (`scoring.compute_metrics`'s rule: a column of `y_true`, scored alone, or
 `"composite"`, the whole matrix). The evaluator holds the resampling design
 only; the metrics and cohorts are named per call, as `cross_validate`'s
-`scoring`, and all of them score the same replicates, so their intervals are
-paired. The result has one row per (cohort, metric): `mean`, the mean of the
-replicate scores, and `lower` and `upper`, their `alpha/2` and
-`1 - alpha/2` quantiles (`np.quantile`, so the 95 % interval at the default
-`alpha=0.05`). The score on the unresampled rows, the interval's point
-estimate, is `scoring.compute_metrics(y_true, y_pred, metrics, cohorts)`'s. The interval is **conditional on the fitted model**: nothing is
+`scoring`, and all of them score the same replicates, so they are paired. The
+result has one row per replicate and one column per (cohort, metric), each
+score raw, in its metric's own direction. The statistics are the caller's: the
+mean, the SD, and the percentile interval, `replicates.quantile([alpha / 2,
+1 - alpha / 2])` (the 95 % interval at `alpha = 0.05`). On one evaluation set,
+one seed draws the same rows in every call, so two models' replicates pair row
+by row: their difference per replicate is the bootstrap of the difference.
+The score on the unresampled rows, the interval's point estimate, is
+`scoring.compute_metrics(y_true, y_pred, metrics, cohorts)`'s. The interval is **conditional on the fitted model**: nothing is
 refit, so it measures how much the score depends on which rows were held out,
 not how much the model would change on other training data.
 
@@ -328,7 +333,7 @@ distinct groups raise `ValueError`.
 **Ratio metrics.** The cohort log loss is a ratio of sums recomputed on each
 replicate, as it should be; a replicate with no children at all is 0/0, and a
 non-finite replicate score raises `ValueError` naming the cohort, the metric and how many, rather than
-returning NaN bounds silently.
+returning NaN replicates silently.
 
 ## 4. Permutation Importance
 

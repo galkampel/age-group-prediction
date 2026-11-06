@@ -12,7 +12,7 @@ left for PR 6. The notebook's md5 is `95261326e5368bd451607d083a5ab366`. PR 3 cl
 as #21 (`0c94f16` on `main`); PR 4's branch `feat/study-cache` created from it. **Updated
 2026-11-06:** 4.1 done (§3, the budget 100 / 10); the notebook's md5 is
 `78b08bd7936dba06d65f18bd52da5cbb`. 4.2 done (the tuner's journal storage: a partial study
-started fresh, the seconds the study's run). **Updated 2026-11-06 (paused):** 4.3 implemented, uncommitted; its Check C was running, the clicks remain (the handoff's §2 "PR 4"); the notebook's md5 `3ac16ed8995efa3899a6b37746cc99d4`. **Updated 2026-11-06:** 4.3 done (§3): the user's renames kept, a stored study loaded without writing to its file (a fix in `src`), the two clicks; the notebook's md5 `91d1c96cdd227a137163cd072235c64a`. **Updated 2026-11-06:** PR 4 merged as #22 (`30bd4f7` on `main`); PR 5's branch `feat/bootstrap-replicates` created from it; 5.1 planned and approved. **Updated 2026-11-06:** 5.1 done (§4, the rename); the notebook's md5 `6edc34aa4cc93d05fcf34b106515dd9c`. **Next: 5.2 (§4).**
+started fresh, the seconds the study's run). **Updated 2026-11-06 (paused):** 4.3 implemented, uncommitted; its Check C was running, the clicks remain (the handoff's §2 "PR 4"); the notebook's md5 `3ac16ed8995efa3899a6b37746cc99d4`. **Updated 2026-11-06:** 4.3 done (§3): the user's renames kept, a stored study loaded without writing to its file (a fix in `src`), the two clicks; the notebook's md5 `91d1c96cdd227a137163cd072235c64a`. **Updated 2026-11-06:** PR 4 merged as #22 (`30bd4f7` on `main`); PR 5's branch `feat/bootstrap-replicates` created from it; 5.1 planned and approved. **Updated 2026-11-06:** 5.1 done (§4, the rename); the notebook's md5 `6edc34aa4cc93d05fcf34b106515dd9c`. **Updated 2026-11-06:** 5.1 committed (`571f721`); 5.2 done (§4: the evaluator returns its replicates; two resampling designs kept, the user's answer); the notebook's md5 `d4a361a5535aaefd89b9dccd4f99e282` (with the user's `median` and `sd`). **Next: 5.3 (§4).**
 
 The companion docs: [EXPERIMENT_NOTEBOOK_HANDOFF.md](EXPERIMENT_NOTEBOOK_HANDOFF.md) (the state,
 how to work, the checks, the traps, iCloud), [NOTEBOOK_METRICS_LOOP_EDA_PLAN.md](NOTEBOOK_METRICS_LOOP_EDA_PLAN.md)
@@ -402,7 +402,50 @@ No code change (D34). One commit for the docs, one more if the review's findings
 - **Checks:** the suite, mypy, Check A–C (the frames equal the reference exactly).
 - **Commit:** `refactor(scoring): evaluate renamed compute_metrics`
 
-### [ ] 5.2 The evaluator returns the replicates (`src`, tests, MODEL_INSPECTION.md)
+### [x] 5.2 The evaluator returns the replicates (`src`, tests, MODEL_INSPECTION.md)
+- **Done (2026-11-06).** `BootstrapEvaluator(n_resamples, random_state=None)`; `evaluate`
+  returns `pd.DataFrame(scores, columns=labels)`, one row per replicate, a `(cohort, metric)`
+  column MultiIndex; the drawing loop unchanged.
+  - **The resampling unit (the user's answer): the two designs stay** (`groups` → whole
+    groups, `None` → rows; no `unit` setting). The probe (the 100-trial best models, validation,
+    1000 replicates, seed 42; 306 rows in 129 neighborhoods, median 2 rows, 37 with one): the
+    composite's 95% width, rows / whole neighborhoods / rows within neighborhoods: Model 1
+    deviance 0.507 / 0.542 / 0.380, RMSE 1.006 / 1.095 / 0.582; Model 2 deviance 0.488 / 0.493
+    / 0.360, RMSE 0.885 / 1.024 / 0.582; per cohort, within-neighborhood 0.36–0.82× the whole
+    neighborhoods' (its 1–2-row neighborhoods barely vary), rows 0.85–1.0×; about 2 s a call.
+  - **A correction to the plan below:** the records' `scores` do not hold the raw replicates
+    yet (the tables and the best-run rule read `score, mean, ci95_*`): each loop computes
+    `mean` and the `alpha / 2`, `1 - alpha / 2` quantiles from the replicates, so every table
+    is unchanged; 5.3 moves them to the tables cells.
+  - The bounds equal the old `np.quantile`'s exactly; the mean differs in its last bits
+    (pandas sums a column in another order: 344 of 384 and 699 of 768 table values, at most
+    1.4e-14 relative), so Check C compares `mean` at rtol 1e-12.
+  - **Tests** (`test_inspection_bootstrap.py`, 24): the shape and columns, the replicates the
+    metric's scores in order, the old implementation's mean and bounds pinned (seed 0, rows
+    and groups), `alpha=` rejected; the module 24 passed under `-W error`; the non-slow suite
+    1393 passed, 1 skipped, 1 xfailed, 19 deselected; mypy 28 files, no issue. Two mutations
+    caught after a sentinel: the columns labeled in reverse (3 tests), one replicate fewer
+    (5 tests).
+  - **Docs:** MODEL_INSPECTION.md (the summary, the API row, the bootstrap block, §3; its
+    blocks rerun, output unchanged), MODULE_REFERENCE.md, HYPERPARAMETER_TUNING.md §8, the
+    handoff.
+  - **Check A:** the notebook test 14, ruff 15, the two format hunks, `marimo check` no
+    issue; **Check B** (no `alpha` on the evaluator); **Check C** (444 s): every assertion
+    (the last runs' statistics recomputed from `evaluate`'s replicates exactly), every frame
+    and record equal to `check_c_5_1.pkl` (`mean` at 1e-12), both figures' JSON identical;
+    its pickle `check_c_5_2.pkl`.
+  - **Amended at the user's review** (before the commit): the loops' result named
+    `_replicate_scores` (the user's rename `_replicates_scores`, then the package's own name
+    at their answer); `median` and `sd` (pandas' `std()`, `ddof=1`: the bootstrap standard
+    error) added, the columns `score, mean, median, sd, ci95_lower, ci95_upper` (their
+    order); section 6's text. The scores tables 384 × 13 and 768 × 11, the rows unchanged.
+    Check A (the notebook test 14, ruff 15, the two hunks, `marimo check`), B; Check C (414 s):
+    every assertion, `ci95_lower ≤ median ≤ ci95_upper`, `sd > 0`, the last runs' `median`
+    and `sd` recomputed from the replicates (pandas exactly; NumPy's `median` exactly, its
+    `std(ddof=1)` at 1e-12); every other column and record equal to `check_c_5_1.pkl`, both
+    figures' JSON identical. Its pickle `check_c_5_2b.pkl` is 5.3's reference.
+
+  The notebook's md5 is `d4a361a5535aaefd89b9dccd4f99e282`.
 - **Change:** `BootstrapEvaluator(n_resamples, random_state=None)`; `evaluate` returns
   `pd.DataFrame(scores, columns=labels)` (one row per replicate, a `(cohort, metric)` column
   MultiIndex) after the non-finite check; the `mean/lower/upper` block and `alpha` go. The
@@ -423,6 +466,10 @@ No code change (D34). One commit for the docs, one more if the review's findings
 - **Commit:** `refactor(inspection): the bootstrap evaluator returns its replicates`
 
 ### [ ] 5.3 The statistics in the notebook, and `n_resamples`
+- **Since 5.2 (the user's note):** each loop already computes `mean`, `median`, `sd` and the
+  bounds from the replicate scores; 5.3 keeps the forest plots and the `n_resamples`
+  measurement. Whether the records keep the replicates (5.4's paired difference reads them)
+  is 5.3's planning question; the text below is the plan before 5.2.
 - **Change:** the two loops keep `score` (the point estimate) and the replicates per dataset;
   the tables cells compute `mean`, `sd`, `ci95_lower`, `ci95_upper` from the replicates
   (`alpha` stays a setting; `CI_BOUND_NAMES` from it) into `model1_scores_df` / `model2_scores_df`

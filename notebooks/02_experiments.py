@@ -1647,8 +1647,8 @@ def _(mo):
     model's pairs (below), are refit on the training part, kept, and scored
     on the training rows and on the validation rows (the test part waits for
     the final refit on training + validation) on every metric, per cohort
-    and for the composite, each score with its bootstrap mean and
-    `1 - alpha` (95%) interval, `ci95_lower` to `ci95_upper`: the
+    and for the composite, each score with its bootstrap mean, median, SD
+    and `1 - alpha` (95%) interval, `ci95_lower` to `ci95_upper`: the
     replicates resample whole neighborhoods, and every model is scored on
     the same replicates, so the intervals compare across models. Each model
     has two tables: its runs (each kept model's feature transformers and
@@ -1698,11 +1698,9 @@ def _(mo):
 @app.cell
 def _(BootstrapEvaluator, alpha, n_resamples, seed):
     # The bootstrap of every kept model, over neighborhoods: one seed, so every
-    # model scores the same replicate rows and the intervals compare; its bounds
-    # named by their level (95% at alpha 0.05).
-    bootstrap_evaluator = BootstrapEvaluator(
-        n_resamples, alpha=alpha, random_state=seed
-    )
+    # model scores the same replicate rows and the intervals compare; the
+    # interval's bounds named by their level (95% at alpha 0.05).
+    bootstrap_evaluator = BootstrapEvaluator(n_resamples, random_state=seed)
     _level = round(100 * (1 - alpha))
     CI_BOUND_NAMES = {"lower": f"ci{_level}_lower", "upper": f"ci{_level}_upper"}
     return CI_BOUND_NAMES, bootstrap_evaluator
@@ -1786,6 +1784,7 @@ def _(
     METRICS,
     MODEL1_RUN_SETTINGS,
     PREDICTION_FLOOR,
+    alpha,
     bootstrap_evaluator,
     build_independent_cohorts_model,
     build_study_name,
@@ -1859,15 +1858,24 @@ def _(
             _dataset_scores = compute_metrics(
                 _dataset.Y, _y_pred, METRICS, cohorts=[*COHORTS, "composite"]
             ).stack()
-            _dataset_intervals = bootstrap_evaluator.evaluate(
+            _replicate_scores = bootstrap_evaluator.evaluate(
                 _dataset.Y,
                 _y_pred,
                 _dataset.groups,
                 metrics=METRICS,
                 cohorts=[*COHORTS, "composite"],
-            ).rename(columns=CI_BOUND_NAMES)
-            _scores_by_dataset[_dataset_name] = (
-                _dataset_scores.rename("score").to_frame().join(_dataset_intervals)
+            )
+            # The score on the rows themselves, and its replicates' mean, median,
+            # SD and percentile interval.
+            _scores_by_dataset[_dataset_name] = pd.DataFrame(
+                {
+                    "score": _dataset_scores,
+                    "mean": _replicate_scores.mean(),
+                    "median": _replicate_scores.median(),
+                    "sd": _replicate_scores.std(),
+                    CI_BOUND_NAMES["lower"]: _replicate_scores.quantile(alpha / 2),
+                    CI_BOUND_NAMES["upper"]: _replicate_scores.quantile(1 - alpha / 2),
+                }
             )
         # The run's settings and its best model: the fitted model, its
         # components and their transformers' names (found by identity among
@@ -2159,6 +2167,7 @@ def _(
     MODEL2_PROBABILITY_RUNS,
     MODEL2_TOTAL_RUNS,
     PREDICTION_FLOOR,
+    alpha,
     bootstrap_evaluator,
     build_total_times_probability_model,
     compute_metrics,
@@ -2203,15 +2212,26 @@ def _(
                 _dataset_scores = compute_metrics(
                     _dataset.Y, _y_pred, METRICS, cohorts=[*COHORTS, "composite"]
                 ).stack()
-                _dataset_intervals = bootstrap_evaluator.evaluate(
+                _replicate_scores = bootstrap_evaluator.evaluate(
                     _dataset.Y,
                     _y_pred,
                     _dataset.groups,
                     metrics=METRICS,
                     cohorts=[*COHORTS, "composite"],
-                ).rename(columns=CI_BOUND_NAMES)
-                _scores_by_dataset[_dataset_name] = (
-                    _dataset_scores.rename("score").to_frame().join(_dataset_intervals)
+                )
+                # The score on the rows themselves, and its replicates' mean,
+                # median, SD and percentile interval.
+                _scores_by_dataset[_dataset_name] = pd.DataFrame(
+                    {
+                        "score": _dataset_scores,
+                        "mean": _replicate_scores.mean(),
+                        "median": _replicate_scores.median(),
+                        "sd": _replicate_scores.std(),
+                        CI_BOUND_NAMES["lower"]: _replicate_scores.quantile(alpha / 2),
+                        CI_BOUND_NAMES["upper"]: _replicate_scores.quantile(
+                            1 - alpha / 2
+                        ),
+                    }
                 )
             # The pair's settings and its best model: the fitted model, its
             # components and their transformers' names; its value, and its two
