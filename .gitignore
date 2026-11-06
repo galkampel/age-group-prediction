@@ -222,6 +222,9 @@ mlflow.db
 mlruns/
 mlartifacts/
 
+# The experiment notebook's stored Optuna studies (one journal file per study)
+studies/
+
 # Gate 8 persisted lockbox split manifest (experiment data, not package config)
 artifacts/lockbox/
 

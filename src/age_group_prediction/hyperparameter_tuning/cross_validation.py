@@ -7,6 +7,8 @@ probability model has also a tune method per component, the other one fixed
 (coordinate descent). Each trial fits its folds in ``n_jobs`` parallel
 processes, and the trials run one after another (D13, D19). A trial also
 records its score on each of ``recorded_metrics``, from the same predictions.
+With a ``storage_dir``, each study is stored in a file named after it and
+loaded when it is complete.
 """
 
 from __future__ import annotations
@@ -14,12 +16,15 @@ from __future__ import annotations
 import dataclasses
 import time
 from collections.abc import Callable, Mapping, Sequence
+from pathlib import Path
 
 import numpy as np
 import optuna
 import pandas as pd
 from joblib import Parallel, delayed
 from optuna.samplers import TPESampler
+from optuna.storages import JournalStorage
+from optuna.storages.journal import JournalFileBackend
 from sklearn.model_selection import BaseCrossValidator
 
 from ..feature_engineering import FeatureTransformer
@@ -55,7 +60,8 @@ class CrossValidationTuner:
     model guides the draws. ``n_jobs`` processes fit a trial's folds. Each
     trial records its cross-validated score on ``objective_metric`` and on
     every metric of ``recorded_metrics`` as a user attribute named after the
-    metric.
+    metric. With ``storage_dir``, each study is stored under the tune call's
+    ``study_name`` and loaded when complete (see ``_optimize``).
     """
 
     cv: BaseCrossValidator
@@ -68,6 +74,9 @@ class CrossValidationTuner:
     n_jobs: int = 1
     # Scored from the same fold predictions as `objective_metric`: no extra fit.
     recorded_metrics: Sequence[Metric] = ()
+    # Each study in `<storage_dir>/<study_name>.log`, loaded when complete;
+    # None keeps it in memory.
+    storage_dir: Path | None = None
 
     def score_fold(
         self,
@@ -161,11 +170,13 @@ class CrossValidationTuner:
         y_min: float,
         random_state: int | None,
         study_seed: int,
+        study_name: str | None = None,
     ) -> tuple[optuna.Study, float]:
         """One study of the independent cohorts model of one family and exposure, on the rows of ``X``; the study and its seconds.
 
         The settings are those of ``suggest_independent_cohorts_components``
-        and ``build_independent_cohorts_model``.
+        and ``build_independent_cohorts_model``. The study is stored under
+        ``study_name`` when the tuner has a ``storage_dir``.
         """
 
         def objective(trial: optuna.Trial) -> float:
@@ -183,7 +194,7 @@ class CrossValidationTuner:
             )
             return self.score_trial(trial, model, X, Y, exposure, groups)
 
-        return self._optimize(objective, study_seed=study_seed)
+        return self._optimize(objective, study_seed=study_seed, study_name=study_name)
 
     def tune_total_times_probability_model(
         self,
@@ -200,12 +211,14 @@ class CrossValidationTuner:
         y_min: float,
         random_state: int | None,
         study_seed: int,
+        study_name: str | None = None,
     ) -> tuple[optuna.Study, float]:
         """One study of the total times probability model of one family pair and exposure, on the rows of ``X``; the study and its seconds.
 
         The settings are those of
         ``suggest_total_times_probability_components`` and
-        ``build_total_times_probability_model``.
+        ``build_total_times_probability_model``. The study is stored under
+        ``study_name`` when the tuner has a ``storage_dir``.
         """
 
         def objective(trial: optuna.Trial) -> float:
@@ -227,7 +240,7 @@ class CrossValidationTuner:
             )
             return self.score_trial(trial, model, X, Y, exposure, groups)
 
-        return self._optimize(objective, study_seed=study_seed)
+        return self._optimize(objective, study_seed=study_seed, study_name=study_name)
 
     def tune_total_component(
         self,
@@ -243,6 +256,7 @@ class CrossValidationTuner:
         y_min: float,
         random_state: int | None,
         study_seed: int,
+        study_name: str | None = None,
     ) -> tuple[optuna.Study, float]:
         """One study of the total times probability model's total of one family and exposure, ``probability_component`` fixed; the study and its seconds.
 
@@ -251,7 +265,8 @@ class CrossValidationTuner:
         probabilities add the same constant to every trial's value, so the
         best total is the joint study's; under another metric, or
         ``UpperBound`` (whose standard error the fixed part changes), it is
-        the best total given ``probability_component``.
+        the best total given ``probability_component``. The study is stored
+        under ``study_name`` when the tuner has a ``storage_dir``.
         """
 
         def objective(trial: optuna.Trial) -> float:
@@ -270,7 +285,7 @@ class CrossValidationTuner:
             )
             return self.score_trial(trial, model, X, Y, exposure, groups)
 
-        return self._optimize(objective, study_seed=study_seed)
+        return self._optimize(objective, study_seed=study_seed, study_name=study_name)
 
     def tune_probability_component(
         self,
@@ -285,6 +300,7 @@ class CrossValidationTuner:
         y_min: float,
         random_state: int | None,
         study_seed: int,
+        study_name: str | None = None,
     ) -> tuple[optuna.Study, float]:
         """One study of the total times probability model's probabilities of one family, ``total_component`` fixed; the study and its seconds.
 
@@ -292,7 +308,9 @@ class CrossValidationTuner:
         deviance and a mean aggregator (``Mean``, ``WeightedMean``) the
         fixed total adds the same constant to every trial's value, so the
         best probabilities are the joint study's; under another metric, or
-        ``UpperBound``, they are the best given ``total_component``.
+        ``UpperBound``, they are the best given ``total_component``. The
+        study is stored under ``study_name`` when the tuner has a
+        ``storage_dir``.
         """
 
         def objective(trial: optuna.Trial) -> float:
@@ -310,22 +328,57 @@ class CrossValidationTuner:
             )
             return self.score_trial(trial, model, X, Y, exposure, groups)
 
-        return self._optimize(objective, study_seed=study_seed)
+        return self._optimize(objective, study_seed=study_seed, study_name=study_name)
 
     def _optimize(
-        self, objective: Callable[[optuna.Trial], float], *, study_seed: int
+        self,
+        objective: Callable[[optuna.Trial], float],
+        *,
+        study_seed: int,
+        study_name: str | None,
     ) -> tuple[optuna.Study, float]:
-        """The study of ``objective`` and its seconds.
+        """The study of ``objective`` and the seconds its trials took.
 
         A trial whose fit raises RuntimeError (an NB2 fit that does not
         converge, re-raised as such from a fold's process) is marked FAIL and
         the study goes on; without ``catch`` one such trial would end the
         study.
+
+        With ``storage_dir``, the study is Optuna's journal file
+        ``<storage_dir>/<study_name>.log``. A stored study of ``n_trials``
+        trials is loaded, its file left unchanged, and runs no trial; its
+        seconds are those stored when it ran. A partial one (an interrupted
+        run, or a study ended by an error) is deleted and run again from its
+        seed, since a resumed study would draw differently from the seeded
+        run. A stored study is found by its name only: a change to the data,
+        the folds, the search space or the code is not detected.
         """
+        storage = None
+        if self.storage_dir is not None:
+            if study_name is None:
+                raise ValueError(
+                    "A study_name is required to store the study in storage_dir."
+                )
+            self.storage_dir.mkdir(parents=True, exist_ok=True)
+            storage = JournalStorage(
+                JournalFileBackend(str(self.storage_dir / f"{study_name}.log"))
+            )
+            if study_name in optuna.get_all_study_names(storage):
+                # load_study only reads the file; create_study with
+                # load_if_exists would append a create line to it.
+                stored = optuna.load_study(study_name=study_name, storage=storage)
+                if len(stored.trials) < self.n_trials:
+                    # A partial study: run again from its seed.
+                    optuna.delete_study(study_name=study_name, storage=storage)
+                else:
+                    return stored, stored.user_attrs["seconds"]
         study = optuna.create_study(
-            direction=self.objective_metric.direction,
+            storage=storage,
             sampler=TPESampler(seed=study_seed, n_startup_trials=self.n_startup_trials),
+            study_name=study_name,
+            direction=self.objective_metric.direction,
         )
         start = time.perf_counter()
         study.optimize(objective, n_trials=self.n_trials, catch=(RuntimeError,))
-        return study, time.perf_counter() - start
+        study.set_user_attr("seconds", time.perf_counter() - start)
+        return study, study.user_attrs["seconds"]

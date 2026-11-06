@@ -708,6 +708,14 @@ rest of this plan is history.
   `lower`, `upper` per (cohort, metric)); the point estimate is `scoring.evaluate`'s. A run
   record keeps `train_scores` and `val_scores` in place of `score_table`.
 
+D31–D39 were decided on 2026-11-04 in [the cache plan](NOTEBOOK_CACHE_EVALUATION_PLAN.md) §0,
+which holds their evidence; the two that revise this plan:
+
+- D31. **The budget: `n_trials = 100`, `n_startup_trials = 10`** (10% of the budget, Optuna's
+  default; reverses D20's "never decrease `n_trials`").
+- D32. **Model 2 stays by coordinate descent** (D29): at 100 trials each step gets 100, a joint
+  study 3–4 per dimension.
+
 **What does not change:** notebook sections 1–4 and the `cv`/`cv_groups` cell; the models in
 `src/age_group_prediction/modeling/` (the S1 `get_params`/`set_params` forwarding in
 `IndependentCohortModels` stays: tested, `clone`-safe, simply unused by the notebook);

@@ -127,7 +127,7 @@ def _(load_simulation_config, mo):
     }
 
     DATA_SETTINGS
-    return DATA_SETTINGS, config
+    return DATA_SETTINGS, config, project_root
 
 
 @app.cell
@@ -217,7 +217,7 @@ def _(DATA_SETTINGS, X, config, df, groups, hashlib, json, mo, pd):
             mo.md(f"```text\n{X.head().to_string(index=False)}\n```"),
         ]
     )
-    return
+    return (config_hash,)
 
 
 @app.cell(hide_code=True)
@@ -240,9 +240,10 @@ def _(mo, pd):
     test_size = 0.2  # share of the whole table
     val_size = 0.2  # share of the whole table, so 0.25 of the remainder
     n_splits = 5
-    n_trials = 400
-    # TPE's random start: the trials drawn at random before its model guides the draws.
-    n_startup_trials = 20
+    n_trials = 100
+    # TPE's random start: the trials drawn at random before its model guides the
+    # draws; 10% of the budget, Optuna's default (D31).
+    n_startup_trials = 10
     n_resamples = 1000
     # The bootstrap interval's level is 1 - alpha: 95%.
     alpha = 0.05
@@ -664,6 +665,18 @@ def _(mo):
     model's scale and the total times probability model's total get no
     signal (the total changes nothing in the log loss, so every trial of its
     study scores the same).
+
+    Every study, here and in section 6, is stored in its own file under
+    `studies/` (Optuna's journal file; git-ignored), and a click loads a
+    stored study instead of tuning it, with the seconds its tuning took. The
+    directory's name holds what shapes every study: the data's config hash,
+    the split and its folds, the seed and the budget; the file's name holds
+    what the study tunes (the model, or the total times probability model's
+    coordinate-descent step), its run settings, its objective and its seed.
+    So a changed setting is a new study, and a study run in both sections
+    (each model's first run under the Poisson deviance) is tuned once. Delete
+    a study's file to tune it again: a change to the code or the search
+    spaces is not detected.
     """)
     return
 
@@ -779,11 +792,41 @@ def _(
     CrossValidationTuner,
     METRICS,
     POISSON_DEVIANCE,
+    config_hash,
     cv,
+    mo,
     n_splits,
     n_startup_trials,
     n_trials,
+    project_root,
+    seed,
+    split_method,
+    test_size,
+    val_size,
 ):
+    # Every study is stored in its own file and loaded, not tuned, when a click
+    # finds it complete (D33): its name holds what it tunes, its run settings,
+    # its objective and its seed; the directory's name holds what shapes every
+    # study (the data, the split and its folds, the seed, the budget), so a
+    # changed setting never loads a stale study. Delete a file to tune its
+    # study again; a change to the code or the search spaces is not detected.
+    studies_dir = (
+        project_root
+        / "studies"
+        / "__".join(
+            f"{key}={value}"
+            for key, value in {
+                "data": config_hash[:8],
+                "split_method": split_method,
+                "test_size": test_size,
+                "val_size": val_size,
+                "n_splits": n_splits,
+                "seed": seed,
+                "n_trials": n_trials,
+                "n_startup_trials": n_startup_trials,
+            }.items()
+        )
+    )
     # The study's design, the same for every run: the Poisson deviance of the
     # composite on each fold, the plain mean over them, the first
     # n_startup_trials of n_trials at random; each trial fits its folds in
@@ -796,8 +839,24 @@ def _(
         n_startup_trials=n_startup_trials,
         n_jobs=n_splits,
         recorded_metrics=METRICS,
+        storage_dir=studies_dir,
     )
-    return (tuner,)
+
+    def build_study_name(
+        step: str, run_settings: dict, objective_name: str, study_seed: int
+    ) -> str:
+        """A study's file name: the step it tunes, its run settings, its objective and its seed."""
+        return "__".join(
+            [
+                step,
+                *(f"{key}={value}" for key, value in run_settings.items()),
+                f"objective={objective_name}",
+                f"seed={study_seed}",
+            ]
+        )
+
+    mo.md(f"The studies are stored in `{studies_dir.relative_to(project_root)}`.")
+    return build_study_name, tuner
 
 
 @app.cell
@@ -885,6 +944,7 @@ def _(
     METRICS,
     PREDICTION_FLOOR,
     build_independent_cohorts_model,
+    build_study_name,
     cv_groups,
     dataclasses,
     evaluate,
@@ -900,8 +960,15 @@ def _(
     mo.stop(not run_eda.value, mo.md("Click the button to run the objective EDA."))
     # The independent cohorts model's EDA run: one study per objective, each
     # seeded seed, so the three share their startup draws (M8); the tuner's
-    # design but its metric. A failed trial is caught by the study.
-    _family, _use_exposure = "lgbm_poisson", True
+    # design but its metric. A failed trial is caught by the study. The run
+    # settings of section 6's first run: its deviance study is that run's.
+    _run_settings = {
+        "family": "lgbm_poisson",
+        "use_exposure": True,
+        "share_hyperparams": True,
+        "share_feature_transformer": False,
+    }
+    _family, _use_exposure = _run_settings["family"], _run_settings["use_exposure"]
     _metric_names = [metric.name for metric in METRICS]
     # Every cohort's component draws from the family's candidates.
     _feature_transformer_dict = {
@@ -919,11 +986,14 @@ def _(
             use_exposure=_use_exposure,
             cohorts=COHORTS,
             feature_transformer_dict=COUNT_FEATURE_TRANSFORMERS[_family],
-            share_hyperparams=True,
-            share_feature_transformer=False,
+            share_hyperparams=_run_settings["share_hyperparams"],
+            share_feature_transformer=_run_settings["share_feature_transformer"],
             y_min=PREDICTION_FLOOR,
             random_state=seed,
             study_seed=seed,
+            study_name=build_study_name(
+                "independent_cohorts", _run_settings, _objective.name, seed
+            ),
         )
         # Each trial's model: the cohorts' components its parameters build.
         _components_by_trial = [
@@ -986,6 +1056,7 @@ def _(
     PREDICTION_FLOOR,
     PROBABILITY_FEATURE_TRANSFORMERS,
     ProbabilityComponent,
+    build_study_name,
     build_total_times_probability_model,
     cv_groups,
     dataclasses,
@@ -1026,6 +1097,12 @@ def _(
             y_min=PREDICTION_FLOOR,
             random_state=seed,
             study_seed=seed,
+            study_name=build_study_name(
+                "total_times_probability_coordinate_descent_total",
+                {"total_family": _total_family, "use_exposure": _use_exposure},
+                _objective.name,
+                seed,
+            ),
         )
         # Step 1's trials: each drawn total, with the fixed classifier.
         _total_components_by_trial = [
@@ -1071,6 +1148,12 @@ def _(
                 y_min=PREDICTION_FLOOR,
                 random_state=seed,
                 study_seed=seed,
+                study_name=build_study_name(
+                    "total_times_probability_coordinate_descent_probability",
+                    {"probability_family": _probability_family},
+                    _objective.name,
+                    seed,
+                ),
             )
         )
         # Step 2's trials: step 1's best total, with each drawn classifier.
@@ -1333,7 +1416,7 @@ def _(
             eda_figures["model2", eda_objective.value],
         ]
     )
-    return (eda_figures,)
+    return
 
 
 @app.cell
@@ -1475,7 +1558,7 @@ def _(
             eda_metric_figures["model2", eda_recorded_metric.value],
         ]
     )
-    return (eda_metric_figures,)
+    return
 
 
 @app.cell
@@ -1550,7 +1633,8 @@ def _(mo):
     separate families, and the exposure a run setting: a study that sampled
     the loss split 30 trials 10/20 and did worse than either loss alone, and
     the exposure changes the target (a count or a weighted rate).
-    `n_trials = 400`, the first `n_startup_trials = 20` drawn at random.
+    `n_trials = 100`, the first `n_startup_trials = 10` drawn at random.
+    Each study is stored, and loaded by the next click (section 5).
     The runs go one after another, seeded
     `seed + 0`, `seed + 1`, … in order (each model's in loops over its run
     settings), and each trial fits its 5 folds in
@@ -1704,6 +1788,7 @@ def _(
     PREDICTION_FLOOR,
     bootstrap_evaluator,
     build_independent_cohorts_model,
+    build_study_name,
     cv_groups,
     evaluate,
     mo,
@@ -1725,6 +1810,7 @@ def _(
     for _i, _run_settings in enumerate(MODEL1_RUN_SETTINGS):
         _family = _run_settings["family"]
         _use_exposure = _run_settings["use_exposure"]
+        _study_seed = seed + _i
         _study, _seconds = tuner.tune_independent_cohorts_model(
             train_age_group.X,
             train_age_group.Y,
@@ -1738,7 +1824,13 @@ def _(
             share_feature_transformer=_run_settings["share_feature_transformer"],
             y_min=PREDICTION_FLOOR,
             random_state=seed,
-            study_seed=seed + _i,
+            study_seed=_study_seed,
+            study_name=build_study_name(
+                "independent_cohorts",
+                _run_settings,
+                tuner.objective_metric.name,
+                _study_seed,
+            ),
         )
         # The best components, read from the best trial's parameters by their
         # type, are the model scored and the record kept (D10-D12, D25).
@@ -1905,6 +1997,7 @@ def _(
     MODEL2_FIXED_PROBABILITY_COMPONENT,
     MODEL2_TOTAL_RUN_SETTINGS,
     PREDICTION_FLOOR,
+    build_study_name,
     cv_groups,
     mo,
     run_model2,
@@ -1923,6 +2016,7 @@ def _(
     for _i, _run_settings in enumerate(MODEL2_TOTAL_RUN_SETTINGS):
         _total_family = _run_settings["total_family"]
         _use_exposure = _run_settings["use_exposure"]
+        _study_seed = seed + _i
         _study, _seconds = tuner.tune_total_component(
             train_age_group.X,
             train_age_group.Y,
@@ -1934,7 +2028,13 @@ def _(
             probability_component=MODEL2_FIXED_PROBABILITY_COMPONENT,
             y_min=PREDICTION_FLOOR,
             random_state=seed,
-            study_seed=seed + _i,
+            study_seed=_study_seed,
+            study_name=build_study_name(
+                "total_times_probability_coordinate_descent_total",
+                _run_settings,
+                tuner.objective_metric.name,
+                _study_seed,
+            ),
         )
         # The best total, read from the best trial's parameters by its type
         # (D25); the run keeps it, its transformer's name, its value, trial
@@ -1977,6 +2077,7 @@ def _(
     PREDICTION_FLOOR,
     PROBABILITY_FEATURE_TRANSFORMERS,
     ProbabilityComponent,
+    build_study_name,
     cv_groups,
     mo,
     run_model2,
@@ -1998,6 +2099,7 @@ def _(
     MODEL2_PROBABILITY_RUNS = []
     for _j, _run_settings in enumerate(MODEL2_PROBABILITY_RUN_SETTINGS):
         _probability_family = _run_settings["probability_family"]
+        _study_seed = seed + len(MODEL2_TOTAL_RUN_SETTINGS) + _j
         _study, _seconds = tuner.tune_probability_component(
             train_age_group.X,
             train_age_group.Y,
@@ -2010,7 +2112,13 @@ def _(
             ],
             y_min=PREDICTION_FLOOR,
             random_state=seed,
-            study_seed=seed + len(MODEL2_TOTAL_RUN_SETTINGS) + _j,
+            study_seed=_study_seed,
+            study_name=build_study_name(
+                "total_times_probability_coordinate_descent_probability",
+                _run_settings,
+                tuner.objective_metric.name,
+                _study_seed,
+            ),
         )
         _probability_component = ProbabilityComponent.from_params(
             _study.best_params,
