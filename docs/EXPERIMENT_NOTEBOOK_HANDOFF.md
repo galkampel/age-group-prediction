@@ -7,9 +7,11 @@
   and on GitHub.
 - **PR 5 is on `feat/bootstrap-replicates`**, created by the user from `main` at `30bd4f7`; its
   first commit is this handoff's update.
-- **5.1 is planned and approved** (2026-11-06; the cache plan's 5.1 holds the plan): a rename
-  only, `scoring.evaluate` → `compute_metrics`. Not started.
-- The notebook's md5 is `91d1c96cdd227a137163cd072235c64a`. The user's real study cache is
+- **5.1 is done** (2026-11-06; the cache plan's 5.1 Done note): a rename only,
+  `scoring.evaluate` → `compute_metrics`. Check C's pickle `check_c_5_1.pkl` is in
+  `/private/tmp/claude-501/-Users-galkampel-Desktop-Projects-age-group-prediction/6399f8d3-96a2-49b3-a707-91be30c7b8b4/scratchpad`
+  (with `checks/`: `run_5_1.sh`, `run_guide_blocks.py`). Next: 5.2.
+- The notebook's md5 is `6edc34aa4cc93d05fcf34b106515dd9c`. The user's real study cache is
   `studies/` in the repo (git-ignored; 25 studies at 100 trials): a click loads it in about 7 min.
 
 
@@ -124,7 +126,7 @@ git. Re-verify every fact here against the code of the day.
      2) and `CI_BOUND_NAMES` (`lower` → `ci95_lower`, `upper` → `ci95_upper`), for both models;
    - **the refit and the scores** (Model 1's loop and Model 2's pairs): the best model fitted
      on the training part; per dataset (`_dataset_name`, `_dataset`: train, val) predicted once,
-     `_dataset_scores = scoring.evaluate(...)`, `_dataset_intervals =
+     `_dataset_scores = compute_metrics(...)`, `_dataset_intervals =
      bootstrap_evaluator.evaluate(..., _dataset.groups, ...)` renamed, then joined: `scores` per
      dataset, cohort and metric, `score, mean, ci95_lower, ci95_upper`; one evaluator, so every
      model's replicates are the same rows (D30, M14);
@@ -160,8 +162,8 @@ git. Re-verify every fact here against the code of the day.
   tuner (a tune method per model, and `tune_total_component` / `tune_probability_component`;
   `storage_dir` and each call's `study_name` store a study in Optuna's journal file and load it
   when complete, PR 4), aggregation. No `fit_and_score` (D30).
-- `scoring`: the six metric functions, `Metric`, and `evaluate(y_true, y_pred, metrics,
-  cohorts="composite")`.
+- `scoring`: the six metric functions, `Metric`, and `compute_metrics(y_true, y_pred,
+  metrics, cohorts="composite")` (D35, 5.1; `evaluate` until then).
 - [`inspection`](MODEL_INSPECTION.md): `BootstrapEvaluator.evaluate(y_true, y_pred, groups=None,
   *, metrics, cohorts="composite")` (the caller predicts; the interval alone),
   `PermutationImportance`, `ShapExplainer`.
@@ -774,8 +776,8 @@ constructor, data in the call; fitting and evaluating as separate steps; no priv
 
 **Status (2026-11-06, PR 4 merged as #22, `30bd4f7`):**
 - PR 5 is on `feat/bootstrap-replicates` from `main` at `30bd4f7`; its first commit is this
-  handoff's update. The notebook's md5 is `91d1c96cdd227a137163cd072235c64a`.
-- 5.1 is planned and approved (the cache plan's 5.1, "Planned"); nothing implemented yet.
+  handoff's update. The notebook's md5 is `6edc34aa4cc93d05fcf34b106515dd9c`.
+- 5.1 is done (the cache plan's 5.1 Done note); 5.2 is next.
 
 Next, one step per approval, each stopped with a file-by-file summary, the checks, the
 notebook's md5 and the commit message:

@@ -706,7 +706,8 @@ rest of this plan is history.
   takes the predictions, `(y_true, y_pred, groups=None, *, metrics, cohorts="composite")`,
   scores each replicate with `scoring.evaluate`, and returns the interval alone (`mean`,
   `lower`, `upper` per (cohort, metric)); the point estimate is `scoring.evaluate`'s. A run
-  record keeps `train_scores` and `val_scores` in place of `score_table`.
+  record keeps `train_scores` and `val_scores` in place of `score_table`. (`scoring.evaluate`
+  renamed `compute_metrics` in the cache plan's 5.1, D35.)
 
 D31–D39 were decided on 2026-11-04 in [the cache plan](NOTEBOOK_CACHE_EVALUATION_PLAN.md) §0,
 which holds their evidence; the two that revise this plan:

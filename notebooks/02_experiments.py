@@ -705,7 +705,7 @@ def _():
     )
     from age_group_prediction.scoring import (
         Metric,
-        evaluate,
+        compute_metrics,
         mean_absolute_error_loss,
         mean_bias_error,
         mean_poisson_deviance_loss,
@@ -727,8 +727,8 @@ def _():
         ShapExplainer,
         build_independent_cohorts_model,
         build_total_times_probability_model,
+        compute_metrics,
         dataclasses,
-        evaluate,
         go,
         make_subplots,
         mean_absolute_error_loss,
@@ -945,9 +945,9 @@ def _(
     PREDICTION_FLOOR,
     build_independent_cohorts_model,
     build_study_name,
+    compute_metrics,
     cv_groups,
     dataclasses,
-    evaluate,
     mo,
     pd,
     run_eda,
@@ -1033,7 +1033,7 @@ def _(
         ).fit(train_age_group.X, train_age_group.Y, exposure=train_age_group.exposure)
         # Every metric on validation, per cohort and for the composite; the
         # study's value (in its own objective) and its seconds on each row.
-        _scores_by_objective[_objective.name] = evaluate(
+        _scores_by_objective[_objective.name] = compute_metrics(
             val_age_group.Y,
             _model.predict(val_age_group.X, exposure=val_age_group.exposure),
             METRICS,
@@ -1058,9 +1058,9 @@ def _(
     ProbabilityComponent,
     build_study_name,
     build_total_times_probability_model,
+    compute_metrics,
     cv_groups,
     dataclasses,
-    evaluate,
     mo,
     pd,
     run_eda,
@@ -1197,7 +1197,7 @@ def _(
         # Every metric on validation, per cohort and for the composite; the
         # pair's value (in its own objective) and the two studies' seconds on
         # each row.
-        _scores_by_objective[_objective.name] = evaluate(
+        _scores_by_objective[_objective.name] = compute_metrics(
             val_age_group.Y,
             _model.predict(val_age_group.X, exposure=val_age_group.exposure),
             METRICS,
@@ -1789,8 +1789,8 @@ def _(
     bootstrap_evaluator,
     build_independent_cohorts_model,
     build_study_name,
+    compute_metrics,
     cv_groups,
-    evaluate,
     mo,
     pd,
     run_model1,
@@ -1856,7 +1856,7 @@ def _(
             ("val", val_age_group),
         ):
             _y_pred = _model.predict(_dataset.X, exposure=_dataset.exposure)
-            _dataset_scores = evaluate(
+            _dataset_scores = compute_metrics(
                 _dataset.Y, _y_pred, METRICS, cohorts=[*COHORTS, "composite"]
             ).stack()
             _dataset_intervals = bootstrap_evaluator.evaluate(
@@ -2161,8 +2161,8 @@ def _(
     PREDICTION_FLOOR,
     bootstrap_evaluator,
     build_total_times_probability_model,
+    compute_metrics,
     cv_groups,
-    evaluate,
     pd,
     seed,
     train_age_group,
@@ -2200,7 +2200,7 @@ def _(
                 ("val", val_age_group),
             ):
                 _y_pred = _model.predict(_dataset.X, exposure=_dataset.exposure)
-                _dataset_scores = evaluate(
+                _dataset_scores = compute_metrics(
                     _dataset.Y, _y_pred, METRICS, cohorts=[*COHORTS, "composite"]
                 ).stack()
                 _dataset_intervals = bootstrap_evaluator.evaluate(

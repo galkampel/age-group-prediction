@@ -34,8 +34,8 @@ class BootstrapEvaluator:
     The metrics and cohorts are named per call, as ``cross_validate``'s
     ``scoring``. Each replicate draws the evaluation rows with replacement, or
     whole groups when ``groups`` is given, and scores the fixed predictions on
-    them with every metric for every cohort (``scoring.evaluate``). Scores are
-    reported raw, in each metric's own direction.
+    them with every metric for every cohort (``scoring.compute_metrics``).
+    Scores are reported raw, in each metric's own direction.
     """
 
     n_resamples: Annotated[int, Field(ge=1)]
@@ -56,10 +56,10 @@ class BootstrapEvaluator:
         ``y_true``, ``y_pred`` and ``groups`` are paired by position.
         ``groups`` holds one label per row (e.g. the neighborhood), and each
         replicate draws as many groups as there are, keeping all their rows.
-        ``cohorts`` as in ``scoring.evaluate``: column names of ``y_true``,
-        each scored alone, or ``"composite"``. Returns one row per (cohort,
-        metric): the replicates' ``mean``, ``lower`` and ``upper``; the score
-        on the rows themselves is ``scoring.evaluate``'s.
+        ``cohorts`` as in ``scoring.compute_metrics``: column names of
+        ``y_true``, each scored alone, or ``"composite"``. Returns one row per
+        (cohort, metric): the replicates' ``mean``, ``lower`` and ``upper``;
+        the score on the rows themselves is ``scoring.compute_metrics``'s.
         """
         names = [metric.name for metric in metrics]
         # An empty frame, or two rows under one label, would pass silently.
@@ -99,7 +99,7 @@ class BootstrapEvaluator:
             # Every cohort and metric on the same rows, so their intervals are
             # paired.
             replicate_scores.append(
-                scoring.evaluate(y_drawn, y_pred_drawn, metrics, cohorts).stack()
+                scoring.compute_metrics(y_drawn, y_pred_drawn, metrics, cohorts).stack()
             )
         # One column per (cohort, metric), in the stacked table's order.
         labels = replicate_scores[0].index

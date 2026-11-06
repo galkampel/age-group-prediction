@@ -300,7 +300,7 @@ processes).
 cohorts="composite")` takes the fitted model's predictions, made **once** by
 the caller, then draws `n_resamples` replicates of the evaluation rows with
 replacement and recomputes every metric on each, for every cohort asked for
-(`scoring.evaluate`'s rule: a column of `y_true`, scored alone, or
+(`scoring.compute_metrics`'s rule: a column of `y_true`, scored alone, or
 `"composite"`, the whole matrix). The evaluator holds the resampling design
 only; the metrics and cohorts are named per call, as `cross_validate`'s
 `scoring`, and all of them score the same replicates, so their intervals are
@@ -308,7 +308,7 @@ paired. The result has one row per (cohort, metric): `mean`, the mean of the
 replicate scores, and `lower` and `upper`, their `alpha/2` and
 `1 - alpha/2` quantiles (`np.quantile`, so the 95 % interval at the default
 `alpha=0.05`). The score on the unresampled rows, the interval's point
-estimate, is `scoring.evaluate(y_true, y_pred, metrics, cohorts)`'s. The interval is **conditional on the fitted model**: nothing is
+estimate, is `scoring.compute_metrics(y_true, y_pred, metrics, cohorts)`'s. The interval is **conditional on the fitted model**: nothing is
 refit, so it measures how much the score depends on which rows were held out,
 not how much the model would change on other training data.
 

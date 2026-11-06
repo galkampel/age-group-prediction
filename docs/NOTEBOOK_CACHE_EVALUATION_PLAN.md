@@ -12,7 +12,7 @@ left for PR 6. The notebook's md5 is `95261326e5368bd451607d083a5ab366`. PR 3 cl
 as #21 (`0c94f16` on `main`); PR 4's branch `feat/study-cache` created from it. **Updated
 2026-11-06:** 4.1 done (§3, the budget 100 / 10); the notebook's md5 is
 `78b08bd7936dba06d65f18bd52da5cbb`. 4.2 done (the tuner's journal storage: a partial study
-started fresh, the seconds the study's run). **Updated 2026-11-06 (paused):** 4.3 implemented, uncommitted; its Check C was running, the clicks remain (the handoff's §2 "PR 4"); the notebook's md5 `3ac16ed8995efa3899a6b37746cc99d4`. **Updated 2026-11-06:** 4.3 done (§3): the user's renames kept, a stored study loaded without writing to its file (a fix in `src`), the two clicks; the notebook's md5 `91d1c96cdd227a137163cd072235c64a`. **Updated 2026-11-06:** PR 4 merged as #22 (`30bd4f7` on `main`); PR 5's branch `feat/bootstrap-replicates` created from it; 5.1 planned and approved. **Next: 5.1 (§4).**
+started fresh, the seconds the study's run). **Updated 2026-11-06 (paused):** 4.3 implemented, uncommitted; its Check C was running, the clicks remain (the handoff's §2 "PR 4"); the notebook's md5 `3ac16ed8995efa3899a6b37746cc99d4`. **Updated 2026-11-06:** 4.3 done (§3): the user's renames kept, a stored study loaded without writing to its file (a fix in `src`), the two clicks; the notebook's md5 `91d1c96cdd227a137163cd072235c64a`. **Updated 2026-11-06:** PR 4 merged as #22 (`30bd4f7` on `main`); PR 5's branch `feat/bootstrap-replicates` created from it; 5.1 planned and approved. **Updated 2026-11-06:** 5.1 done (§4, the rename); the notebook's md5 `6edc34aa4cc93d05fcf34b106515dd9c`. **Next: 5.2 (§4).**
 
 The companion docs: [EXPERIMENT_NOTEBOOK_HANDOFF.md](EXPERIMENT_NOTEBOOK_HANDOFF.md) (the state,
 how to work, the checks, the traps, iCloud), [NOTEBOOK_METRICS_LOOP_EDA_PLAN.md](NOTEBOOK_METRICS_LOOP_EDA_PLAN.md)
@@ -351,7 +351,23 @@ No code change (D34). One commit for the docs, one more if the review's findings
 
 ## 4. PR 5: the bootstrap replicates and the comparison metric (`feat/bootstrap-replicates`)
 
-### [ ] 5.1 `scoring.evaluate` → `compute_metrics` (`src`, tests, docs, notebook)
+### [x] 5.1 `scoring.evaluate` → `compute_metrics` (`src`, tests, docs, notebook)
+- **Done (2026-11-06).** As planned; every line number held on `466534e`. One addition: the
+  two test names `test_evaluate_*` → `test_compute_metrics_*` (the word-bounded grep missed
+  them; one signature wrapped to `ruff format`'s hunk). Docstrings rewrapped where the name
+  lengthened a line. Checks:
+  - the grep finds only the bootstrap's own `evaluate`, the old stack and history;
+    `hasattr(scoring, "evaluate")` False;
+  - `test_scoring.py` and `test_inspection_bootstrap.py` 110 passed under `-W error`; the
+    non-slow suite 1392 passed, 1 skipped, 1 xfailed, 19 deselected; mypy 28 files, no issue;
+  - HYPERPARAMETER_TUNING.md's nine output blocks equal;
+  - Check A: the notebook test 14 passed, ruff 15, the user's two format hunks, `marimo check`
+    no issue; Check B (`compute_metrics` defined, `evaluate` not);
+  - Check C (399 s, a fresh copy): every assertion; every frame and record equal to
+    `check_c_4_3.pkl` (`seconds` dropped), both figures' JSON identical. Its pickle
+    `check_c_5_1.pkl` (this session's scratchpad) is 5.2's reference.
+
+  The notebook's md5 is `6edc34aa4cc93d05fcf34b106515dd9c`.
 - **Planned and approved (2026-11-06; the line numbers read on `383ee53` by grep, re-verify
   them).** A rename only: no behaviour, signature or output changes; no alias.
   - `scoring.py`: `def evaluate` (:205) → `compute_metrics`, `__all__` (:41, kept sorted), the

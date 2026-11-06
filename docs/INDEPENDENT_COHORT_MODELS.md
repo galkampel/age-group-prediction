@@ -322,7 +322,7 @@ A model fits and predicts; a caller scores the predictions by calling a `Metric`
 `metric(y_true, y_pred)`, which wraps a scoring function: scikit-learn's
 `mean_poisson_deviance`, `root_mean_squared_error`, `mean_absolute_error`, one of
 `scoring`'s functions, which also score the cohort matrix or, with `cohort=` (a column name
-of `y_true`), one cohort of it, or a custom one. `scoring.evaluate(y_true, y_pred, metrics,
+of `y_true`), one cohort of it, or a custom one. `scoring.compute_metrics(y_true, y_pred, metrics,
 cohorts)` scores several metrics for several cohorts and the composite at once. Build LightGBM with `n_jobs=1`
 while the old stack's tests still import torch: more OpenMP threads crash alongside it
 on macOS. LightGBM ignores `subsample` unless `subsample_freq >= 1` is set too.
