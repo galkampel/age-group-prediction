@@ -8,8 +8,9 @@ list of changes and their answers (§0). 3.3's checks already run: the non-slow 
 1 skipped, 1 xfailed, 19 deselected (7 warnings, the old stack's); mypy 28 files, no issue. The
 notebook's md5 is `676212a808f6c1f87f7926a58b3bffe6`. **Updated 2026-11-05:** 3.3 done (§2): the
 review found no correctness bug; its F2 fixed in `aa1e267`, F1 and F5 in 3.3b's docs, F3 and F4
-left for PR 6. The notebook's md5 is `95261326e5368bd451607d083a5ab366`. PR 3 closed. **Next:
-PR 4 from `main` after PR 3's merge, starting with 4.1 (§3).**
+left for PR 6. The notebook's md5 is `95261326e5368bd451607d083a5ab366`. PR 3 closed and merged
+as #21 (`0c94f16` on `main`); PR 4's branch `feat/study-cache` created from it. **Next: 4.1
+(§3).**
 
 The companion docs: [EXPERIMENT_NOTEBOOK_HANDOFF.md](EXPERIMENT_NOTEBOOK_HANDOFF.md) (the state,
 how to work, the checks, the traps, iCloud), [NOTEBOOK_METRICS_LOOP_EDA_PLAN.md](NOTEBOOK_METRICS_LOOP_EDA_PLAN.md)

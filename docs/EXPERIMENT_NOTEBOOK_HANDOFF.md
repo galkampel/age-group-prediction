@@ -18,8 +18,9 @@ The metrics plan's three PRs:
   merged into `main`;
 - PR 2, the runs in loops scored on every metric: merged as #20, squashed into `main` as
   `16773a5`;
-- PR 3, the objective EDA: on `feat/objective-eda`, created from `main` at `16773a5`, to be
-  squash-merged by the user.
+- PR 3, the objective EDA: merged as #21, squashed into `main` as `0c94f16`.
+
+PR 4 is on **`feat/study-cache`**, created from `main` at `0c94f16`.
 
 MLflow stays deferred; E11's final evaluation is the cache plan's PR 7.
 
@@ -33,7 +34,8 @@ The next session starts at §6.
 a new session on the user's additional changes; **updated** 2026-11-04 again after those changes
 were planned (§1's "For", §2b, §4, §6; the plan is NOTEBOOK_CACHE_EVALUATION_PLAN.md), for the
 session that does 3.3 and starts PR 4; **updated** 2026-11-05 at PR 3's close (3.3: the header,
-§2, §2b, §4, §5, §6), for the session that starts PR 4. The detailed history is in the metrics
+§2, §2b, §4, §5, §6), for the session that starts PR 4; **updated** 2026-11-05 after PR 3's
+merge (#21, `0c94f16`: the header, §2, §2b, §6), as `feat/study-cache`'s first commit. The detailed history is in the metrics
 plan (§2 M1–M14, §4 2.1–2.5, §5 3.1–3.4 and 3.3 with each
 sub-task's "Done" note), in [NOTEBOOK_TUNING_PLAN.md](NOTEBOOK_TUNING_PLAN.md) (§0 D1–D30) and in
 git. Re-verify every fact here against the code of the day.
@@ -152,14 +154,16 @@ git. Re-verify every fact here against the code of the day.
 
 ## 2. State (2026-11-05, end of PR 3)
 
-- **Branches, once the user has merged PR 3:**
-  - `main` holds PR 3 squashed (the PR's title with its number; read the number and the hash
-    from `git log --oneline -3 main`). Its content is identical to `feat/objective-eda`'s last
-    commit, 3.3b's docs commit, which carries this handoff.
-  - `feat/objective-eda` is deleted, locally and on GitHub (`git push -d origin
-    feat/objective-eda`, `git branch -d feat/objective-eda`).
-  - PR 4 goes on `feat/study-cache`, which the user creates from `main`.
-  - The user commits, pushes and merges.
+- **Branches (2026-11-05):**
+  - PR 3 is merged as **#21**, squashed into `main` as **`0c94f16`** (`feat(notebook): the
+    objective EDA; each tuned run keeps its best model and its bootstrap intervals (#21)`). Its
+    content is identical to the branch's last commit `92dd12c`, 3.3b's docs commit (`git diff`
+    empty).
+  - `feat/objective-eda` is deleted, locally and on GitHub.
+  - **`feat/study-cache`** (PR 4) was created from `main` at `0c94f16`; its first commit is this
+    handoff's update.
+  - The user commits, pushes and merges. A squash-merged branch is deleted with
+    `git branch -D` (`-d` refuses: git does not see it as merged).
 - **The notebook's md5 at PR 3's close:** `95261326e5368bd451607d083a5ab366`.
 - **Checks at the end of PR 3** (2.x's numbers below are PR 2's):
   - the non-slow suite 1387 passed, 1 skipped, 1 xfailed, 19 deselected (7 warnings, the old
@@ -303,7 +307,7 @@ results:
   | `b7da88d` | the handoff for the session on the user's additional changes |
   | `a006995` | the plan for PRs 4–7, the docs index, this handoff: for the session that does 3.3 |
   | `aa1e267` | 3.3a the review's F2: the "probability step" label once (subject typed `ix(notebook): …`) |
-  | (3.3b) | PR 3 closed: the deviance kept; F1, F5; the stale sections; this handoff for PR 4 |
+  | `92dd12c` | 3.3b PR 3 closed: the deviance kept; F1, F5; the stale sections; this handoff for PR 4 |
 
 - **3.3 (2026-11-05):** no code change (D34). The review (3.3a), an independent subagent over
   `main..HEAD` at `a006995`, found no correctness bug and five findings, each reproduced twice:
@@ -669,9 +673,10 @@ constructor, data in the call; fitting and evaluating as separate steps; no priv
   bootstrap's 95% interval (3.4, `afcd6f9`).
 - 3.3 is done: the deviance stays the objective, and the review's findings are handled (§2b; F3
   and F4 are open, §5).
-- The last commit on `feat/objective-eda` is 3.3b's docs commit; the user opens the PR,
-  squash-merges it into `main` and deletes the branch.
+- PR 3 is merged as #21 (`0c94f16` on `main`); `feat/study-cache` was created from it, its
+  first commit this handoff's update (§2).
 - The notebook's md5 is `95261326e5368bd451607d083a5ab366`.
+- Nothing of PR 4 is implemented yet.
 
 Next, one step per approval. Each is planned in plan mode (the facts re-verified with read-only
 probes, design questions with evidence and a recommendation, the steps and the commit message in
@@ -715,10 +720,9 @@ docs/NOTEBOOK_TUNING_PLAN.md §0 (D1–D30) and the metrics plan's §2 M10–M14
 and 6 of notebooks/02_experiments.py, src/age_group_prediction/hyperparameter_tuning/cross_validation.py
 and tests/characterization/test_experiments_notebook.py.
 Verify the state first:
-- main holds PR 3 squash-merged (`git log --oneline -3 main`), and its content equals
-  feat/objective-eda's last commit (the 3.3b docs commit);
-- the branch is feat/study-cache, created by me from that main, with no commit of its own; if
-  it does not exist, stop and tell me;
+- main at 0c94f16 (PR 3, #21, squash-merged);
+- the branch feat/study-cache, HEAD my commit of this handoff's update on top of 0c94f16; if
+  it is uncommitted, stop and tell me;
 - the working tree clean, and the notebook's md5 95261326e5368bd451607d083a5ab366 via
   `cat notebooks/02_experiments.py | md5`;
 - no iCloud-offloaded files: `find .git src notebooks tests docs configs -flags +dataless -type f
