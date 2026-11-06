@@ -346,12 +346,12 @@ class CrossValidationTuner:
 
         With ``storage_dir``, the study is Optuna's journal file
         ``<storage_dir>/<study_name>.log``. A stored study of ``n_trials``
-        trials is loaded and runs no trial; its seconds are those stored when
-        it ran. A partial one (an interrupted run, or a study ended by an
-        error) is deleted and run again from its seed, since a resumed study
-        would draw differently from the seeded run. A stored study is found
-        by its name only: a change to the data, the folds, the search space
-        or the code is not detected.
+        trials is loaded, its file left unchanged, and runs no trial; its
+        seconds are those stored when it ran. A partial one (an interrupted
+        run, or a study ended by an error) is deleted and run again from its
+        seed, since a resumed study would draw differently from the seeded
+        run. A stored study is found by its name only: a change to the data,
+        the folds, the search space or the code is not detected.
         """
         storage = None
         if self.storage_dir is not None:
@@ -364,19 +364,21 @@ class CrossValidationTuner:
                 JournalFileBackend(str(self.storage_dir / f"{study_name}.log"))
             )
             if study_name in optuna.get_all_study_names(storage):
+                # load_study only reads the file; create_study with
+                # load_if_exists would append a create line to it.
                 stored = optuna.load_study(study_name=study_name, storage=storage)
                 if len(stored.trials) < self.n_trials:
                     # A partial study: run again from its seed.
                     optuna.delete_study(study_name=study_name, storage=storage)
+                else:
+                    return stored, stored.user_attrs["seconds"]
         study = optuna.create_study(
             storage=storage,
             sampler=TPESampler(seed=study_seed, n_startup_trials=self.n_startup_trials),
             study_name=study_name,
             direction=self.objective_metric.direction,
-            load_if_exists=True,
         )
-        if not study.trials:  # a new study; a stored one is complete
-            start = time.perf_counter()
-            study.optimize(objective, n_trials=self.n_trials, catch=(RuntimeError,))
-            study.set_user_attr("seconds", time.perf_counter() - start)
+        start = time.perf_counter()
+        study.optimize(objective, n_trials=self.n_trials, catch=(RuntimeError,))
+        study.set_user_attr("seconds", time.perf_counter() - start)
         return study, study.user_attrs["seconds"]

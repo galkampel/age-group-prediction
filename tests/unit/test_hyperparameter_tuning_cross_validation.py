@@ -482,8 +482,9 @@ def test_the_probability_study_scores_its_probabilities_with_the_fixed_total_com
 
 def test_a_stored_study_is_loaded_and_not_tuned_again(tmp_path: Path) -> None:
     # A second call with the same dir and name loads the study: no fold is
-    # scored again, and the trials and the seconds are the first call's. The
-    # dir does not exist yet, so the tuner creates it.
+    # scored again, the trials and the seconds are the first call's, and the
+    # file is left unchanged. The dir does not exist yet, so the tuner
+    # creates it.
     X, Y, exposure = _table()
     calls = itertools.count()
 
@@ -505,11 +506,13 @@ def test_a_stored_study_is_loaded_and_not_tuned_again(tmp_path: Path) -> None:
     assert sorted(path.name for path in storage_dir.iterdir()) == ["glm.log"]
     n_scored = TUNER.n_trials * CV.get_n_splits()
     assert next(calls) == n_scored
+    stored_bytes = (storage_dir / "glm.log").read_bytes()
 
     loaded, loaded_seconds = tuner.tune_independent_cohorts_model(
         X, Y, exposure, **settings
     )
     assert next(calls) == n_scored + 1
+    assert (storage_dir / "glm.log").read_bytes() == stored_bytes
     assert [(trial.params, trial.value) for trial in loaded.trials] == [
         (trial.params, trial.value) for trial in study.trials
     ]
