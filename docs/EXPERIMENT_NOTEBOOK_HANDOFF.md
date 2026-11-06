@@ -1,4 +1,15 @@
-# Handoff: the experiment notebook, PR 3 closed (the objective EDA); PR 4 next
+# Handoff: the experiment notebook, PR 4 (the study cache) done, to close
+
+**Status (2026-11-06, 4.3 done; the next session starts at §6):**
+- PR 4 is on `feat/study-cache`. The user committed 4.1 (`a16c218`, `feat(notebook): 100
+  trials, 10 at random`) and 4.2 (`3806c70`, `feat(tuning): a study is stored in a journal file
+  and loaded when complete`).
+- **4.3 is done** (two commits for the user: the loading fix in `src`, then the notebook's
+  cache): the notebook's tuner stores and loads every study; a loaded study's file is left
+  unchanged. §2's "PR 4" holds the checks and the clicks.
+- The notebook's md5 is `91d1c96cdd227a137163cd072235c64a` (4.2's
+  `78b08bd7936dba06d65f18bd52da5cbb`).
+
 
 **For:** the session that starts PR 4 of
 [NOTEBOOK_CACHE_EVALUATION_PLAN.md](NOTEBOOK_CACHE_EVALUATION_PLAN.md), the tuning budget and
@@ -47,7 +58,7 @@ git. Re-verify every fact here against the code of the day.
    seed 42 unless `simulation_seed` overrides it), the room shares, `X`, `Y` (three cohorts),
    the exposure (`n_apartments`), the groups (neighborhoods); the settings printed and hashed.
 2. **Settings:** `seed = 42`, `split_method = "random"`, `test_size = val_size = 0.2`,
-   `n_splits = 5`, `n_trials = 400`, `n_startup_trials = 20`, `n_resamples = 1000`,
+   `n_splits = 5`, `n_trials = 100`, `n_startup_trials = 10` (D31, PR 4), `n_resamples = 1000`,
    `n_repeats = 10`, `n_shap_rows = 100`, `n_shap_background = 50`. The sharing flags are run
    settings now (below), not experiment settings.
 3. **Split:** train 917 / validation 306 / test 306 rows (`AgeGroupDataset` per part), and
@@ -84,8 +95,11 @@ git. Re-verify every fact here against the code of the day.
      `COHORTS`, `PREDICTION_FLOOR`;
    - **the `tuner` cell** (in section 5): `CrossValidationTuner(cv=cv,
      objective_metric=POISSON_DEVIANCE, n_trials=n_trials, n_startup_trials=n_startup_trials,
-     n_jobs=n_splits, recorded_metrics=METRICS)`: every trial also records its cross-validated
-     score on the six metrics (M12);
+     n_jobs=n_splits, recorded_metrics=METRICS, storage_dir=studies_dir)`: every trial also
+     records its cross-validated score on the six metrics (M12); every study is stored in
+     `studies/<data, split, folds, seed, budget>/<step>__<run settings>__objective=…__seed=….log`
+     and loaded by a later click (D33, PR 4: `build_study_name` in the same cell; a study run in
+     sections 5 and 6 is stored once; delete a file to tune its study again);
    - **Model 1:** `MODEL1_RUN_SETTINGS` (8 entries: 4 count families × exposure on / off, each
      with `share_hyperparams=True`, `share_feature_transformer=False`), a button (marimo's
      clickable control; the cells behind it run only when it is clicked), one loop cell
@@ -140,8 +154,9 @@ git. Re-verify every fact here against the code of the day.
 **The packages it uses**, each with its guide:
 - [`hyperparameter_tuning`](HYPERPARAMETER_TUNING.md): records, search spaces, builders (the
   joint suggest functions and `suggest_count_component` / `suggest_probability_component`), the
-  tuner (a tune method per model, and `tune_total_component` / `tune_probability_component`),
-  aggregation. No `fit_and_score` (D30).
+  tuner (a tune method per model, and `tune_total_component` / `tune_probability_component`;
+  `storage_dir` and each call's `study_name` store a study in Optuna's journal file and load it
+  when complete, PR 4), aggregation. No `fit_and_score` (D30).
 - `scoring`: the six metric functions, `Metric`, and `evaluate(y_true, y_pred, metrics,
   cohorts="composite")`.
 - [`inspection`](MODEL_INSPECTION.md): `BootstrapEvaluator.evaluate(y_true, y_pred, groups=None,
@@ -152,7 +167,74 @@ git. Re-verify every fact here against the code of the day.
 - [`splitting`](SPLITTING.md), `feature_engineering` ([FEATURE_TRANSFORMATIONS.md](FEATURE_TRANSFORMATIONS.md)).
   MLflow is not used yet; the old `tracking/` package belongs to the old stack.
 
-## 2. State (2026-11-05, end of PR 3)
+## 2. State
+
+### PR 4 (2026-11-06, in progress)
+
+- **Commits on `feat/study-cache`** (from `main` at `0c94f16`):
+
+  | commit | sub-task |
+  |---|---|
+  | `9662010` | the handoff after PR #21's merge (the branch's first commit) |
+  | `a16c218` | 4.1 the budget: `n_trials = 100`, `n_startup_trials = 10` (D31, D32) |
+  | `3806c70` | 4.2 `CrossValidationTuner.storage_dir` and each tune method's `study_name` |
+
+- **4.1's checks:** Check A, B; Check C (410 s) equal to `check_c_3_3_fix.pkl` (`check_c_4_1.pkl`).
+- **4.2** (the user's answers, the cache plan's 4.2):
+  - a partial study file is deleted and rerun from its seed (a resumed study is not the seeded
+    run);
+  - `seconds` is the study's run, stored in the study and returned on load;
+  - a loaded study skips `optimize` by an explicit branch;
+  - no save switch: the cache is always used.
+
+  Its checks: the module 21 passed under `-W error`; the non-slow suite 1391 passed, 1 skipped,
+  1 xfailed, 19 deselected; mypy 28 files; three mutations caught; two 100-trial studies load
+  in 0.02–0.03 s; Check C (460 s) equal to 4.1's (`check_c_4_2b.pkl`).
+- **4.3, done** (the cache plan's 4.3 has the design, the user's answers and the Done note). The
+  working tree changes:
+  - `notebooks/02_experiments.py`:
+    - section 1's two cells export `project_root` and `config_hash`;
+    - the tuner cell builds `studies_dir` (`studies/data=<hash8>__split_method=…__test_size=…__val_size=…__n_splits=…__seed=…__n_trials=…__n_startup_trials=…`),
+      passes `storage_dir=studies_dir`, defines `build_study_name(step, run_settings,
+      objective_name, study_seed)` and shows the directory;
+    - every tune call passes `study_name`: steps `independent_cohorts`,
+      `total_times_probability_coordinate_descent_total`,
+      `total_times_probability_coordinate_descent_probability` (the user's renames of
+      `name_study`, `model1`, `model2_coordinate_descent_*`). The EDA's Model 1 run settings are a
+      dict in section 6's key order, so the two studies both sections run are stored once;
+    - section 5's text (a storage paragraph) and section 6's (one sentence);
+    - the EDA's two figure cells end in a bare `return` (marimo's trim, kept by the user);
+  - `.gitignore`: `studies/`;
+  - `src/.../hyperparameter_tuning/cross_validation.py`: a complete stored study is opened with
+    `load_study` (read only) and returned; `create_study` only creates (the first Check C found
+    `create_study(load_if_exists=True)` appending a line to every loaded file);
+  - `tests/unit/test_hyperparameter_tuning_cross_validation.py`: the load test checks the file's
+    bytes;
+  - `tests/characterization/test_experiments_notebook.py`:
+    `test_a_study_is_named_by_the_settings_that_shape_it`;
+  - `docs/HYPERPARAMETER_TUNING.md` §6: the notebook's names, the read-only load;
+  - `docs/NOTEBOOK_CACHE_EVALUATION_PLAN.md`: 4.3 ticked with its Done note;
+  - this handoff.
+- **4.3's checks:** the tuning module 21 passed under `-W error`, two mutations caught; the
+  non-slow suite 1392 passed, 1 skipped, 1 xfailed, 19 deselected; mypy 28 files; Check A (the
+  notebook test 14, ruff 15, the two hunks, `marimo check`); Check B; Check C twice on one copy
+  (435 s, then 398 s loading: every frame equal to 4.2's run, then to the first with `seconds`;
+  26 files, unchanged by the load).
+- **The 100-trial clicks** (the real notebook, `PYTHONWARNINGS=error`): the first tuned and
+  stored 25 studies (8.5 MiB; 27 tune calls, two shared by the EDA and section 6) in 1237 s, no
+  failed trial; the second loaded them in 409 s (refits, bootstraps, inspection), every frame
+  equal with `seconds`, the files unchanged. Best on validation: Model 1 `lgbm_poisson`, exposure
+  on, val 2.1296 (cv 2.1402); Model 2 `lgbm_gaussian+logistic`, exposure on, val 2.1031 (cv
+  2.0776). The user's real cache is `studies/` in the repo (git-ignored).
+- **The scripts of this session** (if the scratchpad survived, copy from here first):
+  `/private/tmp/claude-501/-Users-galkampel-Desktop-Projects-age-group-prediction/6f1d463f-a666-4a6a-be29-7ef29b80079c/scratchpad`:
+  `checks/` (`make_copy.py` restores the two figure returns in the copy; `check_cache.py` with
+  the new names; `run_all_4_3.sh`, `run_4_3.sh`, `run_clicks.sh`, `run_click.py`,
+  `list_studies.py`, `compare_clicks.py`), the pickles `check_c_4_3.pkl` (4.3's run: the
+  reference for 5.1), `check_c_4_3_loaded.pkl`, `click_first.pkl`, `click_second.pkl`.
+
+### PR 3 (2026-11-05, closed)
+
 
 - **Branches (2026-11-05):**
   - PR 3 is merged as **#21**, squashed into `main` as **`0c94f16`** (`feat(notebook): the
@@ -390,7 +472,7 @@ and the metrics plan §2 (M1–M9); a later one supersedes an earlier one where 
   are families; the exposure a run setting, both arms. D7, D19: the plain mean of the folds, a
   univariate `TPESampler(seed)`, `catch=(RuntimeError,)`; no pruning, no other parallel place.
 - D9: an aggregator combines the fold scores, `Mean` by default. D20: `n_trials = 400`,
-  `n_startup_trials = 20`; never decrease `n_trials`; all runs kept.
+  `n_startup_trials = 20`; all runs kept (the budget superseded by D31: 100 / 10).
 - D21–D22: the package holds the mechanism, the notebook the experiment; `BootstrapEvaluator`
   holds the resampling design and takes the metrics per call. D24: `replication_method` fixed at
   `"weighted"`. D26: `CrossValidationTuner` with a named tune method per model.
@@ -450,18 +532,20 @@ md5, the commit message. Tick the sub-task and update the status lines.
   does not name, and ask.
 - **marimo's editor trims each cell's `return`** to the names other cells read when the user
   saves: ruff jumps to about 31 findings. The user has chosen to have HEAD's returns restored,
-  after seeing the diff.
+  after seeing the diff; in 4.3 the user kept two such bare `return`s (the EDA's two figure
+  cells: `eda_figures`, `eda_metric_figures` are no longer exported), and Check C's copy
+  restores them (`make_copy.py`) so it still reads the figures.
 - **Format new cells and lines to `ruff format`'s output; never format the whole file** (the
   user's two hunks). Write new cells in the scratchpad, format each on its own, splice them in;
   for an edited line, apply exactly the hunk `ruff format --diff` prints.
 - No new ruff finding. A cell lists every notebook name it uses as a parameter, sorted.
 
 **The checks:**
-- **Check A:** the notebook test, ruff (14 since 3.4: 12 PLR1711, a B018, a RUF059; none new), the
+- **Check A:** the notebook test, ruff (15 since 4.3: 13 PLR1711, a B018, a RUF059; none new), the
   format diff (the two hunks), `marimo check` (no issue since the user removed the empty cell).
 - **Check B:** the names a script run defines (`app.run()`'s defs); nothing fitted.
 - **Check C:** the clicked run on a copy. Build `<scratch>/project/notebooks/02_experiments.py`
-  from the notebook with the line `    n_trials = 400` replaced by `    n_trials = 3` (by line),
+  from the notebook with the line `    n_trials = 100` replaced by `    n_trials = 3` (by line),
   and each of the 8 lines `            "share_hyperparams": True,` (in `MODEL1_RUN_SETTINGS`)
   replaced by `False` (assert both counts); make `<scratch>/project/configs` a symlink to the
   repo's `configs`; run it with `marimo.ui.run_button` patched to a clicked value,
@@ -504,6 +588,17 @@ md5, the commit message. Tick the sub-task and update the status lines.
   none. **For PR 4's first change,** the reference is 3.3's run of `aa1e267`,
   `check_c_3_3_fix.pkl` (every frame and record equal to 3.4's `check_c_3_4b.pkl`); if it is
   gone, run Check C on HEAD before the first edit and keep that pickle.
+- **The scripts of PR 4's session (2026-11-06, the latest copy;** if it survived, copy from
+  here first), in `/private/tmp/claude-501/-Users-galkampel-Desktop-Projects-age-group-prediction/26bc3522-aa12-45fe-b71e-3e2c785cc628/scratchpad`:
+  - `checks/`: 3.3's scripts with `make_copy.py` matching `    n_trials = 100`; `run_check_c.sh`
+    with `S=` this scratchpad; `run_4_1.sh` / `run_4_2.sh` (Check A, B, C and the comparison);
+    `run_4_3.sh` (Check A, B, then Check C twice on one copy); `check_cache.py` (the stored
+    studies' names, computed independently); `compare_with_seconds.py`; `run_click.py` (the
+    real notebook's click); `mutate.py` (4.2's mutations on `mut/`);
+  - the pickles `check_c_3_1l.pkl`, `check_c_3_4_first.pkl` (`check_c.py`'s references),
+    `check_c_3_3_fix.pkl`, `check_c_4_1.pkl`, `check_c_4_2.pkl`, `check_c_4_2b.pkl` (4.2's
+    final run: the reference for 4.3), each with its figures' JSON;
+  - `probe_load_4_2.py` (the load-time probe).
 - **The scripts of the 3.3 session (2026-11-05, the latest copy;** if it survived, copy from
   here first), in
   `/private/tmp/claude-501/-Users-galkampel-Desktop-Projects-age-group-prediction/99f2beed-010f-4e31-a210-84ca1344c999/scratchpad`:
@@ -667,73 +762,48 @@ constructor, data in the call; fitting and evaluating as separate steps; no priv
 
 ## 6. Next, and the prompt
 
-**Status (2026-11-05, PR 3 closed):**
-- PR 3's EDA is built (3.1a–3.1l) and read (3.2, 3.2b).
-- Section 6 keeps each run's best model, its transformers' names and its scores with the
-  bootstrap's 95% interval (3.4, `afcd6f9`).
-- 3.3 is done: the deviance stays the objective, and the review's findings are handled (§2b; F3
-  and F4 are open, §5).
-- PR 3 is merged as #21 (`0c94f16` on `main`); `feat/study-cache` was created from it, its
-  first commit this handoff's update (§2).
-- The notebook's md5 is `95261326e5368bd451607d083a5ab366`.
-- Nothing of PR 4 is implemented yet.
+**Status (2026-11-06, 4.3 done):**
+- PR 4: 4.1 (`a16c218`) and 4.2 (`3806c70`) committed; 4.3 done, for the user's two commits
+  (§2's "PR 4"). The notebook's md5 is `91d1c96cdd227a137163cd072235c64a`.
 
-Next, one step per approval. Each is planned in plan mode (the facts re-verified with read-only
-probes, design questions with evidence and a recommendation, the steps and the commit message in
-the chat) and stopped with a file-by-file summary, the checks, the notebook's md5 and the commit
-message:
-1. **PR 4 from `main`** (`feat/study-cache`, created by the user; NOTEBOOK_CACHE_EVALUATION_PLAN.md
-   §3), in three steps:
-   - **4.1 the budget:** `n_trials = 100`, `n_startup_trials = 10` in section 2 (D31); section 6's
-     text; the notebook test's pins (`tests/characterization/test_experiments_notebook.py`,
-     `"n_trials": "400"`, `"n_startup_trials": "20"` today); `make_copy.py` replacing
-     `    n_trials = 100\n`; D31 and D32 in NOTEBOOK_TUNING_PLAN.md §0. Check C against
-     `check_c_3_3_fix.pkl`: every frame equal (D20: a 3-trial study draws the same points at a
-     random start of 10 or 20).
-   - **4.2 the tuner's storage:** `src`, Optuna's journal file, with its tests.
-   - **4.3 the notebook's runs through the cache.**
-2. **Then PRs 5–7**, each sub-task as the plan writes it:
-   - a change to the runs, the search or the `tuner` cell re-records Check C's baselines (§2);
-   - the reference-run comparison (§4) holds for what must not change;
-   - F3 and F4 (§5) belong to PR 6.
-3. **Deferred, unchanged:** the MLflow runs (the D1e guard first) and D4's comparison table.
-   E11 is PR 7.
+Next, one step per approval, each stopped with a file-by-file summary, the checks, the
+notebook's md5 and the commit message:
+1. **Close PR 4:** the PR's title and description in the chat (no "Generated with Claude
+   Code"), the squash-merge text; after the merge, the user creates `feat/bootstrap-replicates`
+   from `main`.
+2. **PR 5** (the cache plan's §4, 5.1–5.4): 5.1 `scoring.evaluate` → `compute_metrics` (planned
+   and approved 2026-11-06: `src`, `test_scoring.py`, the notebook's import cell, four
+   parameter lists and four calls, five current guides, a note on D30, Check C against
+   `check_c_4_3.pkl`); then the bootstrap's replicates, `n_resamples` measured, RMSE compares.
+3. **Then PRs 6–7.** F3 and F4 (§5) belong to PR 6. MLflow and D4 stay deferred.
 
 The user's preferences:
 - plan docs in `docs/`, split into sub-tasks validated one at a time;
-- each sub-task planned first (the facts re-verified with read-only probes, design questions
-  with evidence and a recommendation, the steps and the commit message in the chat), then
+- each sub-task planned first (the facts re-verified with read-only probes; design questions
+  with evidence and a recommendation, their context explained in the chat before asking), then
   implemented after approval;
 - each sub-task stopped with a file-by-file summary, the checks, the notebook's md5 and the
   commit message;
-- marimo's UI terms explained, and the context of a design question explained in the chat
-  before asking it (the user could not follow a question about F2 asked without it);
-- the implementation kept simple, with meaningful names (no `name` / `scores` placeholders);
+- marimo's UI terms explained;
+- the implementation kept simple, with meaningful names;
 - the user commits.
 
 **The prompt for the next session:**
 
 ```text
-Read docs/NOTEBOOK_CACHE_EVALUATION_PLAN.md in full, then docs/EXPERIMENT_NOTEBOOK_HANDOFF.md in
-full (§1, §2, §2b, §3, §4's checks, traps and iCloud notes, §5, and §6 first), then
-docs/NOTEBOOK_TUNING_PLAN.md §0 (D1–D30) and the metrics plan's §2 M10–M14, then sections 2, 5
-and 6 of notebooks/02_experiments.py, src/age_group_prediction/hyperparameter_tuning/cross_validation.py
-and tests/characterization/test_experiments_notebook.py.
-Verify the state first:
-- main at 0c94f16 (PR 3, #21, squash-merged);
-- the branch feat/study-cache, HEAD my commit of this handoff's update on top of 0c94f16; if
-  it is uncommitted, stop and tell me;
-- the working tree clean, and the notebook's md5 95261326e5368bd451607d083a5ab366 via
-  `cat notebooks/02_experiments.py | md5`;
-- no iCloud-offloaded files: `find .git src notebooks tests docs configs -flags +dataless -type f
-  | grep -vc __pycache__` is 0.
-If anything differs, stop and show me the diff. Then do the plan's §3 (PR 4), one sub-task per
-approval, starting with 4.1 the budget, then 4.2 and 4.3. Plan each sub-task in plan mode
-(re-verify the facts with read-only probes, design questions with evidence and a recommendation,
-the context explained in the chat, the steps and the commit message in the chat) and wait for my
-approval; stop after each with a file-by-file summary, the checks (§4, against 3.3's run of
-aa1e267, check_c_3_3_fix.pkl, as the reference), the notebook's md5 and the commit message. Copy
-the check scripts and pickles from the 3.3 session's scratchpad (handoff §4) or rewrite them
-from §4. Keep the implementation simple. I commit myself: never commit, no Co-Authored-By line,
-no "Generated with Claude Code" in PR text, never git checkout/stash/reset/mv.
+Read docs/EXPERIMENT_NOTEBOOK_HANDOFF.md in full (the status at the top, §2's "PR 4" block,
+§4's checks, traps, iCloud notes and the latest scripts, §6 first), then
+docs/NOTEBOOK_CACHE_EVALUATION_PLAN.md in full (§0 D31–D39, §3's 4.3 Done note, §4 PR 5), then
+src/age_group_prediction/scoring.py, src/age_group_prediction/inspection/bootstrap.py and the
+notebook's import cell and run cells of sections 5 and 6.
+Verify the state first: PR 4 merged into main; the branch feat/bootstrap-replicates from it;
+`git status` clean; the notebook's md5 91d1c96cdd227a137163cd072235c64a via
+`cat notebooks/02_experiments.py | md5`; no iCloud-offloaded files (`find .git src notebooks
+tests docs configs -flags +dataless -type f | grep -vc __pycache__` is 0).
+If anything differs, stop and show me the diff. Then PR 5 (the plan's §4), one sub-task per
+approval, starting with 5.1, each planned in plan mode (re-verify the facts with read-only
+probes, design questions with evidence and a recommendation, the context explained in the
+chat, the steps and the commit message in the chat). Keep the implementation simple. I commit
+myself: never commit, no Co-Authored-By line, no "Generated with Claude Code" in PR text,
+never git checkout/stash/reset/mv.
 ```

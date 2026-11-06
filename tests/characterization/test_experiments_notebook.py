@@ -346,6 +346,29 @@ def test_a_missing_entry_in_the_params_is_named(notebook_defs: dict) -> None:
         )
 
 
+def test_a_study_is_named_by_the_settings_that_shape_it(notebook_defs: dict) -> None:
+    # A stored study is loaded by its name alone, so a setting left out of the
+    # directory's or the file's name would load a stale study after a change.
+    assert notebook_defs["tuner"].storage_dir == (
+        PROJECT_ROOT
+        / "studies"
+        / (
+            f"data={_canonical_hash()[:8]}__split_method=random__test_size=0.2__"
+            "val_size=0.2__n_splits=5__seed=42__n_trials=100__n_startup_trials=10"
+        )
+    )
+    assert notebook_defs["build_study_name"](
+        "independent_cohorts",
+        notebook_defs["MODEL1_RUN_SETTINGS"][0],
+        "poisson_deviance",
+        42,
+    ) == (
+        "independent_cohorts__family=lgbm_poisson__use_exposure=True__"
+        "share_hyperparams=True__share_feature_transformer=False__"
+        "objective=poisson_deviance__seed=42"
+    )
+
+
 def test_the_run_settings_are_the_ones_the_baselines_were_recorded_with(
     notebook_defs: dict,
 ) -> None:

@@ -524,15 +524,19 @@ which costs more than it saves (D19).
 **The stored studies** (D33). With `storage_dir`, each study is Optuna's journal file
 `<storage_dir>/<study_name>.log` (`JournalStorage(JournalFileBackend(path))`, a JSON-lines
 file; the directory is created), and a tune call needs its `study_name` (`ValueError`
-otherwise). A call whose file holds `n_trials` trials loads the study and runs no trial: a
-real `Study`, with every trial's params, values, recorded metrics and durations (a 100-trial
-study of 30 parameters is about 1 MiB and loads in a few hundredths of a second). The
+otherwise). A call whose file holds `n_trials` trials loads the study (`load_study`, which
+only reads: the file is left unchanged) and runs no trial: a real `Study`, with every
+trial's params, values, recorded metrics and durations (a 100-trial study of 30 parameters
+is about 1 MiB and loads in a few hundredths of a second). The
 seconds a call returns are always the study's run, stored in the study as its `seconds`
 user attribute when it ran. A partial file (an interrupted run, or a study ended by an
 error) is deleted and the study run again from its seed: a resumed study would draw
 differently from the seeded run (the sampler's random state is not stored), and an
 interrupted trial stays in the file as FAIL. So a stored study is always the seeded run's.
-Delete a file to run its study again.
+Delete a file to run its study again. The notebook stores every study under `studies/`
+(git-ignored): the directory named after what shapes every study (the data's config hash,
+the split and its folds, the seed, the budget), each file after what the study tunes, its run
+settings, its objective and its seed (`build_study_name` in the tuner's cell).
 
 ## 7. Aggregation
 

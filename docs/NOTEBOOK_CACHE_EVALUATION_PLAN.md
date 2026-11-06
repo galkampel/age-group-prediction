@@ -12,7 +12,7 @@ left for PR 6. The notebook's md5 is `95261326e5368bd451607d083a5ab366`. PR 3 cl
 as #21 (`0c94f16` on `main`); PR 4's branch `feat/study-cache` created from it. **Updated
 2026-11-06:** 4.1 done (§3, the budget 100 / 10); the notebook's md5 is
 `78b08bd7936dba06d65f18bd52da5cbb`. 4.2 done (the tuner's journal storage: a partial study
-started fresh, the seconds the study's run). **Next: 4.3 (§3).**
+started fresh, the seconds the study's run). **Updated 2026-11-06 (paused):** 4.3 implemented, uncommitted; its Check C was running, the clicks remain (the handoff's §2 "PR 4"); the notebook's md5 `3ac16ed8995efa3899a6b37746cc99d4`. **Updated 2026-11-06:** 4.3 done (§3): the user's renames kept, a stored study loaded without writing to its file (a fix in `src`), the two clicks; the notebook's md5 `91d1c96cdd227a137163cd072235c64a`. **PR 4 done; next: close it, then PR 5 (§4).**
 
 The companion docs: [EXPERIMENT_NOTEBOOK_HANDOFF.md](EXPERIMENT_NOTEBOOK_HANDOFF.md) (the state,
 how to work, the checks, the traps, iCloud), [NOTEBOOK_METRICS_LOOP_EDA_PLAN.md](NOTEBOOK_METRICS_LOOP_EDA_PLAN.md)
@@ -268,26 +268,85 @@ No code change (D34). One commit for the docs, one more if the review's findings
   second.
 - **Commit:** `feat(tuning): a study is stored in a journal file and loaded when complete`
 
-### [ ] 4.3 The notebook's runs through the cache (notebook, test, docs)
-- **Change:** section 2 (or 5, where the tuner is built): `studies_dir = project_root /
-  "studies" / f"{config_hash[:8]}_{split_method}_seed{seed}"` (a setting printed with the
-  others; `.gitignore` gains `studies/`); the tuner cell passes `storage_dir=studies_dir`. Every
-  tune call passes `study_name`: Model 1
-  `f"model1_{family}_exposure_{'on' if use_exposure else 'off'}_{'shared' if share_hyperparams else 'own'}_hyperparams_{'shared' if share_feature_transformer else 'own'}_transformer_{tuner.objective_metric.name}_{n_trials}"`,
-  Model 2's totals `model2_total_{family}_exposure_{on|off}_...`, its probabilities
-  `model2_probability_{family}_...`, the EDA's `eda_model1_{objective}_{n_trials}` and
-  `eda_model2_total_{objective}_...` / `eda_model2_probability_{objective}_...` (one f-string per
-  loop, the names visible in the runs tables as a `study_name` column). Section 6's and 5's text:
-  a run loads its study when its file exists; delete the file to rerun. Check C's copy uses the
-  copy's own `studies` dir (the symlinked `configs` only), so the baselines are fresh runs.
-- **Design question:** the name's parts above, or a shorter hash of the settings dict? Recommended:
-  the readable parts (the user: "easy to check if the study exists").
-- **Checks:** Check A, B; Check C twice on the same copy: the first run writes 22 files and equals
-  3.4's frames; the second loads them (every `seconds` equal to the first run's, every frame
-  equal, under 2 min);
-  the 100-trial click on the real notebook (both buttons, `PYTHONWARNINGS=error`): the seconds,
-  the best runs, recorded in this plan's Done note and the handoff's §2.
-- **Done when:** a second click of the notebook is seconds, not minutes.
+### [x] 4.3 The notebook's runs through the cache (notebook, test, docs)
+- **Done (2026-11-06).** As below, with two changes after the first Check C:
+  - **The user's renames** (made in the editor, kept at their answer): `name_study` →
+    `build_study_name`; the steps `model1` → `independent_cohorts`,
+    `model2_coordinate_descent_{total,probability}` →
+    `total_times_probability_coordinate_descent_{total,probability}`. Two cells' returns were
+    trimmed by marimo to a bare `return` (`eda_figures`, `eda_metric_figures` no longer
+    exported) and kept: ruff 13 → 15 (PLR1711); Check C's copy restores them.
+  - **A fix in `src`:** the first Check C's loading run grew every study file by one line.
+    `create_study(load_if_exists=True)` on a stored study appends a create line before Optuna
+    4.9's journal storage finds the duplicate (`JournalStorage.create_new_study`). A complete
+    stored study is now opened with `load_study`, which only reads, and returned;
+    `create_study` only creates. The load test checks the file's bytes; two mutations caught
+    (a complete study opened by `create_study(load_if_exists=True)`: the bytes; deleted and
+    rerun: the call count).
+
+  Checks:
+  - the tuning module 21 passed under `-W error`; the non-slow suite 1392 passed, 1 skipped,
+    1 xfailed, 19 deselected; mypy 28 files, no issue;
+  - Check A: the notebook test 14 passed, ruff 15 (13 PLR1711, a B018, a RUF059), the user's
+    two format hunks only, `marimo check` no issue; Check B, no `studies/` written by a script
+    run;
+  - Check C twice on one copy: the first (435 s) equal to 4.2's `check_c_4_2b.pkl` (`seconds`
+    dropped), figures' JSON identical, 26 files with the names computed independently; the
+    second (398 s) equal to the first with `seconds`, every file's size and md5 unchanged.
+
+  **The 100-trial clicks on the real notebook** (`PYTHONWARNINGS=error`):
+  - the first tuned and stored 25 studies (8.5 MiB) in 1237 s. The EDA's and section 6's
+    first study of each model share a name (Model 1's flags as the EDA's, Model 2's first total),
+    so 27 tune calls store 25 studies (the 3-trial copy, its flags off, stores 26). No failed
+    trial. The studies' seconds: Model 1 300 s, Model 2's totals 180 s, its probabilities 119 s;
+    the EDA's Model 1 40–46 s, Model 2 43–58 s per objective;
+  - the second loaded them in 409 s (the refits, the bootstraps, the inspection): every frame
+    equal to the first click's, `seconds` included; the 25 files unchanged;
+  - best on validation (composite deviance): Model 1 `lgbm_poisson`, exposure on, val 2.1296
+    (cv 2.1402), then `lgbm_gaussian` on 2.1361, `lgbm_poisson` off 2.1684; Model 2
+    `lgbm_gaussian+logistic`, exposure on, val 2.1031 (cv 2.0776), then
+    `lgbm_poisson+logistic` off 2.1217, `lgbm_gaussian+lgbm` on 2.1293;
+  - the EDA's `cv_best` (log loss / deviance / RMSE): Model 1 1.0849 / 2.1402 / 4.3828; Model 2
+    1.0828 / 2.0791 / 4.2862.
+
+  The notebook's md5 is `91d1c96cdd227a137163cd072235c64a`.
+- **Change:** the tuner cell (section 5) builds `studies_dir = project_root / "studies" / <the
+  settings that shape every study>`, joined `key=value` by `__`: the data's config hash (8
+  characters), `split_method`, `test_size`, `val_size`, `n_splits`, `seed`, `n_trials`,
+  `n_startup_trials`. It passes `storage_dir=studies_dir`, defines `build_study_name(step,
+  run_settings, objective_name, study_seed)` (the step, the run settings `key=value`, the
+  objective, the study's seed, joined by `__`), and shows the directory. Section 1's two cells
+  export `project_root` and `config_hash`; `.gitignore` gains `studies/`. Every tune call
+  passes `study_name=build_study_name(...)`:
+  - the steps are `independent_cohorts`, `total_times_probability_coordinate_descent_total`
+    and `total_times_probability_coordinate_descent_probability` (the user's names, renamed
+    from `model1` / `model2_coordinate_descent_*` after the first Check C);
+  - the EDA's runs use section 6's run-settings keys, so the two studies both sections run (each
+    model's first under the Poisson deviance, M10) get one name and are tuned once.
+
+  Section 5's text explains the storage; section 6 has one sentence. The notebook test pins the
+  directory's and one study's name.
+- **The user's answers (2026-11-06)**, on the evidence that the planned names left out the test
+  and validation sizes, `n_splits`, `n_startup_trials` and each study's seed (a changed setting
+  would load a stale study):
+  - **names from the settings**, as above;
+  - **Model 2's two tunings apart in the names:** coordinate descent's steps against a joint
+    study's `total_times_probability_joint`;
+  - **no study-name column** in the records or the runs tables: a row's settings and seed name
+    its file;
+  - **no switch:** the cache is always used (4.2).
+- **Checks:**
+  - Check A and Check B, with no `studies/` written by a script run;
+  - Check C twice on one copy (its own `studies/`):
+    - the first run equals 4.2's frames and writes one directory of 26 files whose names are
+      computed independently;
+    - the second loads them: every frame equal, `seconds` included, no file changed;
+  - the 100-trial click on the real notebook (all buttons, `PYTHONWARNINGS=error`), then a
+    second one: the seconds and the best runs, recorded in this plan's Done note and the
+    handoff's §2.
+- **Done when:** a second click skips the tuning. It still refits, bootstraps and inspects the
+  kept models (the plan's "seconds, not minutes" was wrong: the bootstrap alone is about 6 min,
+  48 calls of about 7 s).
 - **Commit:** `feat(notebook): every study cached in a journal file named by its run settings`
 
 ## 4. PR 5: the bootstrap replicates and the comparison metric (`feat/bootstrap-replicates`)
