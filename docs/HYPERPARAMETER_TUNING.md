@@ -46,7 +46,7 @@ no transformer registry; the candidates are injected, as scikit-learn's
 The notebook's data (sections 1–3: the simulator at 150 neighborhoods × 9 buildings, the
 `random` split of [Splitting §3](SPLITTING.md#3-train-validation-and-test), seed 42), two
 candidate transformers per family, and one short study of each composite, Model 2 also by
-coordinate descent. The notebook runs the same calls at 400 trials, in loops over its run
+coordinate descent. The notebook runs the same calls at 100 trials, in loops over its run
 settings, Model 2 by coordinate descent.
 
 ```python
@@ -513,8 +513,8 @@ the groups, the composite's settings and the study's seed (D26):
 
 The study is `optuna.create_study(direction=metric.direction,
 sampler=TPESampler(seed=study_seed, n_startup_trials=n_startup_trials))`. The notebook runs
-400 trials with a random start of 20 (D20: the LightGBM runs still improved after 200, and a
-start of 10–20% of the budget is the usual rule). `study.optimize(..., catch=(RuntimeError,))`
+100 trials with a random start of 10 (D31: 10% of the budget, Optuna's default; D20 measured
+the start's effect within the search noise). `study.optimize(..., catch=(RuntimeError,))`
 marks a trial FAIL when its fit raises `RuntimeError` (NB2 that does not converge, raised
 from a fold's process as such) and goes on; any other error ends the study, so a bug is not
 hidden (D7, D19). There is no pruning: `WilcoxonPruner` needs the folds one after another,

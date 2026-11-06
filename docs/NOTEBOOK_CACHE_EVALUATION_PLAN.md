@@ -9,8 +9,9 @@ list of changes and their answers (§0). 3.3's checks already run: the non-slow 
 notebook's md5 is `676212a808f6c1f87f7926a58b3bffe6`. **Updated 2026-11-05:** 3.3 done (§2): the
 review found no correctness bug; its F2 fixed in `aa1e267`, F1 and F5 in 3.3b's docs, F3 and F4
 left for PR 6. The notebook's md5 is `95261326e5368bd451607d083a5ab366`. PR 3 closed and merged
-as #21 (`0c94f16` on `main`); PR 4's branch `feat/study-cache` created from it. **Next: 4.1
-(§3).**
+as #21 (`0c94f16` on `main`); PR 4's branch `feat/study-cache` created from it. **Updated
+2026-11-06:** 4.1 done (§3, the budget 100 / 10); the notebook's md5 is
+`78b08bd7936dba06d65f18bd52da5cbb`. **Next: 4.2 (§3).**
 
 The companion docs: [EXPERIMENT_NOTEBOOK_HANDOFF.md](EXPERIMENT_NOTEBOOK_HANDOFF.md) (the state,
 how to work, the checks, the traps, iCloud), [NOTEBOOK_METRICS_LOOP_EDA_PLAN.md](NOTEBOOK_METRICS_LOOP_EDA_PLAN.md)
@@ -190,7 +191,18 @@ No code change (D34). One commit for the docs, one more if the review's findings
 
 ## 3. PR 4: the tuning budget and the study cache (`feat/study-cache`, from `main`)
 
-### [ ] 4.1 The budget (notebook, test)
+### [x] 4.1 The budget (notebook, test)
+- **Done (2026-11-06).** As below, plus `HYPERPARAMETER_TUNING.md:49` and `:516`, which
+  named the notebook's 400 trials and random start of 20. D20's claim re-probed first (Optuna
+  4.9.0, seeds 42 and 49: 3 trials draw the same params at a start of 10 or 20); the new pins
+  failed on the old notebook. Checks:
+  - Check A: the notebook test 13 passed, ruff 14, the two format hunks, `marimo check` no issue;
+  - Check B;
+  - Check C (410 s): the 24 baselines and every assertion; every frame and record equal to
+    `check_c_3_3_fix.pkl`; both figures' JSON files byte-identical.
+
+  The notebook's md5 is `78b08bd7936dba06d65f18bd52da5cbb`; Check C's pickle `check_c_4_1.pkl`
+  (in this session's scratchpad) is 4.2's reference.
 - **Change:** `notebooks/02_experiments.py` section 2: `n_trials = 100`, `n_startup_trials = 10`
   (the comment: 10% of the budget, Optuna's default); section 6's text ("`n_trials = 400`, the
   first `n_startup_trials = 20`" → the new values); `tests/characterization/test_experiments_notebook.py:124-125`

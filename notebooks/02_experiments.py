@@ -240,9 +240,10 @@ def _(mo, pd):
     test_size = 0.2  # share of the whole table
     val_size = 0.2  # share of the whole table, so 0.25 of the remainder
     n_splits = 5
-    n_trials = 400
-    # TPE's random start: the trials drawn at random before its model guides the draws.
-    n_startup_trials = 20
+    n_trials = 100
+    # TPE's random start: the trials drawn at random before its model guides the
+    # draws; 10% of the budget, Optuna's default (D31).
+    n_startup_trials = 10
     n_resamples = 1000
     # The bootstrap interval's level is 1 - alpha: 95%.
     alpha = 0.05
@@ -1550,7 +1551,7 @@ def _(mo):
     separate families, and the exposure a run setting: a study that sampled
     the loss split 30 trials 10/20 and did worse than either loss alone, and
     the exposure changes the target (a count or a weighted rate).
-    `n_trials = 400`, the first `n_startup_trials = 20` drawn at random.
+    `n_trials = 100`, the first `n_startup_trials = 10` drawn at random.
     The runs go one after another, seeded
     `seed + 0`, `seed + 1`, … in order (each model's in loops over its run
     settings), and each trial fits its 5 folds in
