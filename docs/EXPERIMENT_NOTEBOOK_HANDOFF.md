@@ -1,4 +1,14 @@
-# Handoff: the experiment notebook, PR 5b (Model 2's two tuning methods in the EDA): 5b.1 done, 5b.2 next
+# Handoff: the experiment notebook, PR 5b (Model 2's two tuning methods in the EDA): 5b.2 done, 5b.3 next
+
+**Status (2026-11-07, 5b.2 done, before the user's commit):**
+- **5b.1 is committed** (`82ccac2`). **5b.2 is implemented as planned** (the cache plan's 5b.2
+  Done note): the joint Model 2 method in the objective EDA (`eda_model2_joint_df`,
+  `eda_model2_joint_trials_df`, `model2_joint` in the summary, the figures and the tables);
+  section 5's text. The notebook's md5 is `6731d509d2b5298e4d38a99480f700dc`. Next: 5b.3, the
+  reading at 100 trials (the EDA click on the real cache: 3 joint studies tuned, the rest
+  loaded).
+- **Check C's reference** is `check_c_5b_2.pkl` with its two figures' JSON (`run_5b_2.sh`), in
+  the scratchpad named below.
 
 **Status (2026-11-07, 5b.1 done, before the user's commit):**
 - **5b.1 is implemented as planned** (the cache plan's 5b.1 Done note): `trials_table` renamed
@@ -137,18 +147,22 @@ git. Re-verify every fact here against the code of the day.
    (`lgbm_poisson`, exposure on, the notebook's flags) and Model 2's (`lgbm_poisson+logistic`,
    exposure on, by coordinate descent), each one study (Model 2: two) per objective through
    `dataclasses.replace(tuner, objective_metric=objective)`, every study seeded `seed`; each best
-   refit and scored on validation (`eda_model1_df`, `eda_model2_df`, 12 rows each); every trial
+   refit and scored on validation (`eda_model1_df`, `eda_model2_df`, 12 rows each; 5b.2: Model 2's joint method too,
+   `eda_model2_joint_df`, one `tune_total_times_probability_model` study per objective stored as
+   `total_times_probability_joint__…`); every trial
    kept as a row of the whole model it scored (`eda_model1_trials_df` 3 × `n_trials` rows,
    `eda_model2_trials_df` 6 × `n_trials`: `id, objective, seconds, state`, the six metrics,
    `feature_transformers` and `hyperparameters` per component; Model 2's with `step`, `total` rows
    holding the fixed classifier, `probability` rows step 1's best total, `id` each study's own
-   number); `eda_best_df` (6 rows: model × objective, `best_id`, `cv_<metric>`, `val_<metric>`);
-   `eda_figures` (a plotly figure per model and objective, six stacked panels each);
-   `eda_objective`, an "Objective" dropdown (the tuner's objective by default) choosing which
-   objective's two figures are shown, one per model, full width, stacked (3.1k);
+   number; `eda_model2_joint_trials_df` 3 × `n_trials`, no `step`); `eda_best_df` (9 rows: model
+   (`model1`, `model2`, `model2_joint`) × objective, `best_id`, `cv_<metric>`, `val_<metric>`);
+   `eda_figures` (a plotly figure per model and objective, six stacked panels each; the joint's
+   like Model 1's, no step rule); `eda_objective`, an "Objective" dropdown (the tuner's objective
+   by default) choosing which objective's three figures are shown, one per model, full width, stacked (3.1k);
    `eda_recorded_metric`, a "Recorded metric" dropdown, and `eda_metric_figures[model, metric]`
    (a box per objective's study with every trial and its best as a star, Model 2's steps grouped,
-   the y-axis over the bulk; 3.1l); a table cell with the two summaries and the two trials tables.
+   the y-axis over the bulk; 3.1l; three per metric since 5b.2); a table cell with the three
+   summaries and the three trials tables.
 6. **Section 6, tuning and inspection:**
    - **the metrics cell:** `POISSON_DEVIANCE = Metric("poisson_deviance",
      mean_poisson_deviance_loss)` (the tuner's objective, the best-run rule, the permutation
@@ -757,6 +771,18 @@ md5, the commit message. Tick the sub-task and update the status lines.
   titles the cohorts, y the two labels, x the scores, `error_x` exactly, `customdata` the
   bounds, the y axis reversed; `rule_at=0` adds 4 lines at 0). `run_5_3.sh`:
   `check_c.py <copy> check_c_5_3.pkl check_c_3_1l.pkl check_c_3_4_first.pkl check_c_5_2b.pkl`.
+- **Since 5b.2:** the 3.1j–3.1l assertions cover `model2_joint` like Model 1 (one study, no
+  step; the displays three figures each); a 5b.2 block recomputes the three joint studies in
+  memory (`storage_dir=None`): `eda_model2_joint_df` equal to their refit's scores, `cv_best`
+  their `best_value` (the baselines below), the trials table's transformer names,
+  hyperparameters and metrics equal to each trial's params and user attributes, `eda_best_df`'s
+  joint rows (`best_id` the `best_trial.number`), and the copy's `studies/` holding the three
+  `total_times_probability_joint__…` files. `compare.py` on the reference's frames;
+  `compare_figures.py` the reference's figures' JSON key by key (the joint's are new).
+  `run_5b_2.sh`: `check_c.py <copy> check_c_5b_2.pkl check_c_3_1l.pkl check_c_3_4_first.pkl
+  check_c_5_2b.pkl`. **The joint EDA's Check C values** (3 trials, log loss / deviance / RMSE):
+  1.0833 / 2.1543 / 4.4258 (the log loss equals coordinate descent's: only the probabilities
+  count).
 - **The scripts of 5.3's session (2026-11-07, the latest copy;** copy from here first): the
   scratchpad named in the status at the top (`checks/` adapted to 5.3; `check_c_5_3.pkl` is
   5.4's reference).
@@ -975,8 +1001,8 @@ constructor, data in the call; fitting and evaluating as separate steps; no priv
   deleted. PR 5b is on `feat/model2-tuning-methods` from `main` at `c3bdee8`; its first commit is
   the docs (the cache plan's §4b, this handoff). The notebook's md5 is
   `9a66a347ed3fc928f14a43bde04da1b9` (unchanged since 5.3).
-- Check C's reference for the next notebook change is `check_c_5b_1.pkl` since 5b.1 (with its
-  figures' JSON; equal to `check_c_5_3.pkl`), in the scratchpad named in the status at the top; `check_c.py`'s
+- Check C's reference for the next notebook change is `check_c_5b_2.pkl` since 5b.2 (with its
+  figures' JSON; every shared frame and figure equal to `check_c_5b_1.pkl`'s), in the scratchpad named in the status at the top; `check_c.py`'s
   fifth argument stays `check_c_5_2b.pkl`. If they are gone, rewrite the scripts from §4 and run
   Check C on HEAD before the first edit, keeping that pickle.
 
@@ -988,7 +1014,7 @@ notebook's md5 and the commit message in a copyable code block:
    - 5b.1 `trials_table` renamed `build_trials_table` (done; the user: keep the function, a more
      informative name; the trials' scores are already saved during the runs as user
      attributes, the function rebuilds each trial's whole model from the flat params);
-   - 5b.2 the joint Model 2 method in the EDA (one `tune_total_times_probability_model` study
+   - 5b.2 (done) the joint Model 2 method in the EDA (one `tune_total_times_probability_model` study
      per objective, `lgbm_poisson+logistic`, exposure on), `model2_joint` in the summary,
      figures and tables;
    - 5b.3 the reading at 100 trials; if the joint method wins beyond the noise, the
