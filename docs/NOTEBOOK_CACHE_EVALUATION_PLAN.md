@@ -12,7 +12,7 @@ left for PR 6. The notebook's md5 is `95261326e5368bd451607d083a5ab366`. PR 3 cl
 as #21 (`0c94f16` on `main`); PR 4's branch `feat/study-cache` created from it. **Updated
 2026-11-06:** 4.1 done (§3, the budget 100 / 10); the notebook's md5 is
 `78b08bd7936dba06d65f18bd52da5cbb`. 4.2 done (the tuner's journal storage: a partial study
-started fresh, the seconds the study's run). **Updated 2026-11-06 (paused):** 4.3 implemented, uncommitted; its Check C was running, the clicks remain (the handoff's §2 "PR 4"); the notebook's md5 `3ac16ed8995efa3899a6b37746cc99d4`. **Updated 2026-11-06:** 4.3 done (§3): the user's renames kept, a stored study loaded without writing to its file (a fix in `src`), the two clicks; the notebook's md5 `91d1c96cdd227a137163cd072235c64a`. **Updated 2026-11-06:** PR 4 merged as #22 (`30bd4f7` on `main`); PR 5's branch `feat/bootstrap-replicates` created from it; 5.1 planned and approved. **Updated 2026-11-06:** 5.1 done (§4, the rename); the notebook's md5 `6edc34aa4cc93d05fcf34b106515dd9c`. **Updated 2026-11-06:** 5.1 committed (`571f721`); 5.2 done and committed (`4cfe502`) (§4: the evaluator returns its replicates; two resampling designs kept, the user's answer); the notebook's md5 `d4a361a5535aaefd89b9dccd4f99e282` (with the user's `median` and `sd`). **Updated 2026-11-07:** 5.3 planned, not implemented (§4): the `n_resamples` measurement done (1000 kept); the user changed the plan (each model's best run chosen by one configurable selection metric on validation, only the two best bootstrapped, one forest-plot function); the plan awaits approval in the next session; 5.4 re-scoped. **Next: 5.3 as planned (§4).**
+started fresh, the seconds the study's run). **Updated 2026-11-06 (paused):** 4.3 implemented, uncommitted; its Check C was running, the clicks remain (the handoff's §2 "PR 4"); the notebook's md5 `3ac16ed8995efa3899a6b37746cc99d4`. **Updated 2026-11-06:** 4.3 done (§3): the user's renames kept, a stored study loaded without writing to its file (a fix in `src`), the two clicks; the notebook's md5 `91d1c96cdd227a137163cd072235c64a`. **Updated 2026-11-06:** PR 4 merged as #22 (`30bd4f7` on `main`); PR 5's branch `feat/bootstrap-replicates` created from it; 5.1 planned and approved. **Updated 2026-11-06:** 5.1 done (§4, the rename); the notebook's md5 `6edc34aa4cc93d05fcf34b106515dd9c`. **Updated 2026-11-06:** 5.1 committed (`571f721`); 5.2 done and committed (`4cfe502`) (§4: the evaluator returns its replicates; two resampling designs kept, the user's answer); the notebook's md5 `d4a361a5535aaefd89b9dccd4f99e282` (with the user's `median` and `sd`). **Updated 2026-11-07:** 5.3 planned, not implemented (§4): the `n_resamples` measurement done (1000 kept); the user changed the plan (each model's best run chosen by one configurable selection metric on validation, only the two best bootstrapped, one forest-plot function); the plan awaits approval in the next session; 5.4 re-scoped. **Updated 2026-11-07:** 5.3 done as planned (§4): `selection_metric` (RMSE by default), the runs' point scores, the two best bootstrapped, `forest_figure`; the notebook's md5 `9a66a347ed3fc928f14a43bde04da1b9`. **Updated 2026-11-07:** at the user's review, the best runs' table renamed `best_runs_val_scores_df` with `model`, `family`, `use_exposure`; the forest plots to be fixed later; PR 5 closes at 5.3, then PR 5b (the EDA: `build_trials_table`, the joint Model 2 method), PR 6 (the split), PR 7 (5.4, SHAP per cohort, the test evaluation). **Next: close PR 5.**
 
 The companion docs: [EXPERIMENT_NOTEBOOK_HANDOFF.md](EXPERIMENT_NOTEBOOK_HANDOFF.md) (the state,
 how to work, the checks, the traps, iCloud), [NOTEBOOK_METRICS_LOOP_EDA_PLAN.md](NOTEBOOK_METRICS_LOOP_EDA_PLAN.md)
@@ -468,10 +468,48 @@ No code change (D34). One commit for the docs, one more if the review's findings
   the reference's `ci95_lower/ci95_upper` exactly, the means equal.
 - **Commit:** `refactor(inspection): the bootstrap evaluator returns its replicates`
 
-### [ ] 5.3 Each model's best run by a selection metric, bootstrapped; a forest plot of the two
-- **Planned 2026-11-07, not implemented; the plan awaits the user's approval** (the session
-  stopped at the user's request before the edit). The text from "Since 5.2" on is the plan
-  before this one, kept as history.
+### [x] 5.3 Each model's best run by a selection metric, bootstrapped; a forest plot of the two
+- **Done (2026-11-07), as planned below;** every line number held on `1af184a`. The notebook:
+  - `selection_metric = "rmse"` in section 2 (logged, pinned by the test);
+    `SELECTION_METRIC` in the metrics cell;
+  - the two loops keep point scores (`_dataset_scores.to_frame("score")`; the tables 384 × 8,
+    768 × 6, their captions "(the point score; …)");
+  - a cell after Model 2's tables: the best run per model by the validation composite on
+    `SELECTION_METRIC`, the two bootstrapped on validation (`best_replicate_scores`,
+    `best_runs_val_scores_df` 48 × 11: `model, family, use_exposure, cohort, metric, score,
+    mean, median, sd, ci95_lower, ci95_upper`, the models `independent_cohorts` and
+    `total_times_probability`, `use_exposure` a bool; the same names as the keys of
+    `best_replicate_scores`); the inspection's selection cell removed;
+  - `forest_figure(scores, metric_name, lower_column, upper_column, rule_at=None)` (one
+    scatter per cohort panel, the asymmetric `error_x`, the y axis reversed, the hover with
+    the bounds in `customdata`) and the forest-plot cell (`best_forest_figure`);
+  - section 6's text: the selection rule and why, the bootstrap of the two best.
+  - **Amended at the user's review** (2026-11-07, before the commit): the table's `model1`/`model2`
+    labels became the model's name, family and exposure in three columns, and `best_scores_df`
+    was renamed `best_runs_val_scores_df` (what it holds: the best runs' validation scores);
+    `forest_figure` builds its row labels from the three columns. The forest plots, seen on the
+    100-trial runs (a copy of the notebook on the user's `studies/`, a viewer app), "look really
+    bad": to be fixed later (the handoff's §5). On those runs the best by RMSE are the independent
+    cohorts model's `lgbm_poisson`, exposure on (composite RMSE 4.5586, 95% 4.04–5.13), and the
+    total times probability model's `lgbm_poisson+logistic`, exposure off (4.5388, 4.05–5.08);
+    the statistics equal 5.2's records of the two runs (`probe_5_2.pkl`) at 1e-12.
+  - **A correction to the plan's Check B:** a script run clicks nothing, so `best_scores_df`
+    and `best_replicate_scores` are not in its defs; Check B asserts them absent, Check C
+    checks them.
+  - **Check C's 3-trial runs** pick the same best runs by RMSE as by the deviance (Model 1
+    `lgbm_gaussian`, exposure on; Model 2 `lgbm_gaussian+logistic`, exposure on), so
+    `importance_df` and the two best runs' statistics equal 5.2's run.
+
+  Checks: Check A (the notebook test 14 passed, ruff 15, the user's two format hunks, `marimo
+  check` no issue); Check B (`SELECTION_METRIC` the `rmse` object, `forest_figure` defined, the
+  best runs' names absent); Check C (86 s, `check_c_5_3.pkl`, 5.4's reference): every assertion
+  of the handoff's §4 "Since 5.3", every shared column and record equal to `check_c_5_2b.pkl`,
+  both EDA figures' JSON identical; rerun after the review's amendment (81 s), the same. Two
+  mutations caught (on the version before the amendment): the selection read on `train` (the
+  best run's model differs), `error_x`'s two arrays swapped. No `src` change: the suite and mypy
+  run at 5.4's close. The notebook's md5 is `9a66a347ed3fc928f14a43bde04da1b9`.
+- **Planned 2026-11-07** (approved in the next session). The text from "Since 5.2" on is the
+  plan before this one, kept as history.
 - **The `n_resamples` measurement (done, read-only;** `probes/probe_5_3.py` on `probe_5_2.pkl`,
   the 100-trial runs' models; log `probe_5_3.log`, per-seed bounds `probe_5_3_bounds.csv`):
   - setup: validation, whole neighborhoods, seeds 42–46, at 1000 and 10,000 replicates; the
@@ -591,6 +629,10 @@ No code change (D34). One commit for the docs, one more if the review's findings
 - **Commit:** `feat(notebook): each run's scores with their bootstrap SD and interval; a forest plot per model`
 
 ### [ ] 5.4 The best models' paired difference; the importance on the selection metric
+- **Moved to PR 7 (2026-11-07, the user):** PR 5 closes at 5.3; the EDA work (PR 5b) and the
+  split (PR 6) come first, and 5.4 is done in `03_hyperparameter_tuning.py`, with the forest
+  plots' layout fixed. The difference is `total_times_probability − independent_cohorts` (the
+  keys of `best_replicate_scores` since 5.3's review).
 - **Re-scoped 2026-11-07** (after 5.3's plan; the best-run rule and `SELECTION_METRIC` move
   to 5.3):
   - a new cell after 5.3's forest plot: `best_replicate_scores["model2"] −
