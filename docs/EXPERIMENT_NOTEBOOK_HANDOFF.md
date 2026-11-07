@@ -1,4 +1,20 @@
-# Handoff: the experiment notebook, PR 5b (Model 2's two tuning methods in the EDA): 5b.2 done, 5b.3 next
+# Handoff: the experiment notebook, PR 5b (Model 2's two tuning methods in the EDA): 5b.3 done, PR 5b to close
+
+**Status (2026-11-07, 5b.3 done, before the user's commit):**
+- **5b.2 is committed** (`0b25ede`). **5b.3 is done** (the cache plan's 5b.3 Done note): the EDA
+  clicked at 100 trials on the user's cache (the 3 joint studies tuned and stored in `studies/`,
+  now 28 files; the other 25 byte-identical), read with a paired bootstrap on validation.
+  **D40 (the user's): section 6 switches Model 2 to the joint method in PR 7 (the cache plan's
+  7.0)**, the two methods being the same within the noise on the deviance and on RMSE. No code
+  change; the notebook's md5 is `6731d509d2b5298e4d38a99480f700dc`.
+- **The scripts** (this session's scratchpad, `/private/tmp/claude-501/-Users-galkampel-Desktop-Projects-age-group-prediction/f38b920e-c1b1-4cff-a21c-fa1038947061/scratchpad`):
+  `checks/run_5b_3.sh` (the click on a copy with `studies` symlinked, only the EDA's button
+  clicked; the cache listed before and after) and `checks/click_eda_5b_3.py` (the click, then the
+  reading and the paired bootstrap); `eda_5b_3.pkl` (the EDA's frames and the paired
+  differences), `eda_5b_3_eda_figures.json`, `eda_5b_3_eda_metric_figures.json` and the viewer
+  `viewer/eda_5b_3.py` (`.venv/bin/marimo edit <it>`).
+- **Next:** close PR 5b (the user's PR and merge), then PR 6 (the split), then PR 7 starting at
+  7.0.
 
 **Status (2026-11-07, 5b.2 done, before the user's commit):**
 - **5b.1 is committed** (`82ccac2`). **5b.2 is implemented as planned** (the cache plan's 5b.2
@@ -675,6 +691,10 @@ and the metrics plan §2 (M1–M9); a later one supersedes an earlier one where 
   by one selection metric (a setting, RMSE by default) on the validation point score; only the
   two best bootstrapped; one `forest_figure` function, its metric a parameter; 5.4 re-scoped to
   the paired difference and the importance on the selection metric.
+- **PR 5b (2026-11-07):** `trials_table` renamed `build_trials_table` (kept: it rebuilds each
+  trial's whole model); the joint Model 2 method compared in the EDA; **D40** section 6 tunes
+  Model 2 by the joint method from PR 7 on (supersedes D32: the user's rule, the same results on
+  the deviance and on RMSE, so joint; the cost, 16 studies instead of 10, accepted).
 - **The user's wish for this work:** do not overcomplicate; the smallest change that works.
   Keep a valid path working and available; reuse inside it is welcome (D29: the joint draw calls
   the component suggest functions).
@@ -1017,10 +1037,11 @@ notebook's md5 and the commit message in a copyable code block:
    - 5b.2 (done) the joint Model 2 method in the EDA (one `tune_total_times_probability_model` study
      per objective, `lgbm_poisson+logistic`, exposure on), `model2_joint` in the summary,
      figures and tables;
-   - 5b.3 the reading at 100 trials; if the joint method wins beyond the noise, the
-     `model2_tuning_method` setting and the joint loop go into the tuning notebook (PR 7).
+   - 5b.3 (done) the reading at 100 trials; D40: the joint method replaces coordinate descent
+     in section 6, in PR 7 (7.0).
 3. **PR 6, the split** (the cache plan's §5; F3 and F4 there).
-4. **PR 7, the tuning notebook's evaluation:** 5.4 first (the paired difference from
+4. **PR 7, the tuning notebook's evaluation:** 7.0 first (D40: Model 2 by the joint method,
+   16 studies), then 5.4 (the paired difference from
    `best_replicate_scores`, `total_times_probability − independent_cohorts` per replicate; its
    forest plot with `rule_at=0`; the importance on `SELECTION_METRIC`), the forest plots'
    layout fixed (§5), then SHAP per cohort and the test evaluation. MLflow and D4 stay

@@ -12,7 +12,7 @@ left for PR 6. The notebook's md5 is `95261326e5368bd451607d083a5ab366`. PR 3 cl
 as #21 (`0c94f16` on `main`); PR 4's branch `feat/study-cache` created from it. **Updated
 2026-11-06:** 4.1 done (§3, the budget 100 / 10); the notebook's md5 is
 `78b08bd7936dba06d65f18bd52da5cbb`. 4.2 done (the tuner's journal storage: a partial study
-started fresh, the seconds the study's run). **Updated 2026-11-06 (paused):** 4.3 implemented, uncommitted; its Check C was running, the clicks remain (the handoff's §2 "PR 4"); the notebook's md5 `3ac16ed8995efa3899a6b37746cc99d4`. **Updated 2026-11-06:** 4.3 done (§3): the user's renames kept, a stored study loaded without writing to its file (a fix in `src`), the two clicks; the notebook's md5 `91d1c96cdd227a137163cd072235c64a`. **Updated 2026-11-06:** PR 4 merged as #22 (`30bd4f7` on `main`); PR 5's branch `feat/bootstrap-replicates` created from it; 5.1 planned and approved. **Updated 2026-11-06:** 5.1 done (§4, the rename); the notebook's md5 `6edc34aa4cc93d05fcf34b106515dd9c`. **Updated 2026-11-06:** 5.1 committed (`571f721`); 5.2 done and committed (`4cfe502`) (§4: the evaluator returns its replicates; two resampling designs kept, the user's answer); the notebook's md5 `d4a361a5535aaefd89b9dccd4f99e282` (with the user's `median` and `sd`). **Updated 2026-11-07:** 5.3 planned, not implemented (§4): the `n_resamples` measurement done (1000 kept); the user changed the plan (each model's best run chosen by one configurable selection metric on validation, only the two best bootstrapped, one forest-plot function); the plan awaits approval in the next session; 5.4 re-scoped. **Updated 2026-11-07:** 5.3 done as planned (§4): `selection_metric` (RMSE by default), the runs' point scores, the two best bootstrapped, `forest_figure`; the notebook's md5 `9a66a347ed3fc928f14a43bde04da1b9`. **Updated 2026-11-07:** at the user's review, the best runs' table renamed `best_runs_val_scores_df` with `model`, `family`, `use_exposure`; the forest plots to be fixed later; PR 5 closes at 5.3, then PR 5b (the EDA: `build_trials_table`, the joint Model 2 method), PR 6 (the split), PR 7 (5.4, SHAP per cohort, the test evaluation). **Updated 2026-11-07:** PR 5 merged as #23 (`c3bdee8` on `main`, identical to `8a90bf9`); PR 5b planned (§4b) on `feat/model2-tuning-methods`. **Updated 2026-11-07:** 5b.1 done (§4b, the rename); the notebook's md5 `e0f2ba6c32ead22ebee081a4f0a27e3f`. **Updated 2026-11-07:** 5b.1 committed (`82ccac2`); 5b.2 done (§4b, the joint method in the EDA); the notebook's md5 `6731d509d2b5298e4d38a99480f700dc`. **Next: 5b.3 (§4b).**
+started fresh, the seconds the study's run). **Updated 2026-11-06 (paused):** 4.3 implemented, uncommitted; its Check C was running, the clicks remain (the handoff's §2 "PR 4"); the notebook's md5 `3ac16ed8995efa3899a6b37746cc99d4`. **Updated 2026-11-06:** 4.3 done (§3): the user's renames kept, a stored study loaded without writing to its file (a fix in `src`), the two clicks; the notebook's md5 `91d1c96cdd227a137163cd072235c64a`. **Updated 2026-11-06:** PR 4 merged as #22 (`30bd4f7` on `main`); PR 5's branch `feat/bootstrap-replicates` created from it; 5.1 planned and approved. **Updated 2026-11-06:** 5.1 done (§4, the rename); the notebook's md5 `6edc34aa4cc93d05fcf34b106515dd9c`. **Updated 2026-11-06:** 5.1 committed (`571f721`); 5.2 done and committed (`4cfe502`) (§4: the evaluator returns its replicates; two resampling designs kept, the user's answer); the notebook's md5 `d4a361a5535aaefd89b9dccd4f99e282` (with the user's `median` and `sd`). **Updated 2026-11-07:** 5.3 planned, not implemented (§4): the `n_resamples` measurement done (1000 kept); the user changed the plan (each model's best run chosen by one configurable selection metric on validation, only the two best bootstrapped, one forest-plot function); the plan awaits approval in the next session; 5.4 re-scoped. **Updated 2026-11-07:** 5.3 done as planned (§4): `selection_metric` (RMSE by default), the runs' point scores, the two best bootstrapped, `forest_figure`; the notebook's md5 `9a66a347ed3fc928f14a43bde04da1b9`. **Updated 2026-11-07:** at the user's review, the best runs' table renamed `best_runs_val_scores_df` with `model`, `family`, `use_exposure`; the forest plots to be fixed later; PR 5 closes at 5.3, then PR 5b (the EDA: `build_trials_table`, the joint Model 2 method), PR 6 (the split), PR 7 (5.4, SHAP per cohort, the test evaluation). **Updated 2026-11-07:** PR 5 merged as #23 (`c3bdee8` on `main`, identical to `8a90bf9`); PR 5b planned (§4b) on `feat/model2-tuning-methods`. **Updated 2026-11-07:** 5b.1 done (§4b, the rename); the notebook's md5 `e0f2ba6c32ead22ebee081a4f0a27e3f`. **Updated 2026-11-07:** 5b.1 committed (`82ccac2`); 5b.2 done (§4b, the joint method in the EDA); the notebook's md5 `6731d509d2b5298e4d38a99480f700dc`. **Updated 2026-11-07:** 5b.2 committed (`0b25ede`); 5b.3 done (§4b, the reading at 100 trials): D40, section 6 switches Model 2 to the joint method in PR 7 (7.0). **Next: close PR 5b, then PR 6 (§5).**
 
 The companion docs: [EXPERIMENT_NOTEBOOK_HANDOFF.md](EXPERIMENT_NOTEBOOK_HANDOFF.md) (the state,
 how to work, the checks, the traps, iCloud), [NOTEBOOK_METRICS_LOOP_EDA_PLAN.md](NOTEBOOK_METRICS_LOOP_EDA_PLAN.md)
@@ -28,7 +28,7 @@ how to work, the checks, the traps, iCloud), [NOTEBOOK_METRICS_LOOP_EDA_PLAN.md]
 - §4 PR 5: the bootstrap replicates and the comparison metric (5.1–5.3; 5.4 moved to PR 7)
 - §4b PR 5b: Model 2's two tuning methods in the EDA (5b.1–5b.3)
 - §5 PR 6: two notebooks (6.1–6.3)
-- §6 PR 7: SHAP per cohort and the test evaluation (7.1–7.3)
+- §6 PR 7: Model 2 by the joint method (7.0, D40), SHAP per cohort and the test evaluation (7.1–7.3)
 - §7 Facts verified on 2026-11-04
 
 ## 0. Context and decisions
@@ -49,7 +49,7 @@ merge, in this order (the user's choice): the `src` changes first (PRs 4, 5), th
   1.5–2× longer at 20, the random trials drawing large models). The question "can I remove it"
   is answered: only by giving `CrossValidationTuner.n_startup_trials` a default; one explicit line
   is simpler and logged.
-- **D32. Model 2 stays by coordinate descent** (D29). At 100 trials a joint study of 23–33
+- **D32. Model 2 stays by coordinate descent** (D29; **superseded by D40**, 2026-11-07). At 100 trials a joint study of 23–33
   dimensions gets 3–4 trials per dimension; the two steps get 100 each, and the method is exact
   under the deviance. The joint tune method stays in the package (a valid path).
 - **D33. The study cache: Optuna's journal storage, one file per study, loaded when complete.**
@@ -89,6 +89,23 @@ merge, in this order (the user's choice): the `src` changes first (PRs 4, 5), th
 - **D38. SHAP per cohort, values and plots** ("show values and plots for each cohort
   separately", to see whether the features' order differs per cohort): the explainer's values
   are already per row, column and cohort; the table and the figures stop averaging over cohorts.
+- **D40. Section 6 tunes Model 2 by the joint method (PR 7)** (2026-11-07, the user's, after 5b.3's
+  reading at 100 trials). The rule the user set: if the two methods' results are the same on the
+  deviance and on RMSE, switch to joint. The evidence (the EDA's setting, `lgbm_poisson+logistic`,
+  exposure on; joint − coordinate descent; the validation intervals from a paired bootstrap,
+  1000 replicates, whole neighborhoods):
+  - tuned on the deviance (the tuner's objective): cv deviance 2.0735 against 2.0791 (−0.006),
+    validation deviance +0.012 (95% −0.031 to 0.051), cv RMSE −0.009, validation RMSE +0.022
+    (−0.035 to 0.073): the same within the noise;
+  - tuned on RMSE: cv RMSE +0.039 (coordinate descent better beyond the 0.02 noise), validation
+    RMSE −0.113 (−0.242 to 0.007): opposite directions, no consistent winner;
+  - tuned on the log loss: uninformative (the total gets no signal, so each method's total is
+    arbitrary; validation deviance +0.065, 0.010 to 0.127).
+
+  The cost the user accepted: section 6's Model 2 becomes 16 joint studies (8 totals × 2
+  classifier families) instead of 10, half with the LightGBM classifier; the first click is
+  roughly 20 min longer (an estimate from 2.3's 400-trial step times), then cached. Coordinate
+  descent stays in the package and in the EDA as the comparison. Supersedes D32.
 - **D39. The test evaluation follows E11:** both models' best runs (by the comparison metric on
   validation) refit on train + validation, scored on the test part once, behind a button, in the
   tuning notebook; the test scores are reported, never used to choose.
@@ -751,7 +768,28 @@ before the split (PR 6), and the tuning's (5.4 and the rest) after it (PR 7).
   wrong family).
 - **Commit:** `feat(notebook): the objective EDA compares Model 2's two tuning methods, coordinate descent and joint`
 
-### [ ] 5b.3 The reading at 100 trials (docs)
+### [x] 5b.3 The reading at 100 trials (docs)
+- **Done (2026-11-07).** The EDA clicked on the real cache (a copy of the notebook with the two
+  figure cells' returns restored and `studies` symlinked to the repo's; only "Run the objective
+  EDA" clicked; `PYTHONWARNINGS=error`, no warning): 114 s; the 3 joint studies tuned and stored
+  (100 trials each, none failed), the 25 stored files byte-identical; the notebook unchanged.
+  Each objective's best (cv on its objective; validation composite deviance / RMSE; the study's
+  seconds):
+
+  | tuned on | coordinate descent (200 trials) | joint (100 trials) |
+  |---|---|---|
+  | log loss | 1.0828; 2.0539 / 4.4523; 43.2 s | 1.0828; 2.1191 / 4.5358; 39.9 s |
+  | deviance | 2.0791; 2.1373 / 4.5824; 57.8 s | 2.0735; 2.1493 / 4.6040; 32.7 s |
+  | RMSE | 4.2862; 2.1573 / 4.6262; 44.3 s | 4.3247; 2.0990 / 4.5132; 31.5 s |
+
+  The paired bootstrap of the two best models per objective (refit from the stored studies,
+  equal to the EDA's tables; `BootstrapEvaluator(1000, random_state=seed)`, validation, the
+  composite), joint − coordinate descent, 95%: log loss deviance +0.065 (0.010 to 0.127), RMSE
+  +0.084 (0.012 to 0.156); deviance deviance +0.012 (−0.031 to 0.051), RMSE +0.022 (−0.035 to
+  0.073); RMSE deviance −0.058 (−0.143 to 0.014), RMSE −0.113 (−0.242 to 0.007). The search:
+  the joint deviance study at 2.0771 by trial 25, its best at 61; coordinate descent's step 2
+  its best at 34. The figures were saved for the user's viewer app (6 render). **The decision:
+  D40** (§0), the joint method in section 6 in PR 7 (7.0). No code change.
 - The EDA click on the real cache (the 3 joint studies tuned, the rest loaded): per objective,
   each method's `cv_best`, its refit's six validation metrics, its seconds and failed trials;
   the figures read.
@@ -796,6 +834,15 @@ before the split (PR 6), and the tuning's (5.4 and the rest) after it (PR 7).
 - **Commit:** `refactor(notebook): the tuning in its own notebook; 02_experiments.py removed`
 
 ## 6. PR 7: SHAP per cohort and the test evaluation (`feat/test-evaluation`)
+
+### [ ] 7.0 Model 2 by the joint method in section 6 (notebook; D40)
+- **Change:** the tuning notebook's Model 2 runs become one `tune_total_times_probability_model`
+  study per family pair and exposure (16, in a loop over run settings, seeded in the list's
+  order, stored as `total_times_probability_joint__…`), each best refit and scored; the three
+  coordinate-descent cells and `MODEL2_TOTAL_RUNS` / `MODEL2_PROBABILITY_RUNS` removed;
+  `MODEL2_FIXED_PROBABILITY_COMPONENT` stays for the EDA. To plan with the user: the run
+  settings' order and seeds, the records' fields, Check C's new Model 2 baselines (16 joint
+  `cv_best` at 3 trials), the notebook test's pins, section 6's text.
 
 ### [ ] 7.1 SHAP per cohort (notebook)
 - **Change:** the importance cell: `mean_abs_shap` per column × cohort (`np.abs(values).mean(axis=0)`,
