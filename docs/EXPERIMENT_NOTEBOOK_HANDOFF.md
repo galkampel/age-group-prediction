@@ -1,4 +1,14 @@
-# Handoff: the experiment notebook, PR 5b closed; PR 6 (two notebooks) next
+# Handoff: the experiment notebook, PR 5b merged (#24); PR 6 (two notebooks) next
+
+**Status (2026-11-07, PR 5b merged; PR 6 not started; the next session starts at §6):**
+- **PR 5b is merged** as #24, squashed into `main` as `39dd1aa` (identical to `58ed000`, the
+  close's docs commit); `feat/model2-tuning-methods` deleted locally and on GitHub.
+- **PR 6 is on `refactor/two-notebooks`** (from `main` at `39dd1aa`); its first commit is this
+  update. Its plan is the cache plan's §5 (6.1 the shared setup's design, 6.2
+  `02_objective_eda.py`, 6.3 `03_hyperparameter_tuning.py`); PR 7 then starts at 7.0 (D40).
+- The notebook's md5 is `6731d509d2b5298e4d38a99480f700dc`; the user's cache `studies/` holds
+  28 studies (100 trials each). Check C's reference is `check_c_5b_2.pkl`, in the scratchpad
+  `/private/tmp/claude-501/-Users-galkampel-Desktop-Projects-age-group-prediction/f38b920e-c1b1-4cff-a21c-fa1038947061/scratchpad` (copy from it first; the list is in the status below).
 
 **Status (2026-11-07, PR 5b closed before its merge; the next session starts at §6):**
 - **PR 5b is complete** on `feat/model2-tuning-methods` (from `main` at `c3bdee8`): `fef07bc`
@@ -150,7 +160,7 @@ merge (#21, `0c94f16`: the header, §2, §2b, §6), as `feat/study-cache`'s firs
 "PR 5", §3, §4, §6), for the session that continues PR 5 at 5.3; **updated** 2026-11-07 after
 5.3's planning (the header, §2's "PR 5", §3, §4, §6), for the session that implements it;
 **updated** 2026-11-07 after 5.3 (the header, §1, §2's "PR 5", §4, §5, §6), for PR 5's close and PR 5b; **updated**
-2026-11-07 after PR 5's merge (#23), as `feat/model2-tuning-methods`' first commit; **updated** 2026-11-07 at PR 5b's close (the header, §2's "PR 5b", §6 and its prompt), for the session that starts PR 6. The detailed history is in the metrics
+2026-11-07 after PR 5's merge (#23), as `feat/model2-tuning-methods`' first commit; **updated** 2026-11-07 at PR 5b's close (the header, §2's "PR 5b", §6 and its prompt), for the session that starts PR 6; **updated** 2026-11-07 after PR 5b's merge (#24), as `refactor/two-notebooks`' first commit. The detailed history is in the metrics
 plan (§2 M1–M14, §4 2.1–2.5, §5 3.1–3.4 and 3.3 with each
 sub-task's "Done" note), in [NOTEBOOK_TUNING_PLAN.md](NOTEBOOK_TUNING_PLAN.md) (§0 D1–D30) and in
 git. Re-verify every fact here against the code of the day.
@@ -290,7 +300,7 @@ git. Re-verify every fact here against the code of the day.
 
 ## 2. State
 
-### PR 5b (2026-11-07, closed before its merge; `feat/model2-tuning-methods`)
+### PR 5b (2026-11-07, closed: merged as #24, `39dd1aa`; `feat/model2-tuning-methods`)
 
 - **Commits** (from `main` at `c3bdee8`):
 
@@ -300,6 +310,7 @@ git. Re-verify every fact here against the code of the day.
   | `82ccac2` | 5b.1 `trials_table` renamed `build_trials_table` |
   | `0b25ede` | 5b.2 the joint Model 2 method in the objective EDA; section 5's text |
   | `537ff7c` | 5b.3 the reading at 100 trials; D40 |
+  | `58ed000` | PR 5b closed; this handoff for PR 6 |
 
 - **The notebook's EDA since 5b.2:** `eda_model2_joint_df`, `eda_model2_joint_trials_df`,
   `model2_joint` in `eda_best_df` (9 rows), the figures (a third per display) and the tables;
@@ -1054,9 +1065,10 @@ constructor, data in the call; fitting and evaluating as separate steps; no priv
 
 ## 6. Next, and the prompt
 
-**Status (2026-11-07, PR 5b closed before its merge):**
-- PR 5b is complete (§2's "PR 5b"; the closing checks in the status at the top); the user
-  opens and merges it. The notebook's md5 is `6731d509d2b5298e4d38a99480f700dc`.
+**Status (2026-11-07, PR 5b merged; PR 6 not started):**
+- PR 5b is merged as #24 (`39dd1aa` on `main`, identical to `58ed000`); its branch is deleted.
+  PR 6 is on `refactor/two-notebooks` from `main` at `39dd1aa`; its first commit is this
+  update. The notebook's md5 is `6731d509d2b5298e4d38a99480f700dc`.
 - Check C's reference for the next notebook change is `check_c_5b_2.pkl` (with its figures'
   JSON), in the scratchpad named in the status at the top; `check_c.py`'s fifth argument stays
   `check_c_5_2b.pkl`. If they are gone, rewrite the scripts from §4 and run Check C on HEAD
@@ -1064,8 +1076,7 @@ constructor, data in the call; fitting and evaluating as separate steps; no priv
 
 Next, one step per approval, each stopped with a file-by-file summary, the checks, the
 notebooks' md5 and the commit message in a copyable code block:
-1. **PR 5b's merge** (the user's); then the next branch's first commit records its hash in the
-   two docs.
+1. **PR 5b's merge:** done (#24, `39dd1aa`).
 2. **PR 6, the split** (`refactor/two-notebooks` from `main`; the cache plan's §5): 6.1 the
    shared setup's design (three options probed with evidence, the user chooses), 6.2
    `02_objective_eda.py`, 6.3 `03_hyperparameter_tuning.py`; F3 and F4 (§5) there.
@@ -1095,15 +1106,14 @@ docs/NOTEBOOK_CACHE_EVALUATION_PLAN.md (§0 D37 and D40, §5 PR 6 in full, §6's
 notebook's sections 1–4 (the data, the settings, the split, the feature declarations) and the
 names sections 5 and 6 read from them, and tests/characterization/test_experiments_notebook.py.
 Verify the state first:
-- the branch refactor/two-notebooks, which I created from main after PR 5b's merge;
+- the branch refactor/two-notebooks; HEAD my docs commit of PR 5b's merge on 39dd1aa (#24);
 - `git status` clean; the notebook's md5 6731d509d2b5298e4d38a99480f700dc via
   `cat notebooks/02_experiments.py | md5`;
 - no iCloud-offloaded files: `find .git src notebooks tests docs configs -flags +dataless -type f
   | grep -vc __pycache__` is 0.
 If anything differs, stop and show me the diff. Then copy the check scripts (checks/),
 check_c_5b_2.pkl with its figures' JSON, check_c_5_2b.pkl, check_c_3_1l.pkl and
-check_c_3_4_first.pkl from the scratchpad the handoff names (or rewrite them from §4). First
-record PR 5b's merge hash in the two docs (the branch's first commit, docs only). Then, in plan
+check_c_3_4_first.pkl from the scratchpad the handoff names (or rewrite them from §4). In plan
 mode, plan 6.1 (the shared setup's design): probe the three options with evidence, show them with
 a recommendation, the steps and the commit message in the chat, and implement after my
 approval. Then 6.2 and 6.3, one sub-task per approval. Keep the implementation simple. Stop each
