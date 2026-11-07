@@ -1,4 +1,21 @@
-# Handoff: the experiment notebook, PR 5b (Model 2's two tuning methods in the EDA): 5b.3 done, PR 5b to close
+# Handoff: the experiment notebook, PR 5b closed; PR 6 (two notebooks) next
+
+**Status (2026-11-07, PR 5b closed before its merge; the next session starts at §6):**
+- **PR 5b is complete** on `feat/model2-tuning-methods` (from `main` at `c3bdee8`): `fef07bc`
+  the plan, `82ccac2` 5b.1, `0b25ede` 5b.2, `537ff7c` 5b.3, then this handoff (§2's "PR 5b").
+  The user opens and merges it; the next branch's first commit records the merge hash.
+- **D40 (§3):** section 6 tunes Model 2 by the joint method from PR 7 on (the cache plan's 7.0).
+- **The closing checks on `537ff7c`:** the non-slow suite 1393 passed, 1 skipped, 1 xfailed, 19
+  deselected; mypy 28 files, no issue; Check A (the notebook test 14, ruff 15, the user's two
+  format hunks, `marimo check` no issue); Check B. The notebook's md5 is
+  `6731d509d2b5298e4d38a99480f700dc` (unchanged since 5b.2).
+- **The scripts and pickles to copy first:** `/private/tmp/claude-501/-Users-galkampel-Desktop-Projects-age-group-prediction/f38b920e-c1b1-4cff-a21c-fa1038947061/scratchpad`:
+  `checks/` (`run_5b_2.sh`: Check A, B, C and the comparisons; `run_close_5b.sh`: the suite,
+  mypy, Check A, B; `run_5b_3.sh` and `click_eda_5b_3.py`: the EDA's click on the real cache),
+  `check_c_5b_2.pkl` (Check C's reference) with its two figures' JSON, `check_c_5_2b.pkl`,
+  `check_c_3_1l.pkl`, `check_c_3_4_first.pkl`; `eda_5b_3.pkl` and the viewer
+  `viewer/eda_5b_3.py` (the 100-trial EDA's figures). A new session compiles its
+  `PYTHONPYCACHEPREFIX` once without `-W error` (§4's iCloud notes).
 
 **Status (2026-11-07, 5b.3 done, before the user's commit):**
 - **5b.2 is committed** (`0b25ede`). **5b.3 is done** (the cache plan's 5b.3 Done note): the EDA
@@ -133,7 +150,7 @@ merge (#21, `0c94f16`: the header, §2, §2b, §6), as `feat/study-cache`'s firs
 "PR 5", §3, §4, §6), for the session that continues PR 5 at 5.3; **updated** 2026-11-07 after
 5.3's planning (the header, §2's "PR 5", §3, §4, §6), for the session that implements it;
 **updated** 2026-11-07 after 5.3 (the header, §1, §2's "PR 5", §4, §5, §6), for PR 5's close and PR 5b; **updated**
-2026-11-07 after PR 5's merge (#23), as `feat/model2-tuning-methods`' first commit. The detailed history is in the metrics
+2026-11-07 after PR 5's merge (#23), as `feat/model2-tuning-methods`' first commit; **updated** 2026-11-07 at PR 5b's close (the header, §2's "PR 5b", §6 and its prompt), for the session that starts PR 6. The detailed history is in the metrics
 plan (§2 M1–M14, §4 2.1–2.5, §5 3.1–3.4 and 3.3 with each
 sub-task's "Done" note), in [NOTEBOOK_TUNING_PLAN.md](NOTEBOOK_TUNING_PLAN.md) (§0 D1–D30) and in
 git. Re-verify every fact here against the code of the day.
@@ -273,7 +290,28 @@ git. Re-verify every fact here against the code of the day.
 
 ## 2. State
 
-### PR 5 (in progress, `feat/bootstrap-replicates`)
+### PR 5b (2026-11-07, closed before its merge; `feat/model2-tuning-methods`)
+
+- **Commits** (from `main` at `c3bdee8`):
+
+  | commit | sub-task |
+  |---|---|
+  | `fef07bc` | the plan (the cache plan's §4b) and this handoff (the branch's first commit) |
+  | `82ccac2` | 5b.1 `trials_table` renamed `build_trials_table` |
+  | `0b25ede` | 5b.2 the joint Model 2 method in the objective EDA; section 5's text |
+  | `537ff7c` | 5b.3 the reading at 100 trials; D40 |
+
+- **The notebook's EDA since 5b.2:** `eda_model2_joint_df`, `eda_model2_joint_trials_df`,
+  `model2_joint` in `eda_best_df` (9 rows), the figures (a third per display) and the tables;
+  the joint studies stored as `total_times_probability_joint__…` (3 in the user's cache since
+  5b.3, which now holds 28 files).
+- **The joint EDA's Check C values** (3 trials, log loss / deviance / RMSE): 1.0833 / 2.1543 /
+  4.4258.
+- **5b.3's reading** (100 trials) is the cache plan's 5b.3 Done note; the decision is D40.
+- **The checks** of each sub-task are in its Done note; the closing checks in the status at the
+  top.
+
+### PR 5 (closed: merged as #23, `c3bdee8`; `feat/bootstrap-replicates`)
 
 - **Commits** (from `main` at `30bd4f7`):
 
@@ -1016,36 +1054,26 @@ constructor, data in the call; fitting and evaluating as separate steps; no priv
 
 ## 6. Next, and the prompt
 
-**Status (2026-11-07, PR 5 merged; PR 5b planned, not started):**
-- PR 5 is merged as #23 (`c3bdee8` on `main`, identical to 5.3's `8a90bf9`); its branch is
-  deleted. PR 5b is on `feat/model2-tuning-methods` from `main` at `c3bdee8`; its first commit is
-  the docs (the cache plan's §4b, this handoff). The notebook's md5 is
-  `9a66a347ed3fc928f14a43bde04da1b9` (unchanged since 5.3).
-- Check C's reference for the next notebook change is `check_c_5b_2.pkl` since 5b.2 (with its
-  figures' JSON; every shared frame and figure equal to `check_c_5b_1.pkl`'s), in the scratchpad named in the status at the top; `check_c.py`'s
-  fifth argument stays `check_c_5_2b.pkl`. If they are gone, rewrite the scripts from §4 and run
-  Check C on HEAD before the first edit, keeping that pickle.
+**Status (2026-11-07, PR 5b closed before its merge):**
+- PR 5b is complete (§2's "PR 5b"; the closing checks in the status at the top); the user
+  opens and merges it. The notebook's md5 is `6731d509d2b5298e4d38a99480f700dc`.
+- Check C's reference for the next notebook change is `check_c_5b_2.pkl` (with its figures'
+  JSON), in the scratchpad named in the status at the top; `check_c.py`'s fifth argument stays
+  `check_c_5_2b.pkl`. If they are gone, rewrite the scripts from §4 and run Check C on HEAD
+  before the first edit, keeping that pickle.
 
 Next, one step per approval, each stopped with a file-by-file summary, the checks, the
-notebook's md5 and the commit message in a copyable code block:
-1. **Close PR 5 at 5.3:** done (#23).
-2. **PR 5b, the EDA** (`feat/model2-tuning-methods` from `main`; its first commit records this
-   order and its plan in the cache plan as §4b):
-   - 5b.1 `trials_table` renamed `build_trials_table` (done; the user: keep the function, a more
-     informative name; the trials' scores are already saved during the runs as user
-     attributes, the function rebuilds each trial's whole model from the flat params);
-   - 5b.2 (done) the joint Model 2 method in the EDA (one `tune_total_times_probability_model` study
-     per objective, `lgbm_poisson+logistic`, exposure on), `model2_joint` in the summary,
-     figures and tables;
-   - 5b.3 (done) the reading at 100 trials; D40: the joint method replaces coordinate descent
-     in section 6, in PR 7 (7.0).
-3. **PR 6, the split** (the cache plan's §5; F3 and F4 there).
-4. **PR 7, the tuning notebook's evaluation:** 7.0 first (D40: Model 2 by the joint method,
-   16 studies), then 5.4 (the paired difference from
-   `best_replicate_scores`, `total_times_probability − independent_cohorts` per replicate; its
-   forest plot with `rule_at=0`; the importance on `SELECTION_METRIC`), the forest plots'
-   layout fixed (§5), then SHAP per cohort and the test evaluation. MLflow and D4 stay
-   deferred.
+notebooks' md5 and the commit message in a copyable code block:
+1. **PR 5b's merge** (the user's); then the next branch's first commit records its hash in the
+   two docs.
+2. **PR 6, the split** (`refactor/two-notebooks` from `main`; the cache plan's §5): 6.1 the
+   shared setup's design (three options probed with evidence, the user chooses), 6.2
+   `02_objective_eda.py`, 6.3 `03_hyperparameter_tuning.py`; F3 and F4 (§5) there.
+3. **PR 7, the tuning notebook's evaluation:** 7.0 first (D40: Model 2 by the joint method,
+   16 studies), then 5.4 (the paired difference from `best_replicate_scores`,
+   `total_times_probability − independent_cohorts` per replicate; its forest plot with
+   `rule_at=0`; the importance on `SELECTION_METRIC`), the forest plots' layout fixed (§5),
+   then SHAP per cohort and the test evaluation. MLflow and D4 stay deferred.
 
 The user's preferences:
 - plan docs in `docs/`, split into sub-tasks validated one at a time;
@@ -1061,26 +1089,25 @@ The user's preferences:
 **The prompt for the next session:**
 
 ```text
-Read docs/EXPERIMENT_NOTEBOOK_HANDOFF.md in full (the status at the top, §2's "PR 5" block,
+Read docs/EXPERIMENT_NOTEBOOK_HANDOFF.md in full (the status at the top, §2's "PR 5b" block,
 §3, §4's checks, traps, iCloud notes and the latest scripts, §5, §6 first), then
-docs/NOTEBOOK_CACHE_EVALUATION_PLAN.md (§0 D34–D36, §4b PR 5b in full, §4's 5.3 Done note and
-5.4 moved to PR 7), then the notebook's section 5: the EDA's settings and tuner cells,
-trials_table, Model 1's and Model 2's EDA run cells, the summary cell (eda_best_df), the two
-figure cells and the tables cell; and CrossValidationTuner.tune_total_times_probability_model
-in src/age_group_prediction/hyperparameter_tuning/cross_validation.py.
+docs/NOTEBOOK_CACHE_EVALUATION_PLAN.md (§0 D37 and D40, §5 PR 6 in full, §6's 7.0), then the
+notebook's sections 1–4 (the data, the settings, the split, the feature declarations) and the
+names sections 5 and 6 read from them, and tests/characterization/test_experiments_notebook.py.
 Verify the state first:
-- the branch feat/model2-tuning-methods; HEAD my docs commit of PR 5b's plan on c3bdee8 (#23);
-- `git status` clean; the notebook's md5 9a66a347ed3fc928f14a43bde04da1b9 via
+- the branch refactor/two-notebooks, which I created from main after PR 5b's merge;
+- `git status` clean; the notebook's md5 6731d509d2b5298e4d38a99480f700dc via
   `cat notebooks/02_experiments.py | md5`;
 - no iCloud-offloaded files: `find .git src notebooks tests docs configs -flags +dataless -type f
   | grep -vc __pycache__` is 0.
 If anything differs, stop and show me the diff. Then copy the check scripts (checks/),
-check_c_5_3.pkl with its figures' JSON, check_c_5_2b.pkl, check_c_3_1l.pkl and
-check_c_3_4_first.pkl from the scratchpad the handoff names (or rewrite them from §4). In plan
-mode, re-verify 5b.1 (trials_table renamed build_trials_table) against the code (line numbers
-by grep), show it with the steps and the commit message in the chat, and implement it after my
-approval. Then 5b.2 and 5b.3, one sub-task per approval. Keep the implementation simple. Stop
-each sub-task with a file-by-file summary, the checks, the notebook's md5 and the commit message
-in a copyable code block. I commit myself: never commit, no Co-Authored-By line, no "Generated
-with Claude Code" in PR text, never git checkout/stash/reset/mv.
+check_c_5b_2.pkl with its figures' JSON, check_c_5_2b.pkl, check_c_3_1l.pkl and
+check_c_3_4_first.pkl from the scratchpad the handoff names (or rewrite them from §4). First
+record PR 5b's merge hash in the two docs (the branch's first commit, docs only). Then, in plan
+mode, plan 6.1 (the shared setup's design): probe the three options with evidence, show them with
+a recommendation, the steps and the commit message in the chat, and implement after my
+approval. Then 6.2 and 6.3, one sub-task per approval. Keep the implementation simple. Stop each
+sub-task with a file-by-file summary, the checks, the notebooks' md5 and the commit message in a
+copyable code block. I commit myself: never commit, no Co-Authored-By line, no "Generated with
+Claude Code" in PR text, never git checkout/stash/reset/mv.
 ```
