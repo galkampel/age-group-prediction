@@ -1,4 +1,14 @@
-# Handoff: the experiment notebook, PR 5b (Model 2's two tuning methods in the EDA): planned, 5b.1 next
+# Handoff: the experiment notebook, PR 5b (Model 2's two tuning methods in the EDA): 5b.1 done, 5b.2 next
+
+**Status (2026-11-07, 5b.1 done, before the user's commit):**
+- **5b.1 is implemented as planned** (the cache plan's 5b.1 Done note): `trials_table` renamed
+  `build_trials_table` (7 notebook lines; §1 and §5 here). The notebook's md5 is
+  `e0f2ba6c32ead22ebee081a4f0a27e3f`. Next: 5b.2 (the cache plan's §4b).
+- **This session's scratchpad** (copy from it first): `/private/tmp/claude-501/-Users-galkampel-Desktop-Projects-age-group-prediction/f38b920e-c1b1-4cff-a21c-fa1038947061/scratchpad`:
+  `checks/` (`run_5b_1.sh`: Check A, B, C and the comparison; `check_b.py` with 5b.1's names),
+  `check_c_5b_1.pkl` (5b.2's reference) with its two figures' JSON, `check_c_5_3.pkl`,
+  `check_c_5_2b.pkl`, `check_c_3_1l.pkl`, `check_c_3_4_first.pkl`. A new session's
+  `PYTHONPYCACHEPREFIX` is compiled once without `-W error` first (§4's iCloud notes).
 
 **Status (2026-11-07, PR 5 merged; PR 5b planned; the next session starts at §6):**
 - **PR 5 is merged** as #23, squashed into `main` as `c3bdee8` (identical to `8a90bf9`, 5.3);
@@ -122,8 +132,8 @@ git. Re-verify every fact here against the code of the day.
    tuning imports, the metrics cell (also `RMSE` and `EDA_OBJECTIVES = (LOG_LOSS,
    POISSON_DEVIANCE, RMSE)`), `COHORTS` / `PREDICTION_FLOOR`, the `tuner` and
    `MODEL2_FIXED_PROBABILITY_COMPONENT` (moved up from section 6, so every name is defined above
-   where it is read); `trials_table(study, objective, metric_names, components_by_trial,
-   feature_transformer_dict)`; the button "Run the objective EDA"; Model 1's EDA run
+   where it is read); `build_trials_table(study, objective, metric_names, components_by_trial,
+   feature_transformer_dict)` (`trials_table` until 5b.1); the button "Run the objective EDA"; Model 1's EDA run
    (`lgbm_poisson`, exposure on, the notebook's flags) and Model 2's (`lgbm_poisson+logistic`,
    exposure on, by coordinate descent), each one study (Model 2: two) per objective through
    `dataclasses.replace(tuner, objective_metric=objective)`, every study seeded `seed`; each best
@@ -920,14 +930,14 @@ constructor, data in the call; fitting and evaluating as separate steps; no priv
 
 - **The review's #2:** `BootstrapEvaluator.evaluate` does not check `cohorts` (duplicates give
   identical rows, `[]` a confusing `TypeError`); left as is by the user.
-- **PR 3's review, F3 (for PR 6):** no repo test covers `trials_table`, `eda_best_df`, the EDA
+- **PR 3's review, F3 (for PR 6):** no repo test covers `build_trials_table`, `eda_best_df`, the EDA
   figures or section 6's records and tables; only Check C (a scratchpad script) does. A
-  characterization test of `notebook_defs["trials_table"]` on a 3-trial study fits PR 6's test
+  characterization test of `notebook_defs["build_trials_table"]` on a 3-trial study fits PR 6's test
   split (6.2: `test_objective_eda_notebook.py`).
 - **PR 3's review, F4 (for PR 6):**
-  - the lookup of a transformer's name by identity is written four times (`trials_table`,
+  - the lookup of a transformer's name by identity is written four times (`build_trials_table`,
     Model 1's run cell, Model 2's step 1 and step 2);
-  - the hyperparameters are read two ways: `to_dict()["estimator_params"]` in `trials_table`,
+  - the hyperparameters are read two ways: `to_dict()["estimator_params"]` in `build_trials_table`,
     `dataclasses.asdict(component.estimator_params)` in section 6; the output is the same;
   - one shared function belongs with 6.1's shared setup, once the two notebooks exist.
 - **T2.3's F5:** gone with 3.4 (the two arms tables were removed).
@@ -965,8 +975,8 @@ constructor, data in the call; fitting and evaluating as separate steps; no priv
   deleted. PR 5b is on `feat/model2-tuning-methods` from `main` at `c3bdee8`; its first commit is
   the docs (the cache plan's §4b, this handoff). The notebook's md5 is
   `9a66a347ed3fc928f14a43bde04da1b9` (unchanged since 5.3).
-- Check C's reference for the next notebook change is `check_c_5_3.pkl` (with its figures'
-  JSON), in the 2026-11-07 session's scratchpad named in the status at the top; `check_c.py`'s
+- Check C's reference for the next notebook change is `check_c_5b_1.pkl` since 5b.1 (with its
+  figures' JSON; equal to `check_c_5_3.pkl`), in the scratchpad named in the status at the top; `check_c.py`'s
   fifth argument stays `check_c_5_2b.pkl`. If they are gone, rewrite the scripts from §4 and run
   Check C on HEAD before the first edit, keeping that pickle.
 
@@ -975,7 +985,7 @@ notebook's md5 and the commit message in a copyable code block:
 1. **Close PR 5 at 5.3:** done (#23).
 2. **PR 5b, the EDA** (`feat/model2-tuning-methods` from `main`; its first commit records this
    order and its plan in the cache plan as §4b):
-   - 5b.1 `trials_table` renamed `build_trials_table` (the user: keep the function, a more
+   - 5b.1 `trials_table` renamed `build_trials_table` (done; the user: keep the function, a more
      informative name; the trials' scores are already saved during the runs as user
      attributes, the function rebuilds each trial's whole model from the flat params);
    - 5b.2 the joint Model 2 method in the EDA (one `tune_total_times_probability_model` study

@@ -892,7 +892,7 @@ def _(LogisticParams, PROBABILITY_FEATURE_TRANSFORMERS, ProbabilityComponent):
 
 @app.cell
 def _(ProbabilityComponent, pd):
-    def trials_table(
+    def build_trials_table(
         study, objective, metric_names, components_by_trial, feature_transformer_dict
     ):
         """Every trial of `study` as a row of the whole model it scored: its id
@@ -936,7 +936,7 @@ def _(ProbabilityComponent, pd):
             )
         return pd.DataFrame(rows)
 
-    return (trials_table,)
+    return (build_trials_table,)
 
 
 @app.cell
@@ -959,6 +959,7 @@ def _(
     PREDICTION_FLOOR,
     build_independent_cohorts_model,
     build_study_name,
+    build_trials_table,
     compute_metrics,
     cv_groups,
     dataclasses,
@@ -967,7 +968,6 @@ def _(
     run_eda,
     seed,
     train_age_group,
-    trials_table,
     tuner,
     val_age_group,
 ):
@@ -1024,7 +1024,7 @@ def _(
             for trial in _study.trials
         ]
         _trials.append(
-            trials_table(
+            build_trials_table(
                 _study,
                 _objective.name,
                 _metric_names,
@@ -1072,6 +1072,7 @@ def _(
     ProbabilityComponent,
     build_study_name,
     build_total_times_probability_model,
+    build_trials_table,
     compute_metrics,
     cv_groups,
     dataclasses,
@@ -1080,7 +1081,6 @@ def _(
     run_eda,
     seed,
     train_age_group,
-    trials_table,
     tuner,
     val_age_group,
 ):
@@ -1133,7 +1133,7 @@ def _(
             for trial in _total_study.trials
         ]
         _trials.append(
-            trials_table(
+            build_trials_table(
                 _total_study,
                 _objective.name,
                 _metric_names,
@@ -1186,7 +1186,7 @@ def _(
             for trial in _probability_study.trials
         ]
         _trials.append(
-            trials_table(
+            build_trials_table(
                 _probability_study,
                 _objective.name,
                 _metric_names,
