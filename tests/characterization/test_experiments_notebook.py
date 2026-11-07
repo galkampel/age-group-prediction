@@ -123,6 +123,7 @@ def test_a_setting_missing_or_changed_in_a_settings_mapping_is_caught(
         "n_splits": "5",
         "n_trials": "100",
         "n_startup_trials": "10",
+        "selection_metric": "rmse",
         "n_resamples": "1000",
         "alpha": "0.05",
         "n_repeats": "10",

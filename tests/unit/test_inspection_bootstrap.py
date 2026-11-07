@@ -55,11 +55,11 @@ def _evaluate(
     direction: Direction = "minimize",
     **settings: Any,
 ) -> pd.Series:
-    """The one-metric row of the recorder's bootstrap: ``mean``, ``lower``, ``upper``."""
+    """The recorder's replicates: the one metric's column of the bootstrap."""
     metric = Metric("mean_id", recorder, direction=direction)
     kwargs: dict[str, Any] = {"n_resamples": 50, "random_state": 0}
     evaluator = BootstrapEvaluator(**(kwargs | settings))
-    return evaluator.evaluate(Y, Y_PRED, groups, metrics=[metric]).loc[
+    return evaluator.evaluate(Y, Y_PRED, groups, metrics=[metric])[
         ("composite", "mean_id")
     ]
 
@@ -82,13 +82,13 @@ def test_every_metric_scores_the_same_replicates() -> None:
         np.array_equal(ids_a, ids_b)
         for ids_a, ids_b in zip(first.replicates, second.replicates)
     )
-    assert list(result.index) == [("composite", "a"), ("composite", "b")]
-    assert result.index.names == ["cohort", "metric"]
+    assert list(result.columns) == [("composite", "a"), ("composite", "b")]
+    assert result.columns.names == ["cohort", "metric"]
 
 
-def test_the_rows_follow_the_metrics_and_hold_the_interval() -> None:
-    # Catches the metrics' rows in another order than given, or a column
-    # other than the interval's.
+def test_one_row_per_replicate_and_the_columns_follow_the_metrics() -> None:
+    # Catches a replicate lost or added, or the metrics' columns in another
+    # order than given.
     result = BootstrapEvaluator(10).evaluate(
         Y,
         Y_PRED,
@@ -97,8 +97,8 @@ def test_the_rows_follow_the_metrics_and_hold_the_interval() -> None:
             Metric("max_id", lambda y_true, y_pred: float(np.max(y_true))),
         ],
     )
-    assert list(result.columns) == ["mean", "lower", "upper"]
-    assert list(result.index) == [("composite", "mean_id"), ("composite", "max_id")]
+    assert result.shape == (10, 2)
+    assert list(result.columns) == [("composite", "mean_id"), ("composite", "max_id")]
 
 
 @pytest.mark.parametrize(
@@ -139,7 +139,7 @@ def test_rows_are_drawn_with_replacement() -> None:
     result = _evaluate(recorder)
     assert all(len(ids) == len(Y) for ids in recorder.replicates)
     assert any(len(set(ids.tolist())) < len(Y) for ids in recorder.replicates)
-    assert result["lower"] < result["upper"]
+    assert result.nunique() > 1
 
 
 def test_predictions_stay_paired_with_targets() -> None:
@@ -157,26 +157,40 @@ def test_same_seed_gives_identical_results() -> None:
     assert not _evaluate(other, GROUPS, random_state=1).equals(_evaluate(first, GROUPS))
 
 
-def test_bounds_are_the_percentiles_of_the_replicates() -> None:
-    # Catches a wrong quantile (e.g. alpha instead of alpha / 2) or a mean of
-    # something other than the replicate scores.
+def test_the_replicates_are_the_scores_in_the_order_drawn() -> None:
+    # Catches a column holding something other than the metric's replicate
+    # scores, or the replicates reordered.
     recorder = _RecordingMetric()
-    result = _evaluate(recorder, alpha=0.2, n_resamples=200)
-    scores = np.array(recorder.scores)
-    assert len(scores) == 200
-    assert result["mean"] == pytest.approx(scores.mean())
-    assert result["lower"] == pytest.approx(np.quantile(scores, 0.1))
-    assert result["upper"] == pytest.approx(np.quantile(scores, 0.9))
-    assert result["lower"] <= result["mean"] <= result["upper"]
+    result = _evaluate(recorder, n_resamples=200)
+    assert len(recorder.scores) == 200
+    assert result.tolist() == recorder.scores
+
+
+@pytest.mark.parametrize(
+    ("groups", "mean", "lower", "upper"),
+    [
+        (GROUPS, 13.660394088857526, 12.0, 14.909090909090908),
+        (None, 13.820714285714287, 11.56875, 15.924107142857142),
+    ],
+    ids=["groups", "rows"],
+)
+def test_the_replicates_give_the_intervals_the_evaluator_returned_before(
+    groups: np.ndarray | None, mean: float, lower: float, upper: float
+) -> None:
+    # Catches a change in the draws: the evaluator returned these mean and
+    # 95% bounds before it returned its replicates (seed 0, 50 replicates).
+    result = _evaluate(_RecordingMetric(), groups)
+    assert np.quantile(result, [0.025, 0.975]).tolist() == [lower, upper]
+    assert result.mean() == pytest.approx(mean, rel=1e-12, abs=0)
 
 
 def test_a_metric_to_maximize_is_reported_raw() -> None:
-    # Catches the tuner's sign flip being applied here: the interval is in the
-    # metric's own units.
+    # Catches the tuner's sign flip being applied here: the replicates are in
+    # the metric's own units.
     recorder = _RecordingMetric()
     result = _evaluate(recorder, direction="maximize")
-    assert result["mean"] == pytest.approx(np.mean(recorder.scores))
-    assert result["mean"] > 0
+    assert result.tolist() == recorder.scores
+    assert (result > 0).all()
 
 
 def test_non_finite_replicate_raises() -> None:
@@ -227,22 +241,21 @@ def test_fewer_than_two_groups_raises() -> None:
     "settings",
     [
         {"n_resamples": 0},
-        {"alpha": 0.0},
-        {"alpha": 1.0},
         {"random_stat": 0},
+        {"alpha": 0.05},
         {"n_resamples": True},
     ],
     ids=[
         "no-resamples",
-        "alpha-0",
-        "alpha-1",
         "misspelt-keyword",
+        "alpha-is-the-callers",
         "bool-resamples",
     ],
 )
 def test_invalid_settings_raise(settings: dict[str, Any]) -> None:
-    # Catches settings that would fail only after the replicates, or give a
-    # degenerate interval. Pydantic's default ignores extras and reads True as 1.
+    # Catches settings that would fail only after the replicates, or a keyword
+    # that does nothing (the interval's alpha is the caller's). Pydantic's
+    # default ignores extras and reads True as 1.
     with pytest.raises(ValidationError):
         BootstrapEvaluator(**({"n_resamples": 10} | settings))
 
@@ -266,17 +279,17 @@ def test_cohort_model_with_cohort_log_loss() -> None:
     )
     y_pred = model.predict(X_cohort)
     evaluator = BootstrapEvaluator(100, random_state=0)
-    result = evaluator.evaluate(
-        y_cohort, y_pred, groups, metrics=[COHORT_LOG_LOSS]
-    ).loc[("composite", "cohort_log_loss")]
-    full = COHORT_LOG_LOSS(y_cohort, y_pred)
-    assert result["lower"] < full < result["upper"]
+    result = evaluator.evaluate(y_cohort, y_pred, groups, metrics=[COHORT_LOG_LOSS])[
+        ("composite", "cohort_log_loss")
+    ]
+    lower, upper = np.quantile(result, [0.025, 0.975])
+    assert lower < COHORT_LOG_LOSS(y_cohort, y_pred) < upper
 
 
 def test_each_cohort_is_scored_on_the_composites_replicates() -> None:
     # Catches a cohort scored as the whole of y, or replicates drawn per
-    # cohort: with one seed, the composite rows equal a composite-only call,
-    # and a cohort's row equals the bootstrap of its column alone.
+    # cohort: with one seed, the composite column equals a composite-only
+    # call, and a cohort's column equals the bootstrap of its column alone.
     rng = np.random.default_rng(1)
     y_true = pd.DataFrame(
         {"a": rng.poisson(3.0, 28), "b": rng.poisson(6.0, 28)}, dtype=float
@@ -292,14 +305,8 @@ def test_each_cohort_is_scored_on_the_composites_replicates() -> None:
     )
     composite = evaluator.evaluate(y_true, y_pred, GROUPS, metrics=metrics)
 
-    assert list(both.index) == [("a", "mae"), ("composite", "mae")]
-    # The same replicates; the mean's last bit depends on the array's width
-    # (NumPy sums one column pairwise, several row by row).
-    composite_rows = both.loc[[("composite", "mae")]]
-    assert composite_rows.index.equals(composite.index)
-    np.testing.assert_allclose(composite_rows, composite, rtol=1e-12, atol=0)
+    assert list(both.columns) == [("a", "mae"), ("composite", "mae")]
+    pd.testing.assert_frame_equal(both[[("composite", "mae")]], composite)
     column_alone = evaluator.evaluate(y_true["a"], y_pred["a"], GROUPS, metrics=metrics)
-    np.testing.assert_allclose(
-        both.loc[[("a", "mae")]], column_alone, rtol=1e-12, atol=0
-    )
-    assert both.loc[("a", "mae"), "mean"] != both.loc[("composite", "mae"), "mean"]
+    assert both[("a", "mae")].tolist() == column_alone[("composite", "mae")].tolist()
+    assert not both[("a", "mae")].equals(both[("composite", "mae")])

@@ -244,6 +244,9 @@ def _(mo, pd):
     # TPE's random start: the trials drawn at random before its model guides the
     # draws; 10% of the budget, Optuna's default (D31).
     n_startup_trials = 10
+    # The metric that picks each model's best run, by its composite score on
+    # validation: "rmse" or "poisson_deviance" (D34; the deviance still tunes).
+    selection_metric = "rmse"
     n_resamples = 1000
     # The bootstrap interval's level is 1 - alpha: 95%.
     alpha = 0.05
@@ -262,6 +265,7 @@ def _(mo, pd):
         "n_splits": n_splits,
         "n_trials": n_trials,
         "n_startup_trials": n_startup_trials,
+        "selection_metric": selection_metric,
         "n_resamples": n_resamples,
         "alpha": alpha,
         "n_repeats": n_repeats,
@@ -283,6 +287,7 @@ def _(mo, pd):
         n_startup_trials,
         n_trials,
         seed,
+        selection_metric,
         split_method,
         test_size,
         val_size,
@@ -705,7 +710,7 @@ def _():
     )
     from age_group_prediction.scoring import (
         Metric,
-        evaluate,
+        compute_metrics,
         mean_absolute_error_loss,
         mean_bias_error,
         mean_poisson_deviance_loss,
@@ -727,8 +732,8 @@ def _():
         ShapExplainer,
         build_independent_cohorts_model,
         build_total_times_probability_model,
+        compute_metrics,
         dataclasses,
-        evaluate,
         go,
         make_subplots,
         mean_absolute_error_loss,
@@ -749,11 +754,12 @@ def _(
     mean_poisson_deviance_loss,
     multinomial_log_loss,
     root_mean_squared_error_loss,
+    selection_metric,
     wmape_loss,
 ):
-    # The primary metric: the study's objective, the best run's rule and the
-    # permutation importance's score, with the direction Optuna is given; a
-    # loss, so "minimize".
+    # The primary metric: the study's objective and the permutation
+    # importance's score, with the direction Optuna is given; a loss, so
+    # "minimize".
     POISSON_DEVIANCE = Metric(
         "poisson_deviance", mean_poisson_deviance_loss, direction="minimize"
     )
@@ -775,7 +781,15 @@ def _(
     )
     # The objective EDA's objectives (section 5), the same objects as in METRICS.
     EDA_OBJECTIVES = (LOG_LOSS, POISSON_DEVIANCE, RMSE)
-    return EDA_OBJECTIVES, METRICS, POISSON_DEVIANCE
+    # The selection metric: it picks each model's best run (the composite's
+    # point score on validation) and is the forest plots' metric.
+    if selection_metric == "rmse":
+        SELECTION_METRIC = RMSE
+    elif selection_metric == "poisson_deviance":
+        SELECTION_METRIC = POISSON_DEVIANCE
+    else:
+        raise ValueError(f"unknown selection_metric {selection_metric!r}")
+    return EDA_OBJECTIVES, METRICS, POISSON_DEVIANCE, SELECTION_METRIC
 
 
 @app.cell
@@ -945,9 +959,9 @@ def _(
     PREDICTION_FLOOR,
     build_independent_cohorts_model,
     build_study_name,
+    compute_metrics,
     cv_groups,
     dataclasses,
-    evaluate,
     mo,
     pd,
     run_eda,
@@ -1033,7 +1047,7 @@ def _(
         ).fit(train_age_group.X, train_age_group.Y, exposure=train_age_group.exposure)
         # Every metric on validation, per cohort and for the composite; the
         # study's value (in its own objective) and its seconds on each row.
-        _scores_by_objective[_objective.name] = evaluate(
+        _scores_by_objective[_objective.name] = compute_metrics(
             val_age_group.Y,
             _model.predict(val_age_group.X, exposure=val_age_group.exposure),
             METRICS,
@@ -1058,9 +1072,9 @@ def _(
     ProbabilityComponent,
     build_study_name,
     build_total_times_probability_model,
+    compute_metrics,
     cv_groups,
     dataclasses,
-    evaluate,
     mo,
     pd,
     run_eda,
@@ -1197,7 +1211,7 @@ def _(
         # Every metric on validation, per cohort and for the composite; the
         # pair's value (in its own objective) and the two studies' seconds on
         # each row.
-        _scores_by_objective[_objective.name] = evaluate(
+        _scores_by_objective[_objective.name] = compute_metrics(
             val_age_group.Y,
             _model.predict(val_age_group.X, exposure=val_age_group.exposure),
             METRICS,
@@ -1647,10 +1661,7 @@ def _(mo):
     model's pairs (below), are refit on the training part, kept, and scored
     on the training rows and on the validation rows (the test part waits for
     the final refit on training + validation) on every metric, per cohort
-    and for the composite, each score with its bootstrap mean and
-    `1 - alpha` (95%) interval, `ci95_lower` to `ci95_upper`: the
-    replicates resample whole neighborhoods, and every model is scored on
-    the same replicates, so the intervals compare across models. Each model
+    and for the composite: a point score each. Each model
     has two tables: its runs (each kept model's feature transformers and
     hyperparameters per component, its cross-validated objective, its trials
     and seconds) and their scores (a row per dataset, cohort and metric). The six
@@ -1682,9 +1693,24 @@ def _(mo):
     The run
     cells sit behind buttons: opening the notebook fits nothing.
 
-    Each model's best run, by the Poisson deviance of the composite on
-    validation, is then inspected, behind its own button, with its stored
-    model. The permutation importance of the primary metric on validation
+    Each model's best run is the one with the lowest point score of the
+    composite on validation by `selection_metric` (RMSE by default, or the
+    Poisson deviance). The point score, because the bootstrap's mean ranks
+    the runs the same (the bootstrap measures the uncertainty, it does not
+    rank better), and not the cross-validated score, since each run was
+    tuned on it. The chosen run's validation score is optimistic (it won a
+    choice); the test part gives the fair one. The two best runs are
+    bootstrapped on validation: each score with its replicates' mean,
+    median, SD and `1 - alpha` (95%) interval, `ci95_lower` to
+    `ci95_upper`. The replicates resample whole neighborhoods, and both
+    models are scored on the same replicates, so their intervals compare
+    and their difference pairs by replicate; `n_resamples = 1000` was kept
+    by measurement (the bounds' SD across seeds at most 4.6% of the
+    interval's width). A forest plot shows the selection metric with its
+    interval per cohort and for the composite.
+
+    The two best runs are then inspected, behind their own button, with
+    their stored models. The permutation importance of the primary metric on validation
     says what the shipped prediction depends on, and on training what the
     model fitted (a column important there only is overfit). Exact SHAP of
     `n_shap_rows` validation rows against `n_shap_background` training rows
@@ -1697,12 +1723,10 @@ def _(mo):
 
 @app.cell
 def _(BootstrapEvaluator, alpha, n_resamples, seed):
-    # The bootstrap of every kept model, over neighborhoods: one seed, so every
-    # model scores the same replicate rows and the intervals compare; its bounds
-    # named by their level (95% at alpha 0.05).
-    bootstrap_evaluator = BootstrapEvaluator(
-        n_resamples, alpha=alpha, random_state=seed
-    )
+    # The bootstrap of each model's best run, over neighborhoods: one seed, so
+    # both models score the same replicate rows and the intervals compare; the
+    # interval's bounds named by their level (95% at alpha 0.05).
+    bootstrap_evaluator = BootstrapEvaluator(n_resamples, random_state=seed)
     _level = round(100 * (1 - alpha))
     CI_BOUND_NAMES = {"lower": f"ci{_level}_lower", "upper": f"ci{_level}_upper"}
     return CI_BOUND_NAMES, bootstrap_evaluator
@@ -1779,18 +1803,16 @@ def _(mo):
 
 @app.cell
 def _(
-    CI_BOUND_NAMES,
     COHORTS,
     COUNT_FEATURE_TRANSFORMERS,
     CountComponent,
     METRICS,
     MODEL1_RUN_SETTINGS,
     PREDICTION_FLOOR,
-    bootstrap_evaluator,
     build_independent_cohorts_model,
     build_study_name,
+    compute_metrics,
     cv_groups,
-    evaluate,
     mo,
     pd,
     run_model1,
@@ -1845,8 +1867,7 @@ def _(
             for cohort in COHORTS
         )
         # The best model refit on the training part; every metric on training
-        # and validation, per cohort and for the composite: its score and its
-        # bootstrap interval over neighborhoods.
+        # and validation, per cohort and for the composite: its point score.
         _model = build_independent_cohorts_model(
             _best_components, y_min=PREDICTION_FLOOR, random_state=seed
         ).fit(train_age_group.X, train_age_group.Y, exposure=train_age_group.exposure)
@@ -1856,19 +1877,10 @@ def _(
             ("val", val_age_group),
         ):
             _y_pred = _model.predict(_dataset.X, exposure=_dataset.exposure)
-            _dataset_scores = evaluate(
+            _dataset_scores = compute_metrics(
                 _dataset.Y, _y_pred, METRICS, cohorts=[*COHORTS, "composite"]
             ).stack()
-            _dataset_intervals = bootstrap_evaluator.evaluate(
-                _dataset.Y,
-                _y_pred,
-                _dataset.groups,
-                metrics=METRICS,
-                cohorts=[*COHORTS, "composite"],
-            ).rename(columns=CI_BOUND_NAMES)
-            _scores_by_dataset[_dataset_name] = (
-                _dataset_scores.rename("score").to_frame().join(_dataset_intervals)
-            )
+            _scores_by_dataset[_dataset_name] = _dataset_scores.to_frame("score")
         # The run's settings and its best model: the fitted model, its
         # components and their transformers' names (found by identity among
         # the family's candidates); its value, trial counts and seconds. The
@@ -1946,8 +1958,8 @@ def _(mo, model1_runs_df, model1_scores_df):
             ),
             mo.ui.table(model1_runs_df.round(4)),
             mo.md(
-                "**Its scores, per dataset, cohort and for the composite** (score, "
-                "and the bootstrap's mean and 95% interval)"
+                "**Its scores, per dataset, cohort and for the composite** (the "
+                "point score; each model's best run is bootstrapped below)"
             ),
             mo.ui.table(model1_scores_df.round(4)),
         ]
@@ -2153,16 +2165,14 @@ def _(
 
 @app.cell
 def _(
-    CI_BOUND_NAMES,
     COHORTS,
     METRICS,
     MODEL2_PROBABILITY_RUNS,
     MODEL2_TOTAL_RUNS,
     PREDICTION_FLOOR,
-    bootstrap_evaluator,
     build_total_times_probability_model,
+    compute_metrics,
     cv_groups,
-    evaluate,
     pd,
     seed,
     train_age_group,
@@ -2172,8 +2182,7 @@ def _(
     # The 16 pairs, each step-1 total with each step-2 classifier, their runs'
     # best components, scored with no search: the pair's cross-validated
     # value, then the refit on the training part scored on training and
-    # validation, with the bootstrap of the independent cohorts model's runs
-    # (the same evaluator, so the same replicates).
+    # validation (point scores).
     MODEL2_RUNS = []
     for _total_run in MODEL2_TOTAL_RUNS:
         for _probability_run in MODEL2_PROBABILITY_RUNS:
@@ -2200,19 +2209,10 @@ def _(
                 ("val", val_age_group),
             ):
                 _y_pred = _model.predict(_dataset.X, exposure=_dataset.exposure)
-                _dataset_scores = evaluate(
+                _dataset_scores = compute_metrics(
                     _dataset.Y, _y_pred, METRICS, cohorts=[*COHORTS, "composite"]
                 ).stack()
-                _dataset_intervals = bootstrap_evaluator.evaluate(
-                    _dataset.Y,
-                    _y_pred,
-                    _dataset.groups,
-                    metrics=METRICS,
-                    cohorts=[*COHORTS, "composite"],
-                ).rename(columns=CI_BOUND_NAMES)
-                _scores_by_dataset[_dataset_name] = (
-                    _dataset_scores.rename("score").to_frame().join(_dataset_intervals)
-                )
+                _scores_by_dataset[_dataset_name] = _dataset_scores.to_frame("score")
             # The pair's settings and its best model: the fitted model, its
             # components and their transformers' names; its value, and its two
             # studies' trial counts and seconds summed (a study shared by
@@ -2296,13 +2296,187 @@ def _(mo, model2_runs_df, model2_scores_df):
             ),
             mo.ui.table(model2_runs_df.round(4)),
             mo.md(
-                "**Its scores, per dataset, cohort and for the composite** (score, "
-                "and the bootstrap's mean and 95% interval)"
+                "**Its scores, per dataset, cohort and for the composite** (the "
+                "point score; each model's best run is bootstrapped below)"
             ),
             mo.ui.table(model2_scores_df.round(4)),
         ]
     )
     return
+
+
+@app.cell
+def _(
+    CI_BOUND_NAMES,
+    COHORTS,
+    METRICS,
+    MODEL1_RUNS,
+    MODEL2_RUNS,
+    SELECTION_METRIC,
+    alpha,
+    bootstrap_evaluator,
+    mo,
+    pd,
+    val_age_group,
+):
+    # Each model's best run, by its point score on the selection metric of the
+    # composite on validation: its stored model, fitted on the training part.
+    _best_run1 = min(
+        MODEL1_RUNS,
+        key=lambda run: run["scores"].loc[
+            ("val", "composite", SELECTION_METRIC.name), "score"
+        ],
+    )
+    _best_run2 = min(
+        MODEL2_RUNS,
+        key=lambda run: run["scores"].loc[
+            ("val", "composite", SELECTION_METRIC.name), "score"
+        ],
+    )
+    best_model1, best_model2 = _best_run1["model"], _best_run2["model"]
+    # The two bootstrapped on validation, every metric per cohort and for the
+    # composite, by one evaluator: both score the same replicate rows, so their
+    # replicates pair row by row. Each score with its replicates' mean, median,
+    # SD and percentile interval.
+    best_replicate_scores, _scores_by_run = {}, {}
+    for _model_name, _run, _family in (
+        ("independent_cohorts", _best_run1, _best_run1["family"]),
+        (
+            "total_times_probability",
+            _best_run2,
+            f"{_best_run2['total_family']}+{_best_run2['probability_family']}",
+        ),
+    ):
+        _replicate_scores = bootstrap_evaluator.evaluate(
+            val_age_group.Y,
+            _run["model"].predict(val_age_group.X, exposure=val_age_group.exposure),
+            val_age_group.groups,
+            metrics=METRICS,
+            cohorts=[*COHORTS, "composite"],
+        )
+        best_replicate_scores[_model_name] = _replicate_scores
+        _scores_by_run[_model_name, _family, _run["use_exposure"]] = pd.DataFrame(
+            {
+                "score": _run["scores"].loc["val", "score"],
+                "mean": _replicate_scores.mean(),
+                "median": _replicate_scores.median(),
+                "sd": _replicate_scores.std(),
+                CI_BOUND_NAMES["lower"]: _replicate_scores.quantile(alpha / 2),
+                CI_BOUND_NAMES["upper"]: _replicate_scores.quantile(1 - alpha / 2),
+            }
+        )
+    # A row per best run, cohort and metric: the run's model, family and
+    # exposure, then its validation score and the bootstrap's statistics.
+    best_runs_val_scores_df = pd.concat(
+        _scores_by_run, names=["model", "family", "use_exposure"]
+    ).reset_index()
+    mo.vstack(
+        [
+            mo.md(
+                f"**Each model's best run by the {SELECTION_METRIC.name} of the "
+                "composite on validation, bootstrapped on validation:** "
+                + "; ".join(
+                    f"{model} `{family}`, exposure {use_exposure}"
+                    for model, family, use_exposure in _scores_by_run
+                )
+                + " (each score with its replicates' mean, median, SD and 95% "
+                "interval)"
+            ),
+            mo.ui.table(best_runs_val_scores_df.round(4)),
+        ]
+    )
+    return best_model1, best_model2, best_replicate_scores, best_runs_val_scores_df
+
+
+@app.cell
+def _(go, make_subplots):
+    def forest_figure(scores, metric_name, lower_column, upper_column, rule_at=None):
+        """A forest plot of `metric_name`: a panel per cohort, each on its own
+        scale, and a row per run (the first on top), the dot its score and
+        the bar its interval from `lower_column` to `upper_column`. `scores`
+        is long, a row per run, cohort and metric, with the columns `model`,
+        `family`, `use_exposure`, `cohort`, `metric`, `score` and the two
+        bounds. `rule_at` draws a vertical line at that value in every panel
+        (0 for a difference)."""
+        surface, ink, color = "#fcfcfb", "#52514e", "#2a78d6"
+        metric_scores = scores[scores["metric"] == metric_name]
+        cohorts = list(metric_scores["cohort"].unique())
+        figure = make_subplots(
+            rows=1, cols=len(cohorts), shared_yaxes=True, subplot_titles=cohorts
+        )
+        for column, cohort in enumerate(cohorts, start=1):
+            cohort_scores = metric_scores[metric_scores["cohort"] == cohort]
+            score = cohort_scores["score"]
+            run_labels = (
+                cohort_scores["model"]
+                + ": "
+                + cohort_scores["family"]
+                + ", exposure "
+                + cohort_scores["use_exposure"].astype(str)
+            )
+            figure.add_trace(
+                go.Scatter(
+                    x=score,
+                    y=run_labels,
+                    mode="markers",
+                    marker={"size": 9, "color": color},
+                    error_x={
+                        "type": "data",
+                        "symmetric": False,
+                        "array": cohort_scores[upper_column] - score,
+                        "arrayminus": score - cohort_scores[lower_column],
+                        "color": color,
+                        "thickness": 2,
+                        "width": 6,
+                    },
+                    customdata=cohort_scores[[lower_column, upper_column]].to_numpy(),
+                    hovertemplate=(
+                        f"%{{y}}<br>{cohort} {metric_name} %{{x:.4f}}"
+                        "<br>interval %{customdata[0]:.4f} to %{customdata[1]:.4f}"
+                        "<extra></extra>"
+                    ),
+                    showlegend=False,
+                ),
+                row=1,
+                col=column,
+            )
+            if rule_at is not None:
+                figure.add_vline(
+                    x=rule_at, line_width=1, line_color=ink, row=1, col=column
+                )
+        figure.update_yaxes(autorange="reversed")
+        figure.update_layout(
+            title=metric_name,
+            height=300,
+            template="plotly_white",
+            paper_bgcolor=surface,
+            plot_bgcolor=surface,
+            hovermode="closest",
+        )
+        return figure
+
+    return (forest_figure,)
+
+
+@app.cell
+def _(CI_BOUND_NAMES, SELECTION_METRIC, best_runs_val_scores_df, forest_figure, mo):
+    best_forest_figure = forest_figure(
+        best_runs_val_scores_df,
+        SELECTION_METRIC.name,
+        CI_BOUND_NAMES["lower"],
+        CI_BOUND_NAMES["upper"],
+    )
+    mo.vstack(
+        [
+            mo.md(
+                "**Each model's best run on validation: the selection metric per "
+                "cohort and for the composite** (the dot its score, the bar its 95% "
+                "bootstrap interval)"
+            ),
+            best_forest_figure,
+        ]
+    )
+    return (best_forest_figure,)
 
 
 @app.cell
@@ -2335,36 +2509,6 @@ def _(
     shap_rows = AgeGroupDataset(*(part.iloc[_rows] for part in val_age_group))
     shap_background = train_age_group.X.iloc[_background]
     return shap_background, shap_rows
-
-
-@app.cell
-def _(MODEL1_RUNS, MODEL2_RUNS, POISSON_DEVIANCE, mo, run_inspection):
-    mo.stop(
-        not run_inspection.value, mo.md("Click the button to inspect the best runs.")
-    )
-    # Each model's best run, by the Poisson deviance of the composite on
-    # validation: its stored model, fitted on the training part.
-    _best_run1 = min(
-        MODEL1_RUNS,
-        key=lambda run: run["scores"].loc[
-            ("val", "composite", POISSON_DEVIANCE.name), "score"
-        ],
-    )
-    _best_run2 = min(
-        MODEL2_RUNS,
-        key=lambda run: run["scores"].loc[
-            ("val", "composite", POISSON_DEVIANCE.name), "score"
-        ],
-    )
-    best_model1, best_model2 = _best_run1["model"], _best_run2["model"]
-    mo.md(
-        "Inspected, each model's best run by the Poisson deviance of the composite "
-        f"on validation: the independent cohorts model's `{_best_run1['family']}`, "
-        f"exposure {_best_run1['use_exposure']}; the total times probability "
-        f"model's `{_best_run2['total_family']}+{_best_run2['probability_family']}`, "
-        f"exposure {_best_run2['use_exposure']}."
-    )
-    return best_model1, best_model2
 
 
 @app.cell

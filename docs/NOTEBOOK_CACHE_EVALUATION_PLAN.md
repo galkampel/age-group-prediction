@@ -12,7 +12,7 @@ left for PR 6. The notebook's md5 is `95261326e5368bd451607d083a5ab366`. PR 3 cl
 as #21 (`0c94f16` on `main`); PR 4's branch `feat/study-cache` created from it. **Updated
 2026-11-06:** 4.1 done (§3, the budget 100 / 10); the notebook's md5 is
 `78b08bd7936dba06d65f18bd52da5cbb`. 4.2 done (the tuner's journal storage: a partial study
-started fresh, the seconds the study's run). **Updated 2026-11-06 (paused):** 4.3 implemented, uncommitted; its Check C was running, the clicks remain (the handoff's §2 "PR 4"); the notebook's md5 `3ac16ed8995efa3899a6b37746cc99d4`. **Updated 2026-11-06:** 4.3 done (§3): the user's renames kept, a stored study loaded without writing to its file (a fix in `src`), the two clicks; the notebook's md5 `91d1c96cdd227a137163cd072235c64a`. **PR 4 done; next: close it, then PR 5 (§4).**
+started fresh, the seconds the study's run). **Updated 2026-11-06 (paused):** 4.3 implemented, uncommitted; its Check C was running, the clicks remain (the handoff's §2 "PR 4"); the notebook's md5 `3ac16ed8995efa3899a6b37746cc99d4`. **Updated 2026-11-06:** 4.3 done (§3): the user's renames kept, a stored study loaded without writing to its file (a fix in `src`), the two clicks; the notebook's md5 `91d1c96cdd227a137163cd072235c64a`. **Updated 2026-11-06:** PR 4 merged as #22 (`30bd4f7` on `main`); PR 5's branch `feat/bootstrap-replicates` created from it; 5.1 planned and approved. **Updated 2026-11-06:** 5.1 done (§4, the rename); the notebook's md5 `6edc34aa4cc93d05fcf34b106515dd9c`. **Updated 2026-11-06:** 5.1 committed (`571f721`); 5.2 done and committed (`4cfe502`) (§4: the evaluator returns its replicates; two resampling designs kept, the user's answer); the notebook's md5 `d4a361a5535aaefd89b9dccd4f99e282` (with the user's `median` and `sd`). **Updated 2026-11-07:** 5.3 planned, not implemented (§4): the `n_resamples` measurement done (1000 kept); the user changed the plan (each model's best run chosen by one configurable selection metric on validation, only the two best bootstrapped, one forest-plot function); the plan awaits approval in the next session; 5.4 re-scoped. **Updated 2026-11-07:** 5.3 done as planned (§4): `selection_metric` (RMSE by default), the runs' point scores, the two best bootstrapped, `forest_figure`; the notebook's md5 `9a66a347ed3fc928f14a43bde04da1b9`. **Updated 2026-11-07:** at the user's review, the best runs' table renamed `best_runs_val_scores_df` with `model`, `family`, `use_exposure`; the forest plots to be fixed later; PR 5 closes at 5.3, then PR 5b (the EDA: `build_trials_table`, the joint Model 2 method), PR 6 (the split), PR 7 (5.4, SHAP per cohort, the test evaluation). **Next: close PR 5.**
 
 The companion docs: [EXPERIMENT_NOTEBOOK_HANDOFF.md](EXPERIMENT_NOTEBOOK_HANDOFF.md) (the state,
 how to work, the checks, the traps, iCloud), [NOTEBOOK_METRICS_LOOP_EDA_PLAN.md](NOTEBOOK_METRICS_LOOP_EDA_PLAN.md)
@@ -67,7 +67,9 @@ merge, in this order (the user's choice): the `src` changes first (PRs 4, 5), th
   4.3722; 4.2800 against 4.3019); within its study the RMSE best is also the deviance's best
   (percentile 0.0); coordinate descent is exact under the deviance only (M10). Chosen: the
   deviance tunes, RMSE compares (the best-run rule, the forest plots, the paired difference, the
-  test scores); all six metrics stay recorded.
+  test scores); all six metrics stay recorded. **Amended 2026-11-07 (5.3's plan):** the
+  selection metric is a setting (`selection_metric`, RMSE or the deviance, default RMSE), each
+  model's best run chosen by its validation point score.
 - **D35. `scoring.evaluate` becomes `compute_metrics`.** The package's precedent is
   `PermutationImportance.compute_importances`; "calc" is an abbreviation. A rename only.
 - **D36. The bootstrap evaluator returns its replicates; the statistics are computed outside.**
@@ -76,7 +78,8 @@ merge, in this order (the user's choice): the `src` changes first (PRs 4, 5), th
   class. The notebook computes the mean, the SD and the percentile interval, draws forest plots,
   and the paired difference of two models per replicate (valid because one evaluator with one
   seed draws the same rows for every model: M14). `n_resamples` (1000 or 10,000) is decided by a
-  measurement in 5.3, not by rule. The resampling unit (whole neighborhoods today; rows within
+  measurement in 5.3, not by rule (2026-11-07: measured, 1000 kept; and only each model's best
+  run is bootstrapped, the other runs scored by point score: 5.3's plan). The resampling unit (whole neighborhoods today; rows within
   neighborhoods, the user's pandas sketch `y_true.groupby(groups).sample(frac=1.0, replace=True)`)
   is a design question in 5.2, answered with measured interval widths; the NumPy loop stays
   (pandas' `groupby.sample` is no simpler and loses `np.ndarray` targets).
@@ -351,7 +354,49 @@ No code change (D34). One commit for the docs, one more if the review's findings
 
 ## 4. PR 5: the bootstrap replicates and the comparison metric (`feat/bootstrap-replicates`)
 
-### [ ] 5.1 `scoring.evaluate` → `compute_metrics` (`src`, tests, docs, notebook)
+### [x] 5.1 `scoring.evaluate` → `compute_metrics` (`src`, tests, docs, notebook)
+- **Done (2026-11-06).** As planned; every line number held on `466534e`. One addition: the
+  two test names `test_evaluate_*` → `test_compute_metrics_*` (the word-bounded grep missed
+  them; one signature wrapped to `ruff format`'s hunk). Docstrings rewrapped where the name
+  lengthened a line. Checks:
+  - the grep finds only the bootstrap's own `evaluate`, the old stack and history;
+    `hasattr(scoring, "evaluate")` False;
+  - `test_scoring.py` and `test_inspection_bootstrap.py` 110 passed under `-W error`; the
+    non-slow suite 1392 passed, 1 skipped, 1 xfailed, 19 deselected; mypy 28 files, no issue;
+  - HYPERPARAMETER_TUNING.md's nine output blocks equal;
+  - Check A: the notebook test 14 passed, ruff 15, the user's two format hunks, `marimo check`
+    no issue; Check B (`compute_metrics` defined, `evaluate` not);
+  - Check C (399 s, a fresh copy): every assertion; every frame and record equal to
+    `check_c_4_3.pkl` (`seconds` dropped), both figures' JSON identical. Its pickle
+    `check_c_5_1.pkl` (this session's scratchpad) is 5.2's reference.
+
+  The notebook's md5 is `6edc34aa4cc93d05fcf34b106515dd9c`.
+- **Planned and approved (2026-11-06; the line numbers read on `383ee53` by grep, re-verify
+  them).** A rename only: no behaviour, signature or output changes; no alias.
+  - `scoring.py`: `def evaluate` (:205) → `compute_metrics`, `__all__` (:41, kept sorted), the
+    module docstring's ``evaluate`` (:13);
+  - `inspection/bootstrap.py`: the call `scoring.evaluate(...)` (:102) and the docstrings (:37,
+    :59, :62); the bootstrap's own `evaluate` method stays (5.2 reshapes it);
+  - `tests/unit/test_scoring.py`: the import (:14), the section comment (:367), three calls
+    (:384, :406, :408);
+  - the notebook: the import cell's import (:708) and return (:731); the four cells' parameter
+    lists (:950, :1063, :1793, :2165) re-sorted (`compute_metrics` before `cv_groups`); the four
+    calls (:1036, :1200, :1859, :2203); each edited line to `ruff format`'s hunk;
+  - the current guides: HYPERPARAMETER_TUNING.md (:35, :64, :271, the block at :300, :598,
+    :605), MODEL_INSPECTION.md (:303, :311), MODULE_REFERENCE.md (:69 twice and its export
+    list, :75, :120), INDEPENDENT_COHORT_MODELS.md (:325), TOTAL_TIMES_PROBABILITY_MODEL.md
+    (:355), the handoff's current-state lines (§1);
+  - history stays as written: D30 (NOTEBOOK_TUNING_PLAN.md) gets one note ("renamed
+    `compute_metrics` in 5.1, D35"); closed plans and commit tables are not rewritten;
+  - the scratchpad's Check C reads `d["compute_metrics"]` (`check_c.py:93`, `:315`); Check B
+    asserts `compute_metrics` in the defs and `evaluate` not.
+
+  Its checks: the grep below finds only the history left on purpose, and
+  `hasattr(age_group_prediction.scoring, "evaluate")` is False; `test_scoring.py` and
+  `test_inspection_bootstrap.py` under `-W error`; the suite; mypy; HYPERPARAMETER_TUNING.md's
+  blocks rerun; Check A (the notebook test 14, ruff 15, the two hunks, `marimo check`), B, C
+  equal to `check_c_4_3.pkl` exactly. No mutations: a rename changes no behaviour a test could
+  tell apart; the grep and the `hasattr` probe stand in.
 - **Change:** the rename in `scoring.py`, `inspection/bootstrap.py`, the notebook's four calls,
   `tests/unit/test_scoring.py`, `test_inspection_bootstrap.py`, `test_hyperparameter_tuning_cross_validation.py`
   (if it names it), `docs/HYPERPARAMETER_TUNING.md`, `MODEL_INSPECTION.md`, the handoff, D30's
@@ -360,7 +405,50 @@ No code change (D34). One commit for the docs, one more if the review's findings
 - **Checks:** the suite, mypy, Check A–C (the frames equal the reference exactly).
 - **Commit:** `refactor(scoring): evaluate renamed compute_metrics`
 
-### [ ] 5.2 The evaluator returns the replicates (`src`, tests, MODEL_INSPECTION.md)
+### [x] 5.2 The evaluator returns the replicates (`src`, tests, MODEL_INSPECTION.md)
+- **Done (2026-11-06).** `BootstrapEvaluator(n_resamples, random_state=None)`; `evaluate`
+  returns `pd.DataFrame(scores, columns=labels)`, one row per replicate, a `(cohort, metric)`
+  column MultiIndex; the drawing loop unchanged.
+  - **The resampling unit (the user's answer): the two designs stay** (`groups` → whole
+    groups, `None` → rows; no `unit` setting). The probe (the 100-trial best models, validation,
+    1000 replicates, seed 42; 306 rows in 129 neighborhoods, median 2 rows, 37 with one): the
+    composite's 95% width, rows / whole neighborhoods / rows within neighborhoods: Model 1
+    deviance 0.507 / 0.542 / 0.380, RMSE 1.006 / 1.095 / 0.582; Model 2 deviance 0.488 / 0.493
+    / 0.360, RMSE 0.885 / 1.024 / 0.582; per cohort, within-neighborhood 0.36–0.82× the whole
+    neighborhoods' (its 1–2-row neighborhoods barely vary), rows 0.85–1.0×; about 2 s a call.
+  - **A correction to the plan below:** the records' `scores` do not hold the raw replicates
+    yet (the tables and the best-run rule read `score, mean, ci95_*`): each loop computes
+    `mean` and the `alpha / 2`, `1 - alpha / 2` quantiles from the replicates, so every table
+    is unchanged; 5.3 moves them to the tables cells.
+  - The bounds equal the old `np.quantile`'s exactly; the mean differs in its last bits
+    (pandas sums a column in another order: 344 of 384 and 699 of 768 table values, at most
+    1.4e-14 relative), so Check C compares `mean` at rtol 1e-12.
+  - **Tests** (`test_inspection_bootstrap.py`, 24): the shape and columns, the replicates the
+    metric's scores in order, the old implementation's mean and bounds pinned (seed 0, rows
+    and groups), `alpha=` rejected; the module 24 passed under `-W error`; the non-slow suite
+    1393 passed, 1 skipped, 1 xfailed, 19 deselected; mypy 28 files, no issue. Two mutations
+    caught after a sentinel: the columns labeled in reverse (3 tests), one replicate fewer
+    (5 tests).
+  - **Docs:** MODEL_INSPECTION.md (the summary, the API row, the bootstrap block, §3; its
+    blocks rerun, output unchanged), MODULE_REFERENCE.md, HYPERPARAMETER_TUNING.md §8, the
+    handoff.
+  - **Check A:** the notebook test 14, ruff 15, the two format hunks, `marimo check` no
+    issue; **Check B** (no `alpha` on the evaluator); **Check C** (444 s): every assertion
+    (the last runs' statistics recomputed from `evaluate`'s replicates exactly), every frame
+    and record equal to `check_c_5_1.pkl` (`mean` at 1e-12), both figures' JSON identical;
+    its pickle `check_c_5_2.pkl`.
+  - **Amended at the user's review** (before the commit): the loops' result named
+    `_replicate_scores` (the user's rename `_replicates_scores`, then the package's own name
+    at their answer); `median` and `sd` (pandas' `std()`, `ddof=1`: the bootstrap standard
+    error) added, the columns `score, mean, median, sd, ci95_lower, ci95_upper` (their
+    order); section 6's text. The scores tables 384 × 13 and 768 × 11, the rows unchanged.
+    Check A (the notebook test 14, ruff 15, the two hunks, `marimo check`), B; Check C (414 s):
+    every assertion, `ci95_lower ≤ median ≤ ci95_upper`, `sd > 0`, the last runs' `median`
+    and `sd` recomputed from the replicates (pandas exactly; NumPy's `median` exactly, its
+    `std(ddof=1)` at 1e-12); every other column and record equal to `check_c_5_1.pkl`, both
+    figures' JSON identical. Its pickle `check_c_5_2b.pkl` is 5.3's reference.
+
+  The notebook's md5 is `d4a361a5535aaefd89b9dccd4f99e282`.
 - **Change:** `BootstrapEvaluator(n_resamples, random_state=None)`; `evaluate` returns
   `pd.DataFrame(scores, columns=labels)` (one row per replicate, a `(cohort, metric)` column
   MultiIndex) after the non-finite check; the `mean/lower/upper` block and `alpha` go. The
@@ -380,7 +468,151 @@ No code change (D34). One commit for the docs, one more if the review's findings
   the reference's `ci95_lower/ci95_upper` exactly, the means equal.
 - **Commit:** `refactor(inspection): the bootstrap evaluator returns its replicates`
 
-### [ ] 5.3 The statistics in the notebook, and `n_resamples`
+### [x] 5.3 Each model's best run by a selection metric, bootstrapped; a forest plot of the two
+- **Done (2026-11-07), as planned below;** every line number held on `1af184a`. The notebook:
+  - `selection_metric = "rmse"` in section 2 (logged, pinned by the test);
+    `SELECTION_METRIC` in the metrics cell;
+  - the two loops keep point scores (`_dataset_scores.to_frame("score")`; the tables 384 × 8,
+    768 × 6, their captions "(the point score; …)");
+  - a cell after Model 2's tables: the best run per model by the validation composite on
+    `SELECTION_METRIC`, the two bootstrapped on validation (`best_replicate_scores`,
+    `best_runs_val_scores_df` 48 × 11: `model, family, use_exposure, cohort, metric, score,
+    mean, median, sd, ci95_lower, ci95_upper`, the models `independent_cohorts` and
+    `total_times_probability`, `use_exposure` a bool; the same names as the keys of
+    `best_replicate_scores`); the inspection's selection cell removed;
+  - `forest_figure(scores, metric_name, lower_column, upper_column, rule_at=None)` (one
+    scatter per cohort panel, the asymmetric `error_x`, the y axis reversed, the hover with
+    the bounds in `customdata`) and the forest-plot cell (`best_forest_figure`);
+  - section 6's text: the selection rule and why, the bootstrap of the two best.
+  - **Amended at the user's review** (2026-11-07, before the commit): the table's `model1`/`model2`
+    labels became the model's name, family and exposure in three columns, and `best_scores_df`
+    was renamed `best_runs_val_scores_df` (what it holds: the best runs' validation scores);
+    `forest_figure` builds its row labels from the three columns. The forest plots, seen on the
+    100-trial runs (a copy of the notebook on the user's `studies/`, a viewer app), "look really
+    bad": to be fixed later (the handoff's §5). On those runs the best by RMSE are the independent
+    cohorts model's `lgbm_poisson`, exposure on (composite RMSE 4.5586, 95% 4.04–5.13), and the
+    total times probability model's `lgbm_poisson+logistic`, exposure off (4.5388, 4.05–5.08);
+    the statistics equal 5.2's records of the two runs (`probe_5_2.pkl`) at 1e-12.
+  - **A correction to the plan's Check B:** a script run clicks nothing, so `best_scores_df`
+    and `best_replicate_scores` are not in its defs; Check B asserts them absent, Check C
+    checks them.
+  - **Check C's 3-trial runs** pick the same best runs by RMSE as by the deviance (Model 1
+    `lgbm_gaussian`, exposure on; Model 2 `lgbm_gaussian+logistic`, exposure on), so
+    `importance_df` and the two best runs' statistics equal 5.2's run.
+
+  Checks: Check A (the notebook test 14 passed, ruff 15, the user's two format hunks, `marimo
+  check` no issue); Check B (`SELECTION_METRIC` the `rmse` object, `forest_figure` defined, the
+  best runs' names absent); Check C (86 s, `check_c_5_3.pkl`, 5.4's reference): every assertion
+  of the handoff's §4 "Since 5.3", every shared column and record equal to `check_c_5_2b.pkl`,
+  both EDA figures' JSON identical; rerun after the review's amendment (81 s), the same. Two
+  mutations caught (on the version before the amendment): the selection read on `train` (the
+  best run's model differs), `error_x`'s two arrays swapped. No `src` change: the suite and mypy
+  run at 5.4's close. The notebook's md5 is `9a66a347ed3fc928f14a43bde04da1b9`.
+- **Planned 2026-11-07** (approved in the next session). The text from "Since 5.2" on is the
+  plan before this one, kept as history.
+- **The `n_resamples` measurement (done, read-only;** `probes/probe_5_3.py` on `probe_5_2.pkl`,
+  the 100-trial runs' models; log `probe_5_3.log`, per-seed bounds `probe_5_3_bounds.csv`):
+  - setup: validation, whole neighborhoods, seeds 42–46, at 1000 and 10,000 replicates; the
+    best models by deviance and by RMSE, and their paired difference (Model 2 − Model 1); the
+    deviance and RMSE, per cohort and the composite;
+  - the bounds' SD over seeds as % of the interval's width: at most **4.6%** at 1000 (the RMSE
+    difference's composite; most cells 2–3.5%), at most 1.5% at 10,000;
+  - one call (6 metrics × 4 cohorts): 6.9 s at 1000, 69.1 s at 10,000 (the deviance and RMSE
+    alone at 1000: 2.1 s);
+  - **the user kept 1000** (under the 5% rule); the test's pin is unchanged.
+- **Other facts from the probe:**
+  - `score` lies inside `[ci95_lower, ci95_upper]` in all 1152 rows (384 + 768);
+  - the best run by validation composite score:
+    - Model 1: the same run by either metric (`lgbm_poisson`, exposure on: RMSE 4.5586,
+      deviance 2.1296);
+    - Model 2 by deviance: `lgbm_gaussian+logistic`, exposure on (RMSE 4.5393);
+    - Model 2 by RMSE: `lgbm_poisson+logistic`, exposure off (RMSE 4.5388); the two are within
+      noise of each other (0.0005 against intervals about 1.0 wide), so under RMSE Model 2's
+      inspected run changes;
+  - the composite paired difference's interval contains 0 under both rules: RMSE −0.16 to
+    0.12, deviance −0.12 to 0.06;
+  - keeping every run's replicates in its record: 8.8 MiB at 1000 (375 KiB a run), 88 MiB at
+    10,000.
+- **The user's change of plan (2026-11-07; amends D34 and D36):**
+  - each model's best run is chosen by **one selection metric**, configurable between RMSE and
+    the Poisson deviance (default RMSE, D34), as a notebook setting;
+  - it is chosen on the **validation point score** of the composite. Why (the user asked for
+    the best practice): the bootstrap's mean ranks the runs the same as the point score; the
+    bootstrap measures uncertainty, it does not rank better; cv is no fairer, since each run was
+    tuned on it; the chosen model's validation score is optimistic, and the test part (PR 7)
+    gives the fair one;
+  - **only the two best models are bootstrapped**, on every metric; the other runs keep point
+    scores only (a click about 5 min shorter);
+  - the forest plot is **one function with the metric as a parameter** (Model 1's and Model
+    2's score tables have the same shape, so one function serves both).
+- **Change (the plan):**
+  - **section 2:** `selection_metric = "rmse"  # "rmse" or "poisson_deviance"` in
+    `EXPERIMENT_SETTINGS` (printed, logged, pinned by the notebook test);
+  - **the metrics cell:** `SELECTION_METRIC` resolved from it by `if`/`elif` with a raising
+    `else`; the comment: it picks each model's best run on validation and is the forest plots'
+    metric; the deviance still tunes;
+  - **the two loops** (Model 1's runs, Model 2's pairs): no bootstrap;
+    `_scores_by_dataset[_dataset_name] = _dataset_scores.to_frame("score")`; a record's
+    `scores` keeps its `(dataset, cohort, metric)` index with the column `score`;
+    `CI_BOUND_NAMES`, `alpha` and `bootstrap_evaluator` leave both cells' parameters;
+  - **the tables:** the cells' code unchanged; `model1_scores_df` 384 × 8, `model2_scores_df`
+    768 × 6; the two captions "(score)";
+  - **a new cell, the best runs** (after Model 2's tables, before the "Inspect the best runs"
+    button; no button of its own):
+    - each model's best is the `min` of its runs' validation composite `score` on
+      `SELECTION_METRIC`; `best_model1` and `best_model2` are their stored models;
+    - each predicts validation once; `bootstrap_evaluator.evaluate(..., metrics=METRICS,
+      cohorts=[*COHORTS, "composite"])` makes 2 calls (about 14 s; validation only, since a
+      model's bootstrap on its own training rows says little);
+    - `best_replicate_scores = {"model1": …, "model2": …}` for 5.4;
+    - `best_scores_df`: a `model` label (e.g. `model1: lgbm_poisson, exposure True`) × cohort
+      × metric, with `score, mean, median, sd, ci95_lower, ci95_upper` (5.2's statistics,
+      moved here);
+    - it shows the sentence naming both runs and `mo.ui.table(best_scores_df.round(4))`;
+  - **the inspection's selection cell is removed:** the importance and SHAP cells keep their
+    `mo.stop(not run_inspection.value)` and read `best_model1` and `best_model2` from the new
+    cell; the importance's score stays the deviance until 5.4;
+  - **a new cell, `forest_figure(scores, metric_name, lower_column, upper_column,
+    rule_at=None)`**, defined once like `trials_table`, reading no notebook global:
+    - `scores` is long, with the columns `model, cohort, metric, score, <lower>, <upper>`;
+    - one panel per cohort (`make_subplots(rows=1, cols=n_cohorts, shared_yaxes=True)`), each
+      on its own x scale; one row per model, the first on top;
+    - the dot at `score`, the bar from lower to upper (`error_x` `array` / `arrayminus`);
+      `rule_at` draws a vertical line (5.4: 0);
+    - the dataviz palette (series 1 `#2a78d6`, surface `#fcfcfb`, ink `#52514e`) and
+      `plotly_white`, as in 3.1j;
+  - **a new cell, the forest plot:** `forest_figure(best_scores_df, SELECTION_METRIC.name,
+    CI_BOUND_NAMES["lower"], CI_BOUND_NAMES["upper"])` under a caption; it returns
+    `(best_forest_figure,)` for Check C;
+  - **section 6's text:** point scores for the runs; the selection rule and why; the
+    optimism; the two best bootstrapped and plotted; `n_resamples` kept by measurement;
+  - **the test:** `"selection_metric": "rmse"` in the `experiment_settings` pin.
+- **Checks (the plan):**
+  - **Check A:** the notebook test 14, ruff 15 (none new), the two format hunks, `marimo
+    check`;
+  - **Check B:** the defs hold `SELECTION_METRIC`, `forest_figure`, `best_scores_df` and
+    `best_replicate_scores`;
+  - **Check C** (about 3 min; 48 bootstrap calls become 2), against `check_c_5_2b.pkl`:
+    - `SCORE_COLUMNS = ["score"]` for the records and tables;
+    - the best runs are each the `min` of validation composite `rmse`, named in the output;
+    - `best_scores_df` 48 rows: `score` equal to the records'; the statistics recomputed
+      exactly from `evaluate` on the two best models; `best_replicate_scores` equal;
+      `ci95_lower ≤ median ≤ ci95_upper`; `sd > 0`;
+    - the figure: one trace per cohort panel, y the two labels, x the scores,
+      `error_x.array = upper − score` and `arrayminus = score − lower` exactly; four subplot
+      titles;
+    - `compare.py` on the shared columns; both EDA figures' JSON identical;
+    - `importance_df`: equal where the selected run is unchanged, otherwise recomputed
+      independently with `PermutationImportance` (the new pickle is 5.4's reference);
+  - **two mutations:** the selection read on `train`; `error_x`'s two arrays swapped;
+  - no `src` change: the suite and mypy run at 5.4's close.
+- **Commit:** `feat(notebook): each model's best run chosen by a selection metric and bootstrapped; a forest plot of the two`
+
+**The plan before 2026-11-07 (history):**
+- **Since 5.2 (the user's note):** each loop already computes `mean`, `median`, `sd` and the
+  bounds from the replicate scores; 5.3 keeps the forest plots and the `n_resamples`
+  measurement. Whether the records keep the replicates (5.4's paired difference reads them)
+  is 5.3's planning question; the text below is the plan before 5.2.
 - **Change:** the two loops keep `score` (the point estimate) and the replicates per dataset;
   the tables cells compute `mean`, `sd`, `ci95_lower`, `ci95_upper` from the replicates
   (`alpha` stays a setting; `CI_BOUND_NAMES` from it) into `model1_scores_df` / `model2_scores_df`
@@ -396,7 +628,27 @@ No code change (D34). One commit for the docs, one more if the review's findings
   the forest figures' traces one per run, the x the metric's values).
 - **Commit:** `feat(notebook): each run's scores with their bootstrap SD and interval; a forest plot per model`
 
-### [ ] 5.4 RMSE compares: the best-run rule and the paired difference
+### [ ] 5.4 The best models' paired difference; the importance on the selection metric
+- **Moved to PR 7 (2026-11-07, the user):** PR 5 closes at 5.3; the EDA work (PR 5b) and the
+  split (PR 6) come first, and 5.4 is done in `03_hyperparameter_tuning.py`, with the forest
+  plots' layout fixed. The difference is `total_times_probability − independent_cohorts` (the
+  keys of `best_replicate_scores` since 5.3's review).
+- **Re-scoped 2026-11-07** (after 5.3's plan; the best-run rule and `SELECTION_METRIC` move
+  to 5.3):
+  - a new cell after 5.3's forest plot: `best_replicate_scores["model2"] −
+    best_replicate_scores["model1"]` per replicate (the same rows: one evaluator), per cohort
+    and the composite, every metric;
+  - its point difference (the two `score`s), mean and interval;
+  - `forest_figure(..., rule_at=0)` on `SELECTION_METRIC` ("0 inside the interval: no
+    difference shown");
+  - the permutation importance's score `SELECTION_METRIC` (today `POISSON_DEVIANCE`), and the
+    importance table's caption;
+  - section 6's text.
+  - **Checks:** Check A–C (the difference equal to `scores2 − scores1` per replicate exactly;
+    `importance_df` recomputed with the selection metric, a new reference); the suite and mypy
+    before closing PR 5.
+  - **Commit:** `feat(notebook): the best models' paired bootstrap difference; the importance on the selection metric`
+- **The plan before 2026-11-07 (history):**
 - **Change:** the metrics cell gains `COMPARISON_METRIC = RMSE` (the comment: compares models,
   in children per building; the deviance tunes); the inspection's best-run rule and the
   permutation importance's score read it (today `POISSON_DEVIANCE` at the notebook's lines

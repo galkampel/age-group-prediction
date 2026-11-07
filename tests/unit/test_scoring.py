@@ -11,7 +11,7 @@ from sklearn.metrics import log_loss, mean_absolute_error, mean_poisson_deviance
 
 from age_group_prediction.scoring import (
     Metric,
-    evaluate,
+    compute_metrics,
     mean_absolute_error_loss,
     mean_bias_error,
     mean_poisson_deviance_loss,
@@ -364,7 +364,7 @@ def test_invalid_metric_is_rejected(build: Callable[[], Metric]) -> None:
         build()
 
 
-# --- evaluate --------------------------------------------------------------
+# --- compute_metrics -------------------------------------------------------
 
 EVALUATED = (
     Metric("poisson_deviance", mean_poisson_deviance_loss),
@@ -378,10 +378,10 @@ Y_PRED = pd.DataFrame(
 )
 
 
-def test_evaluate_scores_every_metric_for_each_cohort_asked_for() -> None:
+def test_compute_metrics_scores_every_metric_for_each_cohort_asked_for() -> None:
     cohorts = ["n_elementary", "composite", "n_kindergarten"]
 
-    scores = evaluate(Y_TRUE, Y_PRED, EVALUATED, cohorts=cohorts)
+    scores = compute_metrics(Y_TRUE, Y_PRED, EVALUATED, cohorts=cohorts)
 
     assert list(scores.index) == cohorts
     assert list(scores.columns) == ["poisson_deviance", "mae"]
@@ -400,12 +400,14 @@ def test_evaluate_scores_every_metric_for_each_cohort_asked_for() -> None:
 
 
 @pytest.mark.parametrize("cohorts", ["n_elementary", None])
-def test_evaluate_of_one_name_or_the_default_is_one_row(cohorts: str | None) -> None:
+def test_compute_metrics_of_one_name_or_the_default_is_one_row(
+    cohorts: str | None,
+) -> None:
     # The default is the composite; a name is one cohort, not its characters.
     scores = (
-        evaluate(Y_TRUE, Y_PRED, EVALUATED)
+        compute_metrics(Y_TRUE, Y_PRED, EVALUATED)
         if cohorts is None
-        else evaluate(Y_TRUE, Y_PRED, EVALUATED, cohorts=cohorts)
+        else compute_metrics(Y_TRUE, Y_PRED, EVALUATED, cohorts=cohorts)
     )
 
     assert list(scores.index) == [cohorts or "composite"]

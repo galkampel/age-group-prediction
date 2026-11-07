@@ -352,7 +352,7 @@ classes of the old stack. `CountModel` and `NegativeBinomialRegressor`:
 
 Every model keeps `fit(X, y, exposure=None)` and `predict(X, exposure=None)`; a caller
 scores the predictions by calling a `Metric`, `metric(y_true, y_pred)`, or several at once,
-per cohort, with `scoring.evaluate`. Type aliases: `Classifier`, `ReplicationMethod`,
+per cohort, with `scoring.compute_metrics`. Type aliases: `Classifier`, `ReplicationMethod`,
 `CalibrationMethod`.
 
 ## 6. Data Flow

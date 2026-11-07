@@ -1,9 +1,9 @@
-"""The bootstrap intervals of a fitted model's metrics on an evaluation set.
+"""The bootstrap replicates of a fitted model's metrics on an evaluation set.
 
 The caller predicts once and passes the predictions; only the evaluation rows
-are resampled, so the intervals are conditional on the fitted model (no
-refit). Every metric named in a call scores the same replicates, so their
-intervals are paired.
+are resampled, so the replicates are conditional on the fitted model (no
+refit). Every metric named in a call scores the same replicates, so they are
+paired; the caller computes their statistics (a mean, an SD, an interval).
 """
 
 from __future__ import annotations
@@ -29,17 +29,16 @@ __all__ = ["BootstrapEvaluator"]
 # strictly (a bool is not an int), and a misspelt keyword is rejected.
 @pydantic_dataclass(frozen=True, config=STRICT)
 class BootstrapEvaluator:
-    """The resampling design: ``n_resamples`` replicates and a ``1 - alpha`` percentile interval.
+    """The resampling design: ``n_resamples`` replicates, drawn with ``random_state``.
 
     The metrics and cohorts are named per call, as ``cross_validate``'s
     ``scoring``. Each replicate draws the evaluation rows with replacement, or
     whole groups when ``groups`` is given, and scores the fixed predictions on
-    them with every metric for every cohort (``scoring.evaluate``). Scores are
-    reported raw, in each metric's own direction.
+    them with every metric for every cohort (``scoring.compute_metrics``).
+    Scores are reported raw, in each metric's own direction.
     """
 
     n_resamples: Annotated[int, Field(ge=1)]
-    alpha: Annotated[float, Field(gt=0, lt=1)] = 0.05
     random_state: int | None = None
 
     def evaluate(
@@ -56,10 +55,12 @@ class BootstrapEvaluator:
         ``y_true``, ``y_pred`` and ``groups`` are paired by position.
         ``groups`` holds one label per row (e.g. the neighborhood), and each
         replicate draws as many groups as there are, keeping all their rows.
-        ``cohorts`` as in ``scoring.evaluate``: column names of ``y_true``,
-        each scored alone, or ``"composite"``. Returns one row per (cohort,
-        metric): the replicates' ``mean``, ``lower`` and ``upper``; the score
-        on the rows themselves is ``scoring.evaluate``'s.
+        ``cohorts`` as in ``scoring.compute_metrics``: column names of
+        ``y_true``, each scored alone, or ``"composite"``. Returns one row per
+        replicate and one column per (cohort, metric). On one evaluation set,
+        one seed draws the same rows in every call, so two models' replicates
+        pair row by row. The score on the rows themselves is
+        ``scoring.compute_metrics``'s.
         """
         names = [metric.name for metric in metrics]
         # An empty frame, or two rows under one label, would pass silently.
@@ -99,12 +100,12 @@ class BootstrapEvaluator:
             # Every cohort and metric on the same rows, so their intervals are
             # paired.
             replicate_scores.append(
-                scoring.evaluate(y_drawn, y_pred_drawn, metrics, cohorts).stack()
+                scoring.compute_metrics(y_drawn, y_pred_drawn, metrics, cohorts).stack()
             )
         # One column per (cohort, metric), in the stacked table's order.
         labels = replicate_scores[0].index
         scores = np.array([replicate.to_numpy() for replicate in replicate_scores])
-        # np.quantile would return nan bounds silently.
+        # A quantile of the caller's would return nan bounds silently.
         non_finite = np.sum(~np.isfinite(scores), axis=0)
         if non_finite.any():
             failed = ", ".join(
@@ -116,12 +117,4 @@ class BootstrapEvaluator:
                 f"replicate scores are not finite ({failed}); check the data and "
                 "that the metric suits the model"
             )
-        lower, upper = np.quantile(scores, [self.alpha / 2, 1 - self.alpha / 2], axis=0)
-        return pd.DataFrame(
-            {
-                "mean": scores.mean(axis=0),
-                "lower": lower,
-                "upper": upper,
-            },
-            index=labels,
-        )
+        return pd.DataFrame(scores, columns=labels)

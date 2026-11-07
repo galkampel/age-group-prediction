@@ -10,8 +10,8 @@ NaN or an infinity. The count metrics score the cohort matrix,
 every cell; the log loss scores the matrix of at least two cohorts. With
 ``cohort``, a column name of ``y_true``, they score that cohort alone: its
 column, or for the log loss the cohort against the rest of its sample.
-``evaluate`` scores a list of metrics for each cohort asked for, and the
-composite. Shared by :mod:`~age_group_prediction.modeling`,
+``compute_metrics`` scores a list of metrics for each cohort asked for, and
+the composite. Shared by :mod:`~age_group_prediction.modeling`,
 :mod:`~age_group_prediction.inspection` and the experiment notebook, which
 build their metrics from these. Not the ``Metric`` protocol the package root
 exports from the old ``metrics.py``.
@@ -38,7 +38,7 @@ from .utils import check_paired_arrays, column_position
 __all__ = [
     "Direction",
     "Metric",
-    "evaluate",
+    "compute_metrics",
     "mean_absolute_error_loss",
     "mean_bias_error",
     "mean_poisson_deviance_loss",
@@ -202,7 +202,7 @@ def mean_bias_error(
     return float(np.mean(predictions - counts))
 
 
-def evaluate(
+def compute_metrics(
     y_true: ArrayLike,
     y_pred: ArrayLike,
     metrics: Sequence[Metric],

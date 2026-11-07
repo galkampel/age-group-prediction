@@ -1,19 +1,50 @@
-# Handoff: the experiment notebook, PR 4 (the study cache) done, to close
+# Handoff: the experiment notebook, PR 5 in progress (the bootstrap replicates and the comparison metric): 5.3 done, 5.4 next
 
-**Status (2026-11-06, 4.3 done; the next session starts at §6):**
-- PR 4 is on `feat/study-cache`. The user committed 4.1 (`a16c218`, `feat(notebook): 100
-  trials, 10 at random`) and 4.2 (`3806c70`, `feat(tuning): a study is stored in a journal file
-  and loaded when complete`).
-- **4.3 is done** (two commits for the user: the loading fix in `src`, then the notebook's
-  cache): the notebook's tuner stores and loads every study; a loaded study's file is left
-  unchanged. §2's "PR 4" holds the checks and the clicks.
-- The notebook's md5 is `91d1c96cdd227a137163cd072235c64a` (4.2's
-  `78b08bd7936dba06d65f18bd52da5cbb`).
+**Status (2026-11-07, 5.3 done, awaiting the user's commit; the next session starts at §6):**
+- **5.3 is implemented as planned** (the cache plan's 5.3 Done note): `selection_metric = "rmse"`
+  (section 2, pinned) → `SELECTION_METRIC`; the runs keep point scores; a cell picks each
+  model's best run by the validation composite and bootstraps the two (`best_runs_val_scores_df`,
+  `best_replicate_scores`, `best_model1`, `best_model2`); `forest_figure` and the forest plot.
+  The notebook's md5 is `9a66a347ed3fc928f14a43bde04da1b9`.
+- **This session's scratchpad** (copy from it first):
+  `/private/tmp/claude-501/-Users-galkampel-Desktop-Projects-age-group-prediction/095bc943-e3e7-4192-9f55-ee2e42ef19ba/scratchpad`:
+  `checks/` (5.3's: `check_b.py`, `check_c.py` with argv[5] the 5.2b pickle, `compare.py` on the
+  shared columns, `run_5_3.sh`, `mutate_5_3.py`, `run_mutants_5_3.sh`), `new_cells/`, the
+  pickles `check_c_5_3.pkl` (5.4's reference) with its figures' JSON, `check_c_5_2b.pkl`,
+  `check_c_3_1l.pkl`, `check_c_3_4_first.pkl`, `probe_5_2.pkl`.
+
+**Status (2026-11-07, 5.3 planned, not implemented):**
+- **5.3 is planned** in the cache plan's §4 (its 5.3 block, "Planned 2026-11-07"):
+  - the `n_resamples` measurement is done, and 1000 is kept;
+  - the user changed the plan: each model's best run is chosen by one configurable selection
+    metric (RMSE by default) on its validation point score; only the two best are bootstrapped;
+    one `forest_figure` function draws them;
+  - the plan awaits approval in the next session; nothing in the repo changed but the two
+    docs; 5.4 is re-scoped.
+- **The 2026-11-07 session's scratchpad** (copy from it first):
+  `/private/tmp/claude-501/-Users-galkampel-Desktop-Projects-age-group-prediction/6c4b7827-eaf3-4b57-8720-9133a2e32b80/scratchpad`:
+  `checks/`, `probes/` (with `probe_5_3.py`), the pickles `check_c_5_2b.pkl` (5.3's Check C
+  reference), `check_c_3_1l.pkl`, `check_c_3_4_first.pkl`, `probe_5_2.pkl`, and
+  `probe_5_3.log`, `probe_5_3_bounds.csv`.
+
+**Status (2026-11-06, 5.1 and 5.2 committed):**
+- **PR 5 is on `feat/bootstrap-replicates`** (from `main` at `30bd4f7`, PR 4's merge #22):
+  `466534e` this handoff after the merge, `571f721` 5.1 (`scoring.evaluate` →
+  `compute_metrics`), `4cfe502` 5.2 (the bootstrap evaluator returns its replicates; each
+  score's `mean`, `median`, `sd` and interval computed in the notebook). §2's "PR 5" block has
+  the details; the cache plan's 5.1 and 5.2 Done notes the full record.
+- **Next: 5.3** (the forest plots and the `n_resamples` measurement), then 5.4 (RMSE compares;
+  the paired difference), then closing PR 5.
+- The notebook's md5 is `d4a361a5535aaefd89b9dccd4f99e282`. The user's real study cache is
+  `studies/` in the repo (git-ignored; 25 studies at 100 trials): a click loads it in about 7 min.
+- **This session's scratchpad** (copy from it first; it may vanish on a restart):
+  `/private/tmp/claude-501/-Users-galkampel-Desktop-Projects-age-group-prediction/6399f8d3-96a2-49b3-a707-91be30c7b8b4/scratchpad`: `checks/` (the scripts, §4), `check_c_5_2b.pkl` (5.3's Check C reference) and
+  `probe_5_2.pkl` (the 100-trial runs' fitted models, for 5.3's `n_resamples` probe).
 
 
-**For:** the session that starts PR 4 of
-[NOTEBOOK_CACHE_EVALUATION_PLAN.md](NOTEBOOK_CACHE_EVALUATION_PLAN.md), the tuning budget and
-the study cache (4.1–4.3), from `main` after PR 3's merge. That plan holds the user's additional
+**For:** the session that continues PR 5 of
+[NOTEBOOK_CACHE_EVALUATION_PLAN.md](NOTEBOOK_CACHE_EVALUATION_PLAN.md), the bootstrap
+replicates and the comparison metric (5.1–5.4), at 5.3. That plan holds the user's additional
 changes, planned 2026-11-04 as PRs 4–7: the tuning budget and the study cache, the bootstrap
 replicates and RMSE as the comparison metric, the notebook split, SHAP per cohort and the test
 evaluation; decisions D31–D39.
@@ -31,7 +62,8 @@ The metrics plan's three PRs:
   `16773a5`;
 - PR 3, the objective EDA: merged as #21, squashed into `main` as `0c94f16`.
 
-PR 4 is on **`feat/study-cache`**, created from `main` at `0c94f16`.
+The cache plan's PR 4, the study cache: merged as #22, squashed into `main` as `30bd4f7`.
+PR 5 is on **`feat/bootstrap-replicates`**, created from `main` at `30bd4f7`.
 
 MLflow stays deferred; E11's final evaluation is the cache plan's PR 7.
 
@@ -46,7 +78,10 @@ a new session on the user's additional changes; **updated** 2026-11-04 again aft
 were planned (§1's "For", §2b, §4, §6; the plan is NOTEBOOK_CACHE_EVALUATION_PLAN.md), for the
 session that does 3.3 and starts PR 4; **updated** 2026-11-05 at PR 3's close (3.3: the header,
 §2, §2b, §4, §5, §6), for the session that starts PR 4; **updated** 2026-11-05 after PR 3's
-merge (#21, `0c94f16`: the header, §2, §2b, §6), as `feat/study-cache`'s first commit. The detailed history is in the metrics
+merge (#21, `0c94f16`: the header, §2, §2b, §6), as `feat/study-cache`'s first commit; **updated** 2026-11-06 after 5.2 (`4cfe502`: the header, §2's
+"PR 5", §3, §4, §6), for the session that continues PR 5 at 5.3; **updated** 2026-11-07 after
+5.3's planning (the header, §2's "PR 5", §3, §4, §6), for the session that implements it;
+**updated** 2026-11-07 after 5.3 (the header, §1, §2's "PR 5", §4, §5, §6), for PR 5's close and PR 5b. The detailed history is in the metrics
 plan (§2 M1–M14, §4 2.1–2.5, §5 3.1–3.4 and 3.3 with each
 sub-task's "Done" note), in [NOTEBOOK_TUNING_PLAN.md](NOTEBOOK_TUNING_PLAN.md) (§0 D1–D30) and in
 git. Re-verify every fact here against the code of the day.
@@ -58,7 +93,8 @@ git. Re-verify every fact here against the code of the day.
    seed 42 unless `simulation_seed` overrides it), the room shares, `X`, `Y` (three cohorts),
    the exposure (`n_apartments`), the groups (neighborhoods); the settings printed and hashed.
 2. **Settings:** `seed = 42`, `split_method = "random"`, `test_size = val_size = 0.2`,
-   `n_splits = 5`, `n_trials = 100`, `n_startup_trials = 10` (D31, PR 4), `n_resamples = 1000`,
+   `n_splits = 5`, `n_trials = 100`, `n_startup_trials = 10` (D31, PR 4),
+   `selection_metric = "rmse"` (5.3; or `"poisson_deviance"`), `n_resamples = 1000`,
    `n_repeats = 10`, `n_shap_rows = 100`, `n_shap_background = 50`. The sharing flags are run
    settings now (below), not experiment settings.
 3. **Split:** train 917 / validation 306 / test 306 rows (`AgeGroupDataset` per part), and
@@ -117,30 +153,41 @@ git. Re-verify every fact here against the code of the day.
        `best_params`; `tuner.cross_validate(...)[tuner.objective_metric.name]` as `cv_best`;
        refit and scored; no search) → `MODEL2_RUNS`;
    - **the bootstrap evaluator cell** (3.4, M14): `bootstrap_evaluator =
-     BootstrapEvaluator(n_resamples, alpha=alpha, random_state=seed)` (`alpha = 0.05` in section
-     2) and `CI_BOUND_NAMES` (`lower` → `ci95_lower`, `upper` → `ci95_upper`), for both models;
+     BootstrapEvaluator(n_resamples, random_state=seed)` (5.2: no `alpha`; `alpha = 0.05` in
+     section 2) and `CI_BOUND_NAMES` (`lower` → `ci95_lower`, `upper` → `ci95_upper`); since
+     5.3 only the best-runs cell reads them;
    - **the refit and the scores** (Model 1's loop and Model 2's pairs): the best model fitted
-     on the training part; per dataset (`_dataset_name`, `_dataset`: train, val) predicted once,
-     `_dataset_scores = scoring.evaluate(...)`, `_dataset_intervals =
-     bootstrap_evaluator.evaluate(..., _dataset.groups, ...)` renamed, then joined: `scores` per
-     dataset, cohort and metric, `score, mean, ci95_lower, ci95_upper`; one evaluator, so every
-     model's replicates are the same rows (D30, M14);
+     on the training part; per dataset (train, val) predicted once, `_dataset_scores =
+     compute_metrics(...).stack()`, `scores` per dataset, cohort and metric with the one column
+     `score` (5.3: no bootstrap in the loops);
    - **the tables**, two per model, shown with `mo.ui.table` (marimo's interactive table: sort,
      filter, pages): the runs (`model1_runs_df` 8 rows, `model2_runs_df` 16: the settings,
      `feature_transformers`, `hyperparameters` per component, `cv_poisson_deviance`,
      `n_complete`, `n_failed`, `seconds`; a pair's counts and seconds its two studies' summed)
-     and their scores (`model1_scores_df` 384 rows, `model2_scores_df` 768: a row per run ×
-     dataset × cohort × metric);
-   - **behind "Inspect the best runs":** each model's stored best model by the validation
-     composite deviance (no rebuild; the cell names the two runs); the permutation importance
-     and exact SHAP (`importance_df`).
+     and their scores (`model1_scores_df` 384 × 8, `model2_scores_df` 768 × 6: a row per run ×
+     dataset × cohort × metric, `score`);
+   - **the best runs** (5.3; no button: it runs once both models' runs exist): each model's
+     best run by the validation composite on `SELECTION_METRIC` (`selection_metric`, RMSE by
+     default) → `best_model1`, `best_model2`; the two bootstrapped on validation (2 calls, one
+     evaluator: the same replicate rows) → `best_replicate_scores` (`{"independent_cohorts":
+     …, "total_times_probability": …}`, 1000 rows × (cohort, metric)) and
+     `best_runs_val_scores_df` (48 rows: `model` (`independent_cohorts` /
+     `total_times_probability`), `family`, `use_exposure` (bool), `cohort, metric, score, mean,
+     median, sd, ci95_lower, ci95_upper`; the user's names at the 5.3 review); a sentence naming
+     the two and the table;
+   - **`forest_figure(scores, metric_name, lower_column, upper_column, rule_at=None)`** (5.3):
+     a panel per cohort, a row per model, the dot `score` and the bar its interval
+     (`error_x` `array` / `arrayminus`), `rule_at` a vertical line per panel; the forest plot of
+     the two best on `SELECTION_METRIC` (`best_forest_figure`);
+   - **behind "Inspect the best runs":** the permutation importance (still the deviance until
+     5.4) and exact SHAP of `best_model1`, `best_model2` (`importance_df`).
 
 **The run records** (the input of the MLflow runs; the best model only since 3.4, M14):
 - **Model 1** (`MODEL1_RUNS`): the run settings (`family`, `use_exposure`, the two sharing
   flags), `feature_transformers` ({cohort: candidate name}), `model` (fitted on training),
   `components` (the objects; `to_dict()` writes each transformer's declaration), `cv_best`,
   `n_complete`, `n_failed`, `seconds` (the study's), `scores` (dataset × cohort × metric:
-  `score, mean, ci95_lower, ci95_upper`).
+  `score` only since 5.3; the two best runs' statistics are `best_runs_val_scores_df`'s).
 - **Model 2's step runs** (`MODEL2_TOTAL_RUNS`, `MODEL2_PROBABILITY_RUNS`): their settings,
   `feature_transformers`, `component` (the best, the object step 2 and the pairs take),
   `cv_best`, `n_complete`, `n_failed`, `seconds`.
@@ -157,10 +204,11 @@ git. Re-verify every fact here against the code of the day.
   tuner (a tune method per model, and `tune_total_component` / `tune_probability_component`;
   `storage_dir` and each call's `study_name` store a study in Optuna's journal file and load it
   when complete, PR 4), aggregation. No `fit_and_score` (D30).
-- `scoring`: the six metric functions, `Metric`, and `evaluate(y_true, y_pred, metrics,
-  cohorts="composite")`.
+- `scoring`: the six metric functions, `Metric`, and `compute_metrics(y_true, y_pred,
+  metrics, cohorts="composite")` (D35, 5.1; `evaluate` until then).
 - [`inspection`](MODEL_INSPECTION.md): `BootstrapEvaluator.evaluate(y_true, y_pred, groups=None,
-  *, metrics, cohorts="composite")` (the caller predicts; the interval alone),
+  *, metrics, cohorts="composite")` (the caller predicts; since 5.2 the replicates, one row
+  each, the caller computing the statistics),
   `PermutationImportance`, `ShapExplainer`.
 - `modeling` ([Model 1](INDEPENDENT_COHORT_MODELS.md), [Model 2](TOTAL_TIMES_PROBABILITY_MODEL.md)):
   fit and predict; no `evaluate` (D30).
@@ -169,15 +217,85 @@ git. Re-verify every fact here against the code of the day.
 
 ## 2. State
 
-### PR 4 (2026-11-06, in progress)
+### PR 5 (in progress, `feat/bootstrap-replicates`)
 
-- **Commits on `feat/study-cache`** (from `main` at `0c94f16`):
+- **Commits** (from `main` at `30bd4f7`):
+
+  | commit | sub-task |
+  |---|---|
+  | `466534e` | the handoff after PR #22's merge (the branch's first commit) |
+  | `571f721` | 5.1 `scoring.evaluate` renamed `compute_metrics` (D35) |
+  | `4cfe502` | 5.2 the bootstrap evaluator returns its replicates (D36); `mean`, `median`, `sd`, interval in the notebook |
+
+- **5.1 (a rename only):** `scoring.py`, `bootstrap.py`'s call and docstrings, `test_scoring.py`
+  (its import, calls and two test names), the notebook's import cell, four cells' inputs and
+  four calls, the current guides; D30 got a note. Checks: the suite 1392 passed; Check C equal
+  to 4.3's run exactly.
+- **5.2:** `BootstrapEvaluator(n_resamples, random_state=None)` without `alpha`; `evaluate`
+  returns one row per replicate, a `(cohort, metric)` column MultiIndex; the draws unchanged
+  (a test pins the old implementation's mean and bounds). The notebook's two loops (Model 1's
+  runs, Model 2's pairs): `_replicate_scores = bootstrap_evaluator.evaluate(...)`, then one
+  frame per dataset, `score, mean, median, sd, ci95_lower, ci95_upper` (`sd` pandas' `std()`,
+  `ddof=1`; the bounds `quantile(alpha / 2)`, `quantile(1 - alpha / 2)`); the records' `scores`
+  keep those statistics, not the replicates (the tables and the best-run rule read them).
+  The scores tables: 384 × 13, 768 × 11.
+- **5.2's resampling-unit probe** (the 100-trial best models, validation, 1000 replicates,
+  seed 42; 306 rows in 129 neighborhoods, median 2 rows, 37 with one row): the composite's 95%
+  width, rows / whole neighborhoods / rows within neighborhoods: Model 1 deviance 0.507 / 0.542
+  / 0.380, RMSE 1.006 / 1.095 / 0.582; Model 2 deviance 0.488 / 0.493 / 0.360, RMSE 0.885 /
+  1.024 / 0.582. The user kept the two designs (rows, whole groups). One bootstrap call (6
+  metrics × 4 cohorts, 1000 replicates) takes 6.2 s.
+- **5.2's checks:** `test_inspection_bootstrap.py` 24 under `-W error`; the non-slow suite 1393
+  passed, 1 skipped, 1 xfailed, 19 deselected; mypy 28 files; two mutations caught;
+  MODEL_INSPECTION.md's blocks rerun, output unchanged; Check A (the notebook test 14, ruff 15,
+  the two hunks, `marimo check`), B; Check C (414 s) equal to 5.1's run, `mean` at rtol 1e-12
+  (pandas sums in another order: at most 1.4e-14 relative), `median` and `sd` checked against
+  the replicates.
+- **5.3's planning (2026-11-07; HEAD `6013339`, the notebook's md5 unchanged):**
+  - **The `n_resamples` probe** (`probes/probe_5_3.py` on `probe_5_2.pkl`, read-only):
+    validation, whole neighborhoods, seeds 42–46. The bounds' SD over seeds as % of the
+    interval's width: at most 4.6% at 1000, 1.5% at 10,000 (the best models and their paired
+    difference, the deviance and RMSE, per cohort and the composite). One call takes 6.9 s at
+    1000 and 69.1 s at 10,000. **The user kept 1000.**
+  - **The best runs:** Model 1's is the same by either metric (`lgbm_poisson`, exposure on).
+    Model 2's is `lgbm_gaussian+logistic`, exposure on, by deviance and `lgbm_poisson+logistic`,
+    exposure off, by RMSE (RMSE 4.5393 against 4.5388, within noise). `score` lies inside its
+    interval in all 1152 rows. The composite paired difference contains 0 under both rules.
+  - **The user's answers:**
+    - one selection metric, a notebook setting (RMSE by default, the deviance the
+      alternative), on the validation point score;
+    - only the two best models bootstrapped, on every metric; the other runs keep point scores;
+    - one `forest_figure` function, its metric a parameter (Model 1's and Model 2's tables
+      share a shape: a second function only if they differed);
+    - n_resamples 1000.
+  - **The user's question, answered in the chat and recorded in the cache plan's 5.3:**
+    bootstrap or point estimate to choose? The point estimate: the bootstrap's mean ranks the
+    same; the bootstrap measures uncertainty; cv is no fairer, since each run was tuned on it;
+    the chosen score is optimistic, and the test part gives the fair one.
+  - **The plan** is the cache plan's 5.3 block; the user stopped before approving it, to
+    implement in a new session.
+- **5.3, done (2026-11-07; uncommitted at the stop, HEAD `1af184a`):** as planned (the cache
+  plan's 5.3 Done note). Files: `notebooks/02_experiments.py` (the settings, the metrics cell,
+  the evaluator's comment, the two loops, the two captions, three new cells, the inspection's
+  selection cell removed, section 6's text); `tests/characterization/test_experiments_notebook.py`
+  (the pin); the cache plan; this handoff. The checks are in the Done note.
+
+### PR 4 (2026-11-06, closed: merged as #22, `30bd4f7`)
+
+- **Commits on `feat/study-cache`** (from `main` at `0c94f16`; after the squash-merge GitHub
+  keeps them under #22, and the docs cite them by hash):
 
   | commit | sub-task |
   |---|---|
   | `9662010` | the handoff after PR #21's merge (the branch's first commit) |
   | `a16c218` | 4.1 the budget: `n_trials = 100`, `n_startup_trials = 10` (D31, D32) |
   | `3806c70` | 4.2 `CrossValidationTuner.storage_dir` and each tune method's `study_name` |
+  | `6e5aa3a` | the fix: a stored study is loaded without writing to its file (`load_study`) |
+  | `383ee53` | 4.3 every study cached in a journal file named by its run settings |
+
+- **The merge:** #22, squashed into `main` as `30bd4f7`, identical to `383ee53`;
+  `feat/study-cache` deleted locally and on GitHub. A squash-merged branch is deleted with
+  `git branch -D` (`-d` refuses).
 
 - **4.1's checks:** Check A, B; Check C (410 s) equal to `check_c_3_3_fix.pkl` (`check_c_4_1.pkl`).
 - **4.2** (the user's answers, the cache plan's 4.2):
@@ -190,8 +308,8 @@ git. Re-verify every fact here against the code of the day.
   Its checks: the module 21 passed under `-W error`; the non-slow suite 1391 passed, 1 skipped,
   1 xfailed, 19 deselected; mypy 28 files; three mutations caught; two 100-trial studies load
   in 0.02–0.03 s; Check C (460 s) equal to 4.1's (`check_c_4_2b.pkl`).
-- **4.3, done** (the cache plan's 4.3 has the design, the user's answers and the Done note). The
-  working tree changes:
+- **4.3, done** (the cache plan's 4.3 has the design, the user's answers and the Done note),
+  committed as `6e5aa3a` and `383ee53`. The changes:
   - `notebooks/02_experiments.py`:
     - section 1's two cells export `project_root` and `config_hash`;
     - the tuner cell builds `studies_dir` (`studies/data=<hash8>__split_method=…__test_size=…__val_size=…__n_splits=…__seed=…__n_trials=…__n_startup_trials=…`),
@@ -507,6 +625,16 @@ and the metrics plan §2 (M1–M9); a later one supersedes an earlier one where 
   `2**max_depth` stays a known inefficiency; `scoring.Metric` keeps `direction` and `__call__`;
   `Metric.__call__` keeps its `cohort is None` branch; no private helpers, shared ones public in
   `utils.py`; `cohort` is a `str`, not a `Literal`.
+- **PR 5 (2026-11-06):** D35 `compute_metrics` (done in 5.1); D36 the evaluator returns its
+  replicates, `alpha` the notebook's (done in 5.2); **the two resampling designs stay** (rows,
+  whole groups; no `unit` setting: rows within neighborhoods measured 0.36–0.82× as wide, an
+  artefact of 1–2-row neighborhoods); the loops' result named `_replicate_scores`; the scores'
+  columns `score, mean, median, sd, ci95_lower, ci95_upper` (the user's order); Check C compares
+  `mean` at rtol 1e-12, the rest exactly. Commit messages are given in a copyable code block.
+- **5.3's planning (2026-11-07):** `n_resamples = 1000` kept (measured); each model's best run
+  by one selection metric (a setting, RMSE by default) on the validation point score; only the
+  two best bootstrapped; one `forest_figure` function, its metric a parameter; 5.4 re-scoped to
+  the paired difference and the importance on the selection metric.
 - **The user's wish for this work:** do not overcomplicate; the smallest change that works.
   Keep a valid path working and available; reuse inside it is welcome (D29: the joint draw calls
   the component suggest functions).
@@ -588,7 +716,49 @@ md5, the commit message. Tick the sub-task and update the status lines.
   none. **For PR 4's first change,** the reference is 3.3's run of `aa1e267`,
   `check_c_3_3_fix.pkl` (every frame and record equal to 3.4's `check_c_3_4b.pkl`); if it is
   gone, run Check C on HEAD before the first edit and keep that pickle.
-- **The scripts of PR 4's session (2026-11-06, the latest copy;** if it survived, copy from
+- **Since 5.2:** a scores frame has `score, mean, median, sd, ci95_lower, ci95_upper`;
+  `compare.py` compares `mean` at rtol 1e-12 (pandas sums the replicates in another order than
+  the old `np.mean`), the rest exactly, and drops the columns its reference lacks; `check_c.py`
+  checks `ci95_lower ≤ median ≤ ci95_upper`, `sd > 0` and recomputes the last runs'
+  statistics from `evaluate`'s replicates.
+- **Since 5.3:** the records' `scores` and the scores tables hold `score` only
+  (`SCORE_COLUMNS = ["score"]`); `compare.py` compares the shared columns; `check_c.py` takes a
+  fifth argument, the 5.2b pickle, and checks the best runs: each the `min` of the validation
+  composite `rmse` and `best_model*`; `best_runs_val_scores_df` (48 × 11) `score` the records', its
+  statistics recomputed exactly from a fresh evaluator, equal to 5.2b's record of the run (`mean`
+  at 1e-12) and to 3.1l's bounds; `best_replicate_scores` equal to the fresh replicates; the
+  sentence once; `importance_df` equal to 3.1l's; the forest figure (4 traces on `x`…`x4`, the
+  titles the cohorts, y the two labels, x the scores, `error_x` exactly, `customdata` the
+  bounds, the y axis reversed; `rule_at=0` adds 4 lines at 0). `run_5_3.sh`:
+  `check_c.py <copy> check_c_5_3.pkl check_c_3_1l.pkl check_c_3_4_first.pkl check_c_5_2b.pkl`.
+- **The scripts of 5.3's session (2026-11-07, the latest copy;** copy from here first): the
+  scratchpad named in the status at the top (`checks/` adapted to 5.3; `check_c_5_3.pkl` is
+  5.4's reference).
+- **The scripts of 5.3's planning session (2026-11-07;** if it survived), in
+  `/private/tmp/claude-501/-Users-galkampel-Desktop-Projects-age-group-prediction/6c4b7827-eaf3-4b57-8720-9133a2e32b80/scratchpad`:
+  - `checks/`: the 2026-11-06 session's scripts, copied unchanged (`run_5_2b.sh` still names
+    that session's scratchpad in `S=`; 5.3 writes `run_5_3.sh`), not yet adapted to 5.3;
+  - `probes/probe_5_3.py`: the `n_resamples` measurement, the best runs by either metric, and
+    the replicates' memory, on `probe_5_2.pkl` (about 10 min); its output `probe_5_3.log`, the
+    per-seed bounds `probe_5_3_bounds.csv`;
+  - the pickles `check_c_5_2b.pkl` (5.3's reference) with its figures' JSON,
+    `check_c_3_1l.pkl`, `check_c_3_4_first.pkl` and `probe_5_2.pkl`.
+- **The scripts of PR 5's session (2026-11-06;** if it survived, copy from here), in
+  `/private/tmp/claude-501/-Users-galkampel-Desktop-Projects-age-group-prediction/6399f8d3-96a2-49b3-a707-91be30c7b8b4/scratchpad`:
+  - `checks/`: `make_copy.py`, `check_b.py` (5.1's and 5.2's assertions), `check_c.py`,
+    `compare.py`, `run_5_1.sh` / `run_5_2.sh` (the suite, mypy, a guide's blocks, Check A, B, C
+    and the comparison), `run_5_2b.sh` (Check A, B, C only), `run_guide_blocks.py` (a guide's
+    ```python blocks against its ```text blocks), the older `run_4_*.sh`; each `run_*.sh` names
+    this scratchpad in `S=`: change it to the new session's;
+  - the pickles `check_c_3_1l.pkl`, `check_c_3_4_first.pkl` (`check_c.py`'s references),
+    `check_c_4_3.pkl`, `check_c_5_1.pkl`, `check_c_5_2.pkl`, `check_c_5_2b.pkl` (5.2's final
+    run: 5.3's reference), with their figures' JSON;
+  - `probes/probe_5_2.py` and `run_probe_5_2.sh` (the real notebook on a copy with a copy of
+    `studies/`, every button clicked: about 7 min, nothing tuned), `probe_5_2.pkl`
+    (`MODEL1_RUNS`, `MODEL2_RUNS` with their fitted models, `best_model1`, `best_model2`,
+    `train_age_group`, `val_age_group`, `seed`, `METRICS`, `COHORTS`; load with
+    `joblib.externals.cloudpickle`), `probe_5_2_widths.csv`.
+- **The scripts of PR 4's session (2026-11-06;** if it survived, copy from
   here first), in `/private/tmp/claude-501/-Users-galkampel-Desktop-Projects-age-group-prediction/26bc3522-aa12-45fe-b71e-3e2c785cc628/scratchpad`:
   - `checks/`: 3.3's scripts with `make_copy.py` matching `    n_trials = 100`; `run_check_c.sh`
     with `S=` this scratchpad; `run_4_1.sh` / `run_4_2.sh` (Check A, B, C and the comparison);
@@ -681,6 +851,15 @@ read, seconds to 30+ s each).
   on the folder, turning off Optimize Mac Storage, or moving the repo out of `~/Desktop`.
 
 **Traps:**
+- **The fitted models need cloudpickle:** `pickle` fails on a feature transformer's lambda
+  (`CenterByReferencePoint.build.<locals>.<lambda>`); `joblib.externals.cloudpickle.dump`
+  works (5.2's probe).
+- **A shell heredoc with an unquoted delimiter runs the backticks inside it:** write
+  scripts with `<<'EOF'`, or from Python.
+- **An indentation regex also matches a deeper indent** (12 spaces inside 16): anchor it to
+  the line start, or replace the deeper block first.
+- **The user's VS Code marimo kernel** (the marimo extension) may hold the notebook: tell the
+  user before editing; the user edits between turns (5.2: a rename), so re-read the md5 first.
 - **The scratchpad can vanish:** `/private/tmp` was emptied when the machine restarted
   (2026-11-01), taking the check scripts. Keep every number in the docs; rewrite the scripts.
   Another session's scratchpad may survive (2026-11-02: the previous one did); read its scripts,
@@ -748,6 +927,9 @@ constructor, data in the call; fitting and evaluating as separate steps; no priv
   totals with a lower deviance (best 2.0601 against 2.0718). Candidates for a search-space pass,
   with T1's F7 below: Optuna's `multivariate=True`, more startup trials, a narrower space; not
   asked for.
+- **The forest plots (5.3) look bad (the user, 2026-11-07, on the 100-trial runs through the
+  viewer app):** to be fixed later (with 5.4's difference plot in PR 7); `forest_figure`'s
+  layout is unchanged since 5.3.
 - **The EDA figures:** dark mode not selected (the dataviz skill asks for it; marimo's dark theme
   shows them on the light surface); not looked at by the assistant (no browser). The user looked
   at 3.1j's, asked for 3.1k and 3.1l, and approved 3.1k's at 400 trials ("Looks good!").
@@ -762,20 +944,35 @@ constructor, data in the call; fitting and evaluating as separate steps; no priv
 
 ## 6. Next, and the prompt
 
-**Status (2026-11-06, 4.3 done):**
-- PR 4: 4.1 (`a16c218`) and 4.2 (`3806c70`) committed; 4.3 done, for the user's two commits
-  (§2's "PR 4"). The notebook's md5 is `91d1c96cdd227a137163cd072235c64a`.
+**Status (2026-11-07, 5.3 done):**
+- PR 5 is on `feat/bootstrap-replicates` from `main` at `30bd4f7`: `571f721` 5.1, `4cfe502` 5.2,
+  `6013339` the handoff after 5.2, `1af184a` 5.3's plan (docs), then 5.3 (the user's commit).
+  The notebook's md5 is `9a66a347ed3fc928f14a43bde04da1b9`.
+- Check C's reference for the next notebook change is `check_c_5_3.pkl` (this session's scratchpad, the status at
+  the top; if it is gone, run Check C on HEAD before the first edit and keep that pickle).
 
 Next, one step per approval, each stopped with a file-by-file summary, the checks, the
-notebook's md5 and the commit message:
-1. **Close PR 4:** the PR's title and description in the chat (no "Generated with Claude
-   Code"), the squash-merge text; after the merge, the user creates `feat/bootstrap-replicates`
-   from `main`.
-2. **PR 5** (the cache plan's §4, 5.1–5.4): 5.1 `scoring.evaluate` → `compute_metrics` (planned
-   and approved 2026-11-06: `src`, `test_scoring.py`, the notebook's import cell, four
-   parameter lists and four calls, five current guides, a note on D30, Check C against
-   `check_c_4_3.pkl`); then the bootstrap's replicates, `n_resamples` measured, RMSE compares.
-3. **Then PRs 6–7.** F3 and F4 (§5) belong to PR 6. MLflow and D4 stay deferred.
+notebook's md5 and the commit message in a copyable code block:
+1. **Close PR 5 at 5.3** (the user's decision, 2026-11-07: the EDA and the tuning are hard to
+   move between in one notebook, so the EDA work and the split come first): the non-slow suite
+   and mypy; the PR's title and description in the chat (no "Generated with Claude Code"), the
+   squash-merge text, the branch deletion.
+2. **PR 5b, the EDA** (`feat/model2-tuning-methods` from `main`; its first commit records this
+   order and its plan in the cache plan as §4b):
+   - 5b.1 `trials_table` renamed `build_trials_table` (the user: keep the function, a more
+     informative name; the trials' scores are already saved during the runs as user
+     attributes, the function rebuilds each trial's whole model from the flat params);
+   - 5b.2 the joint Model 2 method in the EDA (one `tune_total_times_probability_model` study
+     per objective, `lgbm_poisson+logistic`, exposure on), `model2_joint` in the summary,
+     figures and tables;
+   - 5b.3 the reading at 100 trials; if the joint method wins beyond the noise, the
+     `model2_tuning_method` setting and the joint loop go into the tuning notebook (PR 7).
+3. **PR 6, the split** (the cache plan's §5; F3 and F4 there).
+4. **PR 7, the tuning notebook's evaluation:** 5.4 first (the paired difference from
+   `best_replicate_scores`, `total_times_probability − independent_cohorts` per replicate; its
+   forest plot with `rule_at=0`; the importance on `SELECTION_METRIC`), the forest plots'
+   layout fixed (§5), then SHAP per cohort and the test evaluation. MLflow and D4 stay
+   deferred.
 
 The user's preferences:
 - plan docs in `docs/`, split into sub-tasks validated one at a time;
@@ -783,7 +980,7 @@ The user's preferences:
   with evidence and a recommendation, their context explained in the chat before asking), then
   implemented after approval;
 - each sub-task stopped with a file-by-file summary, the checks, the notebook's md5 and the
-  commit message;
+  commit message in a copyable code block;
 - marimo's UI terms explained;
 - the implementation kept simple, with meaningful names;
 - the user commits.
@@ -791,19 +988,23 @@ The user's preferences:
 **The prompt for the next session:**
 
 ```text
-Read docs/EXPERIMENT_NOTEBOOK_HANDOFF.md in full (the status at the top, §2's "PR 4" block,
-§4's checks, traps, iCloud notes and the latest scripts, §6 first), then
-docs/NOTEBOOK_CACHE_EVALUATION_PLAN.md in full (§0 D31–D39, §3's 4.3 Done note, §4 PR 5), then
-src/age_group_prediction/scoring.py, src/age_group_prediction/inspection/bootstrap.py and the
-notebook's import cell and run cells of sections 5 and 6.
-Verify the state first: PR 4 merged into main; the branch feat/bootstrap-replicates from it;
-`git status` clean; the notebook's md5 91d1c96cdd227a137163cd072235c64a via
-`cat notebooks/02_experiments.py | md5`; no iCloud-offloaded files (`find .git src notebooks
-tests docs configs -flags +dataless -type f | grep -vc __pycache__` is 0).
-If anything differs, stop and show me the diff. Then PR 5 (the plan's §4), one sub-task per
-approval, starting with 5.1, each planned in plan mode (re-verify the facts with read-only
-probes, design questions with evidence and a recommendation, the context explained in the
-chat, the steps and the commit message in the chat). Keep the implementation simple. I commit
-myself: never commit, no Co-Authored-By line, no "Generated with Claude Code" in PR text,
-never git checkout/stash/reset/mv.
+Read docs/EXPERIMENT_NOTEBOOK_HANDOFF.md in full (the status at the top, §2's "PR 5" block with
+5.3, §3, §4's checks, traps, iCloud notes and the latest scripts, §6 first), then
+docs/NOTEBOOK_CACHE_EVALUATION_PLAN.md (§0 D34–D36, §4 PR 5: 5.3's Done note and 5.4
+moved to PR 7) and §4b PR 5b, then the notebook's section 5 (the EDA's run cells, the
+summary, the figure cells, build_trials_table) and tuner.tune_total_times_probability_model.
+Verify the state first:
+- the branch feat/model2-tuning-methods from main after PR 5's merge;
+- `git status` clean; the notebook's md5 `9a66a347ed3fc928f14a43bde04da1b9` via
+  `cat notebooks/02_experiments.py | md5`;
+- no iCloud-offloaded files: `find .git src notebooks tests docs configs -flags +dataless -type f
+  | grep -vc __pycache__` is 0.
+If anything differs, stop and show me the diff. Then copy the check scripts, check_c_5_3.pkl
+(and its figures' JSON), check_c_5_2b.pkl, check_c_3_1l.pkl and check_c_3_4_first.pkl from the
+scratchpad the handoff names (or rewrite them from §4). In plan mode, plan PR 5b's next sub-task
+against the code (line numbers by grep), show it with the steps and the commit message in
+the chat, and implement it after my approval. Keep the implementation simple. Stop each
+sub-task with a file-by-file summary, the checks, the notebook's md5 and the commit message in
+a copyable code block. I commit myself: never commit, no Co-Authored-By line, no "Generated
+with Claude Code" in PR text, never git checkout/stash/reset/mv.
 ```

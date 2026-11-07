@@ -32,7 +32,7 @@ The dependencies run one way: `params` ← `components` ← `search_spaces` ← 
 `cross_validation`, which also uses `aggregation`; within the package, `aggregation` stands
 alone. Import from `age_group_prediction.hyperparameter_tuning`; nothing is re-exported from
 the project's root. The refit is the caller's: it fits the best model, predicts, and scores
-the predictions with `scoring.evaluate` (§8).
+the predictions with `scoring.compute_metrics` (§8).
 
 What lives here is the mechanism: records a test can pin down and another notebook could
 reuse. What stays in the notebook is the reading of one experiment (D21): the candidate
@@ -61,7 +61,7 @@ from age_group_prediction.hyperparameter_tuning import (
     build_independent_cohorts_model, build_total_times_probability_model,
 )
 from age_group_prediction.preprocessing import ExposureTransformer, ShareTransformer
-from age_group_prediction.scoring import Metric, evaluate, mean_poisson_deviance_loss
+from age_group_prediction.scoring import Metric, compute_metrics, mean_poisson_deviance_loss
 from age_group_prediction.splitting import Splitter
 from age_group_prediction.utils import AgeGroupDataset
 from student_simulator import (
@@ -268,7 +268,7 @@ Step 1's value holds the fixed classifier's log loss; step 2's best is the pair'
 A study keeps every trial; only the best is refit. Its components are read back from
 `best_params` by the component types (§3), built the same way the objective built them and
 refit on the whole training part; each part is then predicted and scored with
-`scoring.evaluate`, per cohort and for the composite (§8):
+`scoring.compute_metrics`, per cohort and for the composite (§8):
 
 ```python
 # The best components, read back from best_params by their type, then built and
@@ -297,7 +297,7 @@ for label, model in [
     model.fit(train.X, train.Y, exposure=train.exposure)
     scores = pd.concat(
         {
-            part: evaluate(
+            part: compute_metrics(
                 data.Y, model.predict(data.X, exposure=data.exposure),
                 [POISSON_DEVIANCE], cohorts=[*cohorts, "composite"],
             )["poisson_deviance"]
@@ -595,18 +595,18 @@ UpperBound(z=1.645)
 
 Fitting and scoring are the caller's two steps: the best model is rebuilt from
 `best_params` (§3) and fitted on the training part, each part is predicted, and
-`scoring.evaluate(y_true, y_pred, metrics, cohorts="composite")` returns a table of every
-metric (a column, by name) for each cohort asked for (a row): a column of `y_true`, scored
+`scoring.compute_metrics(y_true, y_pred, metrics, cohorts="composite")` returns a table of
+every metric (a column, by name) for each cohort asked for (a row): a column of `y_true`, scored
 alone through `cohort=`, or `"composite"`, the whole matrix. The Optuna study need not be
 kept. A notebook run keeps its best model only (the trials are studied in the notebook's
 objective EDA, section 5): its settings, `feature_transformers` (each component's candidate
 name), the fitted `model`, its `components` (`to_dict()` writes each one's transformer
 declaration), `cv_best`, `n_complete`, `n_failed`, the seconds, and `scores`: per dataset
-(`train`, `val`), cohort and metric, `scoring.evaluate`'s `score` beside
-`BootstrapEvaluator.evaluate`'s `mean` and bounds, which the notebook names after their level
-(`ci95_lower`, `ci95_upper` at its setting `alpha = 0.05`); one evaluator resamples every
-model with one seed, so their intervals compare. Model 2's coordinate descent keeps a record
-per step study (its best component and its name, `cv_best`, the trial counts, the seconds)
+(`train`, `val`), cohort and metric, `scoring.compute_metrics`'s `score` beside
+the mean, median, SD and percentile bounds of `BootstrapEvaluator.evaluate`'s replicates, the
+bounds named after their level (`ci95_lower`, `ci95_upper` at its setting `alpha = 0.05`); one
+evaluator resamples every model with one seed, so their intervals compare. Model 2's coordinate descent
+keeps a record per step study (its best component and its name, `cv_best`, the trial counts, the seconds)
 and one per pair (its model, components, names, its cross-validated objective as `cv_best`,
 its two studies' trial counts and seconds summed, its `scores`). The notebook shows two
 tables per model: the kept models (settings, each component's transformer and
