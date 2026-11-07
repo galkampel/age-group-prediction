@@ -1,6 +1,21 @@
-# Handoff: the experiment notebook, PR 5 in progress (the bootstrap replicates and the comparison metric): 5.3 done, 5.4 next
+# Handoff: the experiment notebook, PR 5b (Model 2's two tuning methods in the EDA): planned, 5b.1 next
 
-**Status (2026-11-07, 5.3 done, awaiting the user's commit; the next session starts at §6):**
+**Status (2026-11-07, PR 5 merged; PR 5b planned; the next session starts at §6):**
+- **PR 5 is merged** as #23, squashed into `main` as `c3bdee8` (identical to `8a90bf9`, 5.3);
+  `feat/bootstrap-replicates` deleted locally and on GitHub. At the close: the non-slow suite
+  1393 passed, 1 skipped, 1 xfailed, 19 deselected; mypy 28 files, no issue.
+- **PR 5b is on `feat/model2-tuning-methods`** (from `main` at `c3bdee8`): its plan is the cache
+  plan's §4b (5b.1 the rename, 5b.2 the joint method in the EDA, 5b.3 the reading); the order
+  after it is §6's.
+- **The scripts and pickles to copy first** (it may vanish on a restart; then rewrite them from
+  §4): `/private/tmp/claude-501/-Users-galkampel-Desktop-Projects-age-group-prediction/095bc943-e3e7-4192-9f55-ee2e42ef19ba/scratchpad`:
+  `checks/` (`run_5_3.sh`: Check A, B, C and the comparison; `check_c.py` takes `<copy>
+  <out.pkl> check_c_3_1l.pkl check_c_3_4_first.pkl check_c_5_2b.pkl`), `check_c_5_3.pkl` (the
+  reference) with its two figures' JSON, `check_c_5_2b.pkl`, `check_c_3_1l.pkl`,
+  `check_c_3_4_first.pkl`; `probes/view_5_3.py` and `viewer/forest_5_3.py` (5.3's forest plot on
+  the real cache).
+
+**Status (2026-11-07, 5.3 done, before the user's commit):**
 - **5.3 is implemented as planned** (the cache plan's 5.3 Done note): `selection_metric = "rmse"`
   (section 2, pinned) → `SELECTION_METRIC`; the runs keep point scores; a cell picks each
   model's best run by the validation composite and bootstraps the two (`best_runs_val_scores_df`,
@@ -81,7 +96,8 @@ session that does 3.3 and starts PR 4; **updated** 2026-11-05 at PR 3's close (3
 merge (#21, `0c94f16`: the header, §2, §2b, §6), as `feat/study-cache`'s first commit; **updated** 2026-11-06 after 5.2 (`4cfe502`: the header, §2's
 "PR 5", §3, §4, §6), for the session that continues PR 5 at 5.3; **updated** 2026-11-07 after
 5.3's planning (the header, §2's "PR 5", §3, §4, §6), for the session that implements it;
-**updated** 2026-11-07 after 5.3 (the header, §1, §2's "PR 5", §4, §5, §6), for PR 5's close and PR 5b. The detailed history is in the metrics
+**updated** 2026-11-07 after 5.3 (the header, §1, §2's "PR 5", §4, §5, §6), for PR 5's close and PR 5b; **updated**
+2026-11-07 after PR 5's merge (#23), as `feat/model2-tuning-methods`' first commit. The detailed history is in the metrics
 plan (§2 M1–M14, §4 2.1–2.5, §5 3.1–3.4 and 3.3 with each
 sub-task's "Done" note), in [NOTEBOOK_TUNING_PLAN.md](NOTEBOOK_TUNING_PLAN.md) (§0 D1–D30) and in
 git. Re-verify every fact here against the code of the day.
@@ -944,19 +960,19 @@ constructor, data in the call; fitting and evaluating as separate steps; no priv
 
 ## 6. Next, and the prompt
 
-**Status (2026-11-07, 5.3 done):**
-- PR 5 is on `feat/bootstrap-replicates` from `main` at `30bd4f7`: `571f721` 5.1, `4cfe502` 5.2,
-  `6013339` the handoff after 5.2, `1af184a` 5.3's plan (docs), then 5.3 (the user's commit).
-  The notebook's md5 is `9a66a347ed3fc928f14a43bde04da1b9`.
-- Check C's reference for the next notebook change is `check_c_5_3.pkl` (this session's scratchpad, the status at
-  the top; if it is gone, run Check C on HEAD before the first edit and keep that pickle).
+**Status (2026-11-07, PR 5 merged; PR 5b planned, not started):**
+- PR 5 is merged as #23 (`c3bdee8` on `main`, identical to 5.3's `8a90bf9`); its branch is
+  deleted. PR 5b is on `feat/model2-tuning-methods` from `main` at `c3bdee8`; its first commit is
+  the docs (the cache plan's §4b, this handoff). The notebook's md5 is
+  `9a66a347ed3fc928f14a43bde04da1b9` (unchanged since 5.3).
+- Check C's reference for the next notebook change is `check_c_5_3.pkl` (with its figures'
+  JSON), in the 2026-11-07 session's scratchpad named in the status at the top; `check_c.py`'s
+  fifth argument stays `check_c_5_2b.pkl`. If they are gone, rewrite the scripts from §4 and run
+  Check C on HEAD before the first edit, keeping that pickle.
 
 Next, one step per approval, each stopped with a file-by-file summary, the checks, the
 notebook's md5 and the commit message in a copyable code block:
-1. **Close PR 5 at 5.3** (the user's decision, 2026-11-07: the EDA and the tuning are hard to
-   move between in one notebook, so the EDA work and the split come first): the non-slow suite
-   and mypy; the PR's title and description in the chat (no "Generated with Claude Code"), the
-   squash-merge text, the branch deletion.
+1. **Close PR 5 at 5.3:** done (#23).
 2. **PR 5b, the EDA** (`feat/model2-tuning-methods` from `main`; its first commit records this
    order and its plan in the cache plan as §4b):
    - 5b.1 `trials_table` renamed `build_trials_table` (the user: keep the function, a more
@@ -988,23 +1004,26 @@ The user's preferences:
 **The prompt for the next session:**
 
 ```text
-Read docs/EXPERIMENT_NOTEBOOK_HANDOFF.md in full (the status at the top, §2's "PR 5" block with
-5.3, §3, §4's checks, traps, iCloud notes and the latest scripts, §6 first), then
-docs/NOTEBOOK_CACHE_EVALUATION_PLAN.md (§0 D34–D36, §4 PR 5: 5.3's Done note and 5.4
-moved to PR 7) and §4b PR 5b, then the notebook's section 5 (the EDA's run cells, the
-summary, the figure cells, build_trials_table) and tuner.tune_total_times_probability_model.
+Read docs/EXPERIMENT_NOTEBOOK_HANDOFF.md in full (the status at the top, §2's "PR 5" block,
+§3, §4's checks, traps, iCloud notes and the latest scripts, §5, §6 first), then
+docs/NOTEBOOK_CACHE_EVALUATION_PLAN.md (§0 D34–D36, §4b PR 5b in full, §4's 5.3 Done note and
+5.4 moved to PR 7), then the notebook's section 5: the EDA's settings and tuner cells,
+trials_table, Model 1's and Model 2's EDA run cells, the summary cell (eda_best_df), the two
+figure cells and the tables cell; and CrossValidationTuner.tune_total_times_probability_model
+in src/age_group_prediction/hyperparameter_tuning/cross_validation.py.
 Verify the state first:
-- the branch feat/model2-tuning-methods from main after PR 5's merge;
-- `git status` clean; the notebook's md5 `9a66a347ed3fc928f14a43bde04da1b9` via
+- the branch feat/model2-tuning-methods; HEAD my docs commit of PR 5b's plan on c3bdee8 (#23);
+- `git status` clean; the notebook's md5 9a66a347ed3fc928f14a43bde04da1b9 via
   `cat notebooks/02_experiments.py | md5`;
 - no iCloud-offloaded files: `find .git src notebooks tests docs configs -flags +dataless -type f
   | grep -vc __pycache__` is 0.
-If anything differs, stop and show me the diff. Then copy the check scripts, check_c_5_3.pkl
-(and its figures' JSON), check_c_5_2b.pkl, check_c_3_1l.pkl and check_c_3_4_first.pkl from the
-scratchpad the handoff names (or rewrite them from §4). In plan mode, plan PR 5b's next sub-task
-against the code (line numbers by grep), show it with the steps and the commit message in
-the chat, and implement it after my approval. Keep the implementation simple. Stop each
-sub-task with a file-by-file summary, the checks, the notebook's md5 and the commit message in
-a copyable code block. I commit myself: never commit, no Co-Authored-By line, no "Generated
+If anything differs, stop and show me the diff. Then copy the check scripts (checks/),
+check_c_5_3.pkl with its figures' JSON, check_c_5_2b.pkl, check_c_3_1l.pkl and
+check_c_3_4_first.pkl from the scratchpad the handoff names (or rewrite them from §4). In plan
+mode, re-verify 5b.1 (trials_table renamed build_trials_table) against the code (line numbers
+by grep), show it with the steps and the commit message in the chat, and implement it after my
+approval. Then 5b.2 and 5b.3, one sub-task per approval. Keep the implementation simple. Stop
+each sub-task with a file-by-file summary, the checks, the notebook's md5 and the commit message
+in a copyable code block. I commit myself: never commit, no Co-Authored-By line, no "Generated
 with Claude Code" in PR text, never git checkout/stash/reset/mv.
 ```
