@@ -1,4 +1,23 @@
-# Handoff: the experiment notebooks, PR 7 at 7.0 (done); 5.4 next
+# Handoff: the experiment notebooks, PR 7 at 7.0b (done); the plot comparison next
+
+**Status (2026-11-08, 7.0 and 7.0b committed and pushed; implementation paused; the next session
+starts at §6):**
+- **The commits:**
+  - `a74b2ff` holds 7.0's work under 7.0b's message, kept as is (PR 7 is squash-merged, so the
+    merge's message names both);
+  - `8ef9b3f` is 7.0b.
+
+  Both are pushed to `origin/feat/test-evaluation`.
+- **The notebooks' md5:** `02_objective_eda.py` `d74bf1357926732ee31c7e1a98e7bd67`,
+  `03_hyperparameter_tuning.py` `6ffa4a82c6c6c80069ef7a0da0b443c8`.
+- **The cache:** the user's `studies/` holds 50 studies, so a click of either notebook only loads.
+- **Next (the user, 2026-11-08):** before 5.4, compare a **ridge plot** with today's **forest
+  plot** for the two best models (§5, §6). It is a read-only probe with a viewer app; the user
+  chooses the form, and 5.4 uses it.
+- **The scratchpad to copy first:** `/private/tmp/claude-501/-Users-galkampel-Desktop-Projects-age-group-prediction/beacb9e0-ac25-4bc6-87ca-2917e0d810a3/scratchpad`. It holds `checks/` and the pickles
+  `check_c_7_0_eda.pkl` with its two figures' JSON, `check_c_7_0b_tuning.pkl`,
+  `check_c_7_0_tuning.pkl`, `check_c_6_2.pkl` with its two figures' JSON, `check_c_3_1l.pkl`,
+  `check_c_3_4_first.pkl` and `check_c_5_2b.pkl`.
 
 **Status (2026-11-08, 7.0b done, before the user's commit; the next session starts at §6):**
 - **7.0 is committed** as `a74b2ff`, under 7.0b's message (the user may reword it). **7.0b is
@@ -475,8 +494,13 @@ which the two notebooks now hold: 1–5 in the EDA, 1–4 and 6 (as 5) in the tu
 
 ### PR 7 (2026-11-08, open; `feat/test-evaluation`)
 
-- **Commits** (from `main` at `f9c92a5`): `7e148d1` is the handoff after PR #25's merge. 7.0
-  awaits the user's commit.
+- **Commits** (from `main` at `f9c92a5`):
+
+  | commit | sub-task |
+  |---|---|
+  | `7e148d1` | the handoff after PR #25's merge (the branch's first commit) |
+  | `a74b2ff` | 7.0: Model 2 by the joint method, RMSE as the objective, F4, the labels (committed under 7.0b's message) |
+  | `8ef9b3f` | 7.0b: the best runs' two tables and their filter, the index fix; the EDA's empty cell removed |
 - **7.0's Check C baselines** (3 trials, both sharing flags off; the cv RMSE) are in the cache
   plan's 7.0 Done note:
   - Model 1, exposure on / off: `lgbm_poisson` 4.4495 / 4.5284, `lgbm_gaussian` 4.4543 /
@@ -1325,6 +1349,28 @@ constructor, data in the call; fitting and evaluating as separate steps; no priv
 - **The forest plots (5.3) look bad (the user, 2026-11-07, on the 100-trial runs through the
   viewer app):** to be fixed later (with 5.4's difference plot in PR 7); `forest_figure`'s
   layout is unchanged since 5.3.
+  - **The user's question (2026-11-08): is a ridge plot better?**
+    - The forest plot shows each model's point score and 95% bootstrap interval per cohort.
+    - A ridge plot shows the whole distribution of each model's 1000 bootstrap replicates
+      (`best_replicate_scores`; one evaluator, so the rows pair), stacked per cohort: the
+      overlap and the shape, not only the interval. The same form fits 5.4's paired
+      difference, one density per cohort with a rule at 0.
+  - **The comparison is a read-only design probe:**
+    - both figures built from the real 100-trial best runs' replicates, on a copy of the tuning
+      notebook on the user's cache (the click only loads);
+    - per cohort (the composite first) and per metric (`SELECTION_METRIC` by default);
+    - a ridge per model (a KDE or a histogram of the replicates, the point score marked, the
+      95% interval shaded) against today's forest plot;
+    - the same for 5.4's difference (`total_times_probability − independent_cohorts`), with a
+      rule at 0;
+    - shown in a small viewer app (§4's "For the user to look at figures without a click").
+
+    The user chooses, and 5.4 uses the chosen form.
+  - **Notes:**
+    - `best_replicate_scores` is not exported today (marimo's trim); `make_copy_tuning.py`
+      restores the return in the copy.
+    - Load the dataviz skill before designing the figures (the EDA's figures use its reference
+      palette).
 - **The EDA figures:** dark mode not selected (the dataviz skill asks for it; marimo's dark theme
   shows them on the light surface); not looked at by the assistant (no browser). The user looked
   at 3.1j's, asked for 3.1k and 3.1l, and approved 3.1k's at 400 trials ("Looks good!").
@@ -1339,9 +1385,9 @@ constructor, data in the call; fitting and evaluating as separate steps; no priv
 
 ## 6. Next, and the prompt
 
-**Status (2026-11-08, 7.0b done, before the user's commit):**
-- PR 7 is on `feat/test-evaluation` (from `main` at `f9c92a5`): 7.0 committed as `a74b2ff`;
-  7.0b awaits the user's commit.
+**Status (2026-11-08, 7.0 and 7.0b committed and pushed; implementation paused):**
+- PR 7 is on `feat/test-evaluation` (from `main` at `f9c92a5`): 7.0 is `a74b2ff` (under
+  7.0b's message), 7.0b is `8ef9b3f`; both are pushed.
 - The notebooks' md5:
   - `01_eda.py` `4bc1ba3a52dc2ad55d0097a707bd1ccc`;
   - `02_objective_eda.py` `d74bf1357926732ee31c7e1a98e7bd67`;
@@ -1356,13 +1402,15 @@ constructor, data in the call; fitting and evaluating as separate steps; no priv
 Next, one step per approval, each stopped with a file-by-file summary, the checks, the
 notebooks' md5 and the commit message in a copyable code block:
 1. **7.0 and 7.0b:** done (the cache plan's Done notes).
-2. **5.4**, in the tuning notebook:
+2. **The ridge plot against the forest plot** (§5): a read-only probe and a viewer app, no
+   notebook change; the user chooses the form.
+3. **5.4** with the chosen plot, in the tuning notebook:
    - the paired difference from `best_replicate_scores`
      (`total_times_probability − independent_cohorts` per replicate);
-   - its forest plot with `rule_at=0`;
+   - its figure, with a rule at 0;
    - the permutation importance on `SELECTION_METRIC` (the deviance today).
-3. **Then** the forest plots' layout fixed (§5), SHAP per cohort (7.1), and the test
-   evaluation (7.2, 7.3).
+4. **The two best runs' figure** in the chosen form (§5).
+5. **Then** SHAP per cohort (7.1) and the test evaluation (7.2, 7.3).
 
    MLflow and D4 stay deferred.
 
@@ -1382,24 +1430,29 @@ The user's preferences:
 
 ```text
 Read docs/EXPERIMENT_NOTEBOOK_HANDOFF.md in full (the status at the top, §1's "Since 7.0",
-§2's "PR 7" block, §3 (D40-D42 and 7.0's answers), §4's checks (since 7.0, per notebook), traps,
-iCloud notes, §5, §6 first), then docs/NOTEBOOK_CACHE_EVALUATION_PLAN.md (§6's 7.0 Done note,
-then 5.4 in §4), then notebooks/03_hyperparameter_tuning.py (section 5: the best runs, the
-forest plot, the inspection) and the tuning notebook's characterization test.
+§2's "PR 7" block, §3 (7.0's answers), §4's checks (since 7.0) and "For the user to look at
+figures without a click", traps, iCloud notes, §5 (the forest plots), §6 first), then
+docs/NOTEBOOK_CACHE_EVALUATION_PLAN.md (5.3 and 5.4 in §4; 7.0 and 7.0b in §6), then
+notebooks/03_hyperparameter_tuning.py (section 5: the best runs, best_replicate_scores,
+forest_figure and the forest plot, the two best-run tables).
 Verify the state first:
-- the branch feat/test-evaluation; HEAD my 7.0b commit on a74b2ff (7.0);
-- `git status` clean; the notebooks' md5 (`cat <file> | md5`): 02_objective_eda.py
+- the branch feat/test-evaluation; HEAD 8ef9b3f (7.0b) on a74b2ff (7.0); `git status` clean;
+- the notebooks' md5 (`cat <file> | md5`): 02_objective_eda.py
   d74bf1357926732ee31c7e1a98e7bd67, 03_hyperparameter_tuning.py 6ffa4a82c6c6c80069ef7a0da0b443c8;
 - no iCloud-offloaded files: `find .git src notebooks tests docs configs -flags +dataless -type f
   | grep -vc __pycache__` is 0.
 If anything differs, stop and show me the diff. Then copy the check scripts (checks/) and the
-pickles check_c_7_0_eda.pkl with its two figures' JSON, check_c_7_0b_tuning.pkl, check_c_6_2.pkl
-with its two figures' JSON and check_c_3_1l.pkl from the scratchpad the handoff names (or rewrite
-them from §4). In plan mode, plan 5.4: the paired difference's cell and table, its forest plot,
-the importance on the selection metric, the text, Check C's additions; show the design
-questions with evidence and a recommendation, the steps and the commit message in the chat, and
-implement after my approval. Keep the implementation simple. Stop each sub-task with a
-file-by-file summary, the checks, the notebooks' md5 and the commit message in a copyable code
-block. I commit myself: never commit, no Co-Authored-By line, no "Generated with Claude Code" in
-PR text, never git checkout/stash/reset/mv.
+pickles check_c_7_0_eda.pkl with its two figures' JSON, check_c_7_0b_tuning.pkl,
+check_c_6_2.pkl with its two figures' JSON and check_c_3_1l.pkl from the scratchpad the handoff
+names (or rewrite them from §4).
+The question: is a ridge plot better than the forest plot for comparing the two best models?
+In plan mode, plan a read-only probe: build both figures from the real 100-trial best runs'
+bootstrap replicates (a copy of the tuning notebook on my cache: the click only loads), per
+cohort and metric, and for 5.4's paired difference; save them and give me a small viewer app
+to look at them. Load the dataviz skill before designing the figures. Show the design
+questions with evidence and a recommendation in the chat. After I choose, plan 5.4 with the
+chosen plot. Keep the implementation simple. Stop each sub-task with a file-by-file summary,
+the checks, the notebooks' md5 and the commit message in a copyable code block. I commit
+myself: never commit, no Co-Authored-By line, no "Generated with Claude Code" in PR text,
+never git checkout/stash/reset/mv.
 ```
