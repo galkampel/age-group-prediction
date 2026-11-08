@@ -1,5 +1,21 @@
 # Handoff: the experiment notebook, PR 5b merged (#24); PR 6 (two notebooks) next
 
+**Status (2026-11-08, 6.1 done, before the user's commit; next 6.2):**
+- **6.1 is done as planned** (the cache plan's 6.1 Done note), docs only. The three ways of sharing
+  sections 1–4 were probed; **D41 (the user's):** both notebooks duplicate the setup (sections 1–4
+  and the five section-5 cells section 6 also reads). The EDA notebook keeps the descriptions;
+  the tuning notebook has the same code under short text pointing to the EDA, and focuses on the
+  results. A test will pin the two copies equal (6.3). The notebook's md5 is unchanged,
+  `6731d509d2b5298e4d38a99480f700dc`.
+- **This session's scratchpad** (copy from it first):
+  `/private/tmp/claude-501/-Users-galkampel-Desktop-Projects-age-group-prediction/6c6919cb-4d41-4a79-be82-0aa948ff29be/scratchpad`.
+  It holds:
+  - `checks/` and the pickles (`check_c_5b_2.pkl` with its two figures' JSON, `check_c_5_2b.pkl`,
+    `check_c_3_1l.pkl`, `check_c_3_4_first.pkl`), copied unchanged from the scratchpad named
+    below; each `run_*.sh` still names an older scratchpad in `S=`;
+  - `probes/`: `probe_names.py`, `probe_sections.py`, `build_options.py`, `run_options.sh`,
+    `dump_reference.py`.
+
 **Status (2026-11-07, PR 5b merged; PR 6 not started; the next session starts at §6):**
 - **PR 5b is merged** as #24, squashed into `main` as `39dd1aa` (identical to `58ed000`, the
   close's docs commit); `feat/model2-tuning-methods` deleted locally and on GitHub.
@@ -744,6 +760,10 @@ and the metrics plan §2 (M1–M9); a later one supersedes an earlier one where 
   trial's whole model); the joint Model 2 method compared in the EDA; **D40** section 6 tunes
   Model 2 by the joint method from PR 7 on (supersedes D32: the user's rule, the same results on
   the deviance and on RMSE, so joint; the cost, 16 studies instead of 10, accepted).
+- **PR 6 (2026-11-08): D41** the two notebooks duplicate their setup (sections 1–4 and the five
+  section-5 cells section 6 also reads); the EDA notebook is the described copy, the tuning
+  notebook the same code under short text, its focus the results; a test pins the two copies
+  equal (6.3). Not a module, not marimo's `@app.function` (6.1's probes).
 - **The user's wish for this work:** do not overcomplicate; the smallest change that works.
   Keep a valid path working and available; reuse inside it is welcome (D29: the joint draw calls
   the component suggest functions).
@@ -1078,8 +1098,9 @@ Next, one step per approval, each stopped with a file-by-file summary, the check
 notebooks' md5 and the commit message in a copyable code block:
 1. **PR 5b's merge:** done (#24, `39dd1aa`).
 2. **PR 6, the split** (`refactor/two-notebooks` from `main`; the cache plan's §5): 6.1 the
-   shared setup's design (three options probed with evidence, the user chooses), 6.2
-   `02_objective_eda.py`, 6.3 `03_hyperparameter_tuning.py`; F3 and F4 (§5) there.
+   shared setup's design (done 2026-11-08: D41, duplication), 6.2 `02_objective_eda.py`, 6.3
+   `03_hyperparameter_tuning.py` (with the test pinning the two copies equal); F3 and F4 (§5)
+   there.
 3. **PR 7, the tuning notebook's evaluation:** 7.0 first (D40: Model 2 by the joint method,
    16 studies), then 5.4 (the paired difference from `best_replicate_scores`,
    `total_times_probability − independent_cohorts` per replicate; its forest plot with
