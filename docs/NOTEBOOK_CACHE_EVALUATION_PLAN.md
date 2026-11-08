@@ -16,7 +16,8 @@ started fresh, the seconds the study's run). **Updated 2026-11-06 (paused):** 4.
 docs only): the three options probed; the user chose duplication (D41); the notebook's md5
 unchanged, `6731d509d2b5298e4d38a99480f700dc`. **Updated 2026-11-08:** 6.1 committed
 (`4568a5d`); 6.2 done (§5): `02_objective_eda.py` (md5 `b40ff544e17101aeee27f7fec1215010`) and
-its test; `02_experiments.py` unchanged. **Next: 6.3 (§5).**
+its test; `02_experiments.py` unchanged. **Updated 2026-11-08:** 6.2 committed (`20557f8`);
+D42 recorded (§0: RMSE tunes and selects, a setting, with 7.0). **Next: 6.3 (§5).**
 
 The companion docs: [EXPERIMENT_NOTEBOOK_HANDOFF.md](EXPERIMENT_NOTEBOOK_HANDOFF.md) (the state,
 how to work, the checks, the traps, iCloud), [NOTEBOOK_METRICS_LOOP_EDA_PLAN.md](NOTEBOOK_METRICS_LOOP_EDA_PLAN.md)
@@ -110,6 +111,35 @@ merge, in this order (the user's choice): the `src` changes first (PRs 4, 5), th
   classifier families) instead of 10, half with the LightGBM classifier; the first click is
   roughly 20 min longer (an estimate from 2.3's 400-trial step times), then cached. Coordinate
   descent stays in the package and in the EDA as the comparison. Supersedes D32.
+- **D42. RMSE tunes and selects** (2026-11-08, the user's; implemented with 7.0). It supersedes
+  D34's objective half: the deviance stops being the tuner's objective, and RMSE stays the
+  selection and comparison metric. All six metrics stay recorded.
+  - **The evidence: the EDA cannot tell the two objectives apart.**
+    - At 400 trials (D34), the RMSE-tuned models trailed on validation and tied on cv.
+    - At 100 trials (5b.3's `eda_best_df`), the RMSE-tuned models tied on cv or were slightly
+      ahead on *both* metrics. Model 1: cv deviance 2.1373 against the deviance-tuned 2.1402,
+      cv RMSE 4.3828 against 4.3861. Model 2 by coordinate descent: 2.0602 against 2.0791,
+      4.2862 against 4.3256. This is univariate TPE's search noise (the handoff's §5).
+    - On validation the log-loss-tuned models were best on the deviance and on RMSE (Model 1
+      2.0721 / 4.4799; Model 2 by coordinate descent 2.0539 / 4.4523), although the log loss
+      gives the scale no signal. So a single-holdout difference of about 0.1 RMSE is noise; the
+      paired bootstrap's RMSE intervals span about ±0.12 (5b.3).
+  - **The principle given to the user:**
+    - squared error and the deviance are both strictly consistent for the mean;
+    - the deviance weights an error relative to the predicted mean (efficient under
+      Poisson-like variance, the count models' own likelihood);
+    - RMSE weights an error by its absolute size, so the large buildings dominate it;
+    - a weighted sum of the two has no principled weight;
+    - D² (deviance explained) was offered for interpretability.
+
+    The user chose RMSE for both.
+  - **The form:** a notebook setting `objective_metric` (`"rmse"` by default, `"poisson_deviance"`
+    the alternative), read by the metrics cell with an if/elif and a raising else (as
+    `selection_metric`) into `OBJECTIVE_METRIC`, which the tuner takes; the deviance path stays
+    valid and available.
+  - **When:** with 7.0. Under RMSE coordinate descent is not exact (the handoff's §2a), and 7.0
+    replaces it with the joint method (D40). Both retune section 6, so the first click's cost is
+    paid once. PR 6 stays a refactor.
 - **D41. The two notebooks duplicate their setup** (2026-11-08, the user's, after 6.1's probes).
   Sections 1–4 and the five section-5 cells that section 6 also reads (the imports, the metrics,
   `COHORTS`, the `tuner` with `build_study_name`, the fixed classifier) are copied into both
@@ -919,7 +949,20 @@ before the split (PR 6), and the tuning's (5.4 and the rest) after it (PR 7).
 
 ## 6. PR 7: SHAP per cohort and the test evaluation (`feat/test-evaluation`)
 
-### [ ] 7.0 Model 2 by the joint method in section 6 (notebook; D40)
+### [ ] 7.0 Model 2 by the joint method in section 6, the objective RMSE (notebook; D40, D42)
+- **D42's change, with this one:**
+  - the setting `objective_metric = "rmse"` and `OBJECTIVE_METRIC` in the metrics cell;
+  - the tuner takes `objective_metric=OBJECTIVE_METRIC`.
+
+  To plan with the user:
+  - both notebooks under D41 (the EDA's dropdown defaults follow the tuner's objective; the
+    equality test pins the setting);
+  - the notebook tests' pins;
+  - the text naming the deviance as the objective (sections 5 and 6, the metrics cell's
+    comments, `METRICS`' "primary first");
+  - Check C's new baselines;
+  - the first click retuning section 6 (the EDA's RMSE studies seeded `seed`, then shared
+    with the tuning's first runs).
 - **Change:** the tuning notebook's Model 2 runs become one `tune_total_times_probability_model`
   study per family pair and exposure (16, in a loop over run settings, seeded in the list's
   order, stored as `total_times_probability_joint__…`), each best refit and scored; the three

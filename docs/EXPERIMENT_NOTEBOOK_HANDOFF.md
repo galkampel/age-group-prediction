@@ -1,5 +1,13 @@
 # Handoff: the experiment notebook, PR 5b merged (#24); PR 6 (two notebooks) next
 
+**Status (2026-11-08, 6.2 committed; D42 recorded, before the user's commit; next 6.3):**
+- **6.2 is committed** (`20557f8`).
+- **D42 (the user's):** RMSE tunes and selects, through a setting `objective_metric` (`"rmse"`,
+  or `"poisson_deviance"`). It lands with 7.0 in PR 7 (the cache plan's §0 and 7.0); no code
+  change now.
+- Both notebooks' md5 are unchanged: `02_objective_eda.py` `b40ff544e17101aeee27f7fec1215010`,
+  `02_experiments.py` `6731d509d2b5298e4d38a99480f700dc`.
+
 **Status (2026-11-08, 6.2 done, before the user's commit; next 6.3):**
 - **6.1 is committed** (`4568a5d`). **6.2 is done as planned** (the cache plan's 6.2 Done note):
   `notebooks/02_objective_eda.py` (md5 `b40ff544e17101aeee27f7fec1215010`; §1) and
@@ -784,7 +792,9 @@ and the metrics plan §2 (M1–M9); a later one supersedes an earlier one where 
 - **PR 6 (2026-11-08): D41** the two notebooks duplicate their setup (sections 1–4 and the five
   section-5 cells section 6 also reads); the EDA notebook is the described copy, the tuning
   notebook the same code under short text, its focus the results; a test pins the two copies
-  equal (6.3). Not a module, not marimo's `@app.function` (6.1's probes).
+  equal (6.3). Not a module, not marimo's `@app.function` (6.1's probes). **D42** RMSE tunes and
+  selects (supersedes D34's objective half; the EDA cannot tell the two apart), through a setting
+  `objective_metric` (the deviance the alternative), with 7.0 in PR 7.
 - **The user's wish for this work:** do not overcomplicate; the smallest change that works.
   Keep a valid path working and available; reuse inside it is welcome (D29: the joint draw calls
   the component suggest functions).
@@ -1124,7 +1134,7 @@ notebooks' md5 and the commit message in a copyable code block:
    2026-11-08, with F3's test), 6.3 `03_hyperparameter_tuning.py` (with the test pinning the
    two copies equal); F4 (§5) there.
 3. **PR 7, the tuning notebook's evaluation:** 7.0 first (D40: Model 2 by the joint method,
-   16 studies), then 5.4 (the paired difference from `best_replicate_scores`,
+   16 studies; D42: the objective RMSE, the setting `objective_metric`), then 5.4 (the paired difference from `best_replicate_scores`,
    `total_times_probability − independent_cohorts` per replicate; its forest plot with
    `rule_at=0`; the importance on `SELECTION_METRIC`), the forest plots' layout fixed (§5),
    then SHAP per cohort and the test evaluation. MLflow and D4 stay deferred.
