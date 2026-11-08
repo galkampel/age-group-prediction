@@ -20,7 +20,7 @@ its test; `02_experiments.py` unchanged. **Updated 2026-11-08:** 6.2 committed (
 D42 recorded (§0: RMSE tunes and selects, a setting, with 7.0). **Updated 2026-11-08:** D42
 committed (`4344071`); 6.3 done (§5): `03_hyperparameter_tuning.py` (md5
 `2dbb80a38b13321bdc6c78bd5537d01f`), the equality test, `02_experiments.py` removed.
-6.3 committed (`abd8960`, with the user's edits); **PR 6 closed** (2026-11-08: the tuning section's summary; the non-slow suite 1401 passed, mypy 28 files, Check A–C on both notebooks equal to 6.2's and 6.3's runs; `03`'s md5 `1f86f7da2c906cb83e807ad42a051303`). **Updated 2026-11-08:** PR 6 merged as #25 (`f9c92a5` on `main`, identical to `e2cab60`); PR 7's branch `feat/test-evaluation` created from it. **Next: PR 7 from 7.0 (§6).**
+6.3 committed (`abd8960`, with the user's edits); **PR 6 closed** (2026-11-08: the tuning section's summary; the non-slow suite 1401 passed, mypy 28 files, Check A–C on both notebooks equal to 6.2's and 6.3's runs; `03`'s md5 `1f86f7da2c906cb83e807ad42a051303`). **Updated 2026-11-08:** PR 6 merged as #25 (`f9c92a5` on `main`, identical to `e2cab60`); PR 7's branch `feat/test-evaluation` created from it. **Updated 2026-11-08:** 7.0 done (§6): Model 2 by the joint method, RMSE the tuner's objective, F4's two functions, the model labels; the first 100-trial click (22 studies tuned). **Next: 5.4 (§4), then 7.1.**
 
 The companion docs: [EXPERIMENT_NOTEBOOK_HANDOFF.md](EXPERIMENT_NOTEBOOK_HANDOFF.md) (the state,
 how to work, the checks, the traps, iCloud), [NOTEBOOK_METRICS_LOOP_EDA_PLAN.md](NOTEBOOK_METRICS_LOOP_EDA_PLAN.md)
@@ -1013,7 +1013,91 @@ before the split (PR 6), and the tuning's (5.4 and the rest) after it (PR 7).
 
 ## 6. PR 7: SHAP per cohort and the test evaluation (`feat/test-evaluation`)
 
-### [ ] 7.0 Model 2 by the joint method in section 6, the objective RMSE (notebook; D40, D42)
+### [x] 7.0 Model 2 by the joint method in section 6, the objective RMSE (notebook; D40, D42)
+- **Done (2026-11-08), as planned.** The user's answers (the handoff's §3):
+  - **`MODEL2_RUN_SETTINGS`:** 16 explicit dicts in the order total family → classifier →
+    exposure on/off, the i-th seeded `seed + i`; run 0 shares the EDA's joint RMSE study.
+  - **F4:** two per-component functions, `find_feature_transformer_name(component,
+    candidates)` and `read_hyperparameters(component)`, in one cell copied into both notebooks.
+  - **The EDA:** both dropdowns default to the tuner's objective; `METRICS` keeps its order.
+  - **The first 100-trial click:** run in the checks.
+
+  **The changes:**
+  - **Both notebooks:**
+    - the setting `objective_metric = "rmse"`, read into `OBJECTIVE_METRIC` (if/elif/raise),
+      which the tuner takes;
+    - the F4 cell;
+    - the comments that named the deviance as the objective.
+  - **The tuning notebook:**
+    - the joint loop in place of coordinate descent's three cells and the pairs (the records'
+      keys unchanged);
+    - the fixed classifier and `LogisticParams` removed (nothing read them there);
+    - Model 1's run cell and both runs tables call the F4 functions;
+    - section 5's text.
+  - **The EDA:** `build_trials_table` calls the two functions; `eda_recorded_metric` defaults to
+    the tuner's objective; section 5's text.
+  - **The tests:** both pin `objective_metric`. The tuning test pins `MODEL2_RUN_SETTINGS` and
+    the tuner's objective; the equality test pins `objective_metric`, the joint study's name and
+    the two functions (by behaviour on a joint draw and an NB2 Model 1 draw).
+
+  **Check C's new baselines** (3 trials, both sharing flags off; the cv RMSE), Model 1 then Model
+  2's 16 joint runs, exposure on / off:
+  - **Model 1:** `lgbm_poisson` 4.4495 / 4.5284; `lgbm_gaussian` 4.4543 / 4.5563;
+    `poisson_glm` 4.7888 / 5.0400; `nb2` 4.5570 / 5.0545.
+  - **Model 2:**
+    - `lgbm_poisson+logistic` 4.4258 / 4.4591, `+lgbm` 4.6323 / 4.4946;
+    - `lgbm_gaussian+logistic` 4.3963 / 4.4317, `+lgbm` 4.4761 / 4.4976;
+    - `poisson_glm+logistic` 4.5390 / 5.0198, `+lgbm` 4.5645 / 5.0381;
+    - `nb2+logistic` 4.5123 / 5.0293, `+lgbm` 4.5520 / 5.0724.
+  - **Cross-checks:**
+    - At 3 trials (below `n_startup_trials`) the RMSE studies draw the same params as the
+      deviance studies, which reproduce the 8 old Model 1 baselines.
+    - Only `lgbm_gaussian` with exposure off changes its best trial.
+    - Run 0 equals the EDA's joint values (4.4258; deviance 2.1543).
+  - **The best runs at 3 trials:** `lgbm_gaussian` with exposure on (val RMSE 4.4874) and
+    `lgbm_gaussian+logistic` with exposure on (cv 4.3963, val 4.4951).
+
+  **The checks:**
+  - the notebook tests 22 passed (7 + 15); the non-slow suite 1401 passed, 1 skipped, 1 xfailed,
+    19 deselected; mypy 28 files, no issue;
+  - ruff 12 on each notebook, as at HEAD; the user's two format hunks only; the test files
+    clean; `marimo check` no issue;
+  - Check B on both;
+  - **Check C on the EDA** (20 s): every frame equal to `check_c_6_2.pkl`'s, the 27 figures'
+    JSON identical, the dropdowns' defaults and displays on `rmse`;
+  - **Check C on the tuning** (`check_c_7_0_tuning.py`, 165 s): every study recomputed in memory
+    and every record, table, stored file name, best run, bootstrap, importance and forest figure
+    checked against the recomputations. The pickle `check_c_7_0_tuning.pkl` is 5.4's reference.
+  - **Two mutations caught:** the joint loop seeded `seed + _i + 1` (Check C's baselines); the
+    EDA's `read_hyperparameters` without the calibration (the equality test; the unmutated copy
+    passes).
+
+  **The model labels (the user's, during 7.0), the same in both notebooks:** `independent_cohorts`;
+  `total_times_probability` for the joint method (the tuning notebook's Model 2, and the EDA's
+  `model2_joint`); `total_times_probability_coordinate_descent` for the EDA's coordinate descent
+  (its `model2`). They are the values of `eda_best_df`'s `model` column, the EDA figure
+  dictionaries' keys, and the tuning notebook's `importance_df` (its best runs already used them).
+  EDA Check C equals 6.2's run under the renamed keys.
+
+  **The first 100-trial click** (the real notebook and cache, every button clicked,
+  `PYTHONWARNINGS=error`):
+  - The first attempt was cut off when a session ended, after 8 new studies and a partial
+    `lgbm_poisson+lgbm` joint study (exposure on, 35 of 100 trials). The resumed click deleted the
+    partial study and retuned it from its seed (4.2's design).
+  - The resumed click took 898 s: 14 studies tuned and the rest loaded, no failed trial. The 28
+    original files were byte-identical to before the first attempt, and the 22 new files had
+    exactly the expected names (50 in all, 20.4 MiB).
+  - The studies' own seconds summed to 271 for Model 1's 8 and 880 for Model 2's 16; the
+    LightGBM-classifier studies took 65–140 s each.
+  - **Best on validation (composite RMSE):**
+
+    | Model | Best run | cv RMSE | val RMSE | val deviance |
+    |---|---|---|---|---|
+    | Model 1 | `lgbm_gaussian`, exposure on | 4.3755 | 4.5316 | 2.1157 |
+    | Model 2 | `lgbm_poisson+logistic`, exposure on (the EDA's shared study) | 4.3247 | 4.5132 | 2.0990 |
+
+    Model 2's runner-up is `lgbm_gaussian+logistic`, exposure on (val RMSE 4.5180, deviance
+    2.0892), so the two are within the noise.
 - **D42's change, with this one:**
   - the setting `objective_metric = "rmse"` and `OBJECTIVE_METRIC` in the metrics cell;
   - the tuner takes `objective_metric=OBJECTIVE_METRIC`.

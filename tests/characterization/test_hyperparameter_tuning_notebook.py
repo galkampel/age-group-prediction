@@ -124,6 +124,7 @@ def test_a_setting_missing_or_changed_in_a_settings_mapping_is_caught(
         "n_splits": "5",
         "n_trials": "100",
         "n_startup_trials": "10",
+        "objective_metric": "rmse",
         "selection_metric": "rmse",
         "n_resamples": "1000",
         "alpha": "0.05",
@@ -353,6 +354,9 @@ def test_a_missing_entry_in_the_params_is_named(notebook_defs: dict) -> None:
 def test_a_study_is_named_by_the_settings_that_shape_it(notebook_defs: dict) -> None:
     # A stored study is loaded by its name alone, so a setting left out of the
     # directory's or the file's name would load a stale study after a change.
+    # The file's name holds the objective, the tuner's (D42).
+    assert notebook_defs["tuner"].objective_metric is notebook_defs["OBJECTIVE_METRIC"]
+    assert notebook_defs["OBJECTIVE_METRIC"].name == "rmse"
     assert notebook_defs["tuner"].storage_dir == (
         PROJECT_ROOT
         / "studies"
@@ -393,13 +397,17 @@ def test_the_run_settings_are_the_ones_the_baselines_were_recorded_with(
         }
         for family, use_exposure in arms
     ]
-    assert notebook_defs["MODEL2_TOTAL_RUN_SETTINGS"] == [
-        {"total_family": family, "use_exposure": use_exposure}
-        for family, use_exposure in arms
-    ]
-    assert notebook_defs["MODEL2_PROBABILITY_RUN_SETTINGS"] == [
-        {"probability_family": "logistic"},
-        {"probability_family": "lgbm"},
+    # The total times probability model's runs: a family pair × exposure, the
+    # first the objective EDA's joint run (seed + 0), so its study is shared.
+    assert notebook_defs["MODEL2_RUN_SETTINGS"] == [
+        {
+            "total_family": total_family,
+            "probability_family": probability_family,
+            "use_exposure": use_exposure,
+        }
+        for total_family in ("lgbm_poisson", "lgbm_gaussian", "poisson_glm", "nb2")
+        for probability_family in ("logistic", "lgbm")
+        for use_exposure in (True, False)
     ]
 
 
@@ -435,6 +443,7 @@ def test_the_two_notebooks_share_one_setup(
         "n_splits",
         "n_trials",
         "n_startup_trials",
+        "objective_metric",
         "COHORTS",
         "PREDICTION_FLOOR",
         "cv_groups",
@@ -455,7 +464,7 @@ def test_the_two_notebooks_share_one_setup(
             for family, candidates in eda[name].items()
         }, name
     assert [m.name for m in tuning["METRICS"]] == [m.name for m in eda["METRICS"]]
-    assert tuning["POISSON_DEVIANCE"].name == eda["POISSON_DEVIANCE"].name
+    assert tuning["OBJECTIVE_METRIC"].name == eda["OBJECTIVE_METRIC"].name
     tuning_tuner, eda_tuner = tuning["tuner"], eda["tuner"]
     assert tuning_tuner.storage_dir == eda_tuner.storage_dir
     assert tuning_tuner.objective_metric.name == eda_tuner.objective_metric.name
@@ -473,13 +482,17 @@ def test_the_two_notebooks_share_one_setup(
                 "share_hyperparams": True,
                 "share_feature_transformer": False,
             },
-            "poisson_deviance",
+            "rmse",
             42,
         ),
         (
-            "total_times_probability_coordinate_descent_total",
-            {"total_family": "lgbm_poisson", "use_exposure": True},
-            "poisson_deviance",
+            "total_times_probability_joint",
+            {
+                "total_family": "lgbm_poisson",
+                "probability_family": "logistic",
+                "use_exposure": True,
+            },
+            "rmse",
             42,
         ),
     ]
@@ -487,7 +500,40 @@ def test_the_two_notebooks_share_one_setup(
         assert tuning["build_study_name"](*arguments) == eda["build_study_name"](
             *arguments
         )
-    assert (
-        tuning["MODEL2_FIXED_PROBABILITY_COMPONENT"].to_dict()
-        == eda["MODEL2_FIXED_PROBABILITY_COMPONENT"].to_dict()
+    # F4: the transformer's name and the hyperparameters are read by one pair
+    # of functions, copied in both notebooks: the same results on the same
+    # components (a cohort's count component, and a joint draw's total and
+    # probabilities, the classifier with its calibration).
+    trial = optuna.create_study(sampler=RandomSampler(seed=3)).ask()
+    count_transformers = tuning["COUNT_FEATURE_TRANSFORMERS"]["lgbm_gaussian"]
+    probability_transformers = tuning["PROBABILITY_FEATURE_TRANSFORMERS"]["lgbm"]
+    components = suggest_total_times_probability_components(
+        trial,
+        total_family="lgbm_gaussian",
+        probability_family="lgbm",
+        use_exposure=True,
+        total_feature_transformer_dict=count_transformers,
+        probability_feature_transformer_dict=probability_transformers,
     )
+    trial = optuna.create_study(sampler=RandomSampler(seed=4)).ask()
+    nb2_transformers = tuning["COUNT_FEATURE_TRANSFORMERS"]["nb2"]
+    components += suggest_independent_cohorts_components(
+        trial,
+        family="nb2",
+        use_exposure=False,
+        cohorts=tuning["COHORTS"],
+        feature_transformer_dict=nb2_transformers,
+        share_hyperparams=False,
+        share_feature_transformer=False,
+    )
+    candidates = (count_transformers, probability_transformers) + (
+        nb2_transformers,
+    ) * len(tuning["COHORTS"])
+    for component, component_candidates in zip(components, candidates, strict=True):
+        assert tuning["find_feature_transformer_name"](
+            component, component_candidates
+        ) == eda["find_feature_transformer_name"](component, component_candidates)
+        assert tuning["read_hyperparameters"](component) == eda["read_hyperparameters"](
+            component
+        )
+    assert "calibration_method" in tuning["read_hyperparameters"](components[1])
