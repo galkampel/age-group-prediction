@@ -1441,22 +1441,56 @@ def _(
     best_runs_val_scores_df = pd.concat(
         _scores_by_run, names=["model", "family", "use_exposure"]
     ).reset_index()
-    mo.vstack(
-        [
-            mo.md(
-                f"**Each model's best run by the {SELECTION_METRIC.name} of the "
-                "composite on validation, bootstrapped on validation:** "
-                + "; ".join(
-                    f"{model} `{family}`, exposure {use_exposure}"
-                    for model, family, use_exposure in _scores_by_run
-                )
-                + " (each score with its replicates' mean, median, SD and 95% "
-                "interval)"
-            ),
-            mo.ui.table(best_runs_val_scores_df.round(4)),
-        ]
+    mo.md(
+        f"**Each model's best run by the {SELECTION_METRIC.name} of the "
+        "composite on validation, bootstrapped on validation:** "
+        + "; ".join(
+            f"{model} `{family}`, exposure {use_exposure}"
+            for model, family, use_exposure in _scores_by_run
+        )
+        + " (each score with its replicates' mean, median, SD and 95% "
+        "interval; a table per model below)"
     )
     return best_model1, best_model2, best_runs_val_scores_df
+
+
+@app.cell
+def _(COHORTS, METRICS, mo):
+    # What the best runs' tables show: one cohort (the composite by default)
+    # and the chosen metrics (all by default); one choice filters both tables.
+    best_runs_cohort = mo.ui.dropdown(
+        options=[*COHORTS, "composite"], value="composite", label="Cohort"
+    )
+    best_runs_metrics = mo.ui.multiselect(
+        options=[metric.name for metric in METRICS],
+        value=[metric.name for metric in METRICS],
+        label="Metrics",
+    )
+    return best_runs_cohort, best_runs_metrics
+
+
+@app.cell
+def _(best_runs_cohort, best_runs_metrics, best_runs_val_scores_df, mo):
+    # Each model's best run in its own table, the chosen cohort and metrics in
+    # METRICS' order, so the two tables compare row by row.
+    _chosen = best_runs_val_scores_df[
+        (best_runs_val_scores_df["cohort"] == best_runs_cohort.value)
+        & best_runs_val_scores_df["metric"].isin(best_runs_metrics.value)
+    ]
+    _views = []
+    for _model, _family, _use_exposure in (
+        best_runs_val_scores_df[["model", "family", "use_exposure"]]
+        .drop_duplicates()
+        .itertuples(index=False)
+    ):
+        _views.append(mo.md(f"**{_model}:** `{_family}`, exposure {_use_exposure}"))
+        # A fresh index: the frame's row positions would show as a column.
+        _rows = _chosen[_chosen["model"] == _model].reset_index(drop=True)
+        _views.append(mo.ui.table(_rows.round(4)))
+    mo.vstack(
+        [mo.hstack([best_runs_cohort, best_runs_metrics], justify="start"), *_views]
+    )
+    return
 
 
 @app.cell

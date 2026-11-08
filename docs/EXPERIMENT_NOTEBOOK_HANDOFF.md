@@ -1,5 +1,14 @@
 # Handoff: the experiment notebooks, PR 7 at 7.0 (done); 5.4 next
 
+**Status (2026-11-08, 7.0b done, before the user's commit; the next session starts at §6):**
+- **7.0 is committed** as `a74b2ff`, under 7.0b's message (the user may reword it). **7.0b is
+  done** (the cache plan's 7.0b Done note): below the best-runs sentence, a "Cohort" dropdown
+  (default composite) and a "Metrics" multiselect (default all six) filter two tables, one per
+  model, with today's columns. The EDA's trailing empty cell is removed.
+- The notebooks' md5: `02_objective_eda.py` `d74bf1357926732ee31c7e1a98e7bd67`,
+  `03_hyperparameter_tuning.py` `6ffa4a82c6c6c80069ef7a0da0b443c8`. Check C's tuning reference
+  is now `check_c_7_0b_tuning.pkl` (`run_c_tuning_7_0b.sh`; equal to 7.0's run).
+
 **Status (2026-11-08, 7.0 done, before the user's commit; the next session starts at §6):**
 - **7.0 is done as planned** (the cache plan's 7.0 Done note; §1's "Since 7.0"):
   - Model 2 by the joint method in the tuning notebook (`MODEL2_RUN_SETTINGS`, 16);
@@ -312,6 +321,9 @@ the tuning-cell guard, the study's name, `build_trials_table` on an in-memory st
     two run loops and the two runs tables (the tuning);
   - the EDA's two dropdowns default to `tuner.objective_metric.name`;
   - the permutation importance still scores the deviance (5.4 changes it);
+  - since 7.0b, the best runs are shown as two tables, one per model, filtered by
+    `best_runs_cohort` (a dropdown, default composite) and `best_runs_metrics` (a multiselect,
+    default all six);
   - **the model labels, the same in both notebooks** (the user's), replace `model1`, `model2`
     and `model2_joint`:
     - `independent_cohorts`;
@@ -1327,14 +1339,15 @@ constructor, data in the call; fitting and evaluating as separate steps; no priv
 
 ## 6. Next, and the prompt
 
-**Status (2026-11-08, 7.0 done, before the user's commit):**
-- PR 7 is on `feat/test-evaluation` (from `main` at `f9c92a5`); 7.0 awaits the user's commit.
+**Status (2026-11-08, 7.0b done, before the user's commit):**
+- PR 7 is on `feat/test-evaluation` (from `main` at `f9c92a5`): 7.0 committed as `a74b2ff`;
+  7.0b awaits the user's commit.
 - The notebooks' md5:
   - `01_eda.py` `4bc1ba3a52dc2ad55d0097a707bd1ccc`;
   - `02_objective_eda.py` `d74bf1357926732ee31c7e1a98e7bd67`;
-  - `03_hyperparameter_tuning.py` `fd92ddfe5fd8462674174a7aabbf9ef0`.
+  - `03_hyperparameter_tuning.py` `6ffa4a82c6c6c80069ef7a0da0b443c8`.
 - Check C's references (§4, "Since 7.0"): `check_c_7_0_eda.pkl` (the EDA, with its two
-  figures' JSON) and `check_c_7_0_tuning.pkl` (the tuning), in the scratchpad named in the status
+  figures' JSON) and `check_c_7_0b_tuning.pkl` (the tuning), in the scratchpad named in the status
   at the top. If they are gone, rewrite the scripts from §4 and run Check C on HEAD before the
   first edit, keeping those pickles.
 - The user's cache `studies/` holds 50 studies (every RMSE study of the tuning notebook since
@@ -1342,7 +1355,7 @@ constructor, data in the call; fitting and evaluating as separate steps; no priv
 
 Next, one step per approval, each stopped with a file-by-file summary, the checks, the
 notebooks' md5 and the commit message in a copyable code block:
-1. **7.0:** done (the cache plan's 7.0 Done note).
+1. **7.0 and 7.0b:** done (the cache plan's Done notes).
 2. **5.4**, in the tuning notebook:
    - the paired difference from `best_replicate_scores`
      (`total_times_probability − independent_cohorts` per replicate);
@@ -1374,13 +1387,13 @@ iCloud notes, §5, §6 first), then docs/NOTEBOOK_CACHE_EVALUATION_PLAN.md (§6'
 then 5.4 in §4), then notebooks/03_hyperparameter_tuning.py (section 5: the best runs, the
 forest plot, the inspection) and the tuning notebook's characterization test.
 Verify the state first:
-- the branch feat/test-evaluation; HEAD my 7.0 commit on 7e148d1;
+- the branch feat/test-evaluation; HEAD my 7.0b commit on a74b2ff (7.0);
 - `git status` clean; the notebooks' md5 (`cat <file> | md5`): 02_objective_eda.py
-  d74bf1357926732ee31c7e1a98e7bd67, 03_hyperparameter_tuning.py fd92ddfe5fd8462674174a7aabbf9ef0;
+  d74bf1357926732ee31c7e1a98e7bd67, 03_hyperparameter_tuning.py 6ffa4a82c6c6c80069ef7a0da0b443c8;
 - no iCloud-offloaded files: `find .git src notebooks tests docs configs -flags +dataless -type f
   | grep -vc __pycache__` is 0.
 If anything differs, stop and show me the diff. Then copy the check scripts (checks/) and the
-pickles check_c_7_0_eda.pkl with its two figures' JSON, check_c_7_0_tuning.pkl, check_c_6_2.pkl
+pickles check_c_7_0_eda.pkl with its two figures' JSON, check_c_7_0b_tuning.pkl, check_c_6_2.pkl
 with its two figures' JSON and check_c_3_1l.pkl from the scratchpad the handoff names (or rewrite
 them from §4). In plan mode, plan 5.4: the paired difference's cell and table, its forest plot,
 the importance on the selection metric, the text, Check C's additions; show the design

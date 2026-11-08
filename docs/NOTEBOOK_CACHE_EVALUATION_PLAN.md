@@ -20,7 +20,7 @@ its test; `02_experiments.py` unchanged. **Updated 2026-11-08:** 6.2 committed (
 D42 recorded (§0: RMSE tunes and selects, a setting, with 7.0). **Updated 2026-11-08:** D42
 committed (`4344071`); 6.3 done (§5): `03_hyperparameter_tuning.py` (md5
 `2dbb80a38b13321bdc6c78bd5537d01f`), the equality test, `02_experiments.py` removed.
-6.3 committed (`abd8960`, with the user's edits); **PR 6 closed** (2026-11-08: the tuning section's summary; the non-slow suite 1401 passed, mypy 28 files, Check A–C on both notebooks equal to 6.2's and 6.3's runs; `03`'s md5 `1f86f7da2c906cb83e807ad42a051303`). **Updated 2026-11-08:** PR 6 merged as #25 (`f9c92a5` on `main`, identical to `e2cab60`); PR 7's branch `feat/test-evaluation` created from it. **Updated 2026-11-08:** 7.0 done (§6): Model 2 by the joint method, RMSE the tuner's objective, F4's two functions, the model labels; the first 100-trial click (22 studies tuned). **Next: 5.4 (§4), then 7.1.**
+6.3 committed (`abd8960`, with the user's edits); **PR 6 closed** (2026-11-08: the tuning section's summary; the non-slow suite 1401 passed, mypy 28 files, Check A–C on both notebooks equal to 6.2's and 6.3's runs; `03`'s md5 `1f86f7da2c906cb83e807ad42a051303`). **Updated 2026-11-08:** PR 6 merged as #25 (`f9c92a5` on `main`, identical to `e2cab60`); PR 7's branch `feat/test-evaluation` created from it. **Updated 2026-11-08:** 7.0 done (§6): Model 2 by the joint method, RMSE the tuner's objective, F4's two functions, the model labels; the first 100-trial click (22 studies tuned). **Updated 2026-11-08:** 7.0b done (§6): each model's best run in its own table, one cohort and metric filter. **Next: 5.4 (§4), then 7.1.**
 
 The companion docs: [EXPERIMENT_NOTEBOOK_HANDOFF.md](EXPERIMENT_NOTEBOOK_HANDOFF.md) (the state,
 how to work, the checks, the traps, iCloud), [NOTEBOOK_METRICS_LOOP_EDA_PLAN.md](NOTEBOOK_METRICS_LOOP_EDA_PLAN.md)
@@ -1123,6 +1123,56 @@ before the split (PR 6), and the tuning's (5.4 and the rest) after it (PR 7).
   `MODEL2_FIXED_PROBABILITY_COMPONENT` stays for the EDA. To plan with the user: the run
   settings' order and seeds, the records' fields, Check C's new Model 2 baselines (16 joint
   `cv_best` at 3 trials), the notebook test's pins, section 6's text.
+
+### [x] 7.0b Each model's best run in its own table, one cohort and metric filter (notebook)
+- **Done (2026-11-08), as planned.**
+  - **`03`:** the controls cell (`best_runs_cohort`, `best_runs_metrics`) and the display cell,
+    after the best-runs cell. Each table's index is reset: the filtered rows' positions
+    otherwise showed as an "Index0" column (Check C found it). The best-runs cell keeps its
+    sentence; the combined table is gone.
+  - **`02`:** the empty cell the user's save had added at its end is removed (the user's
+    answer); its md5 is 7.0's again.
+  - **The test:** `test_the_best_runs_tables_show_the_composite_and_every_metric_by_default`.
+- **Checks:**
+  - the notebook tests 23 passed; the non-slow suite 1402 passed, 1 skipped, 1 xfailed; mypy
+    28 files;
+  - ruff 13 on `03`: the new display cell's bare `return` adds a PLR1711, the kind every display
+    cell has;
+  - the user's two format hunks only; `marimo check` clean; Check B on both;
+  - **Check C:** the EDA's equal to 6.2's run; the tuning's every 7.0 assertion, plus the
+    display cell's two tables read from marimo's inline data, each model's 6 composite rows
+    with today's columns. Every frame and record equals 7.0's run;
+  - the mutation (the second table filtered with the first model's name) caught.
+- **Planned 2026-11-08** (the user's notes after 7.0):
+  - the best-runs table only;
+  - one table per model, both filtered by the same controls;
+  - each table keeps today's columns;
+  - its own commit after 7.0.
+- **Change** (`03_hyperparameter_tuning.py`), two new cells after the best-runs cell (the
+  bootstrap, `best_runs_val_scores_df` and the forest plot unchanged):
+  - **the controls cell** (no click needed):
+    - `best_runs_cohort = mo.ui.dropdown(options=[*COHORTS, "composite"],
+      value="composite", label="Cohort")`;
+    - `best_runs_metrics = mo.ui.multiselect(options=<METRICS' names>, value=<all six>,
+      label="Metrics")`;
+  - **the display cell:**
+    - the two controls on one line;
+    - per model, a heading naming the model and its run, then an `mo.ui.table` of its rows of
+      `best_runs_val_scores_df` for the chosen cohort and metrics (today's columns, `METRICS`'
+      order, rounded to 4);
+    - with the defaults, 6 rows per model, the metrics aligned row by row.
+  - **The best-runs cell** keeps its sentence naming the two runs; its 48-row combined table is
+    removed (the two tables replace it).
+- **Test:** the controls' options and defaults pinned (`composite`; all six metrics).
+- **Checks:**
+  - Check A: the notebook tests; ruff, none new; the user's two format hunks; `marimo check`;
+  - Check B: the controls defined without a click, their options and defaults;
+  - Check C:
+    - every frame and record equal to `check_c_7_0_tuning.pkl`;
+    - the display holds the two controls and two tables headed by the two models;
+    - the default filter's 6 rows per model equal `best_runs_val_scores_df`'s composite rows;
+  - a mutation (the second table filtered with the first model's name) caught.
+- **Commit:** `feat(notebook): each model's best run in its own table, filtered by one cohort and metric choice (7.0b)`
 
 ### [ ] 7.1 SHAP per cohort (notebook)
 - **Change:** the importance cell: `mean_abs_shap` per column × cohort (`np.abs(values).mean(axis=0)`,

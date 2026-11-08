@@ -537,3 +537,17 @@ def test_the_two_notebooks_share_one_setup(
             component
         )
     assert "calibration_method" in tuning["read_hyperparameters"](components[1])
+
+
+def test_the_best_runs_tables_show_the_composite_and_every_metric_by_default(
+    notebook_defs: dict,
+) -> None:
+    # 7.0b: one cohort and one metric choice filter both models' best-run
+    # tables; a click must open on the composite with every metric shown.
+    cohort = notebook_defs["best_runs_cohort"]
+    metrics = notebook_defs["best_runs_metrics"]
+    metric_names = [metric.name for metric in notebook_defs["METRICS"]]
+    assert list(cohort.options) == [*notebook_defs["COHORTS"], "composite"]
+    assert cohort.value == "composite"
+    assert list(metrics.options) == metric_names
+    assert list(metrics.value) == metric_names
