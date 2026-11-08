@@ -1,5 +1,26 @@
 # Handoff: the experiment notebook, PR 5b merged (#24); PR 6 (two notebooks) next
 
+**Status (2026-11-08, 6.3 done, before the user's commit; next PR 6's close):**
+- **D42's docs are committed** (`4344071`). **6.3 is done as planned** (the cache plan's 6.3
+  Done note):
+  - `notebooks/03_hyperparameter_tuning.py` (md5 `2dbb80a38b13321bdc6c78bd5537d01f`; §1);
+  - `tests/characterization/test_hyperparameter_tuning_notebook.py` (15, the equality test
+    among them);
+  - `02_experiments.py` and its test removed;
+  - the guides name the two notebooks.
+
+  The EDA keeps the user's sorted `eda_best_df` cell (md5 `3db331d12e6c994d5df0cf3ef34dc6b8`);
+  `01_eda.py`'s md5 is `4bc1ba3a52dc2ad55d0097a707bd1ccc`.
+- **Check C's references:** `check_c_6_3.pkl` for the tuning notebook (`check_c_tuning.py`, its
+  fourth and fifth arguments `check_c_3_4_first.pkl` and `check_c_5_2b.pkl`), and
+  `check_c_6_2.pkl` for the EDA (`check_c_eda.py`).
+- **The scripts** (this session's scratchpad): `checks/run_6_3.sh` (Check A on the three
+  notebooks; the tuning package's tests and mypy; Check B and C on `03`; the mutation; the
+  100-trial click on the real cache, the files compared before and after), `run_mutant_6_3.sh`,
+  `make_copy_tuning.py`, `check_b_tuning.py`, `check_c_tuning.py`, `run_click_tuning.py`.
+- **Next: close PR 6** (the non-slow suite, mypy, the handoff for PR 7), then PR 7 from 7.0
+  (D40, D42 and F4).
+
 **Status (2026-11-08, 6.2 committed; D42 recorded, before the user's commit; next 6.3):**
 - **6.2 is committed** (`20557f8`).
 - **D42 (the user's):** RMSE tunes and selects, through a setting `objective_metric` (`"rmse"`,
@@ -210,9 +231,21 @@ inspection's, the metrics cell without `SELECTION_METRIC`; its text the setup's 
 4's stale check text removed; "section 6" the tuning notebook; D40 in section 5). Its test is
 `tests/characterization/test_objective_eda_notebook.py` (7: the printed lines, the seed override,
 the tuning-cell guard, the study's name, `build_trials_table` on an in-memory study: F3).
-`02_experiments.py` keeps all six sections until 6.3.
 
-**The notebook** (`notebooks/02_experiments.py`, marimo; a script run fits nothing):
+**The tuning notebook** (`notebooks/03_hyperparameter_tuning.py`, since 6.3; D41). It holds:
+- sections 1–4 below with the same code, each header with one sentence pointing to the EDA;
+- the five section-5 cells section 6 reads (the imports, the metrics without
+  `EDA_OBJECTIVES`, `COHORTS`, the `tuner` with `build_study_name`, the fixed classifier),
+  placed after the tuning's markdown;
+- section 6 below, numbered **5** ("section 5" in its text and comments now the objective EDA).
+
+Its test is `tests/characterization/test_hyperparameter_tuning_notebook.py` (the old test's 14
+and `test_the_two_notebooks_share_one_setup`: the data, the settings, the parts, the folds, the
+candidates, the metrics, the tuner, the study names and the fixed classifier equal in both
+notebooks). `02_experiments.py` was removed in 6.3. The list below describes its sections,
+which the two notebooks now hold: 1–5 in the EDA, 1–4 and 6 (as 5) in the tuning.
+
+**The notebook** (`notebooks/02_experiments.py` until 6.3, marimo; a script run fits nothing):
 1. **Data:** the simulator at 150 neighborhoods × 9 buildings (`configs/simulation.yml`, its
    seed 42 unless `simulation_seed` overrides it), the room shares, `X`, `Y` (three cohorts),
    the exposure (`n_apartments`), the groups (neighborhoods); the settings printed and hashed.
@@ -1087,6 +1120,7 @@ constructor, data in the call; fitting and evaluating as separate steps; no priv
   - the hyperparameters are read two ways: `to_dict()["estimator_params"]` in `build_trials_table`,
     `dataclasses.asdict(component.estimator_params)` in section 6; the output is the same;
   - one shared function belongs with 6.1's shared setup, once the two notebooks exist.
+  - **Moved to 7.0** (the user's answer in 6.3): the joint loop replaces two of the lookups.
 - **T2.3's F5:** gone with 3.4 (the two arms tables were removed).
 - **T1's F7:** `num_leaves` above `2**max_depth` changes nothing in LightGBM; revisit in a
   search-space pass.
@@ -1131,8 +1165,8 @@ notebooks' md5 and the commit message in a copyable code block:
 1. **PR 5b's merge:** done (#24, `39dd1aa`).
 2. **PR 6, the split** (`refactor/two-notebooks` from `main`; the cache plan's §5): 6.1 the
    shared setup's design (done 2026-11-08: D41, duplication), 6.2 `02_objective_eda.py` (done
-   2026-11-08, with F3's test), 6.3 `03_hyperparameter_tuning.py` (with the test pinning the
-   two copies equal); F4 (§5) there.
+   2026-11-08, with F3's test), 6.3 `03_hyperparameter_tuning.py` (done 2026-11-08, with the
+   test pinning the two copies equal); F4 moved to 7.0.
 3. **PR 7, the tuning notebook's evaluation:** 7.0 first (D40: Model 2 by the joint method,
    16 studies; D42: the objective RMSE, the setting `objective_metric`), then 5.4 (the paired difference from `best_replicate_scores`,
    `total_times_probability − independent_cohorts` per replicate; its forest plot with

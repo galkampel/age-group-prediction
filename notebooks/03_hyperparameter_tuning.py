@@ -22,7 +22,7 @@ def _():
 @app.cell(hide_code=True)
 def _(mo):
     mo.md(r"""
-    # Age Group Prediction
+    # Age Group Prediction: hyperparameter tuning
     """)
     return
 
@@ -32,9 +32,8 @@ def _(mo):
     mo.md(r"""
     ## 1) Data generation
 
-    A synthetic population of buildings from `configs/simulation.yml`, with
-    the overrides below. The simulator's own seed fixes the population; leave
-    `simulation_seed` as `None` to keep the config's value.
+    The synthetic population of `02_objective_eda.py`, where it is described;
+    the same code (a test pins the two notebooks' setup equal).
     """)
     return
 
@@ -225,10 +224,9 @@ def _(mo):
     mo.md(r"""
     ## 2) Experiment settings
 
-    Every value below is logged as a parameter of every run. One `seed` fixes
-    every random component: both holdouts, the cross-validation folds, the
-    Optuna sampler (the i-th study of a run gets `seed + i`), every estimator
-    that takes a `random_state`, and the bootstrap.
+    The objective EDA's settings (described in `02_objective_eda.py`) and the
+    tuning's own: the selection metric, the bootstrap and the inspection;
+    every run logs them (a test pins the shared ones equal).
     """)
     return
 
@@ -299,14 +297,8 @@ def _(mo):
     mo.md(r"""
     ## 3) Train, validation and test split
 
-    Two holdouts with one `Splitter`: the test part from the table, then the
-    validation part from the rest (`val_size / (1 - test_size)` of it, so
-    `val_size` of the table). Each call returns positions in the frame it was
-    given, so the second call's positions are inside the remainder;
-    `train_val_index[...]` maps them back to table positions, and every part
-    is taken by position with `.iloc`. The training part's folds come from
-    the same splitter, so a run cannot pair one method's split with another's
-    folds.
+    The split and the folds of `02_objective_eda.py`, where they are
+    described; the same code (a test pins the two notebooks' setup equal).
     """)
     return
 
@@ -376,15 +368,9 @@ def _(mo):
     mo.md(r"""
     ## 4) Feature variants
 
-    The declarations of `docs/FEATURE_TRANSFORMATIONS.md` §8. `n_apartments`
-    is a feature *and* the offset for the trees (§3.3: the offset asserts
-    proportionality, the feature lets the trees learn departures from it),
-    and only the exposure for the GLM stages (§4.4), so no GLM declaration
-    lists it. `FeatureTransformer` does not enforce that; the declarations
-    do, and the check below prints it. The interactions are §8.5's candidates
-    (the first choice per stage, §6.2-§6.3) plus §6's second choice per stage
-    and §6.5's recommended pair per stage. Each variant is fitted once on the
-    training part as a check; every model fits its own copy.
+    The feature variants of `02_objective_eda.py`, where they are described
+    (`docs/FEATURE_TRANSFORMATIONS.md` §8); the same declarations (a test
+    pins the two notebooks' setup equal).
     """)
     return
 
@@ -635,60 +621,7 @@ def _(
 @app.cell(hide_code=True)
 def _(mo):
     mo.md(r"""
-    ## 5) The objective EDA
-
-    Which objective should the tuner minimize? One run per model of section
-    6, with the same setting for both (`lgbm_poisson`, exposure on), is
-    tuned three times, once on each of `EDA_OBJECTIVES`: the log loss, the
-    Poisson deviance and RMSE of the composite. The three studies of a run
-    share their seed, so their random startup trials are the same draws
-    and only the objective differs. Each study's best model is refit on the
-    training part and scored on validation on every metric, per cohort and
-    for the composite; `cv_best` is the study's value in its own objective.
-    Every trial is kept too, in the trials tables, as a row of the whole
-    model it scored: its id, state, seconds, cross-validated score on the
-    six metrics, and each component's feature transformer and
-    hyperparameters, to see which are good or bad on each. A summary table
-    holds each model's best model per objective: its best trial's id, its
-    cross-validated scores and the refit's composite on validation. The
-    figures show, per model, every metric per trial of the study of the
-    objective chosen in the dropdown, in stacked panels sharing the trial
-    axis: the best trial a red star in each, and a rule where the total
-    times probability model's probability step starts. The comparison
-    figures show, per model, the recorded metric chosen in their dropdown
-    for each objective's study: a box with every trial a point and its best
-    trial a star, each objective in its own color and marker (a click on
-    the legend hides one), the y-axis over the bulk of the trials. The
-    independent cohorts model keeps the sharing flags of its runs in section
-    6 (one set of hyperparameters, a transformer per cohort). The total times
-    probability model is tuned by coordinate descent, as its runs in section 6: its
-    total with the probabilities fixed at a plain logistic model, then its
-    logistic probabilities with that best total fixed; its `cv_best` is the
-    second study's value, the pair's, and its seconds are the two studies'.
-    It is also tuned by the joint method, to compare the two at this
-    budget: one study per objective whose every trial draws both
-    components (`tune_total_times_probability_model`), its `cv_best` and
-    seconds the study's. Coordinate descent gives each part its own
-    `n_trials` and is exact under the Poisson deviance only; the joint study
-    searches both parts' dimensions at once in `n_trials`. Section 6 keeps
-    coordinate descent unless the joint method wins beyond the noise.
-    The expected caveat: the log loss scores each row's proportions only
-    (the row divided by its sum), so under it the independent cohorts
-    model's scale and the total times probability model's total get no
-    signal (the total changes nothing in the log loss, so every trial of its
-    study scores the same).
-
-    Every study, here and in section 6, is stored in its own file under
-    `studies/` (Optuna's journal file; git-ignored), and a click loads a
-    stored study instead of tuning it, with the seconds its tuning took. The
-    directory's name holds what shapes every study: the data's config hash,
-    the split and its folds, the seed and the budget; the file's name holds
-    what the study tunes (the model, or the total times probability model's
-    coordinate-descent step), its run settings, its objective and its seed.
-    So a changed setting is a new study, and a study run in both sections
-    (each model's first run under the Poisson deviance) is tuned once. Delete
-    a study's file to tune it again: a change to the code or the search
-    spaces is not detected.
+    ## 5) Hyperparameter tuning
     """)
     return
 
@@ -786,8 +719,6 @@ def _(
         Metric("wmape", wmape_loss, direction="minimize"),
         Metric("bias", mean_bias_error, direction="minimize"),
     )
-    # The objective EDA's objectives (section 5), the same objects as in METRICS.
-    EDA_OBJECTIVES = (LOG_LOSS, POISSON_DEVIANCE, RMSE)
     # The selection metric: it picks each model's best run (the composite's
     # point score on validation) and is the forest plots' metric.
     if selection_metric == "rmse":
@@ -796,7 +727,7 @@ def _(
         SELECTION_METRIC = POISSON_DEVIANCE
     else:
         raise ValueError(f"unknown selection_metric {selection_metric!r}")
-    return EDA_OBJECTIVES, METRICS, POISSON_DEVIANCE, SELECTION_METRIC
+    return METRICS, POISSON_DEVIANCE, SELECTION_METRIC
 
 
 @app.cell
@@ -883,7 +814,7 @@ def _(
 @app.cell
 def _(LogisticParams, PROBABILITY_FEATURE_TRANSFORMERS, ProbabilityComponent):
     # The total times probability model's fixed probabilities in coordinate
-    # descent's step 1, in the objective EDA and in section 6. The composite
+    # descent's step 1, here and in the objective EDA. The composite
     # deviance is the total's deviance plus the probabilities' log loss, so a
     # fixed classifier adds the same constant to every trial and any one finds
     # the same best total: the cheapest.
@@ -895,990 +826,6 @@ def _(LogisticParams, PROBABILITY_FEATURE_TRANSFORMERS, ProbabilityComponent):
         feature_transformer=PROBABILITY_FEATURE_TRANSFORMERS["logistic"]["glm_base"],
     )
     return (MODEL2_FIXED_PROBABILITY_COMPONENT,)
-
-
-@app.cell
-def _(ProbabilityComponent, pd):
-    def build_trials_table(
-        study, objective, metric_names, components_by_trial, feature_transformer_dict
-    ):
-        """Every trial of `study` as a row of the whole model it scored: its id
-        (its number), `objective`, seconds, state, cross-validated score on
-        each metric (in `metric_names`' order), and each component's feature
-        transformer and hyperparameters (the classifier's with its
-        calibration). `components_by_trial` holds the components of each
-        trial's model, in the study's order; `feature_transformer_dict` maps a
-        component's name to its family's candidates, in which its
-        transformer's name is found by identity."""
-        rows = []
-        for trial, components in zip(study.trials, components_by_trial, strict=True):
-            feature_transformers, hyperparameters = {}, {}
-            for component in components:
-                candidates = feature_transformer_dict[component.name]
-                feature_transformers[component.name] = next(
-                    transformer_name
-                    for transformer_name, transformer in candidates.items()
-                    if transformer is component.feature_transformer
-                )
-                estimator_params = component.to_dict()["estimator_params"]
-                if isinstance(component, ProbabilityComponent):
-                    estimator_params["calibration_method"] = (
-                        component.calibration_method
-                    )
-                hyperparameters[component.name] = estimator_params
-            rows.append(
-                {
-                    "id": trial.number,
-                    "objective": objective,
-                    "seconds": trial.duration.total_seconds(),
-                    "state": trial.state.name,
-                    # A failed trial records no score: NaN.
-                    **{
-                        metric_name: trial.user_attrs.get(metric_name)
-                        for metric_name in metric_names
-                    },
-                    "feature_transformers": feature_transformers,
-                    "hyperparameters": hyperparameters,
-                }
-            )
-        return pd.DataFrame(rows)
-
-    return (build_trials_table,)
-
-
-@app.cell
-def _(mo):
-    run_eda = mo.ui.run_button(label="Run the objective EDA")
-    mo.md(
-        f"{run_eda} One run per model, tuned once on each of `EDA_OBJECTIVES`; "
-        "each trial fits its folds in parallel."
-    )
-    return (run_eda,)
-
-
-@app.cell
-def _(
-    COHORTS,
-    COUNT_FEATURE_TRANSFORMERS,
-    CountComponent,
-    EDA_OBJECTIVES,
-    METRICS,
-    PREDICTION_FLOOR,
-    build_independent_cohorts_model,
-    build_study_name,
-    build_trials_table,
-    compute_metrics,
-    cv_groups,
-    dataclasses,
-    mo,
-    pd,
-    run_eda,
-    seed,
-    train_age_group,
-    tuner,
-    val_age_group,
-):
-    mo.stop(not run_eda.value, mo.md("Click the button to run the objective EDA."))
-    # The independent cohorts model's EDA run: one study per objective, each
-    # seeded seed, so the three share their startup draws (M8); the tuner's
-    # design but its metric. A failed trial is caught by the study. The run
-    # settings of section 6's first run: its deviance study is that run's.
-    _run_settings = {
-        "family": "lgbm_poisson",
-        "use_exposure": True,
-        "share_hyperparams": True,
-        "share_feature_transformer": False,
-    }
-    _family, _use_exposure = _run_settings["family"], _run_settings["use_exposure"]
-    _metric_names = [metric.name for metric in METRICS]
-    # Every cohort's component draws from the family's candidates.
-    _feature_transformer_dict = {
-        cohort: COUNT_FEATURE_TRANSFORMERS[_family] for cohort in COHORTS
-    }
-    _scores_by_objective, _trials = {}, []
-    for _objective in EDA_OBJECTIVES:
-        _objective_tuner = dataclasses.replace(tuner, objective_metric=_objective)
-        _study, _seconds = _objective_tuner.tune_independent_cohorts_model(
-            train_age_group.X,
-            train_age_group.Y,
-            train_age_group.exposure,
-            cv_groups,
-            family=_family,
-            use_exposure=_use_exposure,
-            cohorts=COHORTS,
-            feature_transformer_dict=COUNT_FEATURE_TRANSFORMERS[_family],
-            share_hyperparams=_run_settings["share_hyperparams"],
-            share_feature_transformer=_run_settings["share_feature_transformer"],
-            y_min=PREDICTION_FLOOR,
-            random_state=seed,
-            study_seed=seed,
-            study_name=build_study_name(
-                "independent_cohorts", _run_settings, _objective.name, seed
-            ),
-        )
-        # Each trial's model: the cohorts' components its parameters build.
-        _components_by_trial = [
-            tuple(
-                CountComponent.from_params(
-                    trial.params,
-                    name=cohort,
-                    family=_family,
-                    use_exposure=_use_exposure,
-                    feature_transformer_dict=COUNT_FEATURE_TRANSFORMERS[_family],
-                )
-                for cohort in COHORTS
-            )
-            for trial in _study.trials
-        ]
-        _trials.append(
-            build_trials_table(
-                _study,
-                _objective.name,
-                _metric_names,
-                _components_by_trial,
-                _feature_transformer_dict,
-            )
-        )
-        _best_components = tuple(
-            CountComponent.from_params(
-                _study.best_params,
-                name=cohort,
-                family=_family,
-                use_exposure=_use_exposure,
-                feature_transformer_dict=COUNT_FEATURE_TRANSFORMERS[_family],
-            )
-            for cohort in COHORTS
-        )
-        _model = build_independent_cohorts_model(
-            _best_components, y_min=PREDICTION_FLOOR, random_state=seed
-        ).fit(train_age_group.X, train_age_group.Y, exposure=train_age_group.exposure)
-        # Every metric on validation, per cohort and for the composite; the
-        # study's value (in its own objective) and its seconds on each row.
-        _scores_by_objective[_objective.name] = compute_metrics(
-            val_age_group.Y,
-            _model.predict(val_age_group.X, exposure=val_age_group.exposure),
-            METRICS,
-            cohorts=[*COHORTS, "composite"],
-        ).assign(cv_best=_study.best_value, seconds=_seconds)
-    eda_model1_df = pd.concat(_scores_by_objective, names=["objective"]).reset_index()
-    # Every trial of the three studies, as a row of the whole model it scored.
-    eda_model1_trials_df = pd.concat(_trials, ignore_index=True)
-    return eda_model1_df, eda_model1_trials_df
-
-
-@app.cell
-def _(
-    COHORTS,
-    COUNT_FEATURE_TRANSFORMERS,
-    CountComponent,
-    EDA_OBJECTIVES,
-    METRICS,
-    MODEL2_FIXED_PROBABILITY_COMPONENT,
-    PREDICTION_FLOOR,
-    PROBABILITY_FEATURE_TRANSFORMERS,
-    ProbabilityComponent,
-    build_study_name,
-    build_total_times_probability_model,
-    build_trials_table,
-    compute_metrics,
-    cv_groups,
-    dataclasses,
-    mo,
-    pd,
-    run_eda,
-    seed,
-    train_age_group,
-    tuner,
-    val_age_group,
-):
-    mo.stop(not run_eda.value, mo.md("Click the button to run the objective EDA."))
-    # The total times probability model's EDA run, by coordinate descent as its
-    # runs in section 6: per objective, step 1 tunes the total with the fixed
-    # classifier, step 2 the probabilities with step 1's best total; every
-    # study seeded seed (M8). Step 2's value is the pair's cv: its fixed total
-    # is the pair's.
-    _total_family, _probability_family, _use_exposure = "lgbm_poisson", "logistic", True
-    _metric_names = [metric.name for metric in METRICS]
-    _feature_transformer_dict = {
-        "total": COUNT_FEATURE_TRANSFORMERS[_total_family],
-        "probability": PROBABILITY_FEATURE_TRANSFORMERS[_probability_family],
-    }
-    _scores_by_objective, _trials = {}, []
-    for _objective in EDA_OBJECTIVES:
-        _objective_tuner = dataclasses.replace(tuner, objective_metric=_objective)
-        _total_study, _total_seconds = _objective_tuner.tune_total_component(
-            train_age_group.X,
-            train_age_group.Y,
-            train_age_group.exposure,
-            cv_groups,
-            total_family=_total_family,
-            use_exposure=_use_exposure,
-            total_feature_transformer_dict=COUNT_FEATURE_TRANSFORMERS[_total_family],
-            probability_component=MODEL2_FIXED_PROBABILITY_COMPONENT,
-            y_min=PREDICTION_FLOOR,
-            random_state=seed,
-            study_seed=seed,
-            study_name=build_study_name(
-                "total_times_probability_coordinate_descent_total",
-                {"total_family": _total_family, "use_exposure": _use_exposure},
-                _objective.name,
-                seed,
-            ),
-        )
-        # Step 1's trials: each drawn total, with the fixed classifier.
-        _total_components_by_trial = [
-            (
-                CountComponent.from_params(
-                    trial.params,
-                    name="total",
-                    family=_total_family,
-                    use_exposure=_use_exposure,
-                    feature_transformer_dict=COUNT_FEATURE_TRANSFORMERS[_total_family],
-                ),
-                MODEL2_FIXED_PROBABILITY_COMPONENT,
-            )
-            for trial in _total_study.trials
-        ]
-        _trials.append(
-            build_trials_table(
-                _total_study,
-                _objective.name,
-                _metric_names,
-                _total_components_by_trial,
-                _feature_transformer_dict,
-            ).assign(step="total")
-        )
-        _total_component = CountComponent.from_params(
-            _total_study.best_params,
-            name="total",
-            family=_total_family,
-            use_exposure=_use_exposure,
-            feature_transformer_dict=COUNT_FEATURE_TRANSFORMERS[_total_family],
-        )
-        _probability_study, _probability_seconds = (
-            _objective_tuner.tune_probability_component(
-                train_age_group.X,
-                train_age_group.Y,
-                train_age_group.exposure,
-                cv_groups,
-                total_component=_total_component,
-                probability_family=_probability_family,
-                probability_feature_transformer_dict=PROBABILITY_FEATURE_TRANSFORMERS[
-                    _probability_family
-                ],
-                y_min=PREDICTION_FLOOR,
-                random_state=seed,
-                study_seed=seed,
-                study_name=build_study_name(
-                    "total_times_probability_coordinate_descent_probability",
-                    {"probability_family": _probability_family},
-                    _objective.name,
-                    seed,
-                ),
-            )
-        )
-        # Step 2's trials: step 1's best total, with each drawn classifier.
-        _probability_components_by_trial = [
-            (
-                _total_component,
-                ProbabilityComponent.from_params(
-                    trial.params,
-                    name="probability",
-                    family=_probability_family,
-                    feature_transformer_dict=PROBABILITY_FEATURE_TRANSFORMERS[
-                        _probability_family
-                    ],
-                ),
-            )
-            for trial in _probability_study.trials
-        ]
-        _trials.append(
-            build_trials_table(
-                _probability_study,
-                _objective.name,
-                _metric_names,
-                _probability_components_by_trial,
-                _feature_transformer_dict,
-            ).assign(step="probability")
-        )
-        _probability_component = ProbabilityComponent.from_params(
-            _probability_study.best_params,
-            name="probability",
-            family=_probability_family,
-            feature_transformer_dict=PROBABILITY_FEATURE_TRANSFORMERS[
-                _probability_family
-            ],
-        )
-        _model = build_total_times_probability_model(
-            _total_component,
-            _probability_component,
-            y_min=PREDICTION_FLOOR,
-            random_state=seed,
-        ).fit(train_age_group.X, train_age_group.Y, exposure=train_age_group.exposure)
-        # Every metric on validation, per cohort and for the composite; the
-        # pair's value (in its own objective) and the two studies' seconds on
-        # each row.
-        _scores_by_objective[_objective.name] = compute_metrics(
-            val_age_group.Y,
-            _model.predict(val_age_group.X, exposure=val_age_group.exposure),
-            METRICS,
-            cohorts=[*COHORTS, "composite"],
-        ).assign(
-            cv_best=_probability_study.best_value,
-            seconds=_total_seconds + _probability_seconds,
-        )
-    eda_model2_df = pd.concat(_scores_by_objective, names=["objective"]).reset_index()
-    # Every trial of the six studies (each objective's two steps), as a row of
-    # the whole model it scored: its step's drawn component and fixed one.
-    eda_model2_trials_df = pd.concat(_trials, ignore_index=True)
-    return eda_model2_df, eda_model2_trials_df
-
-
-@app.cell
-def _(
-    COHORTS,
-    COUNT_FEATURE_TRANSFORMERS,
-    CountComponent,
-    EDA_OBJECTIVES,
-    METRICS,
-    PREDICTION_FLOOR,
-    PROBABILITY_FEATURE_TRANSFORMERS,
-    ProbabilityComponent,
-    build_study_name,
-    build_total_times_probability_model,
-    build_trials_table,
-    compute_metrics,
-    cv_groups,
-    dataclasses,
-    mo,
-    pd,
-    run_eda,
-    seed,
-    train_age_group,
-    tuner,
-    val_age_group,
-):
-    mo.stop(not run_eda.value, mo.md("Click the button to run the objective EDA."))
-    # The total times probability model's EDA run by the joint method, to compare
-    # with coordinate descent's above on the same setting: per objective, one
-    # study whose every trial draws both components, seeded seed (M8).
-    _run_settings = {
-        "total_family": "lgbm_poisson",
-        "probability_family": "logistic",
-        "use_exposure": True,
-    }
-    _total_family, _probability_family, _use_exposure = (
-        _run_settings["total_family"],
-        _run_settings["probability_family"],
-        _run_settings["use_exposure"],
-    )
-    _metric_names = [metric.name for metric in METRICS]
-    _feature_transformer_dict = {
-        "total": COUNT_FEATURE_TRANSFORMERS[_total_family],
-        "probability": PROBABILITY_FEATURE_TRANSFORMERS[_probability_family],
-    }
-    _scores_by_objective, _trials = {}, []
-    for _objective in EDA_OBJECTIVES:
-        _objective_tuner = dataclasses.replace(tuner, objective_metric=_objective)
-        _study, _seconds = _objective_tuner.tune_total_times_probability_model(
-            train_age_group.X,
-            train_age_group.Y,
-            train_age_group.exposure,
-            cv_groups,
-            total_family=_total_family,
-            probability_family=_probability_family,
-            use_exposure=_use_exposure,
-            total_feature_transformer_dict=_feature_transformer_dict["total"],
-            probability_feature_transformer_dict=_feature_transformer_dict[
-                "probability"
-            ],
-            y_min=PREDICTION_FLOOR,
-            random_state=seed,
-            study_seed=seed,
-            study_name=build_study_name(
-                "total_times_probability_joint", _run_settings, _objective.name, seed
-            ),
-        )
-        # Each trial's model: the two components its parameters build.
-        _components_by_trial = [
-            (
-                CountComponent.from_params(
-                    trial.params,
-                    name="total",
-                    family=_total_family,
-                    use_exposure=_use_exposure,
-                    feature_transformer_dict=_feature_transformer_dict["total"],
-                ),
-                ProbabilityComponent.from_params(
-                    trial.params,
-                    name="probability",
-                    family=_probability_family,
-                    feature_transformer_dict=_feature_transformer_dict["probability"],
-                ),
-            )
-            for trial in _study.trials
-        ]
-        _trials.append(
-            build_trials_table(
-                _study,
-                _objective.name,
-                _metric_names,
-                _components_by_trial,
-                _feature_transformer_dict,
-            )
-        )
-        # The best trial's model, refit on the training part.
-        _model = build_total_times_probability_model(
-            *_components_by_trial[_study.best_trial.number],
-            y_min=PREDICTION_FLOOR,
-            random_state=seed,
-        ).fit(train_age_group.X, train_age_group.Y, exposure=train_age_group.exposure)
-        # Every metric on validation, per cohort and for the composite; the
-        # study's value (in its own objective) and its seconds on each row.
-        _scores_by_objective[_objective.name] = compute_metrics(
-            val_age_group.Y,
-            _model.predict(val_age_group.X, exposure=val_age_group.exposure),
-            METRICS,
-            cohorts=[*COHORTS, "composite"],
-        ).assign(cv_best=_study.best_value, seconds=_seconds)
-    eda_model2_joint_df = pd.concat(
-        _scores_by_objective, names=["objective"]
-    ).reset_index()
-    # Every trial of the three studies, as a row of the whole model it scored.
-    eda_model2_joint_trials_df = pd.concat(_trials, ignore_index=True)
-    return eda_model2_joint_df, eda_model2_joint_trials_df
-
-
-@app.cell
-def _(
-    METRICS,
-    eda_model1_df,
-    eda_model1_trials_df,
-    eda_model2_df,
-    eda_model2_joint_df,
-    eda_model2_joint_trials_df,
-    eda_model2_trials_df,
-    mo,
-    pd,
-):
-    # Each model's best trial per objective: its study's minimum on the
-    # objective (the first on ties, as Optuna's best trial; the total times
-    # probability model's by coordinate descent in its probability step, the
-    # pair the refit holds; by the joint method in its one study), its
-    # cross-validated score on every metric, and the refit's composite on
-    # validation.
-    _metric_names = [metric.name for metric in METRICS]
-    _rows = []
-    for _model, _trials, _scores in (
-        ("model1", eda_model1_trials_df, eda_model1_df),
-        (
-            "model2",
-            eda_model2_trials_df[eda_model2_trials_df["step"] == "probability"],
-            eda_model2_df,
-        ),
-        ("model2_joint", eda_model2_joint_trials_df, eda_model2_joint_df),
-    ):
-        for _objective, _study_trials in _trials.groupby("objective", sort=False):
-            _best = _study_trials.loc[_study_trials[_objective].idxmin()]
-            _composite = _scores[
-                (_scores["objective"] == _objective)
-                & (_scores["cohort"] == "composite")
-            ].iloc[0]
-            _rows.append(
-                {
-                    "model": _model,
-                    "objective": _objective,
-                    "best_id": _best["id"],
-                    **{
-                        f"cv_{metric_name}": _best[metric_name]
-                        for metric_name in _metric_names
-                    },
-                    **{
-                        f"val_{metric_name}": _composite[metric_name]
-                        for metric_name in _metric_names
-                    },
-                }
-            )
-    eda_best_df = pd.DataFrame(_rows)
-    mo.vstack(
-        [
-            mo.md(
-                "**The objective EDA: the best model per objective** (each study's "
-                "best trial, the total times probability model's by coordinate "
-                "descent (model2) in its probability step, by the joint method "
-                "(model2_joint) in its one study; cv_: its cross-validated scores; "
-                "val_: the refit's composite on validation)"
-            ),
-            mo.ui.table(eda_best_df.round(4)),
-        ]
-    )
-    return (eda_best_df,)
-
-
-@app.cell
-def _(EDA_OBJECTIVES, mo, tuner):
-    # The objective whose studies the EDA's figures show; the tuner's by default.
-    eda_objective = mo.ui.dropdown(
-        options=[objective.name for objective in EDA_OBJECTIVES],
-        value=tuner.objective_metric.name,
-        label="Objective",
-    )
-    return (eda_objective,)
-
-
-@app.cell
-def _(
-    METRICS,
-    eda_best_df,
-    eda_model1_trials_df,
-    eda_model2_joint_trials_df,
-    eda_model2_trials_df,
-    eda_objective,
-    go,
-    make_subplots,
-    mo,
-):
-    # Per model and objective, every metric per trial, a panel each on its own
-    # scale, the trials in order on a shared axis (the total times probability
-    # model by coordinate descent: its total step, then its probability step;
-    # by the joint method, like the independent cohorts model, one study): the
-    # best trial a red star in every panel. The colors are the dataviz
-    # reference palette's (the trials series 1, the best series 8, the rule
-    # secondary ink, the chart surface); the trials translucent, so
-    # overlapping ones show darker.
-    _metric_names = [metric.name for metric in METRICS]
-    _surface, _ink = "#fcfcfb", "#52514e"
-    eda_figures = {}
-    for _model, _trials in (
-        ("model1", eda_model1_trials_df),
-        ("model2", eda_model2_trials_df),
-        ("model2_joint", eda_model2_joint_trials_df),
-    ):
-        for _objective, _study_trials in _trials.groupby("objective", sort=False):
-            _study_trials = _study_trials.reset_index(drop=True)
-            _best_id = eda_best_df.loc[
-                (eda_best_df["model"] == _model)
-                & (eda_best_df["objective"] == _objective),
-                "best_id",
-            ].iloc[0]
-            if _model in ("model1", "model2_joint"):
-                _labels = "trial " + _study_trials["id"].astype(str)
-                _is_best = _study_trials["id"] == _best_id
-                _probability_start = None
-            elif _model == "model2":
-                _labels = (
-                    _study_trials["step"] + " trial " + _study_trials["id"].astype(str)
-                )
-                _is_best = (_study_trials["step"] == "probability") & (
-                    _study_trials["id"] == _best_id
-                )
-                _probability_start = (_study_trials["step"] == "total").sum()
-            else:
-                raise ValueError(f"unknown model {_model!r}")
-            _best_position = _study_trials.index[_is_best][0]
-            _figure = make_subplots(
-                rows=len(_metric_names),
-                cols=1,
-                shared_xaxes=True,
-                subplot_titles=_metric_names,
-                vertical_spacing=0.04,
-            )
-            for _row, _metric_name in enumerate(_metric_names, start=1):
-                _figure.add_trace(
-                    go.Scatter(
-                        x=_study_trials.index,
-                        y=_study_trials[_metric_name],
-                        mode="markers",
-                        marker={"size": 5, "color": "#2a78d6", "opacity": 0.6},
-                        text=_labels,
-                        hovertemplate=f"%{{text}}<br>{_metric_name} %{{y:.4f}}<extra></extra>",
-                        name="trials",
-                        legendgroup="trials",
-                        showlegend=_row == 1,
-                    ),
-                    row=_row,
-                    col=1,
-                )
-                _figure.add_trace(
-                    go.Scatter(
-                        x=[_best_position],
-                        y=[_study_trials.loc[_best_position, _metric_name]],
-                        mode="markers",
-                        marker={
-                            "symbol": "star",
-                            "size": 12,
-                            "color": "#e34948",
-                            "line": {"width": 2, "color": _surface},
-                        },
-                        text=[_labels[_best_position]],
-                        hovertemplate=f"best: %{{text}}<br>{_metric_name} %{{y:.4f}}<extra></extra>",
-                        name=f"best: {_labels[_best_position]}",
-                        legendgroup="best",
-                        showlegend=_row == 1,
-                    ),
-                    row=_row,
-                    col=1,
-                )
-            if _probability_start is not None:
-                # The rule in every panel; its label once, in the top panel.
-                _figure.add_vline(
-                    x=_probability_start - 0.5, line_width=1, line_color=_ink
-                )
-                _figure.add_annotation(
-                    text="probability step",
-                    x=_probability_start - 0.5,
-                    xref="x",
-                    y=1,
-                    yref="y domain",
-                    xanchor="left",
-                    yanchor="top",
-                    showarrow=False,
-                )
-            _figure.update_layout(
-                title=f"tuned on {_objective}",
-                height=1000,
-                template="plotly_white",
-                paper_bgcolor=_surface,
-                plot_bgcolor=_surface,
-                legend={"orientation": "h", "y": -0.06},
-                hovermode="closest",
-            )
-            _figure.update_xaxes(title_text="trial", row=len(_metric_names), col=1)
-            eda_figures[_model, _objective] = _figure
-    mo.vstack(
-        [
-            eda_objective,
-            mo.md(
-                "**The independent cohorts model: every metric per trial** (the "
-                "study of the chosen objective; the star its best trial)"
-            ),
-            eda_figures["model1", eda_objective.value],
-            mo.md(
-                "**The total times probability model by coordinate descent: every "
-                "metric per trial** (the total step's trials, then the probability "
-                "step's; the star its best trial, in the probability step)"
-            ),
-            eda_figures["model2", eda_objective.value],
-            mo.md(
-                "**The total times probability model by the joint method: every "
-                "metric per trial** (one study drawing both components; the star its "
-                "best trial)"
-            ),
-            eda_figures["model2_joint", eda_objective.value],
-        ]
-    )
-    return
-
-
-@app.cell
-def _(METRICS, mo):
-    # The recorded metric on which the EDA's objectives are compared.
-    eda_recorded_metric = mo.ui.dropdown(
-        options=[metric.name for metric in METRICS],
-        value=METRICS[0].name,
-        label="Recorded metric",
-    )
-    return (eda_recorded_metric,)
-
-
-@app.cell
-def _(
-    METRICS,
-    eda_best_df,
-    eda_model1_trials_df,
-    eda_model2_joint_trials_df,
-    eda_model2_trials_df,
-    eda_recorded_metric,
-    go,
-    mo,
-):
-    # Per model and recorded metric, the objectives' studies compared: a box per
-    # objective with every trial a point and its best trial a star (the model it
-    # picks); the total times probability model's two steps side by side by
-    # coordinate descent, its one study by the joint method. The colors are the
-    # dataviz reference palette's first three categorical slots, each objective
-    # with its own marker; the y-axis spans the bulk of the trials (their 2nd to
-    # 98th percentile) and every star.
-    _styles = {
-        "log_loss": ("#2a78d6", "circle"),
-        "poisson_deviance": ("#eb6834", "diamond"),
-        "rmse": ("#1baf7a", "triangle-up"),
-    }
-    _surface, _ink = "#fcfcfb", "#52514e"
-    eda_metric_figures = {}
-    for _model, _trials in (
-        ("model1", eda_model1_trials_df),
-        ("model2", eda_model2_trials_df),
-        ("model2_joint", eda_model2_joint_trials_df),
-    ):
-        if _model in ("model1", "model2_joint"):
-            _x_column, _boxmode = "objective", "overlay"
-            _labels = "trial " + _trials["id"].astype(str)
-            _best_candidates = _trials
-        elif _model == "model2":
-            _x_column, _boxmode = "step", "group"
-            _labels = _trials["step"] + " trial " + _trials["id"].astype(str)
-            _best_candidates = _trials[_trials["step"] == "probability"]
-        else:
-            raise ValueError(f"unknown model {_model!r}")
-        for _metric in METRICS:
-            _figure = go.Figure()
-            _star_values = []
-            for _objective in _trials["objective"].unique():
-                _color, _symbol = _styles[_objective]
-                _is_study = _trials["objective"] == _objective
-                _best_id = eda_best_df.loc[
-                    (eda_best_df["model"] == _model)
-                    & (eda_best_df["objective"] == _objective),
-                    "best_id",
-                ].iloc[0]
-                _best_index = _best_candidates.index[
-                    (_best_candidates["objective"] == _objective)
-                    & (_best_candidates["id"] == _best_id)
-                ][0]
-                _star_values.append(_trials.loc[_best_index, _metric.name])
-                _figure.add_trace(
-                    go.Box(
-                        x=_trials.loc[_is_study, _x_column],
-                        y=_trials.loc[_is_study, _metric.name],
-                        name=_objective,
-                        boxpoints="all",
-                        jitter=0.5,
-                        pointpos=0,
-                        fillcolor="rgba(0, 0, 0, 0)",
-                        line={"color": _color, "width": 2},
-                        marker={
-                            "color": _color,
-                            "symbol": _symbol,
-                            "size": 5,
-                            "opacity": 0.5,
-                        },
-                        text=_labels[_is_study],
-                        hovertemplate=f"{_objective}: %{{text}}<br>{_metric.name} %{{y:.4f}}<extra></extra>",
-                        offsetgroup=_objective,
-                        legendgroup=_objective,
-                    )
-                )
-                _figure.add_trace(
-                    go.Scatter(
-                        x=[_trials.loc[_best_index, _x_column]],
-                        y=[_star_values[-1]],
-                        mode="markers",
-                        marker={
-                            "symbol": "star",
-                            "size": 14,
-                            "color": _color,
-                            "line": {"width": 1.5, "color": _ink},
-                        },
-                        text=[_labels[_best_index]],
-                        hovertemplate=f"best of {_objective}: %{{text}}<br>{_metric.name} %{{y:.4f}}<extra></extra>",
-                        offsetgroup=_objective,
-                        legendgroup=_objective,
-                        showlegend=False,
-                    )
-                )
-            _low, _high = _trials[_metric.name].quantile([0.02, 0.98])
-            _low, _high = min(_low, *_star_values), max(_high, *_star_values)
-            _padding = 0.05 * (_high - _low)
-            _figure.update_layout(
-                title=f"{_metric.name} by objective",
-                height=500,
-                template="plotly_white",
-                paper_bgcolor=_surface,
-                plot_bgcolor=_surface,
-                boxmode=_boxmode,
-                scattermode="group",
-                legend={"orientation": "h", "y": -0.15},
-                hovermode="closest",
-            )
-            _figure.update_yaxes(
-                title_text=_metric.name, range=[_low - _padding, _high + _padding]
-            )
-            eda_metric_figures[_model, _metric.name] = _figure
-    mo.vstack(
-        [
-            eda_recorded_metric,
-            mo.md(
-                "**The independent cohorts model: the objectives compared on the "
-                "chosen metric** (a box per objective's study with every trial; the "
-                "star its best trial)"
-            ),
-            eda_metric_figures["model1", eda_recorded_metric.value],
-            mo.md(
-                "**The total times probability model by coordinate descent: the "
-                "objectives compared on the chosen metric** (each step's trials; the "
-                "star its best trial, in the probability step)"
-            ),
-            eda_metric_figures["model2", eda_recorded_metric.value],
-            mo.md(
-                "**The total times probability model by the joint method: the "
-                "objectives compared on the chosen metric** (a box per objective's "
-                "study with every trial; the star its best trial)"
-            ),
-            eda_metric_figures["model2_joint", eda_recorded_metric.value],
-        ]
-    )
-    return
-
-
-@app.cell
-def _(
-    eda_model1_df,
-    eda_model1_trials_df,
-    eda_model2_df,
-    eda_model2_joint_df,
-    eda_model2_joint_trials_df,
-    eda_model2_trials_df,
-    mo,
-):
-    mo.vstack(
-        [
-            mo.md(
-                "**The objective EDA: the independent cohorts model** (each "
-                "objective's best model refit; every metric on validation, per "
-                "cohort and for the composite; cv_best: the study's value in its "
-                "own objective; seconds: the study's)"
-            ),
-            mo.ui.table(eda_model1_df.round(4)),
-            mo.md(
-                "**The total times probability model by coordinate descent** (the "
-                "same; cv_best: step 2's value, the pair's, in its own objective; "
-                "seconds: the two studies')"
-            ),
-            mo.ui.table(eda_model2_df.round(4)),
-            mo.md(
-                "**The total times probability model by the joint method** (the "
-                "same; cv_best: the study's value in its own objective; seconds: "
-                "the study's)"
-            ),
-            mo.ui.table(eda_model2_joint_df.round(4)),
-            mo.md(
-                "**Every trial: the independent cohorts model** (one row per trial "
-                "of each objective's study, the whole model it scored: its state, "
-                "seconds, cross-validated score on every metric, and each cohort's "
-                "feature transformer and hyperparameters)"
-            ),
-            mo.ui.table(eda_model1_trials_df.round(4)),
-            mo.md(
-                "**Every trial: the total times probability model by coordinate "
-                "descent** (each objective's two studies, each trial by its step and "
-                "number: step `total`, each drawn total with the fixed classifier; "
-                "step `probability`, step 1's best total with each drawn classifier)"
-            ),
-            mo.ui.table(eda_model2_trials_df.round(4)),
-            mo.md(
-                "**Every trial: the total times probability model by the joint "
-                "method** (one row per trial of each objective's study, its total and "
-                "probabilities drawn together)"
-            ),
-            mo.ui.table(eda_model2_joint_trials_df.round(4)),
-        ]
-    )
-    return
-
-
-@app.cell(hide_code=True)
-def _(mo):
-    mo.md(r"""
-    ## 6) Hyperparameter tuning
-
-    Two models: the independent cohorts model (Model 1, one count model per
-    cohort) and the total times probability model (Model 2, a count model of
-    the total times a classifier's cohort probabilities). One run per model
-    family and exposure (on or off, fixed for the run):
-    one Optuna study on the composite, so the model that is scored is the
-    model that is tuned, by the Poisson deviance of the composite on its
-    cross-validation folds on the training part, the plain mean over folds.
-    A trial draws, per cohort (one part per run for the total times
-    probability model), the estimator's hyperparameters and the feature
-    transformer,
-    under the names `<component>__<parameter>` (the transformer by its name,
-    resolved to the object); they make a component, a complete record of
-    that part, and the composite is built from the components with
-    constructor calls; the best run's components are read back from the
-    study's `best_params` by the component type, the same records. Two
-    run settings decide what the independent cohorts model's cohorts share,
-    each drawn once under `shared__`:
-    `share_hyperparams` (one set of hyperparameters for all cohorts) and
-    `share_feature_transformer` (one transformer for all cohorts). Each
-    entry of `MODEL1_RUN_SETTINGS` sets both: its eight runs take `True` and
-    `False`, and a run with other values is one more entry in that list.
-    LightGBM's two losses, Poisson and Gaussian, are
-    separate families, and the exposure a run setting: a study that sampled
-    the loss split 30 trials 10/20 and did worse than either loss alone, and
-    the exposure changes the target (a count or a weighted rate).
-    `n_trials = 100`, the first `n_startup_trials = 10` drawn at random.
-    Each study is stored, and loaded by the next click (section 5).
-    The runs go one after another, seeded
-    `seed + 0`, `seed + 1`, … in order (each model's in loops over its run
-    settings), and each trial fits its 5 folds in
-    parallel. A trial whose fit raises (an NB2 fit that does not converge) is
-    marked failed and the run goes on; the tables count them. Each run keeps
-    its best model only, not its trials (section 5 studies them): its
-    components, read back from the best trial's parameters, their feature
-    transformers' names, its value, its trial counts and seconds. The
-    independent cohorts model's best, and the total times probability
-    model's pairs (below), are refit on the training part, kept, and scored
-    on the training rows and on the validation rows (the test part waits for
-    the final refit on training + validation) on every metric, per cohort
-    and for the composite: a point score each. Each model
-    has two tables: its runs (each kept model's feature transformers and
-    hyperparameters per component, its cross-validated objective, its trials
-    and seconds) and their scores (a row per dataset, cohort and metric). The six
-    metrics: the Poisson deviance (the primary metric, the tuning's
-    objective); the log loss (the proportions between cohorts only, so it
-    never selects); MAE and RMSE per (building, cohort) cell; WMAPE (the
-    absolute error as a share of the children); and the bias (mean
-    predicted minus true count, signed, so 0 is best). A Gaussian loss can predict a negative count,
-    which `CountModel` floors at `y_min` (eps). The total times probability
-    model is tuned by coordinate descent, under `total__…` and
-    `probability__…`. First its total: one run per total family and exposure
-    (8 runs, `MODEL2_TOTAL_RUN_SETTINGS`), the probabilities fixed at a plain
-    logistic model. Then its probabilities: one run per classifier family
-    (2 runs, `MODEL2_PROBABILITY_RUN_SETTINGS`), the best total by cv fixed;
-    the probability model ignores the exposure, and its calibration is
-    searched. Each run scores the whole composite: its cohort Poisson
-    deviance is the total's deviance plus the probabilities' log loss, and no
-    hyperparameter reaches both, so the fixed part adds the same constant to
-    every trial, and one round finds what tuning both at once finds, about 3×
-    faster (`docs/NOTEBOOK_METRICS_LOOP_EDA_PLAN.md` 2.3a). The 16 pairs, each
-    total run's best with each classifier run's best, are then
-    cross-validated and scored, with no search; a pair's trials and seconds
-    are its two runs'. Its replication of the
-    counts into classifier
-    rows is fixed at `weighted`, not searched: for the logistic classifier
-    the two replications are the same fit, and for LightGBM they differed
-    within noise while `per_child` is 2-3× slower
-    (`docs/TOTAL_TIMES_PROBABILITY_MODEL.md` §3.1).
-    The run
-    cells sit behind buttons: opening the notebook fits nothing.
-
-    Each model's best run is the one with the lowest point score of the
-    composite on validation by `selection_metric` (RMSE by default, or the
-    Poisson deviance). The point score, because the bootstrap's mean ranks
-    the runs the same (the bootstrap measures the uncertainty, it does not
-    rank better), and not the cross-validated score, since each run was
-    tuned on it. The chosen run's validation score is optimistic (it won a
-    choice); the test part gives the fair one. The two best runs are
-    bootstrapped on validation: each score with its replicates' mean,
-    median, SD and `1 - alpha` (95%) interval, `ci95_lower` to
-    `ci95_upper`. The replicates resample whole neighborhoods, and both
-    models are scored on the same replicates, so their intervals compare
-    and their difference pairs by replicate; `n_resamples = 1000` was kept
-    by measurement (the bounds' SD across seeds at most 4.6% of the
-    interval's width). A forest plot shows the selection metric with its
-    interval per cohort and for the composite.
-
-    The two best runs are then inspected, behind their own button, with
-    their stored models. The permutation importance of the primary metric on validation
-    says what the shipped prediction depends on, and on training what the
-    model fitted (a column important there only is overfit). Exact SHAP of
-    `n_shap_rows` validation rows against `n_shap_background` training rows
-    attributes the predicted count per row, column and cohort; mean |SHAP|
-    per column is its global importance. The last table puts the two
-    importances' rankings side by side.
-    """)
-    return
 
 
 @app.cell
@@ -2044,7 +991,7 @@ def _(
         # The run's settings and its best model: the fitted model, its
         # components and their transformers' names (found by identity among
         # the family's candidates); its value, trial counts and seconds. The
-        # trials are not kept: section 5 studies them.
+        # trials are not kept: the objective EDA studies them.
         _states = [trial.state.name for trial in _study.trials]
         MODEL1_RUNS.append(
             {
@@ -2210,7 +1157,8 @@ def _(
         )
         # The best total, read from the best trial's parameters by its type
         # (D25); the run keeps it, its transformer's name, its value, trial
-        # counts and seconds. The trials are not kept: section 5 studies them.
+        # counts and seconds. The trials are not kept: the objective EDA studies
+        # them.
         _total_component = CountComponent.from_params(
             _study.best_params,
             name="total",
@@ -2545,7 +1493,7 @@ def _(
             mo.ui.table(best_runs_val_scores_df.round(4)),
         ]
     )
-    return best_model1, best_model2, best_replicate_scores, best_runs_val_scores_df
+    return best_model1, best_model2, best_runs_val_scores_df
 
 
 @app.cell
@@ -2619,7 +1567,13 @@ def _(go, make_subplots):
 
 
 @app.cell
-def _(CI_BOUND_NAMES, SELECTION_METRIC, best_runs_val_scores_df, forest_figure, mo):
+def _(
+    CI_BOUND_NAMES,
+    SELECTION_METRIC,
+    best_runs_val_scores_df,
+    forest_figure,
+    mo,
+):
     best_forest_figure = forest_figure(
         best_runs_val_scores_df,
         SELECTION_METRIC.name,
@@ -2636,7 +1590,7 @@ def _(CI_BOUND_NAMES, SELECTION_METRIC, best_runs_val_scores_df, forest_figure, 
             best_forest_figure,
         ]
     )
-    return (best_forest_figure,)
+    return
 
 
 @app.cell

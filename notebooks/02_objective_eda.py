@@ -1377,6 +1377,12 @@ def _(
 
 
 @app.cell
+def _(eda_best_df):
+    eda_best_df.sort_values(by="objective", ascending=False)
+    return
+
+
+@app.cell
 def _(EDA_OBJECTIVES, mo, tuner):
     # The objective whose studies the EDA's figures show; the tuner's by default.
     eda_objective = mo.ui.dropdown(

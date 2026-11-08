@@ -1,7 +1,7 @@
-"""Characterize the experiment notebook's script run: setup only, nothing fitted.
+"""Characterize the hyperparameter tuning notebook's script run: setup only, nothing fitted.
 
-The notebook (``notebooks/02_experiments.py``) builds its data in setup cells
-and will fit models only behind run buttons. A plain script run leaves every
+The notebook (``notebooks/03_hyperparameter_tuning.py``) builds its data in
+setup cells and fits models only behind run buttons. A plain script run leaves every
 button unclicked, so it must print the facts of the sections built so far
 and fit nothing. These tests run the notebook as a subprocess and read its
 stdout, rather than importing marimo internals, so they stay valid across
@@ -30,7 +30,8 @@ from age_group_prediction.hyperparameter_tuning import (
 from student_simulator import load_simulation_config
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
-NOTEBOOK_PATH = PROJECT_ROOT / "notebooks" / "02_experiments.py"
+NOTEBOOK_PATH = PROJECT_ROOT / "notebooks" / "03_hyperparameter_tuning.py"
+OBJECTIVE_EDA_PATH = PROJECT_ROOT / "notebooks" / "02_objective_eda.py"
 
 
 def _run(notebook: Path, scratch: Path) -> subprocess.CompletedProcess[str]:
@@ -45,7 +46,7 @@ def _run(notebook: Path, scratch: Path) -> subprocess.CompletedProcess[str]:
     env["PYTHONPATH"] = str(PROJECT_ROOT / "src")
     env["MLFLOW_DISABLE_AGENT_HINT"] = "1"
     env["MLFLOW_TRACKING_URI"] = f"sqlite:///{scratch / 'mlflow.db'}"
-    env["MLFLOW_EXPERIMENT_NAME"] = "test-experiments-notebook"
+    env["MLFLOW_EXPERIMENT_NAME"] = "test-hyperparameter-tuning-notebook"
     env["AGE_GROUP_MLFLOW_ARTIFACT_LOCATION"] = str(scratch / "artifacts")
     return subprocess.run(
         [sys.executable, str(notebook)],
@@ -204,7 +205,9 @@ def test_a_tuning_cell_outside_a_run_button_is_caught() -> None:
 @pytest.fixture(scope="module")
 def notebook_defs() -> dict:
     """The names a script run defines, in this process; the buttons stay unclicked, so nothing is fitted."""
-    spec = importlib.util.spec_from_file_location("experiments_notebook", NOTEBOOK_PATH)
+    spec = importlib.util.spec_from_file_location(
+        "hyperparameter_tuning_notebook", NOTEBOOK_PATH
+    )
     assert spec is not None and spec.loader is not None
     notebook = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(notebook)
@@ -398,3 +401,93 @@ def test_the_run_settings_are_the_ones_the_baselines_were_recorded_with(
         {"probability_family": "logistic"},
         {"probability_family": "lgbm"},
     ]
+
+
+@pytest.fixture(scope="module")
+def objective_eda_defs() -> dict:
+    """The names a script run of the objective EDA notebook defines; nothing is fitted."""
+    spec = importlib.util.spec_from_file_location(
+        "objective_eda_notebook", OBJECTIVE_EDA_PATH
+    )
+    assert spec is not None and spec.loader is not None
+    notebook = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(notebook)
+    _, defs = notebook.app.run()
+    return dict(defs)
+
+
+def test_the_two_notebooks_share_one_setup(
+    notebook_defs: dict, objective_eda_defs: dict
+) -> None:
+    # D41: both notebooks copy the setup, and a study either one stores is
+    # loaded by its name alone, which holds the settings but not the data,
+    # the split, the candidates or the tuner's design. A copy that drifts
+    # would load a study tuned on the other copy's setup, silently: the two
+    # must build the same objects.
+    tuning, eda = notebook_defs, objective_eda_defs
+    for name in (
+        "DATA_SETTINGS",
+        "config_hash",
+        "seed",
+        "split_method",
+        "test_size",
+        "val_size",
+        "n_splits",
+        "n_trials",
+        "n_startup_trials",
+        "COHORTS",
+        "PREDICTION_FLOOR",
+        "cv_groups",
+    ):
+        assert tuning[name] == eda[name], name
+    for part in ("train_age_group", "val_age_group"):
+        for field, tuning_values, eda_values in zip(
+            tuning[part]._fields, tuning[part], eda[part], strict=True
+        ):
+            assert tuning_values.equals(eda_values), (part, field)
+    assert repr(tuning["cv"]) == repr(eda["cv"])
+    for name in ("COUNT_FEATURE_TRANSFORMERS", "PROBABILITY_FEATURE_TRANSFORMERS"):
+        assert {
+            family: {key: t.to_dict() for key, t in candidates.items()}
+            for family, candidates in tuning[name].items()
+        } == {
+            family: {key: t.to_dict() for key, t in candidates.items()}
+            for family, candidates in eda[name].items()
+        }, name
+    assert [m.name for m in tuning["METRICS"]] == [m.name for m in eda["METRICS"]]
+    assert tuning["POISSON_DEVIANCE"].name == eda["POISSON_DEVIANCE"].name
+    tuning_tuner, eda_tuner = tuning["tuner"], eda["tuner"]
+    assert tuning_tuner.storage_dir == eda_tuner.storage_dir
+    assert tuning_tuner.objective_metric.name == eda_tuner.objective_metric.name
+    assert [m.name for m in tuning_tuner.recorded_metrics] == [
+        m.name for m in eda_tuner.recorded_metrics
+    ]
+    for field in ("n_trials", "n_startup_trials", "n_jobs"):
+        assert getattr(tuning_tuner, field) == getattr(eda_tuner, field), field
+    study_names = [
+        (
+            "independent_cohorts",
+            {
+                "family": "lgbm_poisson",
+                "use_exposure": True,
+                "share_hyperparams": True,
+                "share_feature_transformer": False,
+            },
+            "poisson_deviance",
+            42,
+        ),
+        (
+            "total_times_probability_coordinate_descent_total",
+            {"total_family": "lgbm_poisson", "use_exposure": True},
+            "poisson_deviance",
+            42,
+        ),
+    ]
+    for arguments in study_names:
+        assert tuning["build_study_name"](*arguments) == eda["build_study_name"](
+            *arguments
+        )
+    assert (
+        tuning["MODEL2_FIXED_PROBABILITY_COMPONENT"].to_dict()
+        == eda["MODEL2_FIXED_PROBABILITY_COMPONENT"].to_dict()
+    )
