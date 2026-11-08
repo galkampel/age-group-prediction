@@ -36,8 +36,9 @@ building-level DataFrame:
 - [Hyperparameter tuning of the rebuilt models](docs/HYPERPARAMETER_TUNING.md):
   the `hyperparameter_tuning` package, plain Optuna over both rebuilt models:
   components drawn per trial, the composite built from them, a
-  `CrossValidationTuner`; sections 5 (the objective EDA) and 6 (the tuning) of
-  `notebooks/02_experiments.py` run it (decisions in the
+  `CrossValidationTuner`; `notebooks/02_objective_eda.py` (the objective EDA)
+  and section 6 (the tuning) of `notebooks/02_experiments.py` run it
+  (decisions in the
   [plan](docs/NOTEBOOK_TUNING_PLAN.md)).
 - [Model inspection](docs/MODEL_INSPECTION.md): the `inspection` package for
   the rebuilt models: bootstrap intervals of a metric, permutation importance
@@ -127,6 +128,10 @@ The research source is a pair of version-controlled marimo notebooks:
 
 - `notebooks/01_eda.py` implements the complete EDA checklist and findings
 	handoff;
+- `notebooks/02_objective_eda.py` compares the tuner's candidate objectives
+  (the log loss, the Poisson deviance, RMSE) on one setting per model: every
+  trial, the best models refit and scored on validation, and figures of
+  both;
 - `notebooks/02_experiments.py` runs the experiments: one MLflow run per
   setting (composite model × estimator family × feature variant × exposure),
   tuned by cross-validation on the training part, compared on the validation
@@ -167,7 +172,8 @@ marimo `.py` notebooks are the sole research source.
 
    marimo prints a local URL and opens it. Add `--headless` to skip opening a
    browser or `--port <n>` to choose the port. The EDA notebook opens the same
-   way with `marimo edit notebooks/01_eda.py`. `uv run` reads `.env` only when
+   way with `marimo edit notebooks/01_eda.py`, and the objective EDA with
+   `marimo edit notebooks/02_objective_eda.py`. `uv run` reads `.env` only when
    given `--env-file`. For a one-off throwaway store instead, export the
    Section 2 variables from the MLflow guide and prefix the command with
    `PYTHONPATH=src` in place of `--env-file .env`. To use the VS Code marimo

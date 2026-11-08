@@ -1,5 +1,17 @@
 # Handoff: the experiment notebook, PR 5b merged (#24); PR 6 (two notebooks) next
 
+**Status (2026-11-08, 6.2 done, before the user's commit; next 6.3):**
+- **6.1 is committed** (`4568a5d`). **6.2 is done as planned** (the cache plan's 6.2 Done note):
+  `notebooks/02_objective_eda.py` (md5 `b40ff544e17101aeee27f7fec1215010`; §1) and
+  `tests/characterization/test_objective_eda_notebook.py` (7 tests, F3 among them).
+  `02_experiments.py` is unchanged (`6731d509d2b5298e4d38a99480f700dc`).
+- **Check C's EDA reference** is now `check_c_6_2.pkl` with its two figures' JSON. Its EDA frames
+  and figures equal `check_c_5b_2.pkl`'s. `check_c_5b_2.pkl` stays section 6's reference.
+- **The scripts** (this session's scratchpad, below): `checks/run_6_2.sh` runs Check A on both
+  notebooks and Check B (`check_b_eda.py`) and Check C (`make_copy_eda.py`, `check_c_eda.py`:
+  `check_c.py`'s EDA blocks) on the EDA notebook, then the comparisons;
+  `checks/run_mutants_6_2.sh` runs F3's two mutations.
+
 **Status (2026-11-08, 6.1 done, before the user's commit; next 6.2):**
 - **6.1 is done as planned** (the cache plan's 6.1 Done note), docs only. The three ways of sharing
   sections 1–4 were probed; **D41 (the user's):** both notebooks duplicate the setup (sections 1–4
@@ -182,6 +194,15 @@ sub-task's "Done" note), in [NOTEBOOK_TUNING_PLAN.md](NOTEBOOK_TUNING_PLAN.md) (
 git. Re-verify every fact here against the code of the day.
 
 ## 1. What exists
+
+**The objective EDA notebook** (`notebooks/02_objective_eda.py`, since 6.2; D41): sections 1–5
+below, copied, with the settings it reads (the 7 of the study directory's name; not
+`selection_metric`, `n_resamples`, `alpha`, `n_repeats`, `n_shap_*`), its imports without the
+inspection's, the metrics cell without `SELECTION_METRIC`; its text the setup's description (section
+4's stale check text removed; "section 6" the tuning notebook; D40 in section 5). Its test is
+`tests/characterization/test_objective_eda_notebook.py` (7: the printed lines, the seed override,
+the tuning-cell guard, the study's name, `build_trials_table` on an in-memory study: F3).
+`02_experiments.py` keeps all six sections until 6.3.
 
 **The notebook** (`notebooks/02_experiments.py`, marimo; a script run fits nothing):
 1. **Data:** the simulator at 150 neighborhoods × 9 buildings (`configs/simulation.yml`, its
@@ -1048,7 +1069,8 @@ constructor, data in the call; fitting and evaluating as separate steps; no priv
 - **PR 3's review, F3 (for PR 6):** no repo test covers `build_trials_table`, `eda_best_df`, the EDA
   figures or section 6's records and tables; only Check C (a scratchpad script) does. A
   characterization test of `notebook_defs["build_trials_table"]` on a 3-trial study fits PR 6's test
-  split (6.2: `test_objective_eda_notebook.py`).
+  split (6.2: `test_objective_eda_notebook.py`). **Done in 6.2** for `build_trials_table` (an
+  in-memory study, two mutations caught); the rest stays Check C's.
 - **PR 3's review, F4 (for PR 6):**
   - the lookup of a transformer's name by identity is written four times (`build_trials_table`,
     Model 1's run cell, Model 2's step 1 and step 2);
@@ -1098,9 +1120,9 @@ Next, one step per approval, each stopped with a file-by-file summary, the check
 notebooks' md5 and the commit message in a copyable code block:
 1. **PR 5b's merge:** done (#24, `39dd1aa`).
 2. **PR 6, the split** (`refactor/two-notebooks` from `main`; the cache plan's §5): 6.1 the
-   shared setup's design (done 2026-11-08: D41, duplication), 6.2 `02_objective_eda.py`, 6.3
-   `03_hyperparameter_tuning.py` (with the test pinning the two copies equal); F3 and F4 (§5)
-   there.
+   shared setup's design (done 2026-11-08: D41, duplication), 6.2 `02_objective_eda.py` (done
+   2026-11-08, with F3's test), 6.3 `03_hyperparameter_tuning.py` (with the test pinning the
+   two copies equal); F4 (§5) there.
 3. **PR 7, the tuning notebook's evaluation:** 7.0 first (D40: Model 2 by the joint method,
    16 studies), then 5.4 (the paired difference from `best_replicate_scores`,
    `total_times_probability − independent_cohorts` per replicate; its forest plot with

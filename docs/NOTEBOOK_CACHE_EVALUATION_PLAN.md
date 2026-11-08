@@ -14,7 +14,9 @@ as #21 (`0c94f16` on `main`); PR 4's branch `feat/study-cache` created from it. 
 `78b08bd7936dba06d65f18bd52da5cbb`. 4.2 done (the tuner's journal storage: a partial study
 started fresh, the seconds the study's run). **Updated 2026-11-06 (paused):** 4.3 implemented, uncommitted; its Check C was running, the clicks remain (the handoff's §2 "PR 4"); the notebook's md5 `3ac16ed8995efa3899a6b37746cc99d4`. **Updated 2026-11-06:** 4.3 done (§3): the user's renames kept, a stored study loaded without writing to its file (a fix in `src`), the two clicks; the notebook's md5 `91d1c96cdd227a137163cd072235c64a`. **Updated 2026-11-06:** PR 4 merged as #22 (`30bd4f7` on `main`); PR 5's branch `feat/bootstrap-replicates` created from it; 5.1 planned and approved. **Updated 2026-11-06:** 5.1 done (§4, the rename); the notebook's md5 `6edc34aa4cc93d05fcf34b106515dd9c`. **Updated 2026-11-06:** 5.1 committed (`571f721`); 5.2 done and committed (`4cfe502`) (§4: the evaluator returns its replicates; two resampling designs kept, the user's answer); the notebook's md5 `d4a361a5535aaefd89b9dccd4f99e282` (with the user's `median` and `sd`). **Updated 2026-11-07:** 5.3 planned, not implemented (§4): the `n_resamples` measurement done (1000 kept); the user changed the plan (each model's best run chosen by one configurable selection metric on validation, only the two best bootstrapped, one forest-plot function); the plan awaits approval in the next session; 5.4 re-scoped. **Updated 2026-11-07:** 5.3 done as planned (§4): `selection_metric` (RMSE by default), the runs' point scores, the two best bootstrapped, `forest_figure`; the notebook's md5 `9a66a347ed3fc928f14a43bde04da1b9`. **Updated 2026-11-07:** at the user's review, the best runs' table renamed `best_runs_val_scores_df` with `model`, `family`, `use_exposure`; the forest plots to be fixed later; PR 5 closes at 5.3, then PR 5b (the EDA: `build_trials_table`, the joint Model 2 method), PR 6 (the split), PR 7 (5.4, SHAP per cohort, the test evaluation). **Updated 2026-11-07:** PR 5 merged as #23 (`c3bdee8` on `main`, identical to `8a90bf9`); PR 5b planned (§4b) on `feat/model2-tuning-methods`. **Updated 2026-11-07:** 5b.1 done (§4b, the rename); the notebook's md5 `e0f2ba6c32ead22ebee081a4f0a27e3f`. **Updated 2026-11-07:** 5b.1 committed (`82ccac2`); 5b.2 done (§4b, the joint method in the EDA); the notebook's md5 `6731d509d2b5298e4d38a99480f700dc`. **Updated 2026-11-07:** 5b.2 committed (`0b25ede`); 5b.3 done (§4b, the reading at 100 trials): D40, section 6 switches Model 2 to the joint method in PR 7 (7.0). **Updated 2026-11-07:** 5b.3 committed (`537ff7c`); PR 5b closed (the suite 1393 passed, mypy 28 files, Check A, B). **Updated 2026-11-07:** PR 5b merged as #24 (`39dd1aa` on `main`); PR 6's branch `refactor/two-notebooks` created from it. **Updated 2026-11-08:** 6.1 done (§5,
 docs only): the three options probed; the user chose duplication (D41); the notebook's md5
-unchanged, `6731d509d2b5298e4d38a99480f700dc`. **Next: 6.2 (§5).**
+unchanged, `6731d509d2b5298e4d38a99480f700dc`. **Updated 2026-11-08:** 6.1 committed
+(`4568a5d`); 6.2 done (§5): `02_objective_eda.py` (md5 `b40ff544e17101aeee27f7fec1215010`) and
+its test; `02_experiments.py` unchanged. **Next: 6.3 (§5).**
 
 The companion docs: [EXPERIMENT_NOTEBOOK_HANDOFF.md](EXPERIMENT_NOTEBOOK_HANDOFF.md) (the state,
 how to work, the checks, the traps, iCloud), [NOTEBOOK_METRICS_LOOP_EDA_PLAN.md](NOTEBOOK_METRICS_LOOP_EDA_PLAN.md)
@@ -851,7 +853,7 @@ before the split (PR 6), and the tuning's (5.4 and the rest) after it (PR 7).
       `"off"` by default; the kernel puts the notebook's directory on `sys.path`.
 - **Commit:** `docs(notebook): the notebooks' setup duplicated, the EDA its described copy (D41)`
 
-### [ ] 6.2 `02_objective_eda.py`
+### [x] 6.2 `02_objective_eda.py`
 - **Change:** sections 1–5 with their text as it is (D41: the setup's described copy); the
   EDA's button, runs, tables and figures;
   the notebook test split: `test_objective_eda_notebook.py` (the printed settings, the tuning
@@ -859,6 +861,49 @@ before the split (PR 6), and the tuning's (5.4 and the rest) after it (PR 7).
 - **Checks:** Check A per notebook; Check B; Check C's EDA assertions on the new file equal the
   reference's EDA frames exactly.
 - **Commit:** `refactor(notebook): the objective EDA in its own notebook`
+- **Planned 2026-11-08, the user's answers:**
+  - the EDA copy drops the names only section 6 reads;
+  - the stale text is fixed in all three places;
+  - the test copies its helpers.
+
+  `docs/README.md` moves to 6.3 (its line is about the tuning).
+- **Done (2026-11-08):**
+  - **`notebooks/02_objective_eda.py`:** lines 1–1779 of `02_experiments.py` (33 cells, up to
+    section 6's markdown) and the footer, then these edits:
+    - the title `… : the objective EDA`;
+    - section 2's settings, the 7 the EDA reads (`selection_metric`, `n_resamples`, `alpha`,
+      `n_repeats`, `n_shap_rows`, `n_shap_background` dropped) and its text (every study
+      `seed`, no bootstrap);
+    - section 4's text without the gone check;
+    - the imports without `BootstrapEvaluator`, `PermutationImportance`, `ShapExplainer`;
+    - the metrics cell without `SELECTION_METRIC`, its comments the EDA's;
+    - "section 6" the tuning notebook in section 5's text and three comments;
+    - coordinate descent's sentence D40's;
+    - at the user's review, `build_trials_table`'s `rows` renamed `trial_records` (one dict per
+      trial); every check rerun, the same results.
+
+    md5 `b40ff544e17101aeee27f7fec1215010`; `02_experiments.py` unchanged.
+  - **`tests/characterization/test_objective_eda_notebook.py`:** 7 tests: the printed lines (7
+    settings), the override, the split, the seed override, the tuning-cell guard, the study's
+    name, and F3 (`build_trials_table` on an in-memory 3-trial study drawn by
+    `suggest_total_times_probability_components`, the third failed: the ids, the states, the
+    metrics, NaN for the failed one, each transformer's name from its param, the hyperparameters
+    by `dataclasses.asdict` with the calibration).
+  - **`README.md`:** three places name the EDA notebook.
+  - **The handoff:** §1, §5's F3, §6 and the status.
+- **Checks:**
+  - the two notebook tests 21 passed (7 + 14);
+  - ruff on the EDA notebook 11 findings (9 PLR1711, a B018, a RUF059: the same as these cells
+    have in `02_experiments.py`, which keeps its 15), the test file clean;
+  - `ruff format --diff` only the user's two hunks (`@@ -158`, `@@ -208`), the test file none;
+  - `marimo check` no issue;
+  - Check B (`check_b_eda.py`): the EDA's names, no section-6 name, nothing fitted;
+  - Check C (`make_copy_eda.py`, `check_c_eda.py`; 24 s): every EDA assertion (the six
+    `cv_best`, Model 2's recomputation, 3.1i–3.1l, 5b.2's joint `cv_best` 1.0833 / 2.1543 /
+    4.4258), the EDA frames equal 3.1l's and, with `compare.py`, `check_c_5b_2.pkl`'s exactly;
+    the 9 + 18 figures' JSON identical to 5b.2's; the pickle `check_c_6_2.pkl`;
+  - F3's two mutations (the calibration branch skipped, the identity lookup inverted) each
+    caught; the unmutated copy passes.
 
 ### [ ] 6.3 `03_hyperparameter_tuning.py`
 - **Change:** sections 1–4 and the five shared section-5 cells (D41: the same code under short
