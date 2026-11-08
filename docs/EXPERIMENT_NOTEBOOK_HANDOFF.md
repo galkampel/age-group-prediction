@@ -1,4 +1,16 @@
-# Handoff: the experiment notebooks, PR 6 (two notebooks) closed; PR 7 (7.0) next
+# Handoff: the experiment notebooks, PR 6 merged (#25); PR 7 (7.0) next
+
+**Status (2026-11-08, PR 6 merged; PR 7 not started; the next session starts at §6):**
+- **PR 6 is merged** as #25, squashed into `main` as `f9c92a5` (identical to `e2cab60`, the
+  close's docs commit); `refactor/two-notebooks` deleted locally and on GitHub.
+- **PR 7 is on `feat/test-evaluation`** (from `main` at `f9c92a5`); its first commit is this
+  update. Its plan is the cache plan's §6, from 7.0 (D40, D42, F4).
+- The notebooks' md5 are unchanged since the close: `02_objective_eda.py`
+  `3db331d12e6c994d5df0cf3ef34dc6b8`, `03_hyperparameter_tuning.py`
+  `1f86f7da2c906cb83e807ad42a051303`. The user's cache `studies/` holds 28 studies.
+- Check C's references are `check_c_6_2.pkl` (the EDA, with its two figures' JSON) and
+  `check_c_6_3.pkl` (the tuning), in the scratchpad named in the status below (copy from it
+  first; §4's "Since PR 6").
 
 **Status (2026-11-08, PR 6 closed, before the user's commit; the next session starts at §6):**
 - **6.3 is committed** (`abd8960`, with the user's edits: §2's "PR 6"). **The close:**
@@ -402,7 +414,7 @@ which the two notebooks now hold: 1–5 in the EDA, 1–4 and 6 (as 5) in the tu
 
 ## 2. State
 
-### PR 6 (2026-11-08, closed: awaits the user's PR and merge; `refactor/two-notebooks`)
+### PR 6 (2026-11-08, closed: merged as #25, `f9c92a5`; `refactor/two-notebooks`)
 
 - **Commits** (from `main` at `39dd1aa`):
 
@@ -413,7 +425,10 @@ which the two notebooks now hold: 1–5 in the EDA, 1–4 and 6 (as 5) in the tu
   | `20557f8` | 6.2 `02_objective_eda.py` and its test (F3) |
   | `4344071` | D42 recorded: RMSE to tune and select, with 7.0 |
   | `abd8960` | 6.3 `03_hyperparameter_tuning.py`, the equality test; `02_experiments.py` removed |
-  | (the user's) | PR 6 closed: the tuning section's summary; this handoff for PR 7 |
+  | `e2cab60` | PR 6 closed: the tuning section's summary; this handoff for PR 7 |
+
+  The merge: #25, squashed into `main` as `f9c92a5`, identical to `e2cab60`; the branch
+  deleted locally and on GitHub (`git branch -D`: `-d` refuses a squash-merged branch).
 
 - **The notebooks:** `notebooks/02_objective_eda.py` (sections 1–5) and
   `notebooks/03_hyperparameter_tuning.py` (sections 1–4 and the tuning as 5). The user's edits:
@@ -1219,10 +1234,9 @@ constructor, data in the call; fitting and evaluating as separate steps; no priv
 
 ## 6. Next, and the prompt
 
-**Status (2026-11-08, PR 6 closed; PR 7 not started):**
-- PR 6 (`refactor/two-notebooks`) is closed: §2's "PR 6" block; the user opens and merges it.
-  The next branch (PR 7, `feat/test-evaluation` from `main` after the merge) starts with a docs
-  commit recording the merge.
+**Status (2026-11-08, PR 6 merged; PR 7 not started):**
+- PR 6 is merged as #25 (`f9c92a5` on `main`, identical to `e2cab60`); its branch is deleted.
+  PR 7 is on `feat/test-evaluation` from `main` at `f9c92a5`; its first commit is this update.
 - The notebooks' md5:
   - `01_eda.py` `4bc1ba3a52dc2ad55d0097a707bd1ccc`;
   - `02_objective_eda.py` `3db331d12e6c994d5df0cf3ef34dc6b8`;
@@ -1233,7 +1247,7 @@ constructor, data in the call; fitting and evaluating as separate steps; no priv
 
 Next, one step per approval, each stopped with a file-by-file summary, the checks, the
 notebooks' md5 and the commit message in a copyable code block:
-1. **PR 6's merge** (the user's).
+1. **PR 6's merge:** done (#25, `f9c92a5`).
 2. **PR 7, the tuning notebook's evaluation** (the cache plan's §6):
    - **7.0 first** (planned with the user), in the tuning notebook:
      - D40: Model 2 by the joint method, 16 studies, replacing the three coordinate-descent
@@ -1271,7 +1285,7 @@ then notebooks/03_hyperparameter_tuning.py (the shared cells and section 5: Mode
 coordinate-descent cells, the pairs, the records and tables, the best runs) and the EDA's joint
 run in notebooks/02_objective_eda.py, and both characterization tests.
 Verify the state first:
-- PR 6 merged into main; the branch feat/test-evaluation from main (create it if I have not);
+- the branch feat/test-evaluation; HEAD my docs commit of PR 6's merge on f9c92a5 (#25);
 - `git status` clean; the notebooks' md5 (`cat <file> | md5`): 02_objective_eda.py
   3db331d12e6c994d5df0cf3ef34dc6b8, 03_hyperparameter_tuning.py 1f86f7da2c906cb83e807ad42a051303;
 - no iCloud-offloaded files: `find .git src notebooks tests docs configs -flags +dataless -type f
@@ -1279,11 +1293,10 @@ Verify the state first:
 If anything differs, stop and show me the diff. Then copy the check scripts (checks/) and the
 pickles check_c_6_2.pkl with its two figures' JSON, check_c_6_3.pkl, check_c_5_2b.pkl,
 check_c_3_1l.pkl and check_c_3_4_first.pkl from the scratchpad the handoff names (or rewrite them
-from §4). Record PR 6's merge in the handoff as the branch's first commit. In plan mode, plan 7.0
-(D40, D42, F4): the run settings' order and seeds, the records' fields, objective_metric in both
-notebooks, the tests' pins, Check C's new baselines; show the design questions with evidence and
-a recommendation, the steps and the commit message in the chat, and implement after my
-approval. Keep the implementation simple. Stop each sub-task with a file-by-file summary, the
+from §4). In plan mode, plan 7.0 (D40, D42, F4): the run settings' order and seeds, the records'
+fields, objective_metric in both notebooks, the tests' pins, Check C's new baselines; show the
+design questions with evidence and a recommendation, the steps and the commit message in the
+chat, and implement after my approval. Keep the implementation simple. Stop each sub-task with a file-by-file summary, the
 checks, the notebooks' md5 and the commit message in a copyable code block. I commit myself:
 never commit, no Co-Authored-By line, no "Generated with Claude Code" in PR text, never git
 checkout/stash/reset/mv.
