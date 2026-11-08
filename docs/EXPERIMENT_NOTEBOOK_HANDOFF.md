@@ -1,4 +1,24 @@
-# Handoff: the experiment notebook, PR 5b merged (#24); PR 6 (two notebooks) next
+# Handoff: the experiment notebooks, PR 6 (two notebooks) closed; PR 7 (7.0) next
+
+**Status (2026-11-08, PR 6 closed, before the user's commit; the next session starts at §6):**
+- **6.3 is committed** (`abd8960`, with the user's edits: §2's "PR 6"). **The close:**
+  - one paragraph under the tuning's header in `03_hyperparameter_tuning.py` (md5
+    `1f86f7da2c906cb83e807ad42a051303`);
+  - Check C's tuning copy restores the two trimmed returns;
+  - this handoff rewritten for PR 7.
+- **The closing checks:**
+  - the non-slow suite 1401 passed, 1 skipped, 1 xfailed, 19 deselected; mypy 28 files, no
+    issue;
+  - Check A: the notebook tests (7 + 15); ruff `03` 12, the EDA 12, `01_eda.py` 32, none new;
+    the user's two format hunks; `marimo check` clean but `01_eda.py`'s old empty cell;
+  - Check B on both notebooks;
+  - Check C on both, every frame, record and figure equal to `check_c_6_2.pkl` and
+    `check_c_6_3.pkl` (20 s and 87 s).
+- **The scripts and pickles to copy first:**
+  `/private/tmp/claude-501/-Users-galkampel-Desktop-Projects-age-group-prediction/6c6919cb-4d41-4a79-be82-0aa948ff29be/scratchpad`.
+  It holds `checks/` (§4's "Since PR 6", `run_close_6.sh`) and the pickles `check_c_6_2.pkl`
+  with its two figures' JSON, `check_c_6_3.pkl`, `check_c_5_2b.pkl`, `check_c_3_1l.pkl`,
+  `check_c_3_4_first.pkl`.
 
 **Status (2026-11-08, 6.3 done, before the user's commit; next PR 6's close):**
 - **D42's docs are committed** (`4344071`). **6.3 is done as planned** (the cache plan's 6.3
@@ -237,7 +257,11 @@ the tuning-cell guard, the study's name, `build_trials_table` on an in-memory st
 - the five section-5 cells section 6 reads (the imports, the metrics without
   `EDA_OBJECTIVES`, `COHORTS`, the `tuner` with `build_study_name`, the fixed classifier),
   placed after the tuning's markdown;
-- section 6 below, numbered **5** ("section 5" in its text and comments now the objective EDA).
+- section 6 below, numbered **5** ("section 5" in its comments now the objective EDA). Its
+  markdown is one paragraph since PR 6's close (the user removed the long description in
+  `abd8960`): the studies, the best-run rule, the bootstrap, the inspection. marimo's trim left
+  `best_replicate_scores` and `best_forest_figure` unexported (5.4's reader will export the
+  first again).
 
 Its test is `tests/characterization/test_hyperparameter_tuning_notebook.py` (the old test's 14
 and `test_the_two_notebooks_share_one_setup`: the data, the settings, the parts, the folds, the
@@ -377,6 +401,31 @@ which the two notebooks now hold: 1–5 in the EDA, 1–4 and 6 (as 5) in the tu
   MLflow is not used yet; the old `tracking/` package belongs to the old stack.
 
 ## 2. State
+
+### PR 6 (2026-11-08, closed: awaits the user's PR and merge; `refactor/two-notebooks`)
+
+- **Commits** (from `main` at `39dd1aa`):
+
+  | commit | sub-task |
+  |---|---|
+  | `67a12f4` | the handoff after PR #24's merge (the branch's first commit) |
+  | `4568a5d` | 6.1 the shared setup's design: duplicated (D41) |
+  | `20557f8` | 6.2 `02_objective_eda.py` and its test (F3) |
+  | `4344071` | D42 recorded: RMSE to tune and select, with 7.0 |
+  | `abd8960` | 6.3 `03_hyperparameter_tuning.py`, the equality test; `02_experiments.py` removed |
+  | (the user's) | PR 6 closed: the tuning section's summary; this handoff for PR 7 |
+
+- **The notebooks:** `notebooks/02_objective_eda.py` (sections 1–5) and
+  `notebooks/03_hyperparameter_tuning.py` (sections 1–4 and the tuning as 5). The user's edits:
+  - in 6.2, `rows` renamed `trial_records` and a cell showing `eda_best_df` sorted by objective;
+  - in `abd8960`, the tuning section's long description removed (the close adds one paragraph)
+    and marimo's trim of two returns (`best_replicate_scores`, `best_forest_figure`; Check C's
+    copy restores them).
+- **The decisions:** D41 (the setup duplicated; the EDA its described copy; a test pins the two
+  equal) and D42 (RMSE tunes and selects through `objective_metric`, with 7.0). F3 is done (a
+  test of `build_trials_table`); F4 moved to 7.0.
+- **The checks of each sub-task** are in the cache plan's 6.1–6.3 Done notes; the close's in the
+  status at the top.
 
 ### PR 5b (2026-11-07, closed: merged as #24, `39dd1aa`; `feat/model2-tuning-methods`)
 
@@ -936,6 +985,25 @@ md5, the commit message. Tick the sub-task and update the status lines.
   check_c_5_2b.pkl`. **The joint EDA's Check C values** (3 trials, log loss / deviance / RMSE):
   1.0833 / 2.1543 / 4.4258 (the log loss equals coordinate descent's: only the probabilities
   count).
+- **Since PR 6 (two notebooks), the checks run per notebook** (the scripts in the 2026-11-08
+  scratchpad named in the status at the top; copy from there first):
+  - **the objective EDA:**
+    - `make_copy_eda.py <notebook> <project>`: `n_trials = 3`, the two figure returns restored;
+    - `check_b_eda.py`;
+    - `check_c_eda.py <copy> <out.pkl> check_c_3_1l.pkl`: `check_c.py`'s EDA blocks; its pickle
+      holds the three EDA frames; the reference is `check_c_6_2.pkl` and its two figures' JSON
+      (`compare.py <new> <reference>`, `compare_figures.py <reference json> <new json>`);
+  - **the tuning:**
+    - `make_copy_tuning.py`: `n_trials = 3`, the 8 flags `False`, the two trimmed returns
+      restored;
+    - `check_b_tuning.py`;
+    - `check_c_tuning.py <copy> <out.pkl> check_c_3_1l.pkl check_c_3_4_first.pkl
+      check_c_5_2b.pkl`: the 24 baselines and the section-6 blocks; the reference is
+      `check_c_6_3.pkl` (`compare.py <new> <reference>`).
+  - **The scripts that run them:** `run_close_6.sh` (the suite, mypy, Check A–C on both),
+    `run_6_3.sh` (with the 100-trial click on the real cache, `run_click_tuning.py`, and the
+    cache's files compared before and after), `run_mutant_6_3.sh` (the equality test's mutation).
+  - Each copy is named after its notebook, with `configs` and `src` symlinked.
 - **The scripts of 5.3's session (2026-11-07, the latest copy;** copy from here first): the
   scratchpad named in the status at the top (`checks/` adapted to 5.3; `check_c_5_3.pkl` is
   5.4's reference).
@@ -1151,60 +1219,72 @@ constructor, data in the call; fitting and evaluating as separate steps; no priv
 
 ## 6. Next, and the prompt
 
-**Status (2026-11-07, PR 5b merged; PR 6 not started):**
-- PR 5b is merged as #24 (`39dd1aa` on `main`, identical to `58ed000`); its branch is deleted.
-  PR 6 is on `refactor/two-notebooks` from `main` at `39dd1aa`; its first commit is this
-  update. The notebook's md5 is `6731d509d2b5298e4d38a99480f700dc`.
-- Check C's reference for the next notebook change is `check_c_5b_2.pkl` (with its figures'
-  JSON), in the scratchpad named in the status at the top; `check_c.py`'s fifth argument stays
-  `check_c_5_2b.pkl`. If they are gone, rewrite the scripts from §4 and run Check C on HEAD
-  before the first edit, keeping that pickle.
+**Status (2026-11-08, PR 6 closed; PR 7 not started):**
+- PR 6 (`refactor/two-notebooks`) is closed: §2's "PR 6" block; the user opens and merges it.
+  The next branch (PR 7, `feat/test-evaluation` from `main` after the merge) starts with a docs
+  commit recording the merge.
+- The notebooks' md5:
+  - `01_eda.py` `4bc1ba3a52dc2ad55d0097a707bd1ccc`;
+  - `02_objective_eda.py` `3db331d12e6c994d5df0cf3ef34dc6b8`;
+  - `03_hyperparameter_tuning.py` `1f86f7da2c906cb83e807ad42a051303`.
+- Check C's references (§4, "Since PR 6"): `check_c_6_2.pkl` (the EDA) and `check_c_6_3.pkl`
+  (the tuning), in the scratchpad named in the status at the top. If they are gone, rewrite the
+  scripts from §4 and run Check C on HEAD before the first edit, keeping those pickles.
 
 Next, one step per approval, each stopped with a file-by-file summary, the checks, the
 notebooks' md5 and the commit message in a copyable code block:
-1. **PR 5b's merge:** done (#24, `39dd1aa`).
-2. **PR 6, the split** (`refactor/two-notebooks` from `main`; the cache plan's §5): 6.1 the
-   shared setup's design (done 2026-11-08: D41, duplication), 6.2 `02_objective_eda.py` (done
-   2026-11-08, with F3's test), 6.3 `03_hyperparameter_tuning.py` (done 2026-11-08, with the
-   test pinning the two copies equal); F4 moved to 7.0.
-3. **PR 7, the tuning notebook's evaluation:** 7.0 first (D40: Model 2 by the joint method,
-   16 studies; D42: the objective RMSE, the setting `objective_metric`), then 5.4 (the paired difference from `best_replicate_scores`,
-   `total_times_probability − independent_cohorts` per replicate; its forest plot with
-   `rule_at=0`; the importance on `SELECTION_METRIC`), the forest plots' layout fixed (§5),
-   then SHAP per cohort and the test evaluation. MLflow and D4 stay deferred.
+1. **PR 6's merge** (the user's).
+2. **PR 7, the tuning notebook's evaluation** (the cache plan's §6):
+   - **7.0 first** (planned with the user), in the tuning notebook:
+     - D40: Model 2 by the joint method, 16 studies, replacing the three coordinate-descent
+       cells;
+     - D42: the objective RMSE through the setting `objective_metric`;
+     - F4: one transformer-name lookup and one hyperparameter read;
+     - both notebooks under D41, the tests' pins, Check C's new baselines, the first click
+       retuning the tuning's studies.
+   - **Then 5.4:** the paired difference from `best_replicate_scores`
+     (`total_times_probability − independent_cohorts` per replicate), its forest plot with
+     `rule_at=0`, and the importance on `SELECTION_METRIC`.
+   - **Then** the forest plots' layout fixed (§5), SHAP per cohort, and the test evaluation.
+
+   MLflow and D4 stay deferred.
 
 The user's preferences:
 - plan docs in `docs/`, split into sub-tasks validated one at a time;
 - each sub-task planned first (the facts re-verified with read-only probes; design questions
   with evidence and a recommendation, their context explained in the chat before asking), then
   implemented after approval;
-- each sub-task stopped with a file-by-file summary, the checks, the notebook's md5 and the
+- each sub-task stopped with a file-by-file summary, the checks, the notebooks' md5 and the
   commit message in a copyable code block;
 - marimo's UI terms explained;
 - the implementation kept simple, with meaningful names;
-- the user commits.
+- the user commits; marimo's editor may trim returns when the user saves (check the md5 and
+  show the diff before each sub-task).
 
 **The prompt for the next session:**
 
 ```text
-Read docs/EXPERIMENT_NOTEBOOK_HANDOFF.md in full (the status at the top, §2's "PR 5b" block,
-§3, §4's checks, traps, iCloud notes and the latest scripts, §5, §6 first), then
-docs/NOTEBOOK_CACHE_EVALUATION_PLAN.md (§0 D37 and D40, §5 PR 6 in full, §6's 7.0), then the
-notebook's sections 1–4 (the data, the settings, the split, the feature declarations) and the
-names sections 5 and 6 read from them, and tests/characterization/test_experiments_notebook.py.
+Read docs/EXPERIMENT_NOTEBOOK_HANDOFF.md in full (the status at the top, §2's "PR 6" block,
+§3 (D40-D42), §4's checks (since PR 6, per notebook), traps, iCloud notes, §5, §6 first), then
+docs/NOTEBOOK_CACHE_EVALUATION_PLAN.md (§0 D32, D40, D42; §6 in full, 7.0 first, and 5.4 in §4),
+then notebooks/03_hyperparameter_tuning.py (the shared cells and section 5: Model 2's three
+coordinate-descent cells, the pairs, the records and tables, the best runs) and the EDA's joint
+run in notebooks/02_objective_eda.py, and both characterization tests.
 Verify the state first:
-- the branch refactor/two-notebooks; HEAD my docs commit of PR 5b's merge on 39dd1aa (#24);
-- `git status` clean; the notebook's md5 6731d509d2b5298e4d38a99480f700dc via
-  `cat notebooks/02_experiments.py | md5`;
+- PR 6 merged into main; the branch feat/test-evaluation from main (create it if I have not);
+- `git status` clean; the notebooks' md5 (`cat <file> | md5`): 02_objective_eda.py
+  3db331d12e6c994d5df0cf3ef34dc6b8, 03_hyperparameter_tuning.py 1f86f7da2c906cb83e807ad42a051303;
 - no iCloud-offloaded files: `find .git src notebooks tests docs configs -flags +dataless -type f
   | grep -vc __pycache__` is 0.
-If anything differs, stop and show me the diff. Then copy the check scripts (checks/),
-check_c_5b_2.pkl with its figures' JSON, check_c_5_2b.pkl, check_c_3_1l.pkl and
-check_c_3_4_first.pkl from the scratchpad the handoff names (or rewrite them from §4). In plan
-mode, plan 6.1 (the shared setup's design): probe the three options with evidence, show them with
+If anything differs, stop and show me the diff. Then copy the check scripts (checks/) and the
+pickles check_c_6_2.pkl with its two figures' JSON, check_c_6_3.pkl, check_c_5_2b.pkl,
+check_c_3_1l.pkl and check_c_3_4_first.pkl from the scratchpad the handoff names (or rewrite them
+from §4). Record PR 6's merge in the handoff as the branch's first commit. In plan mode, plan 7.0
+(D40, D42, F4): the run settings' order and seeds, the records' fields, objective_metric in both
+notebooks, the tests' pins, Check C's new baselines; show the design questions with evidence and
 a recommendation, the steps and the commit message in the chat, and implement after my
-approval. Then 6.2 and 6.3, one sub-task per approval. Keep the implementation simple. Stop each
-sub-task with a file-by-file summary, the checks, the notebooks' md5 and the commit message in a
-copyable code block. I commit myself: never commit, no Co-Authored-By line, no "Generated with
-Claude Code" in PR text, never git checkout/stash/reset/mv.
+approval. Keep the implementation simple. Stop each sub-task with a file-by-file summary, the
+checks, the notebooks' md5 and the commit message in a copyable code block. I commit myself:
+never commit, no Co-Authored-By line, no "Generated with Claude Code" in PR text, never git
+checkout/stash/reset/mv.
 ```

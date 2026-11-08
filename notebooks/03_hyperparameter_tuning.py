@@ -622,6 +622,14 @@ def _(
 def _(mo):
     mo.md(r"""
     ## 5) Hyperparameter tuning
+
+    One Optuna study per model family and exposure, on the composite's
+    cross-validated Poisson deviance (the total times probability model by
+    coordinate descent until PR 7). Each run's best model is refit on the
+    training part and scored on validation; each model's best run is the
+    lowest validation score by `selection_metric`, bootstrapped over whole
+    neighborhoods and inspected behind its button. The objective EDA
+    (`02_objective_eda.py`) describes the studies' storage and their trials.
     """)
     return
 
