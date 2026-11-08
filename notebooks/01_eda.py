@@ -31,7 +31,7 @@ def _(mo):
 
     The accepted findings from this notebook feed the modeling, selection,
     guarded held-out evaluation, and MLflow workflow in
-    `notebooks/02_experiments.py`.
+    `notebooks/02_objective_eda.py` and `notebooks/03_hyperparameter_tuning.py`.
     """)
     return
 

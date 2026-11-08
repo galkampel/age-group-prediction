@@ -12,7 +12,15 @@ left for PR 6. The notebook's md5 is `95261326e5368bd451607d083a5ab366`. PR 3 cl
 as #21 (`0c94f16` on `main`); PR 4's branch `feat/study-cache` created from it. **Updated
 2026-11-06:** 4.1 done (§3, the budget 100 / 10); the notebook's md5 is
 `78b08bd7936dba06d65f18bd52da5cbb`. 4.2 done (the tuner's journal storage: a partial study
-started fresh, the seconds the study's run). **Updated 2026-11-06 (paused):** 4.3 implemented, uncommitted; its Check C was running, the clicks remain (the handoff's §2 "PR 4"); the notebook's md5 `3ac16ed8995efa3899a6b37746cc99d4`. **Updated 2026-11-06:** 4.3 done (§3): the user's renames kept, a stored study loaded without writing to its file (a fix in `src`), the two clicks; the notebook's md5 `91d1c96cdd227a137163cd072235c64a`. **Updated 2026-11-06:** PR 4 merged as #22 (`30bd4f7` on `main`); PR 5's branch `feat/bootstrap-replicates` created from it; 5.1 planned and approved. **Updated 2026-11-06:** 5.1 done (§4, the rename); the notebook's md5 `6edc34aa4cc93d05fcf34b106515dd9c`. **Updated 2026-11-06:** 5.1 committed (`571f721`); 5.2 done and committed (`4cfe502`) (§4: the evaluator returns its replicates; two resampling designs kept, the user's answer); the notebook's md5 `d4a361a5535aaefd89b9dccd4f99e282` (with the user's `median` and `sd`). **Updated 2026-11-07:** 5.3 planned, not implemented (§4): the `n_resamples` measurement done (1000 kept); the user changed the plan (each model's best run chosen by one configurable selection metric on validation, only the two best bootstrapped, one forest-plot function); the plan awaits approval in the next session; 5.4 re-scoped. **Updated 2026-11-07:** 5.3 done as planned (§4): `selection_metric` (RMSE by default), the runs' point scores, the two best bootstrapped, `forest_figure`; the notebook's md5 `9a66a347ed3fc928f14a43bde04da1b9`. **Updated 2026-11-07:** at the user's review, the best runs' table renamed `best_runs_val_scores_df` with `model`, `family`, `use_exposure`; the forest plots to be fixed later; PR 5 closes at 5.3, then PR 5b (the EDA: `build_trials_table`, the joint Model 2 method), PR 6 (the split), PR 7 (5.4, SHAP per cohort, the test evaluation). **Updated 2026-11-07:** PR 5 merged as #23 (`c3bdee8` on `main`, identical to `8a90bf9`); PR 5b planned (§4b) on `feat/model2-tuning-methods`. **Updated 2026-11-07:** 5b.1 done (§4b, the rename); the notebook's md5 `e0f2ba6c32ead22ebee081a4f0a27e3f`. **Updated 2026-11-07:** 5b.1 committed (`82ccac2`); 5b.2 done (§4b, the joint method in the EDA); the notebook's md5 `6731d509d2b5298e4d38a99480f700dc`. **Updated 2026-11-07:** 5b.2 committed (`0b25ede`); 5b.3 done (§4b, the reading at 100 trials): D40, section 6 switches Model 2 to the joint method in PR 7 (7.0). **Updated 2026-11-07:** 5b.3 committed (`537ff7c`); PR 5b closed (the suite 1393 passed, mypy 28 files, Check A, B), to be merged. **Next: PR 6 (§5), from 6.1.**
+started fresh, the seconds the study's run). **Updated 2026-11-06 (paused):** 4.3 implemented, uncommitted; its Check C was running, the clicks remain (the handoff's §2 "PR 4"); the notebook's md5 `3ac16ed8995efa3899a6b37746cc99d4`. **Updated 2026-11-06:** 4.3 done (§3): the user's renames kept, a stored study loaded without writing to its file (a fix in `src`), the two clicks; the notebook's md5 `91d1c96cdd227a137163cd072235c64a`. **Updated 2026-11-06:** PR 4 merged as #22 (`30bd4f7` on `main`); PR 5's branch `feat/bootstrap-replicates` created from it; 5.1 planned and approved. **Updated 2026-11-06:** 5.1 done (§4, the rename); the notebook's md5 `6edc34aa4cc93d05fcf34b106515dd9c`. **Updated 2026-11-06:** 5.1 committed (`571f721`); 5.2 done and committed (`4cfe502`) (§4: the evaluator returns its replicates; two resampling designs kept, the user's answer); the notebook's md5 `d4a361a5535aaefd89b9dccd4f99e282` (with the user's `median` and `sd`). **Updated 2026-11-07:** 5.3 planned, not implemented (§4): the `n_resamples` measurement done (1000 kept); the user changed the plan (each model's best run chosen by one configurable selection metric on validation, only the two best bootstrapped, one forest-plot function); the plan awaits approval in the next session; 5.4 re-scoped. **Updated 2026-11-07:** 5.3 done as planned (§4): `selection_metric` (RMSE by default), the runs' point scores, the two best bootstrapped, `forest_figure`; the notebook's md5 `9a66a347ed3fc928f14a43bde04da1b9`. **Updated 2026-11-07:** at the user's review, the best runs' table renamed `best_runs_val_scores_df` with `model`, `family`, `use_exposure`; the forest plots to be fixed later; PR 5 closes at 5.3, then PR 5b (the EDA: `build_trials_table`, the joint Model 2 method), PR 6 (the split), PR 7 (5.4, SHAP per cohort, the test evaluation). **Updated 2026-11-07:** PR 5 merged as #23 (`c3bdee8` on `main`, identical to `8a90bf9`); PR 5b planned (§4b) on `feat/model2-tuning-methods`. **Updated 2026-11-07:** 5b.1 done (§4b, the rename); the notebook's md5 `e0f2ba6c32ead22ebee081a4f0a27e3f`. **Updated 2026-11-07:** 5b.1 committed (`82ccac2`); 5b.2 done (§4b, the joint method in the EDA); the notebook's md5 `6731d509d2b5298e4d38a99480f700dc`. **Updated 2026-11-07:** 5b.2 committed (`0b25ede`); 5b.3 done (§4b, the reading at 100 trials): D40, section 6 switches Model 2 to the joint method in PR 7 (7.0). **Updated 2026-11-07:** 5b.3 committed (`537ff7c`); PR 5b closed (the suite 1393 passed, mypy 28 files, Check A, B). **Updated 2026-11-07:** PR 5b merged as #24 (`39dd1aa` on `main`); PR 6's branch `refactor/two-notebooks` created from it. **Updated 2026-11-08:** 6.1 done (§5,
+docs only): the three options probed; the user chose duplication (D41); the notebook's md5
+unchanged, `6731d509d2b5298e4d38a99480f700dc`. **Updated 2026-11-08:** 6.1 committed
+(`4568a5d`); 6.2 done (§5): `02_objective_eda.py` (md5 `b40ff544e17101aeee27f7fec1215010`) and
+its test; `02_experiments.py` unchanged. **Updated 2026-11-08:** 6.2 committed (`20557f8`);
+D42 recorded (§0: RMSE tunes and selects, a setting, with 7.0). **Updated 2026-11-08:** D42
+committed (`4344071`); 6.3 done (§5): `03_hyperparameter_tuning.py` (md5
+`2dbb80a38b13321bdc6c78bd5537d01f`), the equality test, `02_experiments.py` removed.
+6.3 committed (`abd8960`, with the user's edits); **PR 6 closed** (2026-11-08: the tuning section's summary; the non-slow suite 1401 passed, mypy 28 files, Check A–C on both notebooks equal to 6.2's and 6.3's runs; `03`'s md5 `1f86f7da2c906cb83e807ad42a051303`). **Next: PR 7 from 7.0 (§6).**
 
 The companion docs: [EXPERIMENT_NOTEBOOK_HANDOFF.md](EXPERIMENT_NOTEBOOK_HANDOFF.md) (the state,
 how to work, the checks, the traps, iCloud), [NOTEBOOK_METRICS_LOOP_EDA_PLAN.md](NOTEBOOK_METRICS_LOOP_EDA_PLAN.md)
@@ -106,6 +114,45 @@ merge, in this order (the user's choice): the `src` changes first (PRs 4, 5), th
   classifier families) instead of 10, half with the LightGBM classifier; the first click is
   roughly 20 min longer (an estimate from 2.3's 400-trial step times), then cached. Coordinate
   descent stays in the package and in the EDA as the comparison. Supersedes D32.
+- **D42. RMSE tunes and selects** (2026-11-08, the user's; implemented with 7.0). It supersedes
+  D34's objective half: the deviance stops being the tuner's objective, and RMSE stays the
+  selection and comparison metric. All six metrics stay recorded.
+  - **The evidence: the EDA cannot tell the two objectives apart.**
+    - At 400 trials (D34), the RMSE-tuned models trailed on validation and tied on cv.
+    - At 100 trials (5b.3's `eda_best_df`), the RMSE-tuned models tied on cv or were slightly
+      ahead on *both* metrics. Model 1: cv deviance 2.1373 against the deviance-tuned 2.1402,
+      cv RMSE 4.3828 against 4.3861. Model 2 by coordinate descent: 2.0602 against 2.0791,
+      4.2862 against 4.3256. This is univariate TPE's search noise (the handoff's §5).
+    - On validation the log-loss-tuned models were best on the deviance and on RMSE (Model 1
+      2.0721 / 4.4799; Model 2 by coordinate descent 2.0539 / 4.4523), although the log loss
+      gives the scale no signal. So a single-holdout difference of about 0.1 RMSE is noise; the
+      paired bootstrap's RMSE intervals span about ±0.12 (5b.3).
+  - **The principle given to the user:**
+    - squared error and the deviance are both strictly consistent for the mean;
+    - the deviance weights an error relative to the predicted mean (efficient under
+      Poisson-like variance, the count models' own likelihood);
+    - RMSE weights an error by its absolute size, so the large buildings dominate it;
+    - a weighted sum of the two has no principled weight;
+    - D² (deviance explained) was offered for interpretability.
+
+    The user chose RMSE for both.
+  - **The form:** a notebook setting `objective_metric` (`"rmse"` by default, `"poisson_deviance"`
+    the alternative), read by the metrics cell with an if/elif and a raising else (as
+    `selection_metric`) into `OBJECTIVE_METRIC`, which the tuner takes; the deviance path stays
+    valid and available.
+  - **When:** with 7.0. Under RMSE coordinate descent is not exact (the handoff's §2a), and 7.0
+    replaces it with the joint method (D40). Both retune section 6, so the first click's cost is
+    paid once. PR 6 stays a refactor.
+- **D41. The two notebooks duplicate their setup** (2026-11-08, the user's, after 6.1's probes).
+  Sections 1–4 and the five section-5 cells that section 6 also reads (the imports, the metrics,
+  `COHORTS`, the `tuner` with `build_study_name`, the fixed classifier) are copied into both
+  notebooks. They are not shared by a module (b) or by marimo's `@app.function` (c). The EDA
+  notebook is the setup's described copy: it keeps the text that explains the preprocessing. The
+  tuning notebook has the same code under short text that points to the EDA, and focuses on the
+  results. A characterization test pins the two copies equal (6.3): a stored study names its
+  transformers, and the cache's directory is keyed by the settings, not by the declarations, so
+  otherwise a drift would load a study tuned on the other copy, silently. The user's guidance:
+  keep it simple, with the setup explicit in at least one place. The probes are 6.1's Done note.
 - **D39. The test evaluation follows E11:** both models' best runs (by the comparison metric on
   validation) refit on train + validation, scored on the test part once, behind a button, in the
   tuning notebook; the test scores are reported, never used to choose.
@@ -800,7 +847,7 @@ before the split (PR 6), and the tuning's (5.4 and the rest) after it (PR 7).
 
 ## 5. PR 6: two notebooks (`refactor/two-notebooks`)
 
-### [ ] 6.1 The shared setup: the design
+### [x] 6.1 The shared setup: the design
 - **Question, probed with evidence before the edit:** sections 1–4 (lines 1–626: the data,
   the settings, the split, the 260-line feature declarations) in both notebooks as (a) a
   duplicate, (b) a plain module beside the notebooks (`notebooks/experiment_setup.py`:
@@ -815,27 +862,176 @@ before the split (PR 6), and the tuning's (5.4 and the rest) after it (PR 7).
 - **Done when:** the user has chosen; the chosen module or cells exist with the same outputs
   (the printed `data`, `experiment_settings`, `split` lines equal).
 - **Commit:** `refactor(notebook): the experiment's setup shared by the notebooks` (if b or c)
+- **Done (2026-11-08; docs only, the notebook's md5 unchanged):** the user chose (a), duplication
+  (D41). The probes are read-only, in the session's scratchpad `probes/`:
+  - `probe_sections.py` (marimo's cell graph):
+    - sections 0–4 are 633 file lines in 16 cells, the declarations' two cells 241 of them;
+    - section 6 also reads five section-5 cells, 194 lines, so both notebooks need them: 827
+      duplicated lines in all;
+    - section 5 reads from sections 1–4: `mo, pd, Y, config_hash, project_root`, 8 settings,
+      `cv, cv_groups, train_age_group, val_age_group` and the two `*_FEATURE_TRANSFORMERS`;
+    - section 6 reads: `mo, pd, AgeGroupDataset, alpha, n_repeats, n_resamples,
+      n_shap_background, n_shap_rows, seed, cv_groups, train_age_group, val_age_group` and the
+      two dicts;
+    - no later cell reads a single declaration.
+  - `build_options.py` and `run_options.sh` (prototypes of (b) and (c), each run four ways and its
+    declarations' `to_dict()` JSON compared with HEAD's):
+    - (b): equal in the script run and in the kernel (`marimo export html`); the test's importlib
+      run raised `ModuleNotFoundError` until the first cell also put `mo.notebook_dir()` on
+      `sys.path`, then equal;
+    - (c): `with app.setup:` and `@app.function`, equal in every run; the second notebook loads
+      the first's file with 6 lines of `importlib` (a leading digit blocks `import`);
+    - `marimo check` clean for both;
+    - marimo 0.24.0 (`uv.lock`) has `app.setup`, `app.function` and `app.embed`; `auto_reload` is
+      `"off"` by default; the kernel puts the notebook's directory on `sys.path`.
+- **Commit:** `docs(notebook): the notebooks' setup duplicated, the EDA its described copy (D41)`
 
-### [ ] 6.2 `02_objective_eda.py`
-- **Change:** sections 1–5 (and the shared setup); the EDA's button, runs, tables and figures;
+### [x] 6.2 `02_objective_eda.py`
+- **Change:** sections 1–5 with their text as it is (D41: the setup's described copy); the
+  EDA's button, runs, tables and figures;
   the notebook test split: `test_objective_eda_notebook.py` (the printed settings, the tuning
   cells behind `mo.stop`). `README.md`, `docs/README.md`, the handoff name the two notebooks.
 - **Checks:** Check A per notebook; Check B; Check C's EDA assertions on the new file equal the
   reference's EDA frames exactly.
 - **Commit:** `refactor(notebook): the objective EDA in its own notebook`
+- **Planned 2026-11-08, the user's answers:**
+  - the EDA copy drops the names only section 6 reads;
+  - the stale text is fixed in all three places;
+  - the test copies its helpers.
 
-### [ ] 6.3 `03_hyperparameter_tuning.py`
-- **Change:** sections 1–4 (shared), 6 (tuning, inspection, the comparison of 5.4); `02_experiments.py`
-  removed; the characterization test renamed/split; `SPLITTING.md`, `HYPERPARAMETER_TUNING.md`,
-  `MODEL_INSPECTION.md` references.
+  `docs/README.md` moves to 6.3 (its line is about the tuning).
+- **Done (2026-11-08):**
+  - **`notebooks/02_objective_eda.py`:** lines 1–1779 of `02_experiments.py` (33 cells, up to
+    section 6's markdown) and the footer, then these edits:
+    - the title `… : the objective EDA`;
+    - section 2's settings, the 7 the EDA reads (`selection_metric`, `n_resamples`, `alpha`,
+      `n_repeats`, `n_shap_rows`, `n_shap_background` dropped) and its text (every study
+      `seed`, no bootstrap);
+    - section 4's text without the gone check;
+    - the imports without `BootstrapEvaluator`, `PermutationImportance`, `ShapExplainer`;
+    - the metrics cell without `SELECTION_METRIC`, its comments the EDA's;
+    - "section 6" the tuning notebook in section 5's text and three comments;
+    - coordinate descent's sentence D40's;
+    - at the user's review, `build_trials_table`'s `rows` renamed `trial_records` (one dict per
+      trial); every check rerun, the same results.
+
+    md5 `b40ff544e17101aeee27f7fec1215010`; `02_experiments.py` unchanged.
+  - **`tests/characterization/test_objective_eda_notebook.py`:** 7 tests: the printed lines (7
+    settings), the override, the split, the seed override, the tuning-cell guard, the study's
+    name, and F3 (`build_trials_table` on an in-memory 3-trial study drawn by
+    `suggest_total_times_probability_components`, the third failed: the ids, the states, the
+    metrics, NaN for the failed one, each transformer's name from its param, the hyperparameters
+    by `dataclasses.asdict` with the calibration).
+  - **`README.md`:** three places name the EDA notebook.
+  - **The handoff:** §1, §5's F3, §6 and the status.
+- **Checks:**
+  - the two notebook tests 21 passed (7 + 14);
+  - ruff on the EDA notebook 11 findings (9 PLR1711, a B018, a RUF059: the same as these cells
+    have in `02_experiments.py`, which keeps its 15), the test file clean;
+  - `ruff format --diff` only the user's two hunks (`@@ -158`, `@@ -208`), the test file none;
+  - `marimo check` no issue;
+  - Check B (`check_b_eda.py`): the EDA's names, no section-6 name, nothing fitted;
+  - Check C (`make_copy_eda.py`, `check_c_eda.py`; 24 s): every EDA assertion (the six
+    `cv_best`, Model 2's recomputation, 3.1i–3.1l, 5b.2's joint `cv_best` 1.0833 / 2.1543 /
+    4.4258), the EDA frames equal 3.1l's and, with `compare.py`, `check_c_5b_2.pkl`'s exactly;
+    the 9 + 18 figures' JSON identical to 5b.2's; the pickle `check_c_6_2.pkl`;
+  - F3's two mutations (the calibration branch skipped, the identity lookup inverted) each
+    caught; the unmutated copy passes.
+
+### [x] 6.3 `03_hyperparameter_tuning.py`
+- **Change:** sections 1–4 and the five shared section-5 cells (D41: the same code under short
+  text pointing to the EDA notebook; the notebook focuses on the results), 6 (tuning,
+  inspection, the comparison of 5.4); `02_experiments.py` removed; the characterization test
+  renamed/split, with a test that pins the two notebooks' copies equal (the declarations'
+  `to_dict()`, the printed settings, `tuner.storage_dir`); `SPLITTING.md`,
+  `HYPERPARAMETER_TUNING.md`, `MODEL_INSPECTION.md` references.
 - **Checks:** Check A per notebook; Check C's section-6 assertions on the new file equal the
   reference's frames exactly; the 100-trial click loads the cached studies (the cache's
   directory is keyed by the data, not the notebook's name).
 - **Commit:** `refactor(notebook): the tuning in its own notebook; 02_experiments.py removed`
+- **Planned 2026-11-08, the user's answers:**
+  - sections 1–4 keep their headers with one sentence each pointing to the EDA notebook, the
+    code shown;
+  - the tuning section becomes 5;
+  - F4 waits for 7.0.
+- **Done (2026-11-08):**
+  - **`notebooks/03_hyperparameter_tuning.py`:** written by a scratch script from
+    `02_experiments.py` at `4344071` (43 cells, 1880 lines): sections 0–4, section 6's
+    markdown, then the five section-5 cells section 6 reads, then the rest of section 6. Then:
+    - the title `… : hyperparameter tuning`;
+    - sections 1–4's markdown one sentence each, pointing to the EDA, "a test pins the two
+      notebooks' setup equal";
+    - `EDA_OBJECTIVES` dropped;
+    - the fixed classifier's comment "here and in the objective EDA";
+    - `## 5) Hyperparameter tuning`; its four "section 5" now the objective EDA.
+
+    md5 `2dbb80a38b13321bdc6c78bd5537d01f`.
+  - **`notebooks/02_experiments.py`** and **`tests/characterization/test_experiments_notebook.py`**
+    removed with `rm` (a scratch copy kept).
+  - **`tests/characterization/test_hyperparameter_tuning_notebook.py`:** the old 14 on `03`,
+    plus `test_the_two_notebooks_share_one_setup` (D41). Both notebooks are run by importlib,
+    and these must be equal in both:
+    - `DATA_SETTINGS`, `config_hash`, the 7 shared settings, `COHORTS`, `PREDICTION_FLOOR`,
+      `cv_groups`;
+    - the training and validation parts field by field, and `repr(cv)`;
+    - the candidates' `to_dict()`, the metrics' names;
+    - the tuner's `storage_dir`, objective, recorded metrics, `n_trials`, `n_startup_trials`,
+      `n_jobs`;
+    - two study names, and the fixed classifier's `to_dict()`.
+  - **The references:**
+    - `README.md` (5);
+    - `docs/README.md`, `MODULE_REFERENCE.md` (its sentence and two table rows),
+      `HYPERPARAMETER_TUNING.md`, `SPLITTING.md`, `MLFLOW_EXPERIMENTS_GUIDE.md`,
+      `MODELING_GUIDE.md`;
+    - the tuning package's docstring;
+    - `01_eda.py`'s closing sentence (md5 `4bc1ba3a52dc2ad55d0097a707bd1ccc`).
+
+    The historical plans and handoffs keep their words.
+  - **The user's EDA edit, kept at their answer:** a cell showing `eda_best_df` sorted by
+    objective (one more PLR1711: the EDA's ruff 12). Their empty cell was removed. The EDA's md5
+    is `3db331d12e6c994d5df0cf3ef34dc6b8`.
+  - F4 moved to 7.0.
+- **Checks:**
+  - the notebook tests 22 passed (7 + 15); the characterization suite (not slow) 27; the tuning
+    package's unit tests 113 passed; mypy 28 files, no issue;
+  - ruff on `03` 11 (9 PLR1711, a B018, a RUF059: those of its cells today), on `01_eda.py` 32
+    as at HEAD, the test files clean;
+  - `ruff format --diff`: `03` and the EDA the user's two hunks only (`03`'s at `@@ -157`,
+    `@@ -207`, one line up); `01_eda.py`'s 39 hunks as at HEAD (it was never formatted);
+  - `marimo check`: `03` and the EDA no issue, `01_eda.py` its empty cell at 2499, as at HEAD;
+  - Check B (`check_b_tuning.py`): no EDA name, nothing fitted;
+  - Check C (`make_copy_tuning.py`, `check_c_tuning.py`; 76 s): the 24 baselines, every
+    section-6 assertion against 3.1l's, 3.4's first and 5.2b's runs; `compare.py`: every frame
+    and record equal to `check_c_5b_2.pkl`'s (`best_runs_val_scores_df`'s `mean` at 1e-12);
+    the pickle `check_c_6_3.pkl`;
+  - the equality test's mutation (the `scale_by_2` plan's scale 3.0 in a copy of `03`, the EDA
+    copied beside it) caught at the candidates; the unmutated copy passes;
+  - the 100-trial click on the real cache (`run_click_tuning.py`, `PYTHONWARNINGS=error`): 87
+    s, nothing tuned; the 28 files' names, sizes and md5 unchanged; best on validation Model 1
+    `lgbm_poisson`, exposure on (cv 2.1402, val 2.1296), Model 2 `lgbm_gaussian+logistic`,
+    exposure on (cv 2.0776, val 2.1031), as at PR 4's click.
 
 ## 6. PR 7: SHAP per cohort and the test evaluation (`feat/test-evaluation`)
 
-### [ ] 7.0 Model 2 by the joint method in section 6 (notebook; D40)
+### [ ] 7.0 Model 2 by the joint method in section 6, the objective RMSE (notebook; D40, D42)
+- **D42's change, with this one:**
+  - the setting `objective_metric = "rmse"` and `OBJECTIVE_METRIC` in the metrics cell;
+  - the tuner takes `objective_metric=OBJECTIVE_METRIC`.
+
+  To plan with the user:
+  - both notebooks under D41 (the EDA's dropdown defaults follow the tuner's objective; the
+    equality test pins the setting);
+  - the notebook tests' pins;
+  - the text naming the deviance as the objective (sections 5 and 6, the metrics cell's
+    comments, `METRICS`' "primary first");
+  - Check C's new baselines;
+  - the first click retuning section 6 (the EDA's RMSE studies seeded `seed`, then shared
+    with the tuning's first runs).
+- **F4 (PR 3's review; moved here from 6.3, the user's answer):** one function for a
+  transformer's name by identity (today in Model 1's run cell, Model 2's step 1 and step 2, and
+  the EDA's `build_trials_table`) and one way to read the hyperparameters (`dataclasses.asdict`
+  in the tuning, `to_dict()["estimator_params"]` in the EDA). The joint loop replaces two of the
+  lookups, so 7.0 writes the function once for what remains.
 - **Change:** the tuning notebook's Model 2 runs become one `tune_total_times_probability_model`
   study per family pair and exposure (16, in a loop over run settings, seeded in the list's
   order, stored as `total_times_probability_joint__…`), each best refit and scored; the three

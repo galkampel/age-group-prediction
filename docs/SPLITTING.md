@@ -264,8 +264,8 @@ the §3 block for every method) and
    ports — its disjointness and exact-partition checks become structurally
    impossible once folds are index complements. Then `models/fold_scoring.py`
    and the old models' nested tuning loops. The `hyperparameter_tuning`
-   package's `CrossValidationTuner`, which sections 5 (the objective EDA) and
-   6 (the tuning) of `notebooks/02_experiments.py` run, already consumes `cv`: every trial
+   package's `CrossValidationTuner`, which `notebooks/02_objective_eda.py` and
+   `notebooks/03_hyperparameter_tuning.py` run, already consumes `cv`: every trial
    splits with the same seeded validator.
 2. **Report metrics by group size** (1 / 2-3 / 4-7 / 8+) instead of filtering,
    so the coverage gap in §4 is visible rather than silent.

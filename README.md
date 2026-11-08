@@ -36,8 +36,9 @@ building-level DataFrame:
 - [Hyperparameter tuning of the rebuilt models](docs/HYPERPARAMETER_TUNING.md):
   the `hyperparameter_tuning` package, plain Optuna over both rebuilt models:
   components drawn per trial, the composite built from them, a
-  `CrossValidationTuner`; sections 5 (the objective EDA) and 6 (the tuning) of
-  `notebooks/02_experiments.py` run it (decisions in the
+  `CrossValidationTuner`; `notebooks/02_objective_eda.py` (the objective EDA)
+  and `notebooks/03_hyperparameter_tuning.py` (the tuning) run it
+  (decisions in the
   [plan](docs/NOTEBOOK_TUNING_PLAN.md)).
 - [Model inspection](docs/MODEL_INSPECTION.md): the `inspection` package for
   the rebuilt models: bootstrap intervals of a metric, permutation importance
@@ -127,7 +128,11 @@ The research source is a pair of version-controlled marimo notebooks:
 
 - `notebooks/01_eda.py` implements the complete EDA checklist and findings
 	handoff;
-- `notebooks/02_experiments.py` runs the experiments: one MLflow run per
+- `notebooks/02_objective_eda.py` compares the tuner's candidate objectives
+  (the log loss, the Poisson deviance, RMSE) on one setting per model: every
+  trial, the best models refit and scored on validation, and figures of
+  both;
+- `notebooks/03_hyperparameter_tuning.py` runs the experiments: one MLflow run per
   setting (composite model × estimator family × feature variant × exposure),
   tuned by cross-validation on the training part, compared on the validation
   part, and one final test-part run (see
@@ -162,12 +167,13 @@ marimo `.py` notebooks are the sole research source.
 
    ```bash
    uv run --env-file .env --group notebook --group tracking \
-     marimo edit notebooks/02_experiments.py
+     marimo edit notebooks/03_hyperparameter_tuning.py
    ```
 
    marimo prints a local URL and opens it. Add `--headless` to skip opening a
    browser or `--port <n>` to choose the port. The EDA notebook opens the same
-   way with `marimo edit notebooks/01_eda.py`. `uv run` reads `.env` only when
+   way with `marimo edit notebooks/01_eda.py`, and the objective EDA with
+   `marimo edit notebooks/02_objective_eda.py`. `uv run` reads `.env` only when
    given `--env-file`. For a one-off throwaway store instead, export the
    Section 2 variables from the MLflow guide and prefix the command with
    `PYTHONPATH=src` in place of `--env-file .env`. To use the VS Code marimo
@@ -183,7 +189,7 @@ marimo `.py` notebooks are the sole research source.
 6. The final cell evaluates the test part once; it refuses to run twice in one
    experiment (D4).
 
-`uv run --env-file .env notebooks/02_experiments.py` runs the notebook as a
+`uv run --env-file .env notebooks/03_hyperparameter_tuning.py` runs the notebook as a
 script: setup only, no run is opened; it refuses to start when
 `MLFLOW_TRACKING_URI` is unset or points at the repo root's `mlflow.db`.
 marimo's runtime configuration also loads `.env` by default when it finds
@@ -506,7 +512,7 @@ before that fix, so its bundled code needs `import lightgbm` before
 [final evaluation, Section 9](docs/FINAL_EVALUATION.md#9-pyfunc-serving-contract).
 
 **Notebook controls.** The old model-fitting notebook was deleted on
-2026-10-14 with the move to the rebuilt models. `notebooks/02_experiments.py`
+2026-10-14 with the move to the rebuilt models. `notebooks/03_hyperparameter_tuning.py`
 (see [Run The Modeling Notebook](#run-the-modeling-notebook)) replaces it for
 the rebuilt models; the lockbox and final-evaluation path described in this
 section belonged to the old stack and has no counterpart there.
