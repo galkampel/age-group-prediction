@@ -1,4 +1,24 @@
-# Handoff: the experiment notebooks, PR 7 at 7.0b (done); the plot comparison next
+# Handoff: the experiment notebooks, PR 7 at 5.4a (done); 5.4b next
+
+**Status (2026-11-09, 5.4a done, before the user's commit; 5.4b next):**
+- **The probe** (§5): the ridge plot against the forest plot on the real 100-trial best runs;
+  the user chose the **redesigned forest** for both figures. 5.4 is split into 5.4a and 5.4b
+  (the cache plan's 5.4).
+- **5.4a is done** (the cache plan's 5.4a Done note): `forest_figure` redesigned (a row per
+  cohort, the composite first, the two models in the palette's two colors, one legend,
+  `share_x_axis`) and, at the user's requests, `ridge_figure` (each model's replicates as a
+  density per cohort row, no dots or bars) behind a "Plot" switch (forest by default); two
+  characterization tests (25 notebook tests). HEAD was `b790457` (this
+  handoff after 7.0b, on `8ef9b3f`).
+- **The notebooks' md5:** `02_objective_eda.py` `d74bf1357926732ee31c7e1a98e7bd67` (unchanged),
+  `03_hyperparameter_tuning.py` `81e1d02096981ca8c43e9734e45fa96d`.
+- **Check C's tuning reference** is now `check_c_5_4a_tuning.pkl` (`check_c_5_4_tuning.py`,
+  `run_c_tuning_5_4a.sh`; every frame and record equal to 7.0b's run), in this session's
+  scratchpad, `/private/tmp/claude-501/-Users-galkampel-Desktop-Projects-age-group-prediction/7b0b2d5d-c3e3-4184-94e5-b652c6e86fb1/scratchpad`.
+  It holds `checks/` (with `run_5_4a.sh`, `run_c_tuning_5_4a.sh`, `run_mutant_5_4a.sh`),
+  the pickles copied from the scratchpad below (`check_c_7_0_eda.pkl` with its two figures'
+  JSON, `check_c_7_0b_tuning.pkl`, `check_c_6_2.pkl` with its two figures' JSON,
+  `check_c_3_1l.pkl`, `click_7_0.pkl`), `probes/` and `viewer/ridge_vs_forest.py` (the probe).
 
 **Status (2026-11-08, 7.0 and 7.0b committed and pushed; implementation paused; the next session
 starts at §6):**
@@ -1371,6 +1391,30 @@ constructor, data in the call; fitting and evaluating as separate steps; no priv
       restores the return in the copy.
     - Load the dataviz skill before designing the figures (the EDA's figures use its reference
       palette).
+  - **Done (2026-11-09): the probe, and the user's choice, the redesigned forest for both
+    figures** (the two best runs and their paired difference; 5.4a and 5.4b in the cache
+    plan). The probe (scratchpad `…/7b0b2d5d-c3e3-4184-94e5-b652c6e86fb1/scratchpad`:
+    `probes/`, `viewer/ridge_vs_forest.py`, `shots/`):
+    - a copy of the tuning notebook on a copy of `studies/` (the inspection unclicked) loaded
+      in 31 s, nothing tuned; the copy's and the real cache's 50 files unchanged; the best runs
+      equal to 7.0's click record;
+    - three forms per metric, for the two runs and for the difference: today's forest, a
+      redesigned forest (a row per cohort, the composite first, the two models in the
+      palette's two colors, one legend), and a half-eye ridge (a KDE of the 1000 replicates,
+      the dot and 95% bar under it); each cohort row its own x for the runs, one shared x for
+      the difference (log loss's composite, 1.08, sits far from its cohorts, 0.58–0.67);
+    - **the evidence:** the two marginals nearly coincide (composite RMSE 4.5316 [4.01, 5.08]
+      against 4.5132 [4.00, 5.04]); the replicates are near-normal (half-widths 0.87–1.18 of
+      each other), so a density adds little; they pair strongly (ρ 0.81–0.985), so the
+      difference's interval is 1.7–5.6× narrower (composite RMSE −0.019 [−0.107, 0.083], 0.19
+      wide against 1.05). Every RMSE difference contains 0 (the high school's just:
+      −0.177 [−0.355, 0.007]); log loss's composite difference excludes it
+      (−0.0043 [−0.0076, −0.0011]) though the two marginals overlap; bias's composite
+      difference −0.080 [−0.149, −0.007] means Model 2 is further from 0 (−0.497 against
+      −0.416), not better;
+    - **the user's answers for 5.4:** two sub-tasks (5.4a the redesign, 5.4b the difference
+      and the importance); bias kept in the difference's table with a caption note; the legend
+      names the model only; one characterization test of `forest_figure`.
 - **The EDA figures:** dark mode not selected (the dataviz skill asks for it; marimo's dark theme
   shows them on the light surface); not looked at by the assistant (no browser). The user looked
   at 3.1j's, asked for 3.1k and 3.1l, and approved 3.1k's at 400 trials ("Looks good!").
@@ -1402,14 +1446,16 @@ constructor, data in the call; fitting and evaluating as separate steps; no priv
 Next, one step per approval, each stopped with a file-by-file summary, the checks, the
 notebooks' md5 and the commit message in a copyable code block:
 1. **7.0 and 7.0b:** done (the cache plan's Done notes).
-2. **The ridge plot against the forest plot** (§5): a read-only probe and a viewer app, no
-   notebook change; the user chooses the form.
-3. **5.4** with the chosen plot, in the tuning notebook:
+2. **The ridge plot against the forest plot** (§5): done 2026-11-09; the redesigned forest
+   chosen for both figures.
+3. **5.4a, the two best runs' figure redesigned, a ridge behind a switch:** done 2026-11-09
+   (the cache plan's 5.4a).
+4. **5.4b** (the cache plan's 5.4b), in the tuning notebook:
    - the paired difference from `best_replicate_scores`
-     (`total_times_probability − independent_cohorts` per replicate);
-   - its figure, with a rule at 0;
+     (`total_times_probability − independent_cohorts` per replicate), its table;
+   - its figure, `forest_figure(..., share_x_axis=True, rule_at=0)`, under the same switch
+     (`ridge_figure` on the difference's replicates for the ridge);
    - the permutation importance on `SELECTION_METRIC` (the deviance today).
-4. **The two best runs' figure** in the chosen form (§5).
 5. **Then** SHAP per cohort (7.1) and the test evaluation (7.2, 7.3).
 
    MLflow and D4 stay deferred.

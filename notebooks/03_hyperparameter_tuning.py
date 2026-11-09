@@ -649,6 +649,7 @@ def _():
     import optuna
     import plotly.graph_objects as go
     from plotly.subplots import make_subplots
+    from scipy.stats import gaussian_kde
 
     from age_group_prediction.hyperparameter_tuning import (
         CountComponent,
@@ -687,6 +688,7 @@ def _():
         build_total_times_probability_model,
         compute_metrics,
         dataclasses,
+        gaussian_kde,
         go,
         make_subplots,
         mean_absolute_error_loss,
@@ -1451,7 +1453,12 @@ def _(
         + " (each score with its replicates' mean, median, SD and 95% "
         "interval; a table per model below)"
     )
-    return best_model1, best_model2, best_runs_val_scores_df
+    return (
+        best_model1,
+        best_model2,
+        best_replicate_scores,
+        best_runs_val_scores_df,
+    )
 
 
 @app.cell
@@ -1494,108 +1501,283 @@ def _(best_runs_cohort, best_runs_metrics, best_runs_val_scores_df, mo):
 
 
 @app.cell
-def _(go, make_subplots):
-    def forest_figure(scores, metric_name, lower_column, upper_column, rule_at=None):
-        """A forest plot of `metric_name`: a panel per cohort, each on its own
-        scale, and a row per run (the first on top), the dot its score and
-        the bar its interval from `lower_column` to `upper_column`. `scores`
-        is long, a row per run, cohort and metric, with the columns `model`,
-        `family`, `use_exposure`, `cohort`, `metric`, `score` and the two
-        bounds. `rule_at` draws a vertical line at that value in every panel
-        (0 for a difference)."""
-        surface, ink, color = "#fcfcfb", "#52514e", "#2a78d6"
-        metric_scores = scores[scores["metric"] == metric_name]
-        cohorts = list(metric_scores["cohort"].unique())
-        figure = make_subplots(
-            rows=1, cols=len(cohorts), shared_yaxes=True, subplot_titles=cohorts
+def _(gaussian_kde, go, make_subplots, np):
+    def forest_figure(
+        scores,
+        metric_name,
+        lower_column,
+        upper_column,
+        share_x_axis=False,
+        rule_at=None,
+    ):
+        """A forest plot of `metric_name`: a row per cohort, the composite
+        first, and in each row a dot per model (the first on top) at its
+        score, the bar its interval from `lower_column` to `upper_column`.
+        `scores` is long, a row per model, cohort and metric, with the columns
+        `model`, `cohort`, `metric`, `score` and the two bounds; the legend
+        names the models. Each row has its own x scale unless `share_x_axis`;
+        `rule_at` draws a vertical line at that value in every row (0 for a
+        difference)."""
+        # The dataviz skill's reference palette: the three categorical colors
+        # that stay apart for colorblind readers, then the surface, the inks,
+        # the gridline and the axis line.
+        colors = ["#2a78d6", "#eb6834", "#1baf7a"]
+        surface, ink, muted, grid, axis = (
+            "#fcfcfb",
+            "#52514e",
+            "#898781",
+            "#e1e0d9",
+            "#c3c2b7",
         )
-        for column, cohort in enumerate(cohorts, start=1):
-            cohort_scores = metric_scores[metric_scores["cohort"] == cohort]
-            score = cohort_scores["score"]
-            run_labels = (
-                cohort_scores["model"]
-                + ": "
-                + cohort_scores["family"]
-                + ", exposure "
-                + cohort_scores["use_exposure"].astype(str)
-            )
-            figure.add_trace(
-                go.Scatter(
-                    x=score,
-                    y=run_labels,
-                    mode="markers",
-                    marker={"size": 9, "color": color},
-                    error_x={
-                        "type": "data",
-                        "symmetric": False,
-                        "array": cohort_scores[upper_column] - score,
-                        "arrayminus": score - cohort_scores[lower_column],
-                        "color": color,
-                        "thickness": 2,
-                        "width": 6,
-                    },
-                    customdata=cohort_scores[[lower_column, upper_column]].to_numpy(),
-                    hovertemplate=(
-                        f"%{{y}}<br>{cohort} {metric_name} %{{x:.4f}}"
-                        "<br>interval %{customdata[0]:.4f} to %{customdata[1]:.4f}"
-                        "<extra></extra>"
+        metric_scores = scores[scores["metric"] == metric_name]
+        # The composite first, then the cohorts in their order.
+        cohorts = sorted(
+            metric_scores["cohort"].unique(), key=lambda cohort: cohort != "composite"
+        )
+        models = list(metric_scores["model"].unique())
+        figure = make_subplots(
+            rows=len(cohorts),
+            cols=1,
+            shared_xaxes=share_x_axis,
+            vertical_spacing=0.11,
+            subplot_titles=cohorts,
+        )
+        for row, cohort in enumerate(cohorts, start=1):
+            for position, model in enumerate(models):
+                color = colors[position]
+                point = metric_scores[
+                    (metric_scores["cohort"] == cohort)
+                    & (metric_scores["model"] == model)
+                ].iloc[0]
+                figure.add_trace(
+                    go.Scatter(
+                        x=[point["score"]],
+                        y=[position],
+                        mode="markers",
+                        name=model,
+                        legendgroup=model,
+                        showlegend=row == 1,
+                        marker={
+                            "size": 10,
+                            "color": color,
+                            "line": {"width": 2, "color": surface},
+                        },
+                        error_x={
+                            "type": "data",
+                            "symmetric": False,
+                            "array": [point[upper_column] - point["score"]],
+                            "arrayminus": [point["score"] - point[lower_column]],
+                            "color": color,
+                            "thickness": 2,
+                            "width": 0,
+                        },
+                        customdata=[[point[lower_column], point[upper_column]]],
+                        hovertemplate=(
+                            f"{model}<br>{cohort} {metric_name} %{{x:.4f}}"
+                            "<br>interval %{customdata[0]:.4f} to %{customdata[1]:.4f}"
+                            "<extra></extra>"
+                        ),
                     ),
-                    showlegend=False,
-                ),
-                row=1,
-                col=column,
-            )
+                    row=row,
+                    col=1,
+                )
+            figure.update_yaxes(range=[len(models) - 0.4, -0.6], row=row, col=1)
             if rule_at is not None:
                 figure.add_vline(
-                    x=rule_at, line_width=1, line_color=ink, row=1, col=column
+                    x=rule_at, line_width=1, line_color=ink, row=row, col=1
                 )
-        figure.update_yaxes(autorange="reversed")
+        height = 110 * len(cohorts) + 130
         figure.update_layout(
-            title=metric_name,
-            height=300,
+            height=height,
             template="plotly_white",
             paper_bgcolor=surface,
             plot_bgcolor=surface,
+            font={
+                "family": "system-ui, -apple-system, Segoe UI, sans-serif",
+                "color": ink,
+                "size": 12,
+            },
+            showlegend=len(models) > 1,
+            legend={
+                "orientation": "h",
+                "x": 0,
+                "xanchor": "left",
+                "y": 1 - 12 / height,
+                "yanchor": "top",
+                "yref": "container",
+            },
+            margin={"l": 30, "r": 20, "t": 80, "b": 50},
             hovermode="closest",
         )
+        figure.update_xaxes(
+            gridcolor=grid, zeroline=False, linecolor=axis, tickfont={"color": muted}
+        )
+        figure.update_xaxes(title_text=metric_name, row=len(cohorts), col=1)
+        figure.update_yaxes(showgrid=False, zeroline=False, showticklabels=False)
+        # Each row's title (its cohort) at the row's top left.
+        figure.update_annotations(x=0, xanchor="left")
         return figure
 
-    return (forest_figure,)
+    def ridge_figure(replicate_scores, metric_name, share_x_axis=False, rule_at=None):
+        """A ridge plot of `metric_name`: a row per cohort, the composite
+        first, and in each row each model's bootstrap replicates as a density
+        (a Gaussian KDE between the replicates' extremes; the row's highest
+        density on top). `replicate_scores` is {model: its replicates, a row
+        per replicate and a column per cohort and metric}; the legend names
+        the models. Each row has its own x scale unless `share_x_axis`;
+        `rule_at` draws a vertical line at that value in every row (0 for a
+        difference)."""
+        # The forest's palette: the three categorical colors, the surface, the
+        # inks, the gridline and the axis line.
+        colors = ["#2a78d6", "#eb6834", "#1baf7a"]
+        surface, ink, muted, grid, axis = (
+            "#fcfcfb",
+            "#52514e",
+            "#898781",
+            "#e1e0d9",
+            "#c3c2b7",
+        )
+        models = list(replicate_scores)
+        # The composite first, then the cohorts in their order.
+        cohorts = sorted(
+            replicate_scores[models[0]].columns.unique(level="cohort"),
+            key=lambda cohort: cohort != "composite",
+        )
+        figure = make_subplots(
+            rows=len(cohorts),
+            cols=1,
+            shared_xaxes=share_x_axis,
+            vertical_spacing=0.11,
+            subplot_titles=cohorts,
+        )
+        for row, cohort in enumerate(cohorts, start=1):
+            # Each model's density by a Gaussian KDE (Scott's bandwidth) on 200
+            # points between its replicates' extremes; the row's curves on one
+            # height scale; a 2px line and a 10% wash.
+            curves = {}
+            for model in models:
+                replicates = replicate_scores[model][(cohort, metric_name)]
+                x_values = np.linspace(replicates.min(), replicates.max(), 200)
+                curves[model] = (x_values, gaussian_kde(replicates)(x_values))
+            row_highest = max(density.max() for _, density in curves.values())
+            for position, model in enumerate(models):
+                x_values, density = curves[model]
+                figure.add_trace(
+                    go.Scatter(
+                        x=x_values,
+                        y=density / row_highest,
+                        mode="lines",
+                        fill="tozeroy",
+                        fillcolor=colors[position] + "1a",
+                        line={"width": 2, "color": colors[position]},
+                        name=model,
+                        legendgroup=model,
+                        showlegend=row == 1,
+                        hovertemplate=(
+                            f"{model}<br>{cohort} {metric_name} %{{x:.4f}}"
+                            "<extra></extra>"
+                        ),
+                    ),
+                    row=row,
+                    col=1,
+                )
+            figure.update_yaxes(range=[0, 1.1], row=row, col=1)
+            if rule_at is not None:
+                figure.add_vline(
+                    x=rule_at, line_width=1, line_color=ink, row=row, col=1
+                )
+        height = 110 * len(cohorts) + 130
+        figure.update_layout(
+            height=height,
+            template="plotly_white",
+            paper_bgcolor=surface,
+            plot_bgcolor=surface,
+            font={
+                "family": "system-ui, -apple-system, Segoe UI, sans-serif",
+                "color": ink,
+                "size": 12,
+            },
+            showlegend=len(models) > 1,
+            legend={
+                "orientation": "h",
+                "x": 0,
+                "xanchor": "left",
+                "y": 1 - 12 / height,
+                "yanchor": "top",
+                "yref": "container",
+            },
+            margin={"l": 30, "r": 20, "t": 80, "b": 50},
+            hovermode="closest",
+        )
+        figure.update_xaxes(
+            gridcolor=grid, zeroline=False, linecolor=axis, tickfont={"color": muted}
+        )
+        figure.update_xaxes(title_text=metric_name, row=len(cohorts), col=1)
+        figure.update_yaxes(showgrid=False, zeroline=False, showticklabels=False)
+        # Each row's title (its cohort) at the row's top left.
+        figure.update_annotations(x=0, xanchor="left")
+        return figure
+
+    return forest_figure, ridge_figure
+
+
+@app.cell
+def _(mo):
+    # The form of the best runs' plot: the forest (each run's score and 95%
+    # interval) or the ridge (the density of each run's bootstrap
+    # replicates).
+    best_runs_plot = mo.ui.radio(
+        options=["forest", "ridge"], value="forest", inline=True, label="Plot"
+    )
+    return (best_runs_plot,)
 
 
 @app.cell
 def _(
     CI_BOUND_NAMES,
     SELECTION_METRIC,
+    best_replicate_scores,
+    best_runs_plot,
     best_runs_val_scores_df,
     forest_figure,
     mo,
+    ridge_figure,
 ):
-    best_forest_figure = forest_figure(
-        best_runs_val_scores_df,
-        SELECTION_METRIC.name,
-        CI_BOUND_NAMES["lower"],
-        CI_BOUND_NAMES["upper"],
-    )
+    metric_name = SELECTION_METRIC.name  # POISSON_DEVIANCE.name
+
+    if best_runs_plot.value == "forest":
+        best_runs_figure = forest_figure(
+            best_runs_val_scores_df,
+            metric_name,
+            CI_BOUND_NAMES["lower"],
+            CI_BOUND_NAMES["upper"],
+        )
+    elif best_runs_plot.value == "ridge":
+        best_runs_figure = ridge_figure(best_replicate_scores, metric_name)
+    else:
+        raise ValueError(f"unknown plot {best_runs_plot.value!r}")
     mo.vstack(
         [
             mo.md(
                 "**Each model's best run on validation: the selection metric per "
-                "cohort and for the composite** (the dot its score, the bar its 95% "
-                "bootstrap interval)"
+                "cohort and for the composite** (a row per cohort, the composite "
+                "first; the dot the run's score, the bar its 95% bootstrap interval, "
+                "the colors named in the legend; the ridge shows instead the density "
+                "of the run's 1000 bootstrap replicates)"
             ),
-            best_forest_figure,
+            best_runs_plot,
+            best_runs_figure,
         ]
     )
-    return
+    return (metric_name,)
 
 
 @app.cell
-def _(mo):
+def _(metric_name, mo):
     run_inspection = mo.ui.run_button(label="Inspect the best runs")
     mo.md(
         f"{run_inspection} each model's best run: the permutation importance and "
-        "SHAP (about two minutes)."
+        f"SHAP for the metric {metric_name} (about two minutes)."
     )
     return (run_inspection,)
 

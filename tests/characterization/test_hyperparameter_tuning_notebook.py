@@ -19,9 +19,12 @@ import subprocess
 import sys
 from pathlib import Path
 
+import numpy as np
 import optuna
+import pandas as pd
 import pytest
 from optuna.samplers import RandomSampler
+from scipy.stats import gaussian_kde
 
 from age_group_prediction.hyperparameter_tuning import (
     suggest_independent_cohorts_components,
@@ -551,3 +554,101 @@ def test_the_best_runs_tables_show_the_composite_and_every_metric_by_default(
     assert cohort.value == "composite"
     assert list(metrics.options) == metric_names
     assert list(metrics.value) == metric_names
+
+
+def test_the_forest_figure_draws_a_row_per_cohort_and_a_trace_per_model(
+    notebook_defs: dict,
+) -> None:
+    # 5.4a: a row per cohort, the composite first; in each row a dot per model
+    # at its score, the bar its interval; one legend entry per model; the
+    # rule in every row. The rows of another metric are not drawn.
+    forest_figure = notebook_defs["forest_figure"]
+    scores = pd.DataFrame(
+        [
+            {"model": model, "cohort": cohort, "metric": metric}
+            for metric in ("rmse", "mae")
+            for model in ("model_a", "model_b")
+            for cohort in ("cohort_x", "cohort_y", "composite")
+        ]
+    )
+    scores["score"] = range(len(scores))
+    scores["lower"] = scores["score"] - 0.5
+    scores["upper"] = scores["score"] + 1.0
+    figure = forest_figure(scores, "rmse", "lower", "upper")
+    cohorts = ["composite", "cohort_x", "cohort_y"]
+    assert [annotation.text for annotation in figure.layout.annotations] == cohorts
+    assert [trace.name for trace in figure.data if trace.showlegend] == [
+        "model_a",
+        "model_b",
+    ]
+    assert figure.layout.showlegend
+    rmse = scores[scores["metric"] == "rmse"].set_index(["cohort", "model"])
+    traces = iter(figure.data)
+    for row, cohort in enumerate(cohorts, start=1):
+        for position, model in enumerate(["model_a", "model_b"]):
+            trace = next(traces)
+            axis = "" if row == 1 else str(row)
+            assert (trace.name, trace.xaxis, trace.yaxis) == (
+                model,
+                f"x{axis}",
+                f"y{axis}",
+            )
+            assert list(trace.y) == [position]
+            assert list(trace.x) == [rmse.loc[(cohort, model), "score"]]
+            assert list(trace.error_x.array) == [1.0]
+            assert list(trace.error_x.arrayminus) == [0.5]
+    assert next(traces, None) is None
+    assert not figure.layout.shapes
+    ruled = forest_figure(
+        scores, "rmse", "lower", "upper", share_x_axis=True, rule_at=0
+    )
+    assert len(ruled.layout.shapes) == 3
+    assert all(shape.x0 == shape.x1 == 0 for shape in ruled.layout.shapes)
+    one_model = forest_figure(
+        scores[scores["model"] == "model_a"], "rmse", "lower", "upper"
+    )
+    assert not one_model.layout.showlegend
+
+
+def test_the_ridge_draws_a_density_per_model_in_a_row_per_cohort(
+    notebook_defs: dict,
+) -> None:
+    # 5.4a: a row per cohort, the composite first; in each row each model's
+    # replicates as a density (a Gaussian KDE between their extremes), the
+    # row's highest density 1; no dots or bars; one legend entry per model;
+    # the rule in every row. The columns of another metric are not drawn.
+    ridge_figure = notebook_defs["ridge_figure"]
+    models = ["model_a", "model_b"]
+    columns = pd.MultiIndex.from_product(
+        [["cohort_x", "cohort_y", "composite"], ["rmse", "mae"]],
+        names=["cohort", "metric"],
+    )
+    rng = np.random.default_rng(0)
+    replicate_scores = {
+        model: pd.DataFrame(rng.normal(4.5, 0.3, (200, len(columns))), columns=columns)
+        for model in models
+    }
+    figure = ridge_figure(replicate_scores, "rmse")
+    cohorts = ["composite", "cohort_x", "cohort_y"]
+    assert [annotation.text for annotation in figure.layout.annotations] == cohorts
+    assert len(figure.data) == 6 and all(trace.mode == "lines" for trace in figure.data)
+    assert [trace.name for trace in figure.data if trace.showlegend] == models
+    for row, cohort in enumerate(cohorts):
+        curves = figure.data[2 * row : 2 * row + 2]
+        densities = {}
+        for model in models:
+            replicates = replicate_scores[model][(cohort, "rmse")]
+            x_values = np.linspace(replicates.min(), replicates.max(), 200)
+            densities[model] = (x_values, gaussian_kde(replicates)(x_values))
+        highest = max(density.max() for _, density in densities.values())
+        for model, curve in zip(models, curves, strict=True):
+            x_values, density = densities[model]
+            axis = "" if row == 0 else str(row + 1)
+            assert (curve.name, curve.xaxis) == (model, f"x{axis}")
+            np.testing.assert_array_equal(curve.x, x_values)
+            np.testing.assert_allclose(curve.y, density / highest)
+        assert max(max(curve.y) for curve in curves) == pytest.approx(1.0)
+    assert not figure.layout.shapes
+    ruled = ridge_figure(replicate_scores, "rmse", share_x_axis=True, rule_at=0)
+    assert len(ruled.layout.shapes) == 3
+    assert all(shape.x0 == shape.x1 == 0 for shape in ruled.layout.shapes)

@@ -20,7 +20,7 @@ its test; `02_experiments.py` unchanged. **Updated 2026-11-08:** 6.2 committed (
 D42 recorded (§0: RMSE tunes and selects, a setting, with 7.0). **Updated 2026-11-08:** D42
 committed (`4344071`); 6.3 done (§5): `03_hyperparameter_tuning.py` (md5
 `2dbb80a38b13321bdc6c78bd5537d01f`), the equality test, `02_experiments.py` removed.
-6.3 committed (`abd8960`, with the user's edits); **PR 6 closed** (2026-11-08: the tuning section's summary; the non-slow suite 1401 passed, mypy 28 files, Check A–C on both notebooks equal to 6.2's and 6.3's runs; `03`'s md5 `1f86f7da2c906cb83e807ad42a051303`). **Updated 2026-11-08:** PR 6 merged as #25 (`f9c92a5` on `main`, identical to `e2cab60`); PR 7's branch `feat/test-evaluation` created from it. **Updated 2026-11-08:** 7.0 done (§6): Model 2 by the joint method, RMSE the tuner's objective, F4's two functions, the model labels; the first 100-trial click (22 studies tuned). **Updated 2026-11-08:** 7.0b done (§6): each model's best run in its own table, one cohort and metric filter. **Next: 5.4 (§4), then 7.1.**
+6.3 committed (`abd8960`, with the user's edits); **PR 6 closed** (2026-11-08: the tuning section's summary; the non-slow suite 1401 passed, mypy 28 files, Check A–C on both notebooks equal to 6.2's and 6.3's runs; `03`'s md5 `1f86f7da2c906cb83e807ad42a051303`). **Updated 2026-11-08:** PR 6 merged as #25 (`f9c92a5` on `main`, identical to `e2cab60`); PR 7's branch `feat/test-evaluation` created from it. **Updated 2026-11-08:** 7.0 done (§6): Model 2 by the joint method, RMSE the tuner's objective, F4's two functions, the model labels; the first 100-trial click (22 studies tuned). **Updated 2026-11-08:** 7.0b done (§6): each model's best run in its own table, one cohort and metric filter. **Updated 2026-11-09:** the ridge plot against the forest plot probed (the handoff's §5): the user chose the redesigned forest for both figures; 5.4 split into 5.4a and 5.4b (§4); 5.4a done (the forest plot redesigned, and a ridge of the replicates behind a switch; `03`'s md5 `81e1d02096981ca8c43e9734e45fa96d`). **Next: 5.4b (§4), then 7.1.**
 
 The companion docs: [EXPERIMENT_NOTEBOOK_HANDOFF.md](EXPERIMENT_NOTEBOOK_HANDOFF.md) (the state,
 how to work, the checks, the traps, iCloud), [NOTEBOOK_METRICS_LOOP_EDA_PLAN.md](NOTEBOOK_METRICS_LOOP_EDA_PLAN.md)
@@ -694,6 +694,73 @@ No code change (D34). One commit for the docs, one more if the review's findings
 - **Commit:** `feat(notebook): each run's scores with their bootstrap SD and interval; a forest plot per model`
 
 ### [ ] 5.4 The best models' paired difference; the importance on the selection metric
+- **Planned 2026-11-09** (after the probe of the ridge plot against the forest plot, the
+  handoff's §5): the user chose the **redesigned forest** for both figures, the two best runs
+  and their paired difference. One function draws both, so 5.4 is two sub-tasks, each
+  committed on its own:
+  - **[x] 5.4a The forest plot redesigned** (the handoff's §6 step 4, done first). **Done
+    (2026-11-09), as planned:**
+    - **`03`:** `forest_figure(scores, metric_name, lower_column, upper_column,
+      share_x_axis=False, rule_at=None)`: a row per cohort, the composite first, each row
+      title at its top left; in each row a dot per model (the first on top; the dataviz
+      palette's slots `#2a78d6`, `#eb6834`, `#1baf7a` in order; 10 px with a 2px surface
+      ring), the bar its interval (2 px, no caps), the bounds in the hover; one legend (the
+      model names) when ≥ 2 models; the x axis titled with the metric; each row its own x
+      unless `share_x_axis`; `rule_at` a line in every row; height `110 × rows + 130`, no
+      title. The forest-plot cell's call is unchanged (`share_x_axis=False`: log loss's
+      composite sits far from its cohorts); its caption describes the rows and the legend.
+    - **The ridge (the user's requests after the redesign; folded into 5.4a, the user's
+      answers):** first the forest with each model's density above its dots
+      (`replicate_scores=`); then, at the user's request, without the forest's dots and bars,
+      so its own function in the same cell, `ridge_figure(replicate_scores, metric_name,
+      share_x_axis=False, rule_at=None)`: a row per cohort (the composite first), each
+      model's bootstrap replicates as a density (`scipy.stats.gaussian_kde`, Scott's
+      bandwidth, 200 points between the replicates' extremes; the row's highest density 1; a
+      2px line and a 10% wash), one legend, the forest's layout; each function keeps its own
+      palette (neither reads a name outside it). A switch, `best_runs_plot =
+      mo.ui.radio(["forest", "ridge"], value="forest", label="Plot")`, chooses the form; the
+      figure is `best_runs_figure` (was `best_forest_figure`); the best-runs cell returns
+      `best_replicate_scores` again (the ridge reads it).
+    - **The tests:** `test_the_forest_figure_draws_a_row_per_cohort_and_a_trace_per_model`
+      (a synthetic frame: the rows, the traces' x and error bars, the legend, the rule; one
+      model, no legend) and `test_the_ridge_draws_a_density_per_model_in_a_row_per_cohort`
+      (the rows, the densities recomputed, no dots, the legend, the rule).
+    - **Checks** (rerun with the ridge): the notebook tests 25 passed; ruff 13 on `03` (none new), the test file
+      clean; the user's two format hunks only; `marimo check` clean; Check B (the new
+      two signatures, the switch on "forest"); **Check C** (`check_c_5_4_tuning.py`, 156 s): every
+      7.0 and 7.0b assertion,
+      the forest block rewritten (8 traces, each row's axes, x, `error_x` and `customdata`
+      exact, the two colors, the legend once per model, the composite first, the rows' own x;
+      `share_x_axis=True, rule_at=0` gives 4 lines at 0 and linked x axes); the ridge (8
+      curves, each density recomputed from `best_replicate_scores` and equal exactly, the
+      colors and washes, the rows' order and own x, the rule); every frame and
+      record equal to 7.0b's run (`check_c_7_0b_tuning.pkl`). The new pickle
+      `check_c_5_4a_tuning.pkl` is 5.4b's reference. **Two mutations caught:** the dot's
+      `error_x` arrays swapped (the forest block); the densities drawn from the other model's
+      replicates (the ridge block). **A look on the real runs** (a copy on a copy of the cache,
+      nothing tuned): the rmse and log loss forests and ridges read cleanly.
+    - The EDA notebook unchanged (`d74bf1357926732ee31c7e1a98e7bd67`); `03`'s md5
+      `81e1d02096981ca8c43e9734e45fa96d`.
+    - **Commit:** `feat(notebook): the forest plot redesigned, and a ridge of the replicates behind a switch (5.4a)`
+  - **[ ] 5.4b The paired difference and the importance on the selection metric:**
+    - the difference figure under the same `best_runs_plot` switch
+      (`ridge_figure({difference: best_difference_replicates}, ..., share_x_axis=True,
+      rule_at=0)` for the ridge);
+    - a new cell after the forest plot: `best_difference_replicates` (`total_times_probability
+      − independent_cohorts` per replicate: one evaluator, the same rows), `best_difference_df`
+      (a row per cohort and metric; `model` the difference's name; `score` the two point
+      scores' difference; `mean, median, sd, ci95_lower, ci95_upper` inline, as the best-runs
+      cell computes them); `forest_figure(..., share_x_axis=True, rule_at=0)` on
+      `SELECTION_METRIC`; the caption: below 0 the total times probability model scores lower,
+      0 inside the interval no difference shown, for bias the sign the direction, not which is
+      better (the user's answer: bias kept); `mo.ui.table(best_difference_df.round(4))`;
+    - both inspection cells' permutation importance on `SELECTION_METRIC`; the comments, the
+      importance table's caption and the metrics cell's comment;
+    - section 5's text: one sentence;
+    - **Checks:** Check A–C (the difference equal to `r2 − r1` per replicate exactly, its
+      statistics recomputed, its figure; `importance_df` recomputed with the selection metric;
+      the rest equal to 5.4a's run), a mutation (the sign swapped), the non-slow suite and mypy.
+    - **Commit:** `feat(notebook): the best models' paired bootstrap difference; the importance on the selection metric (5.4b)`
 - **Moved to PR 7 (2026-11-07, the user):** PR 5 closes at 5.3; the EDA work (PR 5b) and the
   split (PR 6) come first, and 5.4 is done in `03_hyperparameter_tuning.py`, with the forest
   plots' layout fixed. The difference is `total_times_probability − independent_cohorts` (the
