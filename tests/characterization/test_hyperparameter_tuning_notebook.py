@@ -452,7 +452,7 @@ def test_the_two_notebooks_share_one_setup(
         "cv_groups",
     ):
         assert tuning[name] == eda[name], name
-    for part in ("train_age_group", "val_age_group"):
+    for part in ("train_age_group", "val_age_group", "test_age_group"):
         for field, tuning_values, eda_values in zip(
             tuning[part]._fields, tuning[part], eda[part], strict=True
         ):
@@ -671,3 +671,22 @@ def test_the_plots_open_on_their_forms_and_the_selection_metric(
         metric.name for metric in notebook_defs["METRICS"]
     ]
     assert runs_metric.value == difference_metric.value == selection == "rmse"
+
+
+def test_the_test_evaluation_is_behind_its_button_and_opens_on_the_forest(
+    notebook_defs: dict,
+) -> None:
+    # 7.2 (E11): the test part is scored once, on a click; a script run
+    # evaluates nothing. The test section's plot opens on the forest and the
+    # selection metric, any of the six offered.
+    source = NOTEBOOK_PATH.read_text(encoding="utf-8")
+    cells = [
+        cell for cell in source.split("@app.cell") if "train_val_age_group = " in cell
+    ]
+    assert len(cells) == 1
+    assert "mo.stop(\n        not run_test_evaluation.value" in cells[0]
+    assert "test_scores_df" not in notebook_defs
+    assert notebook_defs["test_plot"].value == "forest"
+    metric_names = [metric.name for metric in notebook_defs["METRICS"]]
+    assert list(notebook_defs["test_metric"].options) == metric_names
+    assert notebook_defs["test_metric"].value == notebook_defs["SELECTION_METRIC"].name

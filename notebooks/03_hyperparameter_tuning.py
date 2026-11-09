@@ -356,7 +356,7 @@ def _(
         f"split n_train={len(train_index)} n_val={len(val_index)} "
         f"n_test={len(test_index)}"
     )
-    return splitter, train_age_group, val_age_group
+    return splitter, test_age_group, train_age_group, val_age_group
 
 
 @app.cell
@@ -1410,6 +1410,12 @@ def _(
         ],
     )
     best_model1, best_model2 = _best_run1["model"], _best_run2["model"]
+    # The two run records by the model's label: the test evaluation refits
+    # them from their components.
+    best_runs = {
+        "independent_cohorts": _best_run1,
+        "total_times_probability": _best_run2,
+    }
     # The two bootstrapped on validation, every metric per cohort and for the
     # composite, by one evaluator: both score the same replicate rows, so their
     # replicates pair row by row. Each score with its replicates' mean, median,
@@ -1460,6 +1466,7 @@ def _(
         best_model1,
         best_model2,
         best_replicate_scores,
+        best_runs,
         best_runs_val_scores_df,
     )
 
@@ -2067,6 +2074,264 @@ def _(
                 "of the predicted count over the explained rows and cohorts)"
             ),
             mo.md(f"```text\n{importance_df.round(4).to_string(index=False)}\n```"),
+        ]
+    )
+    return
+
+
+@app.cell(hide_code=True)
+def _(mo):
+    mo.md(r"""
+    ## 6) The test evaluation
+
+    The test part stands for production (E11): each model's best run, chosen
+    on validation, is refit on the training and validation parts together,
+    then the test part is predicted once and scored, with the bootstrap over
+    its neighborhoods. Validation stays the selection evidence; the test
+    score is reported, never used to choose.
+    """)
+    return
+
+
+@app.cell
+def _(mo):
+    run_test_evaluation = mo.ui.run_button(label="Evaluate on the test part")
+    mo.md(
+        f"{run_test_evaluation} each model's best run: refit on the training and "
+        "validation parts, scored once on the test part."
+    )
+    return (run_test_evaluation,)
+
+
+@app.cell
+def _(
+    AgeGroupDataset,
+    CI_BOUND_NAMES,
+    COHORTS,
+    METRICS,
+    PREDICTION_FLOOR,
+    alpha,
+    best_runs,
+    bootstrap_evaluator,
+    build_independent_cohorts_model,
+    build_total_times_probability_model,
+    compute_metrics,
+    mo,
+    pd,
+    run_test_evaluation,
+    seed,
+    test_age_group,
+    train_age_group,
+    val_age_group,
+):
+    mo.stop(
+        not run_test_evaluation.value,
+        mo.md("Click the button to evaluate the best runs on the test part."),
+    )
+    # The training and validation parts together, part by part.
+    train_val_age_group = AgeGroupDataset(
+        *(
+            pd.concat([train_part, val_part])
+            for train_part, val_part in zip(train_age_group, val_age_group, strict=True)
+        )
+    )
+    # Each model's best run, chosen on validation, refit on them from its
+    # components; the test part predicted once and scored, every metric per
+    # cohort and for the composite, with the bootstrap over its
+    # neighborhoods (one evaluator: the two models' replicates pair).
+    test_predictions, test_replicate_scores, _scores_by_run = {}, {}, {}
+    for _model_name, _run in best_runs.items():
+        if _model_name == "independent_cohorts":
+            _model = build_independent_cohorts_model(
+                _run["components"], y_min=PREDICTION_FLOOR, random_state=seed
+            )
+            _family = _run["family"]
+        elif _model_name == "total_times_probability":
+            _model = build_total_times_probability_model(
+                *_run["components"], y_min=PREDICTION_FLOOR, random_state=seed
+            )
+            _family = f"{_run['total_family']}+{_run['probability_family']}"
+        else:
+            raise ValueError(f"unknown model {_model_name!r}")
+        _model.fit(
+            train_val_age_group.X,
+            train_val_age_group.Y,
+            exposure=train_val_age_group.exposure,
+        )
+        test_predictions[_model_name] = _model.predict(
+            test_age_group.X, exposure=test_age_group.exposure
+        )
+        _replicate_scores = bootstrap_evaluator.evaluate(
+            test_age_group.Y,
+            test_predictions[_model_name],
+            test_age_group.groups,
+            metrics=METRICS,
+            cohorts=[*COHORTS, "composite"],
+        )
+        test_replicate_scores[_model_name] = _replicate_scores
+        _scores_by_run[_model_name, _family, _run["use_exposure"]] = pd.DataFrame(
+            {
+                "score": compute_metrics(
+                    test_age_group.Y,
+                    test_predictions[_model_name],
+                    METRICS,
+                    cohorts=[*COHORTS, "composite"],
+                ).stack(),
+                "mean": _replicate_scores.mean(),
+                "median": _replicate_scores.median(),
+                "sd": _replicate_scores.std(),
+                CI_BOUND_NAMES["lower"]: _replicate_scores.quantile(alpha / 2),
+                CI_BOUND_NAMES["upper"]: _replicate_scores.quantile(1 - alpha / 2),
+            }
+        )
+    # A row per best run, cohort and metric, as on validation.
+    test_scores_df = pd.concat(
+        _scores_by_run, names=["model", "family", "use_exposure"]
+    ).reset_index()
+    # The two runs' paired difference per test replicate, as on validation.
+    _difference_name = "total_times_probability - independent_cohorts"
+    test_difference_replicates = (
+        test_replicate_scores["total_times_probability"]
+        - test_replicate_scores["independent_cohorts"]
+    )
+    _point_scores = test_scores_df.set_index(["model", "cohort", "metric"])["score"]
+    test_difference_df = (
+        pd.DataFrame(
+            {
+                "score": _point_scores["total_times_probability"]
+                - _point_scores["independent_cohorts"],
+                "mean": test_difference_replicates.mean(),
+                "median": test_difference_replicates.median(),
+                "sd": test_difference_replicates.std(),
+                CI_BOUND_NAMES["lower"]: test_difference_replicates.quantile(alpha / 2),
+                CI_BOUND_NAMES["upper"]: test_difference_replicates.quantile(
+                    1 - alpha / 2
+                ),
+            }
+        )
+        .rename_axis(["cohort", "metric"])
+        .reset_index()
+    )
+    test_difference_df.insert(0, "model", _difference_name)
+    mo.md(
+        "**Each model's best run refit on the training and validation parts "
+        f"({len(train_val_age_group.X)} rows) and scored once on the test part "
+        f"({len(test_age_group.X)} rows):** "
+        + "; ".join(
+            f"{model} `{family}`, exposure {use_exposure}"
+            for model, family, use_exposure in _scores_by_run
+        )
+    )
+    return (
+        test_difference_df,
+        test_difference_replicates,
+        test_replicate_scores,
+        test_scores_df,
+    )
+
+
+@app.cell
+def _(METRICS, SELECTION_METRIC, mo):
+    # The test section's plot and metric: the forest first, any of the six
+    # metrics (the selection metric by default).
+    test_plot = mo.ui.radio(
+        options=["forest", "ridge"], value="forest", inline=True, label="Plot"
+    )
+    test_metric = mo.ui.dropdown(
+        options=[metric.name for metric in METRICS],
+        value=SELECTION_METRIC.name,
+        label="Metric",
+    )
+    return test_metric, test_plot
+
+
+@app.cell
+def _(
+    CI_BOUND_NAMES,
+    best_runs_val_scores_df,
+    forest_figure,
+    mo,
+    pd,
+    ridge_figure,
+    test_difference_df,
+    test_difference_replicates,
+    test_metric,
+    test_plot,
+    test_replicate_scores,
+    test_scores_df,
+):
+    _difference_name = test_difference_df["model"].iloc[0]
+    if test_plot.value == "forest":
+        test_runs_figure = forest_figure(
+            test_scores_df,
+            test_metric.value,
+            CI_BOUND_NAMES["lower"],
+            CI_BOUND_NAMES["upper"],
+        )
+        test_difference_figure = forest_figure(
+            test_difference_df,
+            test_metric.value,
+            CI_BOUND_NAMES["lower"],
+            CI_BOUND_NAMES["upper"],
+            share_x_axis=True,
+            rule_at=0,
+        )
+    elif test_plot.value == "ridge":
+        test_runs_figure = ridge_figure(test_replicate_scores, test_metric.value)
+        test_difference_figure = ridge_figure(
+            {_difference_name: test_difference_replicates},
+            test_metric.value,
+            share_x_axis=True,
+            rule_at=0,
+        )
+    else:
+        raise ValueError(f"unknown plot {test_plot.value!r}")
+    # Each model's composite score per metric on validation (refit on the
+    # training part: the selection evidence, optimistic) and on test (refit on
+    # the training and validation parts: the fair score).
+    val_against_test_df = pd.DataFrame(
+        {
+            _dataset: _scores[_scores["cohort"] == "composite"].set_index(
+                ["model", "metric"]
+            )["score"]
+            for _dataset, _scores in (
+                ("val", best_runs_val_scores_df),
+                ("test", test_scores_df),
+            )
+        }
+    )
+    val_against_test_df["test_minus_val"] = (
+        val_against_test_df["test"] - val_against_test_df["val"]
+    )
+    val_against_test_df = val_against_test_df.reset_index()
+    mo.vstack(
+        [
+            mo.md(
+                "**Each model's best run on the test part: the chosen metric per "
+                "cohort and for the composite** (refit on the training and "
+                "validation parts; the dot the test score, the bar its 95% "
+                "bootstrap interval over the test neighborhoods; the ridge the "
+                "replicates' density)"
+            ),
+            mo.hstack([test_plot, test_metric], justify="start"),
+            test_runs_figure,
+            mo.md(
+                f"**Their paired difference on the test part, {_difference_name}** "
+                "(below 0 the total times probability model scores lower; 0 inside "
+                "the interval: no difference shown; for bias the sign gives the "
+                "direction, not which model is better)"
+            ),
+            test_difference_figure,
+            mo.md(
+                "**Validation against test, the composite** (validation: refit on "
+                "the training part, the selection evidence; test: refit on the "
+                "training and validation parts, scored once)"
+            ),
+            mo.ui.table(val_against_test_df.round(4)),
+            mo.md("**The test scores, per cohort and metric**"),
+            mo.ui.table(test_scores_df.round(4)),
+            mo.md("**The paired difference on the test part, per cohort and metric**"),
+            mo.ui.table(test_difference_df.round(4)),
         ]
     )
     return

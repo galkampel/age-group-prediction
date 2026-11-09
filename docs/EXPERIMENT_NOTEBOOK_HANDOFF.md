@@ -1,4 +1,20 @@
-# Handoff: the experiment notebooks, PR 7 at 5.4b (done); 7.1 next
+# Handoff: the experiment notebooks, PR 7 at 7.2 (done); 7.3 next
+
+**Status (2026-11-09, 7.2 done, before the user's commit; 7.3 next):**
+- **5.4b is committed** as `96030f1`. **PR 7's order changed (the user):** the test evaluation
+  (7.2, 7.3) before SHAP per cohort (7.1, last).
+- **7.2 is done** (the cache plan's 7.2 Done note): both split cells return `test_age_group`;
+  `best_runs` exported; section 6 "The test evaluation" behind "Evaluate on the test part":
+  each best run refit on train + validation (1223 rows), the test part (306) scored once with
+  the bootstrap, the two runs' figure and their difference under the section's own switch and
+  menu, the validation-against-test table, the tables. 27 notebook tests; the suite 1406
+  passed; mypy clean. **Not run on the user's cache** (E11: the user reads the test part first).
+- **The notebooks' md5:** `02_objective_eda.py` `373c1c39f717935cb08ce14ff6e05a3a`,
+  `03_hyperparameter_tuning.py` `5ef93a47e800c442302b537c57730a01`.
+- **Check C's references:** the tuning `check_c_7_2_tuning.pkl`, the EDA `check_c_7_2_eda.pkl`
+  with its two figures' JSON (`run_7_2.sh`, `run_c_tuning_7_2.sh`, `run_mutant_7_2.sh`), in
+  this session's scratchpad (named below).
+- **7.3 (the user's note):** the best and worst test buildings are `k`, 5 by default.
 
 **Status (2026-11-09, 5.4b done, before the user's commit; 7.1 next):**
 - **5.4a is committed** as `f0d240c`, with the user's `metric_name` edit (the cache plan's 5.4).
@@ -1469,7 +1485,10 @@ notebooks' md5 and the commit message in a copyable code block:
    (the cache plan's 5.4a).
 4. **5.4b, the paired difference with its own switch and menu, the runs' "Metric" menu, the
    importance on the chosen loss:** done 2026-11-09 (the cache plan's 5.4b).
-5. **Next:** SHAP per cohort (7.1), then the test evaluation (7.2, 7.3).
+5. **7.2, the test evaluation:** done 2026-11-09 (the cache plan's 7.2; the order changed
+   by the user: 7.2, 7.3, then 7.1).
+6. **Next:** 7.3, the reading of the test predictions (`k = 5` best and worst buildings by
+   default), then SHAP per cohort (7.1).
 
    MLflow and D4 stay deferred.
 

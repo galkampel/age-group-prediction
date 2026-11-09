@@ -20,7 +20,7 @@ its test; `02_experiments.py` unchanged. **Updated 2026-11-08:** 6.2 committed (
 D42 recorded (§0: RMSE tunes and selects, a setting, with 7.0). **Updated 2026-11-08:** D42
 committed (`4344071`); 6.3 done (§5): `03_hyperparameter_tuning.py` (md5
 `2dbb80a38b13321bdc6c78bd5537d01f`), the equality test, `02_experiments.py` removed.
-6.3 committed (`abd8960`, with the user's edits); **PR 6 closed** (2026-11-08: the tuning section's summary; the non-slow suite 1401 passed, mypy 28 files, Check A–C on both notebooks equal to 6.2's and 6.3's runs; `03`'s md5 `1f86f7da2c906cb83e807ad42a051303`). **Updated 2026-11-08:** PR 6 merged as #25 (`f9c92a5` on `main`, identical to `e2cab60`); PR 7's branch `feat/test-evaluation` created from it. **Updated 2026-11-08:** 7.0 done (§6): Model 2 by the joint method, RMSE the tuner's objective, F4's two functions, the model labels; the first 100-trial click (22 studies tuned). **Updated 2026-11-08:** 7.0b done (§6): each model's best run in its own table, one cohort and metric filter. **Updated 2026-11-09:** the ridge plot against the forest plot probed (the handoff's §5): the user chose the redesigned forest for both figures; 5.4 split into 5.4a and 5.4b (§4); 5.4a done and committed (`f0d240c`, with the user's `metric_name` edit; `03`'s md5 `b0c6c70333dbe2c153bb2a34ea35e9a9`). **Updated 2026-11-09:** 5.4b done (§4): the paired difference with its own plot switch (ridge first) and metric menu (all six), the runs' "Metric" menu, the importance on the chosen loss; `03`'s md5 `2a2eb2576071e02f91eef47c7677344a`. **Next: 7.1 (§6).**
+6.3 committed (`abd8960`, with the user's edits); **PR 6 closed** (2026-11-08: the tuning section's summary; the non-slow suite 1401 passed, mypy 28 files, Check A–C on both notebooks equal to 6.2's and 6.3's runs; `03`'s md5 `1f86f7da2c906cb83e807ad42a051303`). **Updated 2026-11-08:** PR 6 merged as #25 (`f9c92a5` on `main`, identical to `e2cab60`); PR 7's branch `feat/test-evaluation` created from it. **Updated 2026-11-08:** 7.0 done (§6): Model 2 by the joint method, RMSE the tuner's objective, F4's two functions, the model labels; the first 100-trial click (22 studies tuned). **Updated 2026-11-08:** 7.0b done (§6): each model's best run in its own table, one cohort and metric filter. **Updated 2026-11-09:** the ridge plot against the forest plot probed (the handoff's §5): the user chose the redesigned forest for both figures; 5.4 split into 5.4a and 5.4b (§4); 5.4a done and committed (`f0d240c`, with the user's `metric_name` edit; `03`'s md5 `b0c6c70333dbe2c153bb2a34ea35e9a9`). **Updated 2026-11-09:** 5.4b done (§4): the paired difference with its own plot switch (ridge first) and metric menu (all six), the runs' "Metric" menu, the importance on the chosen loss; `03`'s md5 `2a2eb2576071e02f91eef47c7677344a`; committed as `96030f1`. **Updated 2026-11-09:** PR 7's order changed (the user): the test evaluation (7.2, 7.3) before SHAP per cohort (7.1, last); 7.2 done (§6): the best runs refit on train + validation and scored once on the test part; the notebooks' md5 `02` `373c1c39f717935cb08ce14ff6e05a3a`, `03` `5ef93a47e800c442302b537c57730a01`. **Next: 7.3 (§6), then 7.1.**
 
 The companion docs: [EXPERIMENT_NOTEBOOK_HANDOFF.md](EXPERIMENT_NOTEBOOK_HANDOFF.md) (the state,
 how to work, the checks, the traps, iCloud), [NOTEBOOK_METRICS_LOOP_EDA_PLAN.md](NOTEBOOK_METRICS_LOOP_EDA_PLAN.md)
@@ -1291,7 +1291,9 @@ before the split (PR 6), and the tuning's (5.4 and the rest) after it (PR 7).
   - a mutation (the second table filtered with the first model's name) caught.
 - **Commit:** `feat(notebook): each model's best run in its own table, filtered by one cohort and metric choice (7.0b)`
 
-### [ ] 7.1 SHAP per cohort (notebook)
+**The order since 2026-11-09 (the user):** 7.2, 7.3, then 7.1.
+
+### [ ] 7.1 SHAP per cohort (notebook; last since 2026-11-09)
 - **Change:** the importance cell: `mean_abs_shap` per column × cohort (`np.abs(values).mean(axis=0)`,
   a frame columns × cohorts, the composite beside as today) and the rank per cohort; a
   beeswarm-style plotly figure per model and cohort (the SHAP value per explained row and
@@ -1301,7 +1303,43 @@ before the split (PR 6), and the tuning's (5.4 and the rest) after it (PR 7).
   exactly; the figures' traces one per column).
 - **Commit:** `feat(notebook): SHAP per cohort, the values and the feature order`
 
-### [ ] 7.2 The final refit and the test scores (E11)
+### [x] 7.2 The final refit and the test scores (E11)
+- **Done (2026-11-09), as planned** (the user's answers: the test part returned in both
+  notebooks; the best runs exported as `best_runs`; the test section with its own switch and
+  menu, figures and tables; a validation-against-test table of the composite):
+  - **both notebooks' split cell** returns `test_age_group` (D41's copies stay identical; the
+    unused-name RUF059 is gone from both); the setup-equality test compares the test part too;
+  - **`03`'s best-runs cell** exports `best_runs` (`{"independent_cohorts": run,
+    "total_times_probability": run}`);
+  - **section 6, "The test evaluation":** its text (E11); the button "Evaluate on the test
+    part" (`run_test_evaluation`); one cell behind `mo.stop(not run_test_evaluation.value, …)`:
+    `train_val_age_group` (train + validation, part by part: 1223 rows); per model the best
+    run refit from its components (`build_*_model`, `y_min`, `seed`), the test part (306 rows)
+    predicted once (`test_predictions`, a frame per model for 7.3), the point scores and the
+    bootstrap over the test neighborhoods (`test_replicate_scores`), `test_scores_df` (48 ×
+    11, `best_runs_val_scores_df`'s columns), the paired difference
+    (`test_difference_replicates`, `test_difference_df`), a sentence naming the runs and the
+    rows; a controls cell (`test_plot` forest / ridge, the forest first; `test_metric`, all six,
+    the selection metric by default); a display cell: the two runs' figure, their difference
+    (a shared x, a rule at 0), `val_against_test_df` (12 rows: per model and metric, the
+    composite's `val`, `test`, `test_minus_val`), the test scores and the difference's tables.
+  - **The test:** `test_the_test_evaluation_is_behind_its_button_and_opens_on_the_forest`;
+    the equality test's test part.
+  - **Checks:** the notebook tests 27 passed; ruff `03` 13 (the RUF059 gone, the new markdown
+    cell's bare `return` the kind every markdown cell has), `02` 11 (the RUF059 gone), the
+    test file clean; the user's two format hunks in each; `marimo check` clean; Check B on
+    both (nothing evaluated without a click); **Check C on the EDA** (every frame and figure
+    equal to 7.0's run) and **on the tuning** (183 s): the refit's rows (train then
+    validation), its predictions equal to an independent refit's exactly, the replicates to a
+    fresh evaluator's, `test_scores_df` and the difference recomputed exactly, the default
+    figures, `val_against_test_df` row by row, the display once with its three tables; every
+    earlier frame and record equal to 5.4b's amended run (`check_c_5_4b2_tuning.pkl`; the new
+    reference `check_c_7_2_tuning.pkl`). **The mutation** (the refit on the training part only)
+    caught (the test predictions differ). The non-slow suite 1406 passed; mypy 28 files clean.
+  - **Not run on the user's cache:** E11's test part is scored once; the user reads it first.
+  - The notebooks' md5: `02` `373c1c39f717935cb08ce14ff6e05a3a`, `03`
+    `5ef93a47e800c442302b537c57730a01`.
+  - **Commit:** `feat(notebook): the best models refit on train and validation, scored once on the test part (7.2)`
 - **Change:** a new section 7 "The test evaluation": a button "Evaluate on the test part"; a cell
   that refits each model's best run (by the comparison metric on validation; the stored
   components, `build_*_model`, `random_state=seed`) on `train + val` (`pd.concat` of the two
@@ -1318,7 +1356,7 @@ before the split (PR 6), and the tuning's (5.4 and the rest) after it (PR 7).
 ### [ ] 7.3 The reading of the test predictions
 - **Change:** cells after 7.2, per model: (a) the residual table, a row per test building
   (`building_id`, `neighborhood_id`, the features, the true and predicted counts per cohort,
-  the composite's absolute error), and the best K and worst K (`K = 10`, a setting) with what
+  the composite's absolute error), and the best k and worst k (`k`, a setting, **5 by default**: the user, 2026-11-09) with what
   they share: their neighborhoods' counts among the K, their exposure and share quantiles
   (an anomaly: a value outside the training rows' 1st–99th percentile), one table each; (b)
   the count "confusion matrix": per cohort, the true count × the rounded predicted count as a

@@ -341,7 +341,7 @@ def _(
         f"split n_train={len(train_index)} n_val={len(val_index)} "
         f"n_test={len(test_index)}"
     )
-    return splitter, train_age_group, val_age_group
+    return splitter, test_age_group, train_age_group, val_age_group
 
 
 @app.cell
