@@ -1,4 +1,28 @@
-# Handoff: the experiment notebooks, PR 7 at 7.2 (done); 7.3 next
+# Handoff: the experiment notebooks, PR 7 at 7.2 (committed); 7.3 next
+
+**Status (2026-11-09, 7.2 committed and pushed; implementation paused; the next session starts at
+§6):**
+- **The session's commits** (on `b790457`, the handoff after 7.0b): `f0d240c` 5.4a (with the
+  user's `metric_name` edit), `96030f1` 5.4b, `0316c06` 7.2; `feat/test-evaluation` is level
+  with `origin`. **PR 7's order changed (the user):** 7.2, 7.3, then 7.1.
+- **The notebooks' md5:** `02_objective_eda.py` `373c1c39f717935cb08ce14ff6e05a3a`,
+  `03_hyperparameter_tuning.py` `376052b50cc90504d95ec2ac4dff26e0`.
+- **`0316c06` holds marimo's trims from the user's save** (verified: the code otherwise the
+  stop's; the notebook tests 27 passed, `marimo check` clean, the two format hunks): the test
+  evaluation cell no longer returns `test_predictions` and `train_val_age_group`, the test
+  display cell's return is bare (ruff 14 on `03`, the extra a PLR1711). Check C's
+  `make_copy_tuning.py` restores them (and the earlier trims); 7.3 reads `test_predictions`,
+  so marimo keeps it.
+- **The test part has not been run on the user's cache** (E11): the user reads it first; Check C
+  runs it on the 3-trial copy only.
+- **The user's open marimo session saved over an edit once** (5.4b): tell the user before
+  editing the notebook, ask them to reload it after, and check the md5 before each edit.
+- **The scratchpad to copy first:** `/private/tmp/claude-501/-Users-galkampel-Desktop-Projects-age-group-prediction/7b0b2d5d-c3e3-4184-94e5-b652c6e86fb1/scratchpad`. It holds `checks/` (§4's "Since 5.4":
+  `run_7_2.sh`, `check_c_5_4_tuning.py`, `make_copy_tuning.py`, `compare_shared.py`,
+  `run_mutant_7_2.sh`, …), `probes/` (the ridge-against-forest probe, the real-cache looks:
+  `make_copy_probe.py`, `look_*.py`), `viewer/ridge_vs_forest.py` and the pickles
+  `check_c_7_2_tuning.pkl` (the tuning's reference), `check_c_7_2_eda.pkl` with its two
+  figures' JSON (the EDA's), `check_c_3_1l.pkl`, `click_7_0.pkl`.
 
 **Status (2026-11-09, 7.2 done, before the user's commit; 7.3 next):**
 - **5.4b is committed** as `96030f1`. **PR 7's order changed (the user):** the test evaluation
@@ -554,6 +578,10 @@ which the two notebooks now hold: 1–5 in the EDA, 1–4 and 6 (as 5) in the tu
   | `7e148d1` | the handoff after PR #25's merge (the branch's first commit) |
   | `a74b2ff` | 7.0: Model 2 by the joint method, RMSE as the objective, F4, the labels (committed under 7.0b's message) |
   | `8ef9b3f` | 7.0b: the best runs' two tables and their filter, the index fix; the EDA's empty cell removed |
+  | `b790457` | the handoff after 7.0b |
+  | `f0d240c` | 5.4a: `forest_figure` redesigned, `ridge_figure` behind a "Plot" switch (with the user's `metric_name` edit) |
+  | `96030f1` | 5.4b: the paired difference (its own switch and menu), the runs' "Metric" menu, the importance on `importance_metric` |
+  | `0316c06` | 7.2: the best runs refit on train + validation, scored once on the test part (with marimo's trims) |
 - **7.0's Check C baselines** (3 trials, both sharing flags off; the cv RMSE) are in the cache
   plan's 7.0 Done note:
   - Model 1, exposure on / off: `lgbm_poisson` 4.4495 / 4.5284, `lgbm_gaussian` 4.4543 /
@@ -1201,6 +1229,21 @@ md5, the commit message. Tick the sub-task and update the status lines.
     and `run_click_7_0.sh`. The click runner keeps the original cache listing
     (`studies_before_7_0.json`), and `compare_studies_7_0.py` checks the old files unchanged and
     the 22 new names.
+- **Since 5.4 (2026-11-09; the scripts in the scratchpad named in the status at the top):**
+  - `run_7_2.sh`: Check A on both notebooks (the notebook tests, ruff, the format hunks,
+    `marimo check`), Check B on both, Check C on the EDA (`make_copy_eda.py`,
+    `check_c_eda.py`, against `check_c_7_0_eda.pkl` and its figures) and on the tuning
+    (`run_c_tuning_7_2.sh`: `make_copy_tuning.py`, `check_c_5_4_tuning.py`, `compare_shared.py`
+    against the previous run's pickle, then `run_mutant_7_2.sh`), the non-slow suite, mypy;
+  - `check_c_5_4_tuning.py` (from `check_c_7_0_tuning.py`) adds the forest and ridge
+    figures, the paired difference, the menus and `importance_metric`, and 7.2's test
+    evaluation (an independent refit on train + validation, its predictions, a fresh
+    bootstrap, the statistics, the figures, the validation-against-test table);
+  - `compare_shared.py <new> <reference> [skipped frames]`: `compare.py` on the shared frames;
+  - **a look on the real runs** (`probes/run_look_5_4b2.sh` as the model): a copy of the
+    notebook (`make_copy_probe.py`, unchanged but for the trimmed returns) on a copy of
+    `studies/`, every button clicked but the inspection, the figures written as HTML and
+    screenshotted with headless Chrome; the real cache compared before and after.
 - **The scripts of 5.3's session (2026-11-07, the latest copy;** copy from here first): the
   scratchpad named in the status at the top (`checks/` adapted to 5.3; `check_c_5_3.pkl` is
   5.4's reference).
@@ -1462,15 +1505,15 @@ constructor, data in the call; fitting and evaluating as separate steps; no priv
 
 ## 6. Next, and the prompt
 
-**Status (2026-11-08, 7.0 and 7.0b committed and pushed; implementation paused):**
-- PR 7 is on `feat/test-evaluation` (from `main` at `f9c92a5`): 7.0 is `a74b2ff` (under
-  7.0b's message), 7.0b is `8ef9b3f`; both are pushed.
+**Status (2026-11-09, 7.2 committed and pushed; implementation paused):**
+- PR 7 is on `feat/test-evaluation` (from `main` at `f9c92a5`): 7.0 `a74b2ff`, 7.0b
+  `8ef9b3f`, 5.4a `f0d240c`, 5.4b `96030f1`, 7.2 `0316c06` (§2's "PR 7"); all pushed.
 - The notebooks' md5:
   - `01_eda.py` `4bc1ba3a52dc2ad55d0097a707bd1ccc`;
-  - `02_objective_eda.py` `d74bf1357926732ee31c7e1a98e7bd67`;
-  - `03_hyperparameter_tuning.py` `6ffa4a82c6c6c80069ef7a0da0b443c8`.
-- Check C's references (§4, "Since 7.0"): `check_c_7_0_eda.pkl` (the EDA, with its two
-  figures' JSON) and `check_c_7_0b_tuning.pkl` (the tuning), in the scratchpad named in the status
+  - `02_objective_eda.py` `373c1c39f717935cb08ce14ff6e05a3a`;
+  - `03_hyperparameter_tuning.py` `376052b50cc90504d95ec2ac4dff26e0`.
+- Check C's references (§4, "Since 5.4"): `check_c_7_2_eda.pkl` (the EDA, with its two
+  figures' JSON) and `check_c_7_2_tuning.pkl` (the tuning), in the scratchpad named in the status
   at the top. If they are gone, rewrite the scripts from §4 and run Check C on HEAD before the
   first edit, keeping those pickles.
 - The user's cache `studies/` holds 50 studies (every RMSE study of the tuning notebook since
@@ -1507,30 +1550,30 @@ The user's preferences:
 **The prompt for the next session:**
 
 ```text
-Read docs/EXPERIMENT_NOTEBOOK_HANDOFF.md in full (the status at the top, §1's "Since 7.0",
-§2's "PR 7" block, §3 (7.0's answers), §4's checks (since 7.0) and "For the user to look at
-figures without a click", traps, iCloud notes, §5 (the forest plots), §6 first), then
-docs/NOTEBOOK_CACHE_EVALUATION_PLAN.md (5.3 and 5.4 in §4; 7.0 and 7.0b in §6), then
-notebooks/03_hyperparameter_tuning.py (section 5: the best runs, best_replicate_scores,
-forest_figure and the forest plot, the two best-run tables).
+Read docs/EXPERIMENT_NOTEBOOK_HANDOFF.md in full (the status at the top, §1, §2's "PR 7"
+block, §3, §4's checks (since 7.0 and since 5.4) and "For the user to look at figures without a
+click", traps, iCloud notes, §5, §6 first), then docs/NOTEBOOK_CACHE_EVALUATION_PLAN.md (§6: the
+order note, 7.2's Done note, 7.3, 7.1; 5.4a and 5.4b in §4), then
+notebooks/03_hyperparameter_tuning.py (section 5 from the best runs on: forest_figure,
+ridge_figure, the switches and menus, the paired difference, the inspection; section 6, the test
+evaluation).
 Verify the state first:
-- the branch feat/test-evaluation; HEAD 8ef9b3f (7.0b) on a74b2ff (7.0); `git status` clean;
+- the branch feat/test-evaluation; HEAD the handoff's commit on 0316c06 (7.2); `git status`
+  clean;
 - the notebooks' md5 (`cat <file> | md5`): 02_objective_eda.py
-  d74bf1357926732ee31c7e1a98e7bd67, 03_hyperparameter_tuning.py 6ffa4a82c6c6c80069ef7a0da0b443c8;
+  373c1c39f717935cb08ce14ff6e05a3a, 03_hyperparameter_tuning.py 376052b50cc90504d95ec2ac4dff26e0;
 - no iCloud-offloaded files: `find .git src notebooks tests docs configs -flags +dataless -type f
   | grep -vc __pycache__` is 0.
-If anything differs, stop and show me the diff. Then copy the check scripts (checks/) and the
-pickles check_c_7_0_eda.pkl with its two figures' JSON, check_c_7_0b_tuning.pkl,
-check_c_6_2.pkl with its two figures' JSON and check_c_3_1l.pkl from the scratchpad the handoff
-names (or rewrite them from §4).
-The question: is a ridge plot better than the forest plot for comparing the two best models?
-In plan mode, plan a read-only probe: build both figures from the real 100-trial best runs'
-bootstrap replicates (a copy of the tuning notebook on my cache: the click only loads), per
-cohort and metric, and for 5.4's paired difference; save them and give me a small viewer app
-to look at them. Load the dataviz skill before designing the figures. Show the design
-questions with evidence and a recommendation in the chat. After I choose, plan 5.4 with the
-chosen plot. Keep the implementation simple. Stop each sub-task with a file-by-file summary,
-the checks, the notebooks' md5 and the commit message in a copyable code block. I commit
-myself: never commit, no Co-Authored-By line, no "Generated with Claude Code" in PR text,
-never git checkout/stash/reset/mv.
+If anything differs, stop and show me the diff. Then copy checks/, probes/ and the pickles
+check_c_7_2_tuning.pkl, check_c_7_2_eda.pkl with its two figures' JSON and check_c_3_1l.pkl from
+the scratchpad the handoff names (or rewrite them from §4).
+Next: 7.3, the reading of the test predictions (the best and worst k buildings, k = 5 by
+default; the count heatmaps; the totals; the shares), then 7.1 (SHAP per cohort). In plan mode,
+plan 7.3: re-verify the facts with read-only probes, show the design questions with evidence and
+a recommendation in the chat, and implement after my approval. Don't run the test evaluation on
+my cache: I read the test part first. My marimo session may be open: tell me before editing the
+notebook and remind me to reload it after. Keep the implementation simple. Stop each sub-task
+with a file-by-file summary, the checks, the notebooks' md5 and the commit message in a
+copyable code block. I commit myself: never commit, no Co-Authored-By line, no "Generated with
+Claude Code" in PR text, never git checkout/stash/reset/mv.
 ```
