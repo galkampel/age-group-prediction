@@ -652,3 +652,22 @@ def test_the_ridge_draws_a_density_per_model_in_a_row_per_cohort(
     ruled = ridge_figure(replicate_scores, "rmse", share_x_axis=True, rule_at=0)
     assert len(ruled.layout.shapes) == 3
     assert all(shape.x0 == shape.x1 == 0 for shape in ruled.layout.shapes)
+
+
+def test_the_plots_open_on_their_forms_and_the_selection_metric(
+    notebook_defs: dict,
+) -> None:
+    # 5.4b: the best runs' plot opens on the forest, the paired difference's
+    # on the ridge; both metric menus on the selection metric. The runs' menu
+    # (which also sets the permutation importance's metric, bias excepted)
+    # offers the two selection metrics and bias; the difference's, all six.
+    assert notebook_defs["best_runs_plot"].value == "forest"
+    assert notebook_defs["best_difference_plot"].value == "ridge"
+    selection = notebook_defs["SELECTION_METRIC"].name
+    runs_metric = notebook_defs["best_runs_metric"]
+    assert list(runs_metric.options) == ["rmse", "poisson_deviance", "bias"]
+    difference_metric = notebook_defs["best_difference_metric"]
+    assert list(difference_metric.options) == [
+        metric.name for metric in notebook_defs["METRICS"]
+    ]
+    assert runs_metric.value == difference_metric.value == selection == "rmse"

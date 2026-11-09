@@ -1,6 +1,23 @@
-# Handoff: the experiment notebooks, PR 7 at 5.4a (done); 5.4b next
+# Handoff: the experiment notebooks, PR 7 at 5.4b (done); 7.1 next
 
-**Status (2026-11-09, 5.4a done, before the user's commit; 5.4b next):**
+**Status (2026-11-09, 5.4b done, before the user's commit; 7.1 next):**
+- **5.4a is committed** as `f0d240c`, with the user's `metric_name` edit (the cache plan's 5.4).
+- **5.4b is done** (the cache plan's 5.4b Done note, with its amendment): a "Metric" menu
+  (`best_runs_metric`: rmse, poisson_deviance or bias, the selection metric by default) beside
+  the runs' "Plot" switch; the permutation importance on `importance_metric` (the chosen loss;
+  the selection metric for bias); the two best runs' paired bootstrap difference
+  (`best_difference_replicates`, `best_difference_df`, its table) with its own switch (the
+  ridge first) and metric menu (all six). 26 notebook tests; the
+  non-slow suite 1405 passed; mypy 28 files.
+- **The notebooks' md5:** `02_objective_eda.py` `d74bf1357926732ee31c7e1a98e7bd67` (unchanged),
+  `03_hyperparameter_tuning.py` `2a2eb2576071e02f91eef47c7677344a`.
+- **The user's open marimo session saved over an edit once (10:44:29):** reload the notebook
+  in it after each edit, and check the md5 before each one.
+- **Check C's tuning reference** is now `check_c_5_4b2_tuning.pkl` (`check_c_5_4_tuning.py`,
+  `run_5_4b2.sh`, `run_c_tuning_5_4b2.sh`, `run_mutant_5_4b.sh`, `compare_shared.py`), in this
+  session's scratchpad (named in the status below).
+
+**Status (2026-11-09, 5.4a done, before the user's commit; committed as `f0d240c`):**
 - **The probe** (§5): the ridge plot against the forest plot on the real 100-trial best runs;
   the user chose the **redesigned forest** for both figures. 5.4 is split into 5.4a and 5.4b
   (the cache plan's 5.4).
@@ -1450,13 +1467,9 @@ notebooks' md5 and the commit message in a copyable code block:
    chosen for both figures.
 3. **5.4a, the two best runs' figure redesigned, a ridge behind a switch:** done 2026-11-09
    (the cache plan's 5.4a).
-4. **5.4b** (the cache plan's 5.4b), in the tuning notebook:
-   - the paired difference from `best_replicate_scores`
-     (`total_times_probability − independent_cohorts` per replicate), its table;
-   - its figure, `forest_figure(..., share_x_axis=True, rule_at=0)`, under the same switch
-     (`ridge_figure` on the difference's replicates for the ridge);
-   - the permutation importance on `SELECTION_METRIC` (the deviance today).
-5. **Then** SHAP per cohort (7.1) and the test evaluation (7.2, 7.3).
+4. **5.4b, the paired difference with its own switch and menu, the runs' "Metric" menu, the
+   importance on the chosen loss:** done 2026-11-09 (the cache plan's 5.4b).
+5. **Next:** SHAP per cohort (7.1), then the test evaluation (7.2, 7.3).
 
    MLflow and D4 stay deferred.
 

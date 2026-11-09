@@ -635,7 +635,11 @@ def _(mo):
     descent). Each run's best model is refit on the
     training part and scored on validation; each model's best run is the
     lowest validation score by `selection_metric`, bootstrapped over whole
-    neighborhoods and inspected behind its button. The objective EDA
+    neighborhoods and inspected behind its button. The two best runs' paired
+    difference, per bootstrap replicate, shows whether one is better; a
+    "Metric" menu chooses the metric of the plots and, unless it is bias, of
+    the permutation importance (`selection_metric` by default). The
+    objective EDA
     (`02_objective_eda.py`) describes the studies' storage and their trials.
     """)
     return
@@ -714,7 +718,6 @@ def _(
     wmape_loss,
 ):
     # Each metric with the direction Optuna is given; a loss, so "minimize".
-    # The Poisson deviance is also the permutation importance's score.
     POISSON_DEVIANCE = Metric(
         "poisson_deviance", mean_poisson_deviance_loss, direction="minimize"
     )
@@ -750,7 +753,7 @@ def _(
         SELECTION_METRIC = POISSON_DEVIANCE
     else:
         raise ValueError(f"unknown selection_metric {selection_metric!r}")
-    return METRICS, OBJECTIVE_METRIC, POISSON_DEVIANCE, SELECTION_METRIC
+    return METRICS, OBJECTIVE_METRIC, SELECTION_METRIC
 
 
 @app.cell
@@ -1722,62 +1725,180 @@ def _(gaussian_kde, go, make_subplots, np):
 
 
 @app.cell
-def _(mo):
+def _(SELECTION_METRIC, mo):
     # The form of the best runs' plot: the forest (each run's score and 95%
     # interval) or the ridge (the density of each run's bootstrap
-    # replicates).
+    # replicates); and its metric, the selection metric by default, which the
+    # permutation importance also scores unless it is bias.
     best_runs_plot = mo.ui.radio(
         options=["forest", "ridge"], value="forest", inline=True, label="Plot"
     )
-    return (best_runs_plot,)
+    best_runs_metric = mo.ui.dropdown(
+        options=["rmse", "poisson_deviance", "bias"],
+        value=SELECTION_METRIC.name,
+        label="Metric",
+    )
+    return best_runs_metric, best_runs_plot
 
 
 @app.cell
 def _(
     CI_BOUND_NAMES,
+    METRICS,
     SELECTION_METRIC,
     best_replicate_scores,
+    best_runs_metric,
     best_runs_plot,
     best_runs_val_scores_df,
     forest_figure,
     mo,
     ridge_figure,
 ):
-    metric_name = SELECTION_METRIC.name  # POISSON_DEVIANCE.name
-
+    # The permutation importance's metric: the chosen one when it is a loss;
+    # for bias, a signed score, the selection metric.
+    if best_runs_metric.value in ("rmse", "poisson_deviance"):
+        importance_metric = {metric.name: metric for metric in METRICS}[
+            best_runs_metric.value
+        ]
+    elif best_runs_metric.value == "bias":
+        importance_metric = SELECTION_METRIC
+    else:
+        raise ValueError(f"unknown metric {best_runs_metric.value!r}")
     if best_runs_plot.value == "forest":
         best_runs_figure = forest_figure(
             best_runs_val_scores_df,
-            metric_name,
+            best_runs_metric.value,
             CI_BOUND_NAMES["lower"],
             CI_BOUND_NAMES["upper"],
         )
     elif best_runs_plot.value == "ridge":
-        best_runs_figure = ridge_figure(best_replicate_scores, metric_name)
+        best_runs_figure = ridge_figure(best_replicate_scores, best_runs_metric.value)
     else:
         raise ValueError(f"unknown plot {best_runs_plot.value!r}")
     mo.vstack(
         [
             mo.md(
-                "**Each model's best run on validation: the selection metric per "
+                "**Each model's best run on validation: the chosen metric per "
                 "cohort and for the composite** (a row per cohort, the composite "
                 "first; the dot the run's score, the bar its 95% bootstrap interval, "
                 "the colors named in the legend; the ridge shows instead the density "
                 "of the run's 1000 bootstrap replicates)"
             ),
-            best_runs_plot,
+            mo.hstack([best_runs_plot, best_runs_metric], justify="start"),
             best_runs_figure,
         ]
     )
-    return (metric_name,)
+    return (importance_metric,)
 
 
 @app.cell
-def _(metric_name, mo):
+def _(METRICS, SELECTION_METRIC, mo):
+    # The paired difference's own plot, the ridge first, and its own metric,
+    # any of the six (the selection metric by default).
+    best_difference_plot = mo.ui.radio(
+        options=["forest", "ridge"], value="ridge", inline=True, label="Plot"
+    )
+    best_difference_metric = mo.ui.dropdown(
+        options=[metric.name for metric in METRICS],
+        value=SELECTION_METRIC.name,
+        label="Metric",
+    )
+    return best_difference_metric, best_difference_plot
+
+
+@app.cell
+def _(
+    CI_BOUND_NAMES,
+    alpha,
+    best_difference_metric,
+    best_difference_plot,
+    best_replicate_scores,
+    best_runs_val_scores_df,
+    forest_figure,
+    mo,
+    pd,
+    ridge_figure,
+):
+    # The two best runs' paired difference per replicate: both were scored on
+    # the same replicate rows (one evaluator), so the difference keeps the
+    # pairing, and its interval is far narrower than either run's. Below 0
+    # the total times probability model scores lower.
+    _difference_name = "total_times_probability - independent_cohorts"
+    best_difference_replicates = (
+        best_replicate_scores["total_times_probability"]
+        - best_replicate_scores["independent_cohorts"]
+    )
+    _point_scores = best_runs_val_scores_df.set_index(["model", "cohort", "metric"])[
+        "score"
+    ]
+    # A row per cohort and metric: the point scores' difference, then the
+    # replicates' statistics, as for each run.
+    best_difference_df = (
+        pd.DataFrame(
+            {
+                "score": _point_scores["total_times_probability"]
+                - _point_scores["independent_cohorts"],
+                "mean": best_difference_replicates.mean(),
+                "median": best_difference_replicates.median(),
+                "sd": best_difference_replicates.std(),
+                CI_BOUND_NAMES["lower"]: best_difference_replicates.quantile(alpha / 2),
+                CI_BOUND_NAMES["upper"]: best_difference_replicates.quantile(
+                    1 - alpha / 2
+                ),
+            }
+        )
+        .rename_axis(["cohort", "metric"])
+        .reset_index()
+    )
+    best_difference_df.insert(0, "model", _difference_name)
+    # The chosen plot and metric, one x axis for every cohort so the rule at
+    # 0 lines up.
+    if best_difference_plot.value == "forest":
+        best_difference_figure = forest_figure(
+            best_difference_df,
+            best_difference_metric.value,
+            CI_BOUND_NAMES["lower"],
+            CI_BOUND_NAMES["upper"],
+            share_x_axis=True,
+            rule_at=0,
+        )
+    elif best_difference_plot.value == "ridge":
+        best_difference_figure = ridge_figure(
+            {_difference_name: best_difference_replicates},
+            best_difference_metric.value,
+            share_x_axis=True,
+            rule_at=0,
+        )
+    else:
+        raise ValueError(f"unknown plot {best_difference_plot.value!r}")
+    mo.vstack(
+        [
+            mo.md(
+                f"**The paired difference on validation, {_difference_name}: "
+                f"{best_difference_metric.value} per cohort and for the composite** "
+                "(per bootstrap replicate, so the pairing counts; below 0 the total "
+                "times probability model scores lower; 0 inside the 95% interval: no "
+                "difference shown; for bias the sign gives the direction, not which "
+                "model is better)"
+            ),
+            mo.hstack([best_difference_plot, best_difference_metric], justify="start"),
+            best_difference_figure,
+            mo.md(
+                "**The difference on every metric** (for bias the sign gives the "
+                "direction of the change, not which model is better)"
+            ),
+            mo.ui.table(best_difference_df.round(4)),
+        ]
+    )
+    return
+
+
+@app.cell
+def _(importance_metric, mo):
     run_inspection = mo.ui.run_button(label="Inspect the best runs")
     mo.md(
-        f"{run_inspection} each model's best run: the permutation importance and "
-        f"SHAP for the metric {metric_name} (about two minutes)."
+        f"{run_inspection} each model's best run: the permutation importance on "
+        f"{importance_metric.name} and SHAP (about two minutes)."
     )
     return (run_inspection,)
 
@@ -1806,10 +1927,10 @@ def _(
 
 @app.cell
 def _(
-    POISSON_DEVIANCE,
     PermutationImportance,
     ShapExplainer,
     best_model1,
+    importance_metric,
     mo,
     n_repeats,
     pd,
@@ -1823,11 +1944,11 @@ def _(
     mo.stop(
         not run_inspection.value, mo.md("Click the button to inspect the best runs.")
     )
-    # Permutation importance of the Poisson deviance: on validation the decision
+    # Permutation importance of its metric: on validation the decision
     # table, on training the overfit check. SHAP, exact at nine columns, of the
     # validation subsample against the training background; the values explain
     # the count (the rows' exposure), per row, column and cohort.
-    _importance = PermutationImportance(POISSON_DEVIANCE, n_repeats, random_state=seed)
+    _importance = PermutationImportance(importance_metric, n_repeats, random_state=seed)
     model1_permutation = pd.concat(
         {
             "train": _importance.compute_importances(
@@ -1853,10 +1974,10 @@ def _(
 
 @app.cell
 def _(
-    POISSON_DEVIANCE,
     PermutationImportance,
     ShapExplainer,
     best_model2,
+    importance_metric,
     mo,
     n_repeats,
     pd,
@@ -1870,7 +1991,7 @@ def _(
     mo.stop(
         not run_inspection.value, mo.md("Click the button to inspect the best runs.")
     )
-    _importance = PermutationImportance(POISSON_DEVIANCE, n_repeats, random_state=seed)
+    _importance = PermutationImportance(importance_metric, n_repeats, random_state=seed)
     model2_permutation = pd.concat(
         {
             "train": _importance.compute_importances(
@@ -1896,6 +2017,7 @@ def _(
 
 @app.cell
 def _(
+    importance_metric,
     mo,
     model1_permutation,
     model1_shap,
@@ -1941,7 +2063,7 @@ def _(
         [
             mo.md(
                 "**Feature importance of the best runs** (perm: the drop of the cohort "
-                "Poisson deviance when the column is shuffled; mean_abs_shap: mean |SHAP| "
+                f"{importance_metric.name} when the column is shuffled; mean_abs_shap: mean |SHAP| "
                 "of the predicted count over the explained rows and cohorts)"
             ),
             mo.md(f"```text\n{importance_df.round(4).to_string(index=False)}\n```"),

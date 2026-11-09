@@ -20,7 +20,7 @@ its test; `02_experiments.py` unchanged. **Updated 2026-11-08:** 6.2 committed (
 D42 recorded (§0: RMSE tunes and selects, a setting, with 7.0). **Updated 2026-11-08:** D42
 committed (`4344071`); 6.3 done (§5): `03_hyperparameter_tuning.py` (md5
 `2dbb80a38b13321bdc6c78bd5537d01f`), the equality test, `02_experiments.py` removed.
-6.3 committed (`abd8960`, with the user's edits); **PR 6 closed** (2026-11-08: the tuning section's summary; the non-slow suite 1401 passed, mypy 28 files, Check A–C on both notebooks equal to 6.2's and 6.3's runs; `03`'s md5 `1f86f7da2c906cb83e807ad42a051303`). **Updated 2026-11-08:** PR 6 merged as #25 (`f9c92a5` on `main`, identical to `e2cab60`); PR 7's branch `feat/test-evaluation` created from it. **Updated 2026-11-08:** 7.0 done (§6): Model 2 by the joint method, RMSE the tuner's objective, F4's two functions, the model labels; the first 100-trial click (22 studies tuned). **Updated 2026-11-08:** 7.0b done (§6): each model's best run in its own table, one cohort and metric filter. **Updated 2026-11-09:** the ridge plot against the forest plot probed (the handoff's §5): the user chose the redesigned forest for both figures; 5.4 split into 5.4a and 5.4b (§4); 5.4a done (the forest plot redesigned, and a ridge of the replicates behind a switch; `03`'s md5 `81e1d02096981ca8c43e9734e45fa96d`). **Next: 5.4b (§4), then 7.1.**
+6.3 committed (`abd8960`, with the user's edits); **PR 6 closed** (2026-11-08: the tuning section's summary; the non-slow suite 1401 passed, mypy 28 files, Check A–C on both notebooks equal to 6.2's and 6.3's runs; `03`'s md5 `1f86f7da2c906cb83e807ad42a051303`). **Updated 2026-11-08:** PR 6 merged as #25 (`f9c92a5` on `main`, identical to `e2cab60`); PR 7's branch `feat/test-evaluation` created from it. **Updated 2026-11-08:** 7.0 done (§6): Model 2 by the joint method, RMSE the tuner's objective, F4's two functions, the model labels; the first 100-trial click (22 studies tuned). **Updated 2026-11-08:** 7.0b done (§6): each model's best run in its own table, one cohort and metric filter. **Updated 2026-11-09:** the ridge plot against the forest plot probed (the handoff's §5): the user chose the redesigned forest for both figures; 5.4 split into 5.4a and 5.4b (§4); 5.4a done and committed (`f0d240c`, with the user's `metric_name` edit; `03`'s md5 `b0c6c70333dbe2c153bb2a34ea35e9a9`). **Updated 2026-11-09:** 5.4b done (§4): the paired difference with its own plot switch (ridge first) and metric menu (all six), the runs' "Metric" menu, the importance on the chosen loss; `03`'s md5 `2a2eb2576071e02f91eef47c7677344a`. **Next: 7.1 (§6).**
 
 The companion docs: [EXPERIMENT_NOTEBOOK_HANDOFF.md](EXPERIMENT_NOTEBOOK_HANDOFF.md) (the state,
 how to work, the checks, the traps, iCloud), [NOTEBOOK_METRICS_LOOP_EDA_PLAN.md](NOTEBOOK_METRICS_LOOP_EDA_PLAN.md)
@@ -693,7 +693,7 @@ No code change (D34). One commit for the docs, one more if the review's findings
   the forest figures' traces one per run, the x the metric's values).
 - **Commit:** `feat(notebook): each run's scores with their bootstrap SD and interval; a forest plot per model`
 
-### [ ] 5.4 The best models' paired difference; the importance on the selection metric
+### [x] 5.4 The best models' paired difference; the importance on the selection metric
 - **Planned 2026-11-09** (after the probe of the ridge plot against the forest plot, the
   handoff's §5): the user chose the **redesigned forest** for both figures, the two best runs
   and their paired difference. One function draws both, so 5.4 is two sub-tasks, each
@@ -742,25 +742,75 @@ No code change (D34). One commit for the docs, one more if the review's findings
     - The EDA notebook unchanged (`d74bf1357926732ee31c7e1a98e7bd67`); `03`'s md5
       `81e1d02096981ca8c43e9734e45fa96d`.
     - **Commit:** `feat(notebook): the forest plot redesigned, and a ridge of the replicates behind a switch (5.4a)`
-  - **[ ] 5.4b The paired difference and the importance on the selection metric:**
-    - the difference figure under the same `best_runs_plot` switch
-      (`ridge_figure({difference: best_difference_replicates}, ..., share_x_axis=True,
-      rule_at=0)` for the ridge);
-    - a new cell after the forest plot: `best_difference_replicates` (`total_times_probability
-      − independent_cohorts` per replicate: one evaluator, the same rows), `best_difference_df`
-      (a row per cohort and metric; `model` the difference's name; `score` the two point
-      scores' difference; `mean, median, sd, ci95_lower, ci95_upper` inline, as the best-runs
-      cell computes them); `forest_figure(..., share_x_axis=True, rule_at=0)` on
-      `SELECTION_METRIC`; the caption: below 0 the total times probability model scores lower,
-      0 inside the interval no difference shown, for bias the sign the direction, not which is
-      better (the user's answer: bias kept); `mo.ui.table(best_difference_df.round(4))`;
-    - both inspection cells' permutation importance on `SELECTION_METRIC`; the comments, the
-      importance table's caption and the metrics cell's comment;
-    - section 5's text: one sentence;
-    - **Checks:** Check A–C (the difference equal to `r2 − r1` per replicate exactly, its
-      statistics recomputed, its figure; `importance_df` recomputed with the selection metric;
-      the rest equal to 5.4a's run), a mutation (the sign swapped), the non-slow suite and mypy.
-    - **Commit:** `feat(notebook): the best models' paired bootstrap difference; the importance on the selection metric (5.4b)`
+  - **5.4a committed** as `f0d240c` with the user's edit: `metric_name = SELECTION_METRIC.name
+    # POISSON_DEVIANCE.name` in the plot cell, read by both figures and the inspection button's
+    text (`03`'s md5 `b0c6c70333dbe2c153bb2a34ea35e9a9`). Shown at 5.4b's planning; the user's
+    answers: a "Metric" menu replaces it, and the permutation importance scores the chosen
+    metric.
+  - **[x] 5.4b The paired difference and the importance on the chosen metric.** **Done
+    (2026-11-09), as planned:**
+    - **The menu:** the switch cell also defines `best_runs_metric = mo.ui.dropdown(["rmse",
+      "poisson_deviance"], value=SELECTION_METRIC.name, label="Metric")` (the two metrics
+      `selection_metric` allows; bias makes no permutation-importance score), shown beside the
+      "Plot" switch. The plot cell resolves `chosen_metric = {metric.name: metric for metric
+      in METRICS}[best_runs_metric.value]` and returns it (in place of `metric_name`); its
+      caption says "the chosen metric".
+    - **The paired difference** (a new cell after the plot): `best_difference_replicates`
+      (`total_times_probability − independent_cohorts` per replicate), `best_difference_df`
+      (24 × 9: `model` `total_times_probability - independent_cohorts` (an ASCII hyphen: ruff's
+      RUF001 flags the minus sign), `cohort, metric, score` (the two point scores'
+      difference), `mean, median, sd, ci95_lower, ci95_upper`); the figure under the same
+      switch and metric (`forest_figure(..., share_x_axis=True, rule_at=0)` or
+      `ridge_figure({difference: replicates}, ..., share_x_axis=True, rule_at=0)`); the
+      caption (below 0 the total times probability model scores lower; 0 inside the interval,
+      no difference shown); the table on every metric (for bias, the sign the direction, not
+      which is better).
+    - **The importance:** both inspection cells' `PermutationImportance(chosen_metric, …)`;
+      their comment, the importance table's caption (the metric's name), the button's text
+      ("the permutation importance on {metric} and SHAP"); the metrics cell's old comment gone.
+    - **Section 5's text:** one sentence on the paired difference and the menu.
+    - **The test:** `test_the_best_runs_plot_opens_on_the_forest_and_the_selection_metric`.
+    - **Checks:** the notebook tests 26 passed; ruff 12 on `03` (HEAD's count: the user's edit
+      removed a bare `return`), the test file clean; the user's two format hunks only; `marimo
+      check` clean; Check B (the menu on `rmse`; `chosen_metric` and the difference only after
+      the click); **Check C** (148 s): every earlier assertion; the importance recomputed with
+      `chosen_metric` (the selection metric's object); the difference equal to `r2 − r1` per
+      replicate exactly, `best_difference_df` recomputed exactly, its forest (4 rows, 4 lines
+      at 0, linked x) and ridge, the display once with its table; every other frame and record
+      equal to 5.4a's run (`check_c_5_4a_tuning.pkl`; `compare_shared.py`, `importance_df`
+      skipped). The new reference is `check_c_5_4b_tuning.pkl`. **The mutation** (the sign
+      swapped) caught by the difference block. **The non-slow suite** 1405 passed, 1 skipped,
+      1 xfailed, 19 deselected; **mypy** 28 files, no issue.
+    - **On the real runs** (a copy on a copy of the cache, nothing tuned): the difference on
+      rmse equals the probe's exactly (composite −0.0185 [−0.1065, 0.0826]; kindergarten
+      0.1380 [−0.0565, 0.3545]; elementary −0.0558 [−0.2181, 0.0860]; high school −0.1771
+      [−0.3554, 0.0066]); the forest and the ridge read cleanly.
+    - **Amended at the user's review (2026-11-09; the user's answers):**
+      - **the difference's own controls:** a cell before it defines `best_difference_plot`
+        (forest / ridge, **the ridge first**) and `best_difference_metric` (**all six
+        metrics**, the selection metric by default), shown between its caption and figure;
+        the caption names the metric and the bias caveat;
+      - **the user's save over the first amendment** (their marimo session, 10:44:29): it
+        added `"bias"` to the runs' menu and marimo trimmed two returns (`POISSON_DEVIANCE`
+        from the metrics cell, the difference cell's names); the amendment was re-applied on
+        top of it;
+      - **bias for the figures only (the user's answer):** the plot cell defines
+        `importance_metric` (the chosen loss for rmse / poisson_deviance; the selection metric
+        for bias) in place of `chosen_metric`; the figures read the menu's name; the button,
+        both importance cells and the importance caption read `importance_metric`; section
+        5's text says so;
+      - **the test** renamed `test_the_plots_open_on_their_forms_and_the_selection_metric`
+        (both switches, both menus' options and defaults);
+      - **checks:** the notebook tests 26; ruff 13 (the user's save's count: the difference
+        cell's trimmed `return`; none new); `marimo check` clean; Check B; **Check C** (162 s):
+        the difference shown as the ridge (curves recomputed, 4 lines at 0, linked x), its
+        forest through the function, both forms on all six metrics, the controls; every frame
+        and record equal to 5.4b's first run (`check_c_5_4b_tuning.pkl`; the new reference
+        `check_c_5_4b2_tuning.pkl`); `make_copy_tuning.py` restores `POISSON_DEVIANCE`'s
+        export; the mutation caught; the non-slow suite 1405 passed; mypy clean; the ridge on
+        rmse, log loss and bias on the real runs read cleanly.
+    - The EDA notebook unchanged; `03`'s md5 `2a2eb2576071e02f91eef47c7677344a`.
+    - **Commit:** `feat(notebook): the best models' paired bootstrap difference with its own plot and metric choice; the importance on the chosen metric (5.4b)`
 - **Moved to PR 7 (2026-11-07, the user):** PR 5 closes at 5.3; the EDA work (PR 5b) and the
   split (PR 6) come first, and 5.4 is done in `03_hyperparameter_tuning.py`, with the forest
   plots' layout fixed. The difference is `total_times_probability − independent_cohorts` (the
