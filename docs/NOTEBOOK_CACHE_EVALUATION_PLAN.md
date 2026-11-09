@@ -1322,7 +1322,8 @@ before the split (PR 6), and the tuning's (5.4 and the rest) after it (PR 7).
     rows; a controls cell (`test_plot` forest / ridge, the forest first; `test_metric`, all six,
     the selection metric by default); a display cell: the two runs' figure, their difference
     (a shared x, a rule at 0), `val_against_test_df` (12 rows: per model and metric, the
-    composite's `val`, `test`, `test_minus_val`), the test scores and the difference's tables.
+    composite's `val`, `test`, `test_minus_val`; the last removed in 7.3 at the user's
+    review), the test scores and the difference's tables.
   - **The test:** `test_the_test_evaluation_is_behind_its_button_and_opens_on_the_forest`;
     the equality test's test part.
   - **Checks:** the notebook tests 27 passed; ruff `03` 13 (the RUF059 gone, the new markdown
@@ -1353,7 +1354,84 @@ before the split (PR 6), and the tuning's (5.4 and the rest) after it (PR 7).
   cohorts × 6 metrics; the refit's training rows 1223; the test predictions' length 306).
 - **Commit:** `feat(notebook): the best models refit on train and validation, scored once on the test part`
 
-### [ ] 7.3 The reading of the test predictions
+### [x] 7.3 The reading of the test predictions
+- **Done (2026-11-09; the design changed by the user at the planning):**
+  - **The user's answers:**
+    - the buildings ranked by **a metric over each building's own cells**, the composite or one
+      cohort, the menu `rmse` (the selection metric, default), `mae`, `poisson_deviance`;
+      the probe on validation: these three are finite on every building, wmape divides by 0
+      when a cohort has no child (an error under `-W error`), bias is signed, log loss fails
+      on a building with no child;
+    - **a "Model" menu**, each table and figure one model;
+    - **no count heatmap** (the user's): overlaid histograms of the true counts and the
+      predicted means, and a scatter of true against predicted (the composite: the total);
+    - **k a number box** (5 by default), not a section-2 setting: a changed setting would
+      rerun the test evaluation unclicked and lose its results.
+  - **Revised twice at the user's reviews (2026-11-09, before the commit; the user's answers):**
+    - **First:** `n_in_neighborhood` dropped (correct but almost always 1: the 306 test
+      buildings in 129 neighborhoods, 1–5 each); raw feature values, no percentiles, no
+      `outside_1_99`; a residual table's order (ids, true, predicted, then the score derived
+      from them); the count figures apart under their own menus; the share scatter replaced by
+      pooled shares (`Σ y_c / Σ y` against `Σ ŷ_c / Σ ŷ`).
+    - **Second:** a Best / Worst switch with **one table per model** (Model 1 first, each
+      ranking its own buildings); no total columns in the building tables (the composite is
+      over the cohort cells; the totals are derived); `3_rooms_share` (`1 − Σ` the other three:
+      `ShareTransformer` leaves the reference out) before `4_rooms_share`; the neighborhood
+      **level** (misread) replaced by a neighborhood **filter** with that selection's
+      statistics, both models side by side; no `predicted_minus_true` columns; grouped bars,
+      not stacked (a common baseline per cohort reads the gap); **7.2's `test_minus_val`
+      removed** from `val_against_test_df`.
+  - **`03`:**
+    - the test evaluation cell returns `test_predictions` again (marimo's trim);
+    - 7.2's display cell: `val_against_test_df` is `model, metric, val, test`;
+    - section 6's text gains a paragraph on the reading;
+    - **the controls cell** (no click): `RANKING_METRIC_NAMES`, `test_reading_end` (best /
+      worst, worst), `test_reading_cohort`, `test_reading_metric`, `test_reading_k`
+      (`mo.ui.number(1, 50, value=5)`), `test_reading_model` and `test_figures_cohort` (the
+      figures), `test_neighborhood` (searchable: `all` and the 129 test neighborhoods);
+    - **the frames cell:** `test_buildings_df` (612: a row per model and building, the ids,
+      the 9 features, `<cohort>_true` / `_predicted`, the totals) and
+      `test_building_scores_df` (2448: per model, building and cohort, the three metrics from
+      `compute_metrics` on the building's row);
+    - **the tables cell:** `test_ranked_buildings` (`{model: its best or worst k}`: ids, each
+      cohort's true and predicted, the score, the features with `3_rooms_share`), then each
+      model's every building, worst first (the counts, the three scores);
+    - **the counts cell:** `test_counts_histogram` (true and predicted over shared bins) and
+      `test_counts_scatter` (the identity line, colored by `n_apartments` on the palette's blue
+      ramp, the building in the hover), per building;
+    - **the statistics cell:** for all the test buildings or one neighborhood,
+      `test_selection_buildings_df` (each cohort's true and both models' predictions),
+      `test_selection_counts_df` (per cohort and the total), `test_selection_shares_df`
+      (pooled), `test_selection_shares_bars` (grouped: true gray, Model 1 blue, Model 2
+      orange), `test_selection_scores_df` (`cohort, metric`, a column per model);
+    - the empty cell the user's save added at the end removed (the user's answer).
+  - **The test:** `test_the_test_reading_opens_on_its_defaults` (the menus' options and
+    defaults; no reading frame without a click).
+  - **Checks:**
+    - the notebook tests 28 passed;
+    - ruff `03` 14 as at HEAD (13 PLR1711, a B018), the test file clean; the user's two format
+      hunks; `marimo check` clean (after the empty cell's removal);
+    - Check B on both (the menus without a click, no reading frame);
+    - Check C on the EDA (every frame and figure equal to 7.2's run);
+    - **Check C on the tuning** (`check_c_7_3_tuning.py`, 211 s): the frames against
+      `test_age_group` and the predictions; every building score recomputed with NumPy; each
+      model's worst 5 (its own ranking) with every column, `3_rooms_share` equal to `1 − Σ` and
+      the four summing to 1; each model's every-building table (306 rows, marimo inlining its
+      first page of 10); the figures; the selection `all`: its buildings, counts, pooled
+      shares and bars recomputed, the scores equal `test_scores_df`'s point scores; every
+      earlier frame and record equal to 7.2's run (`val_against_test_df` without
+      `test_minus_val`; the new reference `check_c_7_3_tuning.pkl`).
+    - **One neighborhood** (the look's variant copy: N_144, its 3 buildings; Model 2,
+      `n_highschool`, best): its buildings, counts, shares and scores equal the masked sums and
+      a fresh `compute_metrics`.
+    - **The mutation** (the worst k by `nsmallest`) caught.
+    - The non-slow suite 1407 passed, 1 skipped, 1 xfailed; mypy 28 files clean.
+    - A look at the 3-trial copy's figures (headless Chrome) read cleanly.
+  - **Not run on the user's cache** (E11).
+  - The notebooks' md5: `02` `373c1c39f717935cb08ce14ff6e05a3a`, `03`
+    `f44128a70f625c23419f873d5413c368`.
+  - **Commit:** `feat(notebook): the test predictions read: each model's best and worst buildings by a chosen metric, true against predicted counts, and a neighborhood's counts, shares and scores (7.3)`
+- **The plan before the user's answers (history):**
 - **Change:** cells after 7.2, per model: (a) the residual table, a row per test building
   (`building_id`, `neighborhood_id`, the features, the true and predicted counts per cohort,
   the composite's absolute error), and the best k and worst k (`k`, a setting, **5 by default**: the user, 2026-11-09) with what

@@ -2089,6 +2089,13 @@ def _(mo):
     then the test part is predicted once and scored, with the bootstrap over
     its neighborhoods. Validation stays the selection evidence; the test
     score is reported, never used to choose.
+
+    The test predictions are then read (the menus): each model's best or
+    worst test buildings by a metric over each building's own cells (one
+    cohort, or the composite), with their true and predicted counts and
+    their features; one model's true and predicted counts per building; and,
+    for all the test buildings or one neighborhood, the children, the cohort
+    shares and the scores, true and of both models.
     """)
     return
 
@@ -2225,6 +2232,7 @@ def _(
     return (
         test_difference_df,
         test_difference_replicates,
+        test_predictions,
         test_replicate_scores,
         test_scores_df,
     )
@@ -2300,9 +2308,6 @@ def _(
             )
         }
     )
-    val_against_test_df["test_minus_val"] = (
-        val_against_test_df["test"] - val_against_test_df["val"]
-    )
     val_against_test_df = val_against_test_df.reset_index()
     mo.vstack(
         [
@@ -2335,6 +2340,502 @@ def _(
         ]
     )
     return
+
+
+@app.cell
+def _(COHORTS, SELECTION_METRIC, mo, test_age_group):
+    # The reading of the test predictions. The tables: each model's best or
+    # worst k buildings by a metric over each building's own cells, one cohort
+    # or the composite (its three cohorts); the metric a count loss finite on
+    # every building (wmape divides by 0 when a cohort has no child, bias is
+    # signed, log loss needs a child). The count figures: the model and the
+    # cohort (the composite: the total). The statistics: all the test
+    # buildings, or one neighborhood's.
+    RANKING_METRIC_NAMES = ["rmse", "mae", "poisson_deviance"]
+    test_reading_end = mo.ui.radio(
+        options=["best", "worst"], value="worst", inline=True, label="Show"
+    )
+    test_reading_cohort = mo.ui.dropdown(
+        options=[*COHORTS, "composite"], value="composite", label="Cohort"
+    )
+    test_reading_metric = mo.ui.dropdown(
+        options=RANKING_METRIC_NAMES, value=SELECTION_METRIC.name, label="Rank by"
+    )
+    test_reading_k = mo.ui.number(start=1, stop=50, value=5, label="k")
+    test_reading_model = mo.ui.dropdown(
+        options=["independent_cohorts", "total_times_probability"],
+        value="independent_cohorts",
+        label="Model",
+    )
+    test_figures_cohort = mo.ui.dropdown(
+        options=[*COHORTS, "composite"], value="composite", label="Cohort"
+    )
+    test_neighborhood = mo.ui.dropdown(
+        options=["all", *sorted(test_age_group.groups.unique())],
+        value="all",
+        searchable=True,
+        label="Neighborhood",
+    )
+    return (
+        RANKING_METRIC_NAMES,
+        test_figures_cohort,
+        test_neighborhood,
+        test_reading_cohort,
+        test_reading_end,
+        test_reading_k,
+        test_reading_metric,
+        test_reading_model,
+    )
+
+
+@app.cell
+def _(
+    COHORTS,
+    METRICS,
+    RANKING_METRIC_NAMES,
+    compute_metrics,
+    pd,
+    test_age_group,
+    test_predictions,
+):
+    # Each test building as each model predicts it: its ids and features, the
+    # true and the predicted count per cohort, and the totals.
+    _ranking_metrics = [
+        metric for metric in METRICS if metric.name in RANKING_METRIC_NAMES
+    ]
+    _buildings, _scores = [], []
+    for _model_name, _predictions in test_predictions.items():
+        _table = pd.DataFrame(
+            {
+                "model": _model_name,
+                "building_id": test_age_group.ids,
+                "neighborhood_id": test_age_group.groups,
+            }
+        ).join(test_age_group.X)
+        for _cohort in COHORTS:
+            _table[f"{_cohort}_true"] = test_age_group.Y[_cohort]
+            _table[f"{_cohort}_predicted"] = _predictions[_cohort]
+        _table["total_true"] = test_age_group.Y.sum(axis=1)
+        _table["total_predicted"] = _predictions.sum(axis=1)
+        _buildings.append(_table)
+        # Each building scored on its own cells: each cohort's, and the
+        # composite's (its three cohorts).
+        for _position, _building_id in enumerate(test_age_group.ids):
+            _scores.append(
+                compute_metrics(
+                    test_age_group.Y.iloc[[_position]],
+                    _predictions.iloc[[_position]],
+                    _ranking_metrics,
+                    cohorts=[*COHORTS, "composite"],
+                )
+                .reset_index()
+                .assign(model=_model_name, building_id=_building_id)
+            )
+    test_buildings_df = pd.concat(_buildings, ignore_index=True)
+    test_building_scores_df = pd.concat(_scores, ignore_index=True)[
+        ["model", "building_id", "cohort", *RANKING_METRIC_NAMES]
+    ]
+    return test_building_scores_df, test_buildings_df
+
+
+@app.cell
+def _(
+    COHORTS,
+    RANKING_METRIC_NAMES,
+    mo,
+    test_building_scores_df,
+    test_buildings_df,
+    test_reading_cohort,
+    test_reading_end,
+    test_reading_k,
+    test_reading_metric,
+):
+    _end, _cohort, _metric, _k = (
+        test_reading_end.value,
+        test_reading_cohort.value,
+        test_reading_metric.value,
+        test_reading_k.value,
+    )
+    _counts = [
+        "neighborhood_id",
+        *[f"{cohort}_{kind}" for cohort in COHORTS for kind in ("true", "predicted")],
+    ]
+    _cohort_text = (
+        "the composite (its three cohorts)" if _cohort == "composite" else _cohort
+    )
+    # Per model: its buildings in a residual table's order (the ids, the true
+    # and the predicted counts, then the scores derived from them, on the
+    # chosen cohort), worst first; its best or worst k with their features.
+    test_ranked_buildings, _chosen_views, _every_views = {}, [], []
+    for _model in ("independent_cohorts", "total_times_probability"):
+        _buildings = (
+            test_buildings_df[test_buildings_df["model"] == _model]
+            .drop(columns="model")
+            .set_index("building_id")
+        )
+        # The features, with the 3-room share (the one the shares leave out:
+        # the four sum to 1) before the 4-room share.
+        _features = _buildings.drop(columns=[*_counts, "total_true", "total_predicted"])
+        _features.insert(
+            _features.columns.get_loc("4_rooms_share"),
+            "3_rooms_share",
+            1
+            - _features[["4_rooms_share", "5_rooms_share", "6_rooms_share"]].sum(
+                axis=1
+            ),
+        )
+        _ranked = (
+            _buildings[_counts]
+            .join(
+                test_building_scores_df[
+                    (test_building_scores_df["model"] == _model)
+                    & (test_building_scores_df["cohort"] == _cohort)
+                ].set_index("building_id")[RANKING_METRIC_NAMES]
+            )
+            .sort_values(_metric, ascending=False, kind="stable")
+        )
+        if _end == "best":
+            _chosen = _ranked.nsmallest(_k, _metric)
+        elif _end == "worst":
+            _chosen = _ranked.nlargest(_k, _metric)
+        else:
+            raise ValueError(f"unknown end {_end!r}")
+        test_ranked_buildings[_model] = (
+            _chosen[[*_counts, _metric]].join(_features).reset_index()
+        )
+        _chosen_views += [
+            mo.md(f"**{_model}: its {_end} {_k}**"),
+            mo.ui.table(test_ranked_buildings[_model].round(4)),
+        ]
+        _every_views += [
+            mo.md(f"**{_model}: every test building, worst first**"),
+            mo.ui.table(_ranked.reset_index().round(4)),
+        ]
+    mo.vstack(
+        [
+            mo.md(
+                f"**Each model's {_end} {_k} test buildings by their {_metric} on "
+                f"{_cohort_text}** (each model ranks its own; the score over the "
+                "building's own cells; each row the true and the predicted counts, "
+                "the score, then the features)"
+            ),
+            mo.hstack(
+                [
+                    test_reading_end,
+                    test_reading_cohort,
+                    test_reading_metric,
+                    test_reading_k,
+                ],
+                justify="start",
+            ),
+            *_chosen_views,
+            mo.md(
+                "**Every test building** (the true and the predicted counts, then "
+                f"the three scores on {_cohort_text})"
+            ),
+            *_every_views,
+        ]
+    )
+    return (test_ranked_buildings,)
+
+
+@app.cell
+def _(go, mo, test_buildings_df, test_figures_cohort, test_reading_model):
+    # The forest's palette: each model in its color, the truth in the muted
+    # ink; the number of apartments on the sequential blue ramp (steps 250,
+    # 400, 550, 700, so the lightest still shows on the surface).
+    _model_colors = {
+        "independent_cohorts": "#2a78d6",
+        "total_times_probability": "#eb6834",
+    }
+    _surface, _ink, _muted, _grid, _axis = (
+        "#fcfcfb",
+        "#52514e",
+        "#898781",
+        "#e1e0d9",
+        "#c3c2b7",
+    )
+    _blues = ["#86b6ef", "#3987e5", "#1c5cab", "#0d366b"]
+    _model, _cohort = test_reading_model.value, test_figures_cohort.value
+    _color = _model_colors[_model]
+    # The chosen cohort's counts per building, or the buildings' totals.
+    _count = "total" if _cohort == "composite" else _cohort
+    _buildings = test_buildings_df[test_buildings_df["model"] == _model].set_index(
+        "building_id"
+    )
+    _true, _predicted = _buildings[f"{_count}_true"], _buildings[f"{_count}_predicted"]
+    # The true counts and the predicted means over the same bins.
+    test_counts_histogram = go.Figure(
+        [
+            go.Histogram(
+                x=_values,
+                name=_name,
+                bingroup="counts",
+                marker={"color": _trace_color},
+                opacity=0.6,
+                hovertemplate=f"{_name} %{{x}}: %{{y}} buildings<extra></extra>",
+            )
+            for _name, _values, _trace_color in (
+                ("true", _true, _muted),
+                ("predicted", _predicted, _color),
+            )
+        ]
+    )
+    test_counts_histogram.update_layout(barmode="overlay")
+    test_counts_histogram.update_xaxes(title_text=f"{_count} count")
+    test_counts_histogram.update_yaxes(title_text="buildings")
+    # Each building's true count against its prediction, colored by its
+    # number of apartments; on the dotted line they are equal.
+    _top = max(_true.max(), _predicted.max()) * 1.05
+    test_counts_scatter = go.Figure(
+        [
+            go.Scatter(
+                x=[0, _top],
+                y=[0, _top],
+                mode="lines",
+                line={"color": _ink, "width": 1, "dash": "dot"},
+                hoverinfo="skip",
+                showlegend=False,
+            ),
+            go.Scatter(
+                x=_true,
+                y=_predicted,
+                mode="markers",
+                showlegend=False,
+                marker={
+                    "size": 8,
+                    "color": _buildings["n_apartments"],
+                    "colorscale": _blues,
+                    "colorbar": {"title": {"text": "n_apartments"}, "thickness": 12},
+                    "line": {"width": 1, "color": _surface},
+                },
+                customdata=_buildings.reset_index()[
+                    ["building_id", "neighborhood_id", "n_apartments"]
+                ].to_numpy(),
+                hovertemplate=(
+                    "%{customdata[0]} (%{customdata[1]}), %{customdata[2]} apartments"
+                    "<br>true %{x}, predicted %{y:.2f}<extra></extra>"
+                ),
+            ),
+        ]
+    )
+    test_counts_scatter.update_xaxes(title_text=f"true {_count}", range=[0, _top])
+    test_counts_scatter.update_yaxes(title_text=f"predicted {_count}", range=[0, _top])
+    for _figure in (test_counts_histogram, test_counts_scatter):
+        _figure.update_layout(
+            height=400,
+            template="plotly_white",
+            paper_bgcolor=_surface,
+            plot_bgcolor=_surface,
+            font={
+                "family": "system-ui, -apple-system, Segoe UI, sans-serif",
+                "color": _ink,
+                "size": 12,
+            },
+            legend={
+                "orientation": "h",
+                "x": 0,
+                "xanchor": "left",
+                "y": 1.02,
+                "yanchor": "bottom",
+            },
+            margin={"l": 50, "r": 20, "t": 50, "b": 50},
+            hovermode="closest",
+        )
+        _figure.update_xaxes(
+            gridcolor=_grid, zeroline=False, linecolor=_axis, tickfont={"color": _muted}
+        )
+        _figure.update_yaxes(
+            gridcolor=_grid, zeroline=False, linecolor=_axis, tickfont={"color": _muted}
+        )
+    _count_text = "the total" if _cohort == "composite" else _cohort
+    mo.vstack(
+        [
+            mo.md(
+                f"**The true and the predicted counts of {_model} per test building: "
+                f"{_count_text}**"
+            ),
+            mo.hstack([test_reading_model, test_figures_cohort], justify="start"),
+            mo.md(
+                "The true counts and the predicted means over the same bins (a "
+                "model predicts a mean, so even a perfect model's histogram is "
+                "narrower than the counts')"
+            ),
+            test_counts_histogram,
+            mo.md(
+                "Each building's true count against its prediction, equal on the "
+                "dotted line, the color its number of apartments"
+            ),
+            test_counts_scatter,
+        ]
+    )
+    return test_counts_histogram, test_counts_scatter
+
+
+@app.cell
+def _(
+    COHORTS,
+    METRICS,
+    RANKING_METRIC_NAMES,
+    compute_metrics,
+    go,
+    mo,
+    pd,
+    test_age_group,
+    test_neighborhood,
+    test_predictions,
+):
+    _model_colors = {
+        "independent_cohorts": "#2a78d6",
+        "total_times_probability": "#eb6834",
+    }
+    _surface, _ink, _muted, _grid, _axis = (
+        "#fcfcfb",
+        "#52514e",
+        "#898781",
+        "#e1e0d9",
+        "#c3c2b7",
+    )
+    # The selection: every test building, or one neighborhood's.
+    if test_neighborhood.value == "all":
+        _mask = pd.Series(True, index=test_age_group.groups.index)
+        _selection_text = f"all {len(_mask)} test buildings"
+    else:
+        _mask = test_age_group.groups == test_neighborhood.value
+        _selection_text = (
+            f"neighborhood {test_neighborhood.value}: its {_mask.sum()} test buildings"
+        )
+    _true = test_age_group.Y[_mask]
+    _predicted = {
+        model: predictions[_mask] for model, predictions in test_predictions.items()
+    }
+    # Its buildings: each cohort's true count and each model's prediction.
+    test_selection_buildings_df = pd.DataFrame(
+        {
+            "building_id": test_age_group.ids[_mask],
+            "neighborhood_id": test_age_group.groups[_mask],
+        }
+    )
+    for _cohort in COHORTS:
+        test_selection_buildings_df[f"{_cohort}_true"] = _true[_cohort]
+        for _model, _model_predictions in _predicted.items():
+            test_selection_buildings_df[f"{_cohort}_{_model}"] = _model_predictions[
+                _cohort
+            ]
+    test_selection_buildings_df = test_selection_buildings_df.reset_index(drop=True)
+    # Its children per cohort and in total, and the pooled shares: each
+    # cohort's children over all the children, so each child counts once.
+    test_selection_counts_df = pd.DataFrame(
+        {
+            "true": [*_true.sum(), _true.sum().sum()],
+            **{
+                model: [*predictions.sum(), predictions.sum().sum()]
+                for model, predictions in _predicted.items()
+            },
+        },
+        index=pd.Index([*COHORTS, "total"], name="cohort"),
+    ).reset_index()
+    test_selection_shares_df = (
+        pd.DataFrame(
+            {
+                "true": _true.sum() / _true.sum().sum(),
+                **{
+                    model: predictions.sum() / predictions.sum().sum()
+                    for model, predictions in _predicted.items()
+                },
+            }
+        )
+        .rename_axis("cohort")
+        .reset_index()
+    )
+    # Each model's scores over the selection's cells, per cohort and for the
+    # composite.
+    _ranking_metrics = [
+        metric for metric in METRICS if metric.name in RANKING_METRIC_NAMES
+    ]
+    test_selection_scores_df = pd.DataFrame(
+        {
+            model: compute_metrics(
+                _true, predictions, _ranking_metrics, cohorts=[*COHORTS, "composite"]
+            ).stack()
+            for model, predictions in _predicted.items()
+        }
+    ).reset_index()
+    # The shares as grouped bars: the truth in the muted ink, each model in
+    # its color.
+    test_selection_shares_bars = go.Figure(
+        [
+            go.Bar(
+                x=COHORTS,
+                y=test_selection_shares_df[_series],
+                name=_series,
+                marker={"color": _bar_color, "line": {"width": 2, "color": _surface}},
+                hovertemplate=f"%{{x}} {_series} share %{{y:.3f}}<extra></extra>",
+            )
+            for _series, _bar_color in (
+                ("true", _muted),
+                *_model_colors.items(),
+            )
+        ]
+    )
+    test_selection_shares_bars.update_layout(
+        barmode="group",
+        bargap=0.3,
+        height=360,
+        template="plotly_white",
+        paper_bgcolor=_surface,
+        plot_bgcolor=_surface,
+        font={
+            "family": "system-ui, -apple-system, Segoe UI, sans-serif",
+            "color": _ink,
+            "size": 12,
+        },
+        legend={
+            "orientation": "h",
+            "x": 0,
+            "xanchor": "left",
+            "y": 1.02,
+            "yanchor": "bottom",
+        },
+        margin={"l": 50, "r": 20, "t": 50, "b": 50},
+    )
+    test_selection_shares_bars.update_xaxes(linecolor=_axis, tickfont={"color": _muted})
+    test_selection_shares_bars.update_yaxes(
+        title_text="share of the children",
+        gridcolor=_grid,
+        zeroline=False,
+        tickfont={"color": _muted},
+    )
+    mo.vstack(
+        [
+            mo.md(
+                f"**The statistics of {_selection_text}, true and each model's "
+                "predicted**"
+            ),
+            test_neighborhood,
+            mo.md("**Its buildings** (each cohort's true count, then each model's)"),
+            mo.ui.table(test_selection_buildings_df.round(4)),
+            mo.md("**Its children**, per cohort and in total"),
+            mo.ui.table(test_selection_counts_df.round(4)),
+            mo.md(
+                "**Its cohort shares** (each cohort's children over all the children)"
+            ),
+            mo.ui.table(test_selection_shares_df.round(4)),
+            test_selection_shares_bars,
+            mo.md(
+                "**Each model's scores over its cells**, per cohort and for the "
+                "composite"
+            ),
+            mo.ui.table(test_selection_scores_df.round(4)),
+        ]
+    )
+    return (
+        test_selection_buildings_df,
+        test_selection_counts_df,
+        test_selection_scores_df,
+        test_selection_shares_bars,
+        test_selection_shares_df,
+    )
 
 
 if __name__ == "__main__":

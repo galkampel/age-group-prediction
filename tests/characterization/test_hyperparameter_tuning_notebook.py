@@ -690,3 +690,44 @@ def test_the_test_evaluation_is_behind_its_button_and_opens_on_the_forest(
     metric_names = [metric.name for metric in notebook_defs["METRICS"]]
     assert list(notebook_defs["test_metric"].options) == metric_names
     assert notebook_defs["test_metric"].value == notebook_defs["SELECTION_METRIC"].name
+
+
+def test_the_test_reading_opens_on_its_defaults(
+    notebook_defs: dict,
+) -> None:
+    # 7.3: the reading of the test predictions needs no click for its menus;
+    # its frames and figures exist only after the test evaluation's click. The
+    # tables show each model's worst 5 by a count loss finite on every
+    # building; the figures have their own model and cohort; the statistics
+    # cover all the test buildings or one neighborhood.
+    assert notebook_defs["RANKING_METRIC_NAMES"] == ["rmse", "mae", "poisson_deviance"]
+    end = notebook_defs["test_reading_end"]
+    assert list(end.options) == ["best", "worst"]
+    assert end.value == "worst"
+    cohort = notebook_defs["test_reading_cohort"]
+    assert list(cohort.options) == [*notebook_defs["COHORTS"], "composite"]
+    assert cohort.value == "composite"
+    metric = notebook_defs["test_reading_metric"]
+    assert list(metric.options) == notebook_defs["RANKING_METRIC_NAMES"]
+    assert metric.value == notebook_defs["SELECTION_METRIC"].name == "rmse"
+    k = notebook_defs["test_reading_k"]
+    assert (k.start, k.stop, k.value) == (1, 50, 5)
+    model = notebook_defs["test_reading_model"]
+    assert list(model.options) == ["independent_cohorts", "total_times_probability"]
+    assert model.value == "independent_cohorts"
+    figures_cohort = notebook_defs["test_figures_cohort"]
+    assert list(figures_cohort.options) == list(cohort.options)
+    assert figures_cohort.value == "composite"
+    neighborhood = notebook_defs["test_neighborhood"]
+    test_neighborhoods = sorted(notebook_defs["test_age_group"].groups.unique())
+    assert list(neighborhood.options) == ["all", *test_neighborhoods]
+    assert neighborhood.value == "all"
+    assert "test_figures_level" not in notebook_defs
+    for name in (
+        "test_buildings_df",
+        "test_building_scores_df",
+        "test_ranked_buildings",
+        "test_counts_histogram",
+        "test_selection_counts_df",
+    ):
+        assert name not in notebook_defs, name

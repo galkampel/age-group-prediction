@@ -1,4 +1,21 @@
-# Handoff: the experiment notebooks, PR 7 at 7.2 (committed); 7.3 next
+# Handoff: the experiment notebooks, PR 7 at 7.3 (done); 7.1 next
+
+**Status (2026-11-09, 7.3 done, before the user's commit; 7.1 next):**
+- **7.3 is done, revised twice at the user's reviews** (the cache plan's 7.3 Done note): a
+  Best / Worst switch with one table per model (ids, each cohort's true and predicted, the
+  score, the features with `3_rooms_share`) and each model's every building; the count figures
+  (a histogram, a scatter; the user dropped the count heatmap) under their own model and cohort
+  menus; a neighborhood filter (`all` or one of 129) with the selection's buildings, counts,
+  pooled shares (table, grouped bars) and both models' scores. 7.2's `test_minus_val` removed.
+  28 notebook tests; the suite 1407 passed; mypy clean. **Not run on the user's cache** (E11).
+  The empty cell the user's save added at the end is removed (the user's answer).
+- **The notebooks' md5:** `02_objective_eda.py` `373c1c39f717935cb08ce14ff6e05a3a`,
+  `03_hyperparameter_tuning.py` `f44128a70f625c23419f873d5413c368`.
+- **Check C's tuning reference** is now `check_c_7_3_tuning.pkl` (`run_7_3.sh`,
+  `run_c_tuning_7_3.sh`, `check_c_7_3_tuning.py`, `run_mutant_7_3.sh`; the look
+  `probes/run_look_7_3.sh`), in this session's scratchpad:
+  `/private/tmp/claude-501/-Users-galkampel-Desktop-Projects-age-group-prediction/f37dc199-6bcb-4a3d-b0f1-d248c4ea76f3/scratchpad`
+  (with the EDA's `check_c_7_3_eda.pkl` and its two figures' JSON, `check_c_3_1l.pkl`).
 
 **Status (2026-11-09, 7.2 committed and pushed; implementation paused; the next session starts at
 §6):**
@@ -582,6 +599,7 @@ which the two notebooks now hold: 1–5 in the EDA, 1–4 and 6 (as 5) in the tu
   | `f0d240c` | 5.4a: `forest_figure` redesigned, `ridge_figure` behind a "Plot" switch (with the user's `metric_name` edit) |
   | `96030f1` | 5.4b: the paired difference (its own switch and menu), the runs' "Metric" menu, the importance on `importance_metric` |
   | `0316c06` | 7.2: the best runs refit on train + validation, scored once on the test part (with marimo's trims) |
+  | (the user's) | 7.3: the test predictions read: each model's best and worst buildings, true against predicted counts, a neighborhood's counts, shares and scores |
 - **7.0's Check C baselines** (3 trials, both sharing flags off; the cv RMSE) are in the cache
   plan's 7.0 Done note:
   - Model 1, exposure on / off: `lgbm_poisson` 4.4495 / 4.5284, `lgbm_gaussian` 4.4543 /
@@ -1530,8 +1548,10 @@ notebooks' md5 and the commit message in a copyable code block:
    importance on the chosen loss:** done 2026-11-09 (the cache plan's 5.4b).
 5. **7.2, the test evaluation:** done 2026-11-09 (the cache plan's 7.2; the order changed
    by the user: 7.2, 7.3, then 7.1).
-6. **Next:** 7.3, the reading of the test predictions (`k = 5` best and worst buildings by
-   default), then SHAP per cohort (7.1).
+6. **7.3, the reading of the test predictions:** done 2026-11-09, revised twice at the user's
+   reviews (the cache plan's 7.3: a table per model, a neighborhood filter, the heatmap and the
+   share scatter replaced; 7.2's `test_minus_val` removed).
+7. **Next:** SHAP per cohort (7.1), then PR 7's close.
 
    MLflow and D4 stay deferred.
 
