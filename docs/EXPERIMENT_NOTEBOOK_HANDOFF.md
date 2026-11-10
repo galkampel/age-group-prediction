@@ -1,4 +1,21 @@
-# Handoff: the experiment notebooks, PR 7 at 7.3 (committed); 7.1 next
+# Handoff: the experiment notebooks, PR 7 at 7.1a (done); 7.1b next
+
+**Status (2026-11-10, 7.1 planned and split; 7.1a done, before the user's commit; 7.1b next):**
+- **7.1 is planned** (the cache plan's 7.1, with the probe on the real best runs) as three
+  sub-tasks after the user's two notes: 7.1a `PermutationImportance` returns scikit-learn's
+  result; 7.1b SHAP per cohort (the tables without ranks, a beeswarm with its own cohort menu);
+  7.1c the test buildings' SHAP waterfalls behind their own button.
+- **7.1a is done** (the cache plan's 7.1a Done note): `src`, its tests, MODEL_INSPECTION.md and
+  `03`'s three inspection cells; `importance_df` and every Check C frame equal to 7.3's run.
+- **The notebooks' md5:** `02_objective_eda.py` `373c1c39f717935cb08ce14ff6e05a3a`,
+  `03_hyperparameter_tuning.py` `858cbfe2f3524ccf2c9b628082491740`.
+- **The test part has still not been run on the user's cache** (E11).
+- **The scratchpad:** `/private/tmp/claude-501/-Users-galkampel-Desktop-Projects-age-group-prediction/99bdc359-a398-40b1-92af-4986d8d47896/scratchpad`.
+  It holds `checks/` (7.3's, plus `run_7_1a.sh`, `run_c_tuning_7_1a.sh`,
+  `check_c_7_1a_tuning.py`, `run_mutant_7_1a.sh`), `probes/` (with `probe_7_1.py`,
+  `run_probe_7_1.sh`, `draft_beeswarm_7_1.py`), `probe_7_1.pkl` (the real runs' SHAP),
+  `shots_7_1/`, and the pickles `check_c_7_1a_tuning.pkl` (the tuning's reference),
+  `check_c_7_1a_eda.pkl` with its two figures' JSON, `check_c_7_3_*`, `check_c_3_1l.pkl`.
 
 **Status (2026-11-09, 7.3 committed and pushed; implementation paused; the next session starts at
 §6):**

@@ -11,6 +11,7 @@ import pytest
 from numpy.typing import ArrayLike
 from pydantic import ValidationError
 from sklearn.linear_model import LogisticRegression, PoissonRegressor
+from sklearn.utils import Bunch
 
 from age_group_prediction.feature_engineering import (
     FeatureTransformer,
@@ -42,6 +43,9 @@ X = pd.DataFrame(
 EXPOSURE = np.arange(1.0, 41.0)
 Y = X["x"].to_numpy() * EXPOSURE
 N_REPEATS = 4
+# Each column's position in the result's arrays, which follow X's columns.
+X_POSITION = 0
+IGNORED_POSITION = 1
 
 
 class _SpyModel(BaseAgeGroupModel):
@@ -74,7 +78,7 @@ class _RecordingMetric:
 
 def _compute(
     recorder: _RecordingMetric, *, direction: Direction = "minimize", **settings: Any
-) -> tuple[_SpyModel, pd.DataFrame]:
+) -> tuple[_SpyModel, Bunch]:
     metric = Metric("mae", recorder, direction=direction)
     kwargs: dict[str, Any] = {
         "metric": metric,
@@ -90,9 +94,9 @@ def test_an_ignored_column_scores_zero_and_a_used_one_positive() -> None:
     # Catches a scorer that ignores the permuted frame, or the wrong column
     # shuffled: the unused column must score exactly 0 in every repeat.
     _, result = _compute(_RecordingMetric())
-    assert result.loc["ignored", "importance_mean"] == 0.0
-    assert result.loc["ignored", "importance_std"] == 0.0
-    assert result.loc["x", "importance_mean"] > 0.0
+    assert result.importances_mean[IGNORED_POSITION] == 0.0
+    assert result.importances_std[IGNORED_POSITION] == 0.0
+    assert result.importances_mean[X_POSITION] > 0.0
 
 
 def test_a_positive_importance_means_the_column_helps_under_both_directions() -> None:
@@ -104,8 +108,8 @@ def test_a_positive_importance_means_the_column_helps_under_both_directions() ->
     gain_result = PermutationImportance(
         gain, N_REPEATS, random_state=0
     ).compute_importances(_SpyModel(), X, Y, exposure=EXPOSURE)
-    assert loss_result.loc["x", "importance_mean"] > 0.0
-    assert gain_result.loc["x", "importance_mean"] > 0.0
+    assert loss_result.importances_mean[X_POSITION] > 0.0
+    assert gain_result.importances_mean[X_POSITION] > 0.0
 
 
 def test_exposure_stays_row_aligned_while_columns_are_permuted() -> None:
@@ -128,11 +132,13 @@ def test_importance_is_the_mean_and_std_of_the_score_drops() -> None:
     _, result = _compute(recorder)
     scores = np.array(recorder.scores)
     assert len(scores) == 1 + N_REPEATS * len(X.columns)
-    for position, column in enumerate(X.columns):
+    assert result.importances.shape == (len(X.columns), N_REPEATS)
+    for position in range(len(X.columns)):
         start = 1 + position * N_REPEATS
         drops = scores[start : start + N_REPEATS] - scores[0]
-        assert result.loc[column, "importance_mean"] == pytest.approx(drops.mean())
-        assert result.loc[column, "importance_std"] == pytest.approx(np.std(drops))
+        np.testing.assert_allclose(result.importances[position], drops)
+        assert result.importances_mean[position] == pytest.approx(drops.mean())
+        assert result.importances_std[position] == pytest.approx(np.std(drops))
 
 
 def test_same_seed_gives_identical_results() -> None:
@@ -140,8 +146,8 @@ def test_same_seed_gives_identical_results() -> None:
     _, first = _compute(_RecordingMetric())
     _, second = _compute(_RecordingMetric())
     _, other = _compute(_RecordingMetric(), random_state=1)
-    pd.testing.assert_frame_equal(first, second)
-    assert first.loc["x", "importance_mean"] != other.loc["x", "importance_mean"]
+    np.testing.assert_array_equal(first.importances, second.importances)
+    assert first.importances_mean[X_POSITION] != other.importances_mean[X_POSITION]
 
 
 def test_non_finite_score_raises() -> None:
@@ -217,6 +223,6 @@ def test_total_times_probability_model_with_a_string_column() -> None:
     ).fit(X_table, Y_table, exposure=exposure)
     importance = PermutationImportance(COHORT_POISSON_DEVIANCE, 3, random_state=0)
     result = importance.compute_importances(model, X_table, Y_table, exposure=exposure)
-    assert list(result.index) == list(X_table.columns)
-    assert result.columns.tolist() == ["importance_mean", "importance_std"]
-    assert np.isfinite(result.to_numpy()).all()
+    assert sorted(result) == ["importances", "importances_mean", "importances_std"]
+    assert result.importances.shape == (len(X_table.columns), 3)
+    assert np.isfinite(result.importances).all()

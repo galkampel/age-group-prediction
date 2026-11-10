@@ -1940,7 +1940,6 @@ def _(
     importance_metric,
     mo,
     n_repeats,
-    pd,
     run_inspection,
     seed,
     shap_background,
@@ -1956,23 +1955,21 @@ def _(
     # validation subsample against the training background; the values explain
     # the count (the rows' exposure), per row, column and cohort.
     _importance = PermutationImportance(importance_metric, n_repeats, random_state=seed)
-    model1_permutation = pd.concat(
-        {
-            "train": _importance.compute_importances(
-                best_model1,
-                train_age_group.X,
-                train_age_group.Y,
-                exposure=train_age_group.exposure,
-            ),
-            "val": _importance.compute_importances(
-                best_model1,
-                val_age_group.X,
-                val_age_group.Y,
-                exposure=val_age_group.exposure,
-            ),
-        },
-        names=["split", "column"],
-    )
+    # scikit-learn's results, their arrays in X's column order.
+    model1_permutation = {
+        "train": _importance.compute_importances(
+            best_model1,
+            train_age_group.X,
+            train_age_group.Y,
+            exposure=train_age_group.exposure,
+        ),
+        "val": _importance.compute_importances(
+            best_model1,
+            val_age_group.X,
+            val_age_group.Y,
+            exposure=val_age_group.exposure,
+        ),
+    }
     model1_shap = ShapExplainer(method="exact", n_jobs=-1).explain(
         best_model1, shap_rows.X, shap_background, exposure=shap_rows.exposure
     )
@@ -1987,7 +1984,6 @@ def _(
     importance_metric,
     mo,
     n_repeats,
-    pd,
     run_inspection,
     seed,
     shap_background,
@@ -1999,23 +1995,21 @@ def _(
         not run_inspection.value, mo.md("Click the button to inspect the best runs.")
     )
     _importance = PermutationImportance(importance_metric, n_repeats, random_state=seed)
-    model2_permutation = pd.concat(
-        {
-            "train": _importance.compute_importances(
-                best_model2,
-                train_age_group.X,
-                train_age_group.Y,
-                exposure=train_age_group.exposure,
-            ),
-            "val": _importance.compute_importances(
-                best_model2,
-                val_age_group.X,
-                val_age_group.Y,
-                exposure=val_age_group.exposure,
-            ),
-        },
-        names=["split", "column"],
-    )
+    # scikit-learn's results, their arrays in X's column order.
+    model2_permutation = {
+        "train": _importance.compute_importances(
+            best_model2,
+            train_age_group.X,
+            train_age_group.Y,
+            exposure=train_age_group.exposure,
+        ),
+        "val": _importance.compute_importances(
+            best_model2,
+            val_age_group.X,
+            val_age_group.Y,
+            exposure=val_age_group.exposure,
+        ),
+    }
     model2_shap = ShapExplainer(method="exact", n_jobs=-1).explain(
         best_model2, shap_rows.X, shap_background, exposure=shap_rows.exposure
     )
@@ -2035,7 +2029,8 @@ def _(
 ):
     # The two importances side by side, per model and raw column: the permutation
     # importance on validation (its rank decides) and on training, and the mean
-    # |SHAP| over the explained rows and the cohorts (D18).
+    # |SHAP| over the explained rows and the cohorts (D18). Both hold arrays in
+    # X's column order, SHAP's feature_names.
     _rows = []
     for _model, _permutation, _shap in [
         ("independent_cohorts", model1_permutation, model1_shap),
@@ -2043,13 +2038,12 @@ def _(
     ]:
         _table = pd.DataFrame(
             {
-                "perm_mean_train": _permutation.loc["train", "importance_mean"],
-                "perm_mean_val": _permutation.loc["val", "importance_mean"],
-                "perm_std_val": _permutation.loc["val", "importance_std"],
-                "mean_abs_shap": pd.Series(
-                    np.abs(_shap.values).mean(axis=(0, 2)), index=_shap.feature_names
-                ),
-            }
+                "perm_mean_train": _permutation["train"].importances_mean,
+                "perm_mean_val": _permutation["val"].importances_mean,
+                "perm_std_val": _permutation["val"].importances_std,
+                "mean_abs_shap": np.abs(_shap.values).mean(axis=(0, 2)),
+            },
+            index=_shap.feature_names,
         )
         _table["perm_rank"] = _table["perm_mean_val"].rank(ascending=False).astype(int)
         _table["shap_rank"] = _table["mean_abs_shap"].rank(ascending=False).astype(int)

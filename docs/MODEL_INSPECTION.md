@@ -21,7 +21,7 @@ build on each other in order.
 | part | answers | class |
 |---|---|---|
 | bootstrap | how sure is the validation score? | `BootstrapEvaluator(n_resamples, random_state=None).evaluate(y_true, y_pred, groups=None, *, metrics=[...], cohorts="composite")` → a DataFrame, one row per replicate, one column per (cohort, metric) |
-| permutation importance | which columns does the score depend on? | `PermutationImportance(metric, n_repeats, random_state=None)` → a DataFrame per column |
+| permutation importance | which columns does the score depend on? | `PermutationImportance(metric, n_repeats, random_state=None)` → scikit-learn's result (a `Bunch` of arrays in `X`'s column order) |
 | SHAP | how does each column move each row's prediction? | `ShapExplainer(method, max_evals=None, random_state=None, n_jobs=1)` → a `shap.Explanation` |
 
 The bootstrap takes the fitted model's predictions; the other two take a
@@ -159,16 +159,18 @@ permutation = {}
 for name, model in models.items():
     on_train = importance.compute_importances(model, X_train, Y_train, exposure=exposure_train)
     on_val = importance.compute_importances(model, X_val, Y_val, exposure=exposure_val)
-    permutation[name] = on_val["importance_mean"]
+    # The results hold arrays in X's column order; the table names them.
+    table = pd.DataFrame({"train": on_train.importances_mean, "val": on_val.importances_mean,
+                          "val_std": on_val.importances_std}, index=X_val.columns)
+    permutation[name] = table["val"]
     print(name)
-    print(pd.DataFrame({"train": on_train["importance_mean"], "val": on_val["importance_mean"],
-                        "val_std": on_val["importance_std"]}).sort_values("val", ascending=False).round(3))
+    print(table.sort_values("val", ascending=False).round(3))
 component = pd.DataFrame({
     "total (poisson_deviance)": PermutationImportance(POISSON_DEVIANCE, 10, random_state=0)
-        .compute_importances(model_2.total_model_, X_val, Y_val.sum(axis=1), exposure=exposure_val)["importance_mean"],
+        .compute_importances(model_2.total_model_, X_val, Y_val.sum(axis=1), exposure=exposure_val).importances_mean,
     "probability (log_loss)": PermutationImportance(LOG_LOSS, 10, random_state=0)
-        .compute_importances(model_2.probability_model_, X_val, Y_val)["importance_mean"],
-})
+        .compute_importances(model_2.probability_model_, X_val, Y_val).importances_mean,
+}, index=X_val.columns)
 print(component.sort_values("total (poisson_deviance)", ascending=False).round(4))
 ```
 
@@ -345,9 +347,14 @@ averaged over the repeats:
 
     importance = score(X) - score(X with the column shuffled)
 
+It returns scikit-learn's result unchanged, a `Bunch` of arrays in `X`'s
+column order: `importances` (a row per column, a column per repeat),
+`importances_mean` and `importances_std`; a caller that wants a table builds
+it with `index=X.columns`.
+
 with a loss entering negated, so a **positive** importance means the column
 helps, whichever way the metric points, and the units are the metric's.
-`importance_std` is the spread over the repeats; a column whose mean is
+`importances_std` is the spread over the repeats; a column whose mean is
 within a standard deviation of zero is noise. The exposure stays paired with
 its row (scikit-learn shuffles a copy of one column with the rows in place).
 

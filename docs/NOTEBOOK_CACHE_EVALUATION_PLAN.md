@@ -1293,15 +1293,79 @@ before the split (PR 6), and the tuning's (5.4 and the rest) after it (PR 7).
 
 **The order since 2026-11-09 (the user):** 7.2, 7.3, then 7.1.
 
-### [ ] 7.1 SHAP per cohort (notebook; last since 2026-11-09)
-- **Change:** the importance cell: `mean_abs_shap` per column × cohort (`np.abs(values).mean(axis=0)`,
-  a frame columns × cohorts, the composite beside as today) and the rank per cohort; a
-  beeswarm-style plotly figure per model and cohort (the SHAP value per explained row and
-  column, the color the column's value, the columns ordered by the cohort's mean |SHAP|), shown
-  in a dropdown of the cohorts or stacked; section 6's text.
-- **Checks:** Check A–C (the per-cohort means average to the reference's `mean_abs_shap`
-  exactly; the figures' traces one per column).
-- **Commit:** `feat(notebook): SHAP per cohort, the values and the feature order`
+### [ ] 7.1 SHAP per cohort, the permutation result, the test buildings' waterfalls (last since 2026-11-09)
+- **Planned 2026-11-10** (the user's answers, all the recommended options; the user's two notes
+  at the planning: `PermutationImportance` returns scikit-learn's result object, the caller
+  builds a frame; a local SHAP view, a waterfall, of 7.3's best/worst k test buildings).
+  Three sub-tasks, `src` first.
+- **The probe** (read-only, the real 100-trial best runs: a copy of the notebook on a copy of
+  `studies/`, only "Inspect the best runs" clicked, the test part not evaluated, the 50 files
+  unchanged; 81 s):
+  - SHAP is 100 rows × 9 columns × 3 cohorts per model.
+  - The cohorts rank the columns differently:
+    - Model 1: `median_age` 2 / 2 / 4, `5_rooms_share` 4 / 3 / 2, `6_rooms_share` 5 / 4 / 3;
+    - Model 2: `median_age` 2 / 5 / 2, `ses` 3 / 2 / 5, `school_status` 5 / 9 / 7.
+  - The per-cohort means average to today's `mean_abs_shap` only to the last bit (≤ 4.4e-16),
+    so the composite keeps today's `np.abs(values).mean(axis=(0, 2))`.
+  - `school_status` is a string with unordered levels (none / existing / planned): gray in the
+    beeswarm, its level on hover.
+- **[x] 7.1a `PermutationImportance` returns scikit-learn's result (`src`, tests, guide,
+  notebook).** **Done (2026-11-10), as planned:**
+  - **`inspection/permutation.py`:** `compute_importances(...) -> Bunch`, scikit-learn's result
+    unchanged after the finite check: `importances` (a row per column, a column per repeat),
+    `importances_mean`, `importances_std`, in `X`'s column order.
+  - **`tests/unit/test_inspection_permutation.py`:** the assertions read the arrays (each
+    column by its position in `X`); the drops test also checks `importances` row by row and
+    its shape; the string-column test checks the keys and the shape.
+  - **`docs/MODEL_INSPECTION.md`:** the overview's row, §4 (the result's keys, how to build a
+    table) and the code block (its frames built with `index=X_val.columns`); the outputs are
+    unchanged (`run_guide_blocks.py`: 5 blocks equal).
+  - **`03`:** the two inspection cells keep `{"train": result, "val": result}` (no `pd.concat`,
+    no `pd`); the importance cell builds the frame from the arrays, indexed by SHAP's
+    `feature_names`.
+  - **Checks:**
+    - the permutation tests 11 passed; the notebook tests 28 passed;
+    - ruff `03` 14, `02` 11 (as at HEAD); the user's two format hunks; `marimo check` clean;
+    - Check B on both;
+    - Check C on the EDA: every frame and figure equal to 7.3's run;
+    - Check C on the tuning (`check_c_7_1a_tuning.py`, 188 s): both results per model
+      recomputed (`importances` exactly, the table's columns from them, `X`'s order);
+      `importance_df` and every shared frame and record equal to 7.3's run
+      (`check_c_7_3_tuning.pkl`; the new reference `check_c_7_1a_tuning.pkl`);
+    - **the mutation** (`importances_std` returned as the mean, on a full copy, the sentinel
+      first) caught by `test_importance_is_the_mean_and_std_of_the_score_drops`;
+    - the non-slow suite 1407 passed, 1 skipped, 1 xfailed (6 warnings, all MLflow's in the
+      old stack's `test_gate8_tracking.py`); mypy 28 files clean.
+  - The notebooks' md5: `02` `373c1c39f717935cb08ce14ff6e05a3a`, `03`
+    `858cbfe2f3524ccf2c9b628082491740`.
+  - **Commit:** `refactor(inspection): PermutationImportance returns scikit-learn's result; the callers build the frame (7.1a)`
+- **[ ] 7.1b SHAP per cohort, the tables and the beeswarm (notebook):**
+  - **the importance cell:** per model `perm_mean_train`, `perm_mean_val`, `perm_std_val`,
+    `mean_abs_shap_<cohort>` × 3, `mean_abs_shap_composite` (today's, bit-identical); no ranks;
+    one `mo.ui.table` per model (Model 1 first, a heading with its run), rows in `X`'s order;
+  - **a controls cell:** `shap_cohort` (the three cohorts, the first by default; no total);
+  - **a beeswarm cell:**
+    - per model a figure with a trace per column, ordered by the cohort's mean |SHAP|;
+    - x the SHAP value, y the row with a seeded jitter (±0.3);
+    - the color the column's value scaled to its min–max on 7.3's blue ramp, a non-numeric
+      column gray; `shap_beeswarm_figures`;
+  - **the text;** the test (the menu's options and default, no figure without a click);
+  - **Check C:** the per-cohort columns exactly, the composite equal to the reference and the
+    per-cohort mean at 1e-12, the figures' traces; the mutation (the order ascending).
+  - **Commit:** `feat(notebook): SHAP per cohort: each model's importance table with the mean |SHAP| per cohort, and a beeswarm per cohort (7.1b)`
+- **[ ] 7.1c The test buildings' SHAP waterfalls (notebook):**
+  - **7.2's cell** exports `test_models` and `train_val_age_group`;
+  - **a button** "Explain the test buildings" (`run_test_explanation`); behind it, `test_shap`
+    for all 306 test buildings per model (exact, against `n_shap_background` train +
+    validation rows, seeded);
+  - **per model** a building menu of 7.3's shown k (`test_ranked_buildings`);
+  - **a waterfall cell:** a horizontal `go.Waterfall` from the base value to the prediction,
+    for 7.3's cohort (the composite: the total, the cohorts summed), the colors from the
+    palette's diverging pair; `test_waterfall_figures`;
+  - **the test:** the button's guard;
+  - **Check C:** additivity, the menus' options, each waterfall's values the chosen id's row;
+    the mutation (the row by position instead of id). Not run on the user's cache (E11).
+  - **Commit:** `feat(notebook): the test buildings explained: a SHAP waterfall of each model's chosen best or worst building (7.1c)`
 
 ### [x] 7.2 The final refit and the test scores (E11)
 - **Done (2026-11-09), as planned** (the user's answers: the test part returned in both
