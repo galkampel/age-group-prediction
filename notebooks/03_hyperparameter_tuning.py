@@ -635,7 +635,8 @@ def _(mo):
     descent). Each run's best model is refit on the
     training part and scored on validation; each model's best run is the
     lowest validation score by `selection_metric`, bootstrapped over whole
-    neighborhoods and inspected behind its button. The two best runs' paired
+    neighborhoods and inspected behind its button (the permutation importance
+    and the SHAP values per cohort). The two best runs' paired
     difference, per bootstrap replicate, shows whether one is better; a
     "Metric" menu chooses the metric of the plots and, unless it is bias, of
     the permutation importance (`selection_metric` by default). The
@@ -1905,7 +1906,7 @@ def _(importance_metric, mo):
     run_inspection = mo.ui.run_button(label="Inspect the best runs")
     mo.md(
         f"{run_inspection} each model's best run: the permutation importance on "
-        f"{importance_metric.name} and SHAP (about two minutes)."
+        f"{importance_metric.name} and the SHAP values per cohort (about two minutes)."
     )
     return (run_inspection,)
 
@@ -2018,6 +2019,7 @@ def _(
 
 @app.cell
 def _(
+    best_runs_val_scores_df,
     importance_metric,
     mo,
     model1_permutation,
@@ -2028,46 +2030,213 @@ def _(
     pd,
 ):
     # The two importances side by side, per model and raw column: the permutation
-    # importance on validation (its rank decides) and on training, and the mean
-    # |SHAP| over the explained rows and the cohorts (D18). Both hold arrays in
-    # X's column order, SHAP's feature_names.
+    # importance on validation (the decision) and on training (the overfit
+    # check), and the mean |SHAP| over the explained rows per cohort and for the
+    # composite (D18). Both hold arrays in X's column order, SHAP's
+    # feature_names.
     _rows = []
     for _model, _permutation, _shap in [
         ("independent_cohorts", model1_permutation, model1_shap),
         ("total_times_probability", model2_permutation, model2_shap),
     ]:
+        _mean_abs_shap = np.abs(_shap.values).mean(axis=0)
         _table = pd.DataFrame(
             {
-                "perm_mean_train": _permutation["train"].importances_mean,
-                "perm_mean_val": _permutation["val"].importances_mean,
-                "perm_std_val": _permutation["val"].importances_std,
-                "mean_abs_shap": np.abs(_shap.values).mean(axis=(0, 2)),
+                "perm_fi_mean_train": _permutation["train"].importances_mean,
+                "perm_fi_std_train": _permutation["train"].importances_std,
+                "perm_fi_mean_val": _permutation["val"].importances_mean,
+                "perm_fi_std_val": _permutation["val"].importances_std,
+                **{
+                    f"mean_abs_shap_{cohort}": _mean_abs_shap[:, position]
+                    for position, cohort in enumerate(_shap.output_names)
+                },
+                # Over the rows and the cohorts at once: the mean over the
+                # cohorts, up to the last bit.
+                "mean_abs_shap_composite": np.abs(_shap.values).mean(axis=(0, 2)),
             },
             index=_shap.feature_names,
         )
-        _table["perm_rank"] = _table["perm_mean_val"].rank(ascending=False).astype(int)
-        _table["shap_rank"] = _table["mean_abs_shap"].rank(ascending=False).astype(int)
-        _rows.append(_table.rename_axis("column").reset_index().assign(model=_model))
-    importance_df = pd.concat(_rows, ignore_index=True)[
-        [
-            "model",
-            "column",
-            "perm_mean_train",
-            "perm_mean_val",
-            "perm_std_val",
-            "perm_rank",
-            "mean_abs_shap",
-            "shap_rank",
-        ]
-    ]
+        _table = _table.rename_axis("column").reset_index()
+        _table.insert(0, "model", _model)
+        _rows.append(_table)
+    importance_df = pd.concat(_rows, ignore_index=True)
+    # Each model's table, its rows in X's column order, so the two compare row
+    # by row.
+    _views = []
+    for _model, _family, _use_exposure in (
+        best_runs_val_scores_df[["model", "family", "use_exposure"]]
+        .drop_duplicates()
+        .itertuples(index=False)
+    ):
+        _views.append(mo.md(f"**{_model}:** `{_family}`, exposure {_use_exposure}"))
+        _views.append(
+            mo.ui.table(
+                importance_df[importance_df["model"] == _model]
+                .drop(columns="model")
+                .reset_index(drop=True)
+                .round(4)
+            )
+        )
     mo.vstack(
         [
             mo.md(
-                "**Feature importance of the best runs** (perm: the drop of the cohort "
-                f"{importance_metric.name} when the column is shuffled; mean_abs_shap: mean |SHAP| "
-                "of the predicted count over the explained rows and cohorts)"
+                "**Feature importance of each model's best run, per raw column** "
+                "(perm_fi_mean_val: the permutation feature importance, the drop of "
+                f"the composite {importance_metric.name} on validation when the "
+                "column is shuffled, the decision; perm_fi_mean_train: the same on "
+                "the training rows, what the model fitted, so a column high there "
+                "and near 0 on validation is overfit; perm_fi_std_train, "
+                "perm_fi_std_val: the spread over the repeated shuffles; "
+                "mean_abs_shap_<cohort>: how much the column moves the cohort's "
+                "predicted count, the mean |SHAP| over the explained validation "
+                "rows, no labels needed; mean_abs_shap_composite: their mean over "
+                "the cohorts)"
             ),
-            mo.md(f"```text\n{importance_df.round(4).to_string(index=False)}\n```"),
+            *_views,
+        ]
+    )
+    return
+
+
+@app.cell
+def _(COHORTS, mo):
+    # The beeswarm's cohort: the SHAP values explain each cohort's predicted
+    # count, and each cohort orders the columns its own way.
+    shap_cohort = mo.ui.dropdown(options=COHORTS, value=COHORTS[0], label="Cohort")
+    return (shap_cohort,)
+
+
+@app.cell
+def _(go, mo, model1_shap, model2_shap, np, pd, seed, shap_cohort, shap_rows):
+    # The palette's tokens, as in the test reading's figures; a column's value
+    # on the sequential blue ramp (steps 250, 400, 550, 700); a category's
+    # levels (unordered) each in its own row, in the muted gray: a row holds
+    # one level, so its value has no low or high.
+    _surface, _ink, _muted, _grid, _axis = (
+        "#fcfcfb",
+        "#52514e",
+        "#898781",
+        "#e1e0d9",
+        "#c3c2b7",
+    )
+    _blues = ["#86b6ef", "#3987e5", "#1c5cab", "#0d366b"]
+    _cohort = shap_cohort.value
+    # One jitter, so each row of dots spreads the same way in every figure.
+    _jitter = np.random.default_rng(seed).uniform(-0.3, 0.3, len(shap_rows.X))
+    shap_beeswarm_figures = {}
+    for _model, _shap in (
+        ("independent_cohorts", model1_shap),
+        ("total_times_probability", model2_shap),
+    ):
+        _values = _shap.values[:, :, _shap.output_names.index(_cohort)]
+        # The columns by the cohort's mean |SHAP|, the largest on top; a
+        # numeric column one row, a category a row per level, kept together
+        # at the column's place: (label, column, its rows, whether a level).
+        _order = np.argsort(-np.abs(_values).mean(axis=0), kind="stable")
+        _rows = []
+        for _column_position in _order:
+            _column = _shap.feature_names[_column_position]
+            _raw = shap_rows.X[_column]
+            if pd.api.types.is_numeric_dtype(_raw):
+                _rows.append(
+                    (_column, _column_position, np.full(len(_raw), True), False)
+                )
+            else:
+                for _level in sorted(_raw.unique()):
+                    _rows.append(
+                        (
+                            f"{_column} = {_level}",
+                            _column_position,
+                            (_raw == _level).to_numpy(),
+                            True,
+                        )
+                    )
+        _figure = go.Figure()
+        _scale_shown = False
+        for _position, (_label, _column_position, _mask, _is_level) in enumerate(_rows):
+            _column = _shap.feature_names[_column_position]
+            _raw = shap_rows.X[_column][_mask]
+            if not _is_level:
+                # The value scaled to the column's range over the explained
+                # rows; a constant column divides by 1.
+                _range = (_raw.max() - _raw.min()) or 1
+                _marker = {
+                    "color": ((_raw - _raw.min()) / _range).to_numpy(),
+                    "colorscale": _blues,
+                    "cmin": 0,
+                    "cmax": 1,
+                    "showscale": not _scale_shown,
+                    "colorbar": {
+                        "title": {"text": "value"},
+                        "thickness": 12,
+                        "tickvals": [0, 1],
+                        "ticktext": ["low", "high"],
+                    },
+                }
+                _scale_shown = True
+                _value_text = "%{customdata:.4g}"
+            else:
+                _marker = {"color": _muted}
+                _value_text = "%{customdata}"
+            _figure.add_trace(
+                go.Scatter(
+                    x=_values[_mask, _column_position],
+                    y=len(_rows) - 1 - _position + _jitter[_mask],
+                    mode="markers",
+                    name=_label,
+                    showlegend=False,
+                    marker={"size": 6, "opacity": 0.8, **_marker},
+                    customdata=_raw.to_numpy(),
+                    hovertemplate=(
+                        f"{_column} {_value_text}<br>SHAP %{{x:.3f}}<extra></extra>"
+                    ),
+                )
+            )
+        _figure.update_layout(
+            height=60 + 45 * len(_rows),
+            template="plotly_white",
+            paper_bgcolor=_surface,
+            plot_bgcolor=_surface,
+            font={
+                "family": "system-ui, -apple-system, Segoe UI, sans-serif",
+                "color": _ink,
+                "size": 12,
+            },
+            margin={"l": 190, "r": 20, "t": 20, "b": 50},
+            hovermode="closest",
+        )
+        _figure.update_yaxes(
+            tickvals=list(range(len(_rows)))[::-1],
+            ticktext=[row[0] for row in _rows],
+            gridcolor=_grid,
+            zeroline=False,
+            linecolor=_axis,
+            tickfont={"color": _ink},
+        )
+        _figure.update_xaxes(
+            title_text=f"SHAP value (children, {_cohort})",
+            gridcolor=_grid,
+            zeroline=True,
+            zerolinecolor=_axis,
+            linecolor=_axis,
+            tickfont={"color": _muted},
+        )
+        shap_beeswarm_figures[_model] = _figure
+    _views = []
+    for _model, _figure in shap_beeswarm_figures.items():
+        _views += [mo.md(f"**{_model}**"), _figure]
+    mo.vstack(
+        [
+            mo.md(
+                f"**The SHAP values of {_cohort} per explained validation row** "
+                "(each dot a row: how much the column moves its predicted count "
+                "from the mean prediction over the background; the columns ordered "
+                "by their mean |SHAP| for the cohort, the largest on top; the color "
+                "the column's value, low to high over the explained rows; a "
+                "category a row per level, in gray)"
+            ),
+            shap_cohort,
+            *_views,
         ]
     )
     return
@@ -2530,7 +2699,7 @@ def _(
             *_every_views,
         ]
     )
-    return (test_ranked_buildings,)
+    return
 
 
 @app.cell
@@ -2663,7 +2832,7 @@ def _(go, mo, test_buildings_df, test_figures_cohort, test_reading_model):
             test_counts_scatter,
         ]
     )
-    return test_counts_histogram, test_counts_scatter
+    return
 
 
 @app.cell
@@ -2823,13 +2992,12 @@ def _(
             mo.ui.table(test_selection_scores_df.round(4)),
         ]
     )
-    return (
-        test_selection_buildings_df,
-        test_selection_counts_df,
-        test_selection_scores_df,
-        test_selection_shares_bars,
-        test_selection_shares_df,
-    )
+    return
+
+
+@app.cell
+def _():
+    return
 
 
 if __name__ == "__main__":

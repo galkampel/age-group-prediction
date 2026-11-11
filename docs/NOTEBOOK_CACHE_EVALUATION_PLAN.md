@@ -1339,7 +1339,77 @@ before the split (PR 6), and the tuning's (5.4 and the rest) after it (PR 7).
   - The notebooks' md5: `02` `373c1c39f717935cb08ce14ff6e05a3a`, `03`
     `858cbfe2f3524ccf2c9b628082491740`.
   - **Commit:** `refactor(inspection): PermutationImportance returns scikit-learn's result; the callers build the frame (7.1a)`
-- **[ ] 7.1b SHAP per cohort, the tables and the beeswarm (notebook):**
+- **[x] 7.1b SHAP per cohort, the tables and the beeswarm (notebook).** **Done (2026-11-10), as
+  planned** (with the caption the user's question asked for: what each importance means):
+  - **`03`:**
+    - **the importance cell:** per model `perm_mean_train`, `perm_mean_val`, `perm_std_val`,
+      `mean_abs_shap_<cohort>` × 3 and `mean_abs_shap_composite` (today's computation); no ranks.
+      One `mo.ui.table` per model (Model 1 first, headed by its run), rows in `X`'s order. The
+      caption says what each column means (validation the decision, train the overfit check,
+      mean |SHAP| label-free);
+    - **the controls cell:** `shap_cohort` (the three cohorts, the first by default);
+    - **the beeswarm cell:** `shap_beeswarm_figures` (per model, a trace per column ordered by
+      the cohort's mean |SHAP|, the seeded jitter, the value on the blue ramp, `school_status`
+      gray, one colorbar);
+    - **the text:** section 5's paragraph and the inspection button's sentence.
+  - **The test:** `test_the_shap_beeswarm_opens_on_the_first_cohort`.
+  - **Checks:**
+    - the notebook tests 29 passed;
+    - ruff `03` 14, `02` 11 (as at HEAD); the user's two format hunks; `marimo check` clean;
+    - Check B on both;
+    - Check C on the EDA: equal to 7.1a's run;
+    - **Check C on the tuning** (`check_c_7_1b_tuning.py`, 190 s):
+      - the per-cohort means exactly; the composite exactly, and the per-cohort mean at 1e-12;
+      - the permutation part as in 7.1a;
+      - both tables from marimo's inline data, rounded to 4, no rank;
+      - each figure's 9 traces in the cohort's order, x the values, y the rows plus the
+        recomputed jitter, the colors scaled, `school_status` gray, one colorbar;
+      - every other frame and record equal to 7.1a's run; `importance_df`'s shared columns
+        equal to 7.1a's (with `mean_abs_shap` renamed); the new reference
+        `check_c_7_1b_tuning.pkl`;
+    - **the mutation** (the columns in ascending order) caught;
+    - the non-slow suite 1408 passed, 1 skipped, 1 xfailed; mypy 28 files clean;
+    - the 3-trial copy's figures screenshotted (`shots_7_1b/`) and read.
+  - The notebooks' md5: `02` `373c1c39f717935cb08ce14ff6e05a3a`, `03`
+    `5cf1856ec35237dc2f5891c7974101b2`.
+  - **Amended (2026-11-11, the user's review, before the commit):**
+    - **the importance cell:** `perm` renamed `perm_fi` (permutation feature importance), and
+      train's spread added: `perm_fi_mean_train`, `perm_fi_std_train`, `perm_fi_mean_val`,
+      `perm_fi_std_val`, then the mean |SHAP| columns (the user's order: train first); the
+      caption names the four;
+    - **the beeswarm cell:** a non-numeric column a row per level (`school_status = existing /
+      none / planned`, its levels sorted), kept together at the column's place in the
+      mean-|SHAP| order, in the muted gray (`#898781`): a row holds one level, so its value
+      has no low or high for the blue ramp, and the row's label names the level (the user's
+      choice at the stop, over a color per level: aqua, violet, yellow); the single gray row
+      overlapped its three levels (the probe on the real validation SHAP: one row against a row
+      per level, the user chose the rows);
+    - **the user's question, why `n_daycares_500m` moves kindergarten so little:** the simulator
+      gives it a small, saturating effect (`1 − e^(−n/3)`, already 0.49–0.74 over the middle
+      half of the rows; +0.12 on the total's log mean, −0.20 on the lifecycle index): about 0.30
+      on log E[kindergarten] per saturation unit, 0.056 across the rows, against median age's
+      0.14; kindergarten is its largest cohort in truth (elementary +0.10, high school −0.13) and
+      in both models (Model 1's mean |SHAP| 0.139 / 0.075 / 0.082); a neighborhood-level column
+      under a neighborhood effect of sd 0.20; its validation permutation importance −0.003.
+    - **Checks** (`run_7_1b2.sh`; first on the colored version, md5
+      `ee632893763020b7c43bb2d5dbc6abc7`; the gray version's rerun ended during the mutation, so
+      the mutation, the screenshots, the suite and mypy are to rerun):
+      - the notebook tests 29 passed (unchanged: no test reads the renamed columns);
+      - ruff `03` 14, `02` 11 (as at HEAD); the user's two format hunks; `marimo check` clean;
+      - Check B on both;
+      - Check C on the EDA: every frame and figure equal to 7.1b's run;
+      - **Check C on the tuning** (`check_c_7_1b2_tuning.py`, 184 s; the gray version 187 s, passed): the four `perm_fi`
+        columns recomputed (`importances_mean` and `importances_std` of both splits exactly);
+        both tables from marimo's inline data; each beeswarm's 11 rows (`school_status`'s three
+        levels together at its place, gray, x, y, hover values; every explained row in
+        exactly one level row); every other frame and record equal to 7.1b's run, `importance_df`
+        with the columns renamed (the new reference `check_c_7_1b2_tuning.pkl`);
+      - **the mutation** (each level's row holding the other levels' rows) caught;
+      - the non-slow suite 1408 passed, 1 skipped, 1 xfailed; mypy 28 files clean;
+      - the 3-trial copy's beeswarms screenshotted (`shots_7_1b2/`) and read.
+    - The notebooks' md5: `02` `373c1c39f717935cb08ce14ff6e05a3a`, `03`
+      `7e0885006782467b5e6b99ca80600ff2` (the gray version).
+  - **The plan:**
   - **the importance cell:** per model `perm_mean_train`, `perm_mean_val`, `perm_std_val`,
     `mean_abs_shap_<cohort>` × 3, `mean_abs_shap_composite` (today's, bit-identical); no ranks;
     one `mo.ui.table` per model (Model 1 first, a heading with its run), rows in `X`'s order;
@@ -1352,20 +1422,43 @@ before the split (PR 6), and the tuning's (5.4 and the rest) after it (PR 7).
   - **the text;** the test (the menu's options and default, no figure without a click);
   - **Check C:** the per-cohort columns exactly, the composite equal to the reference and the
     per-cohort mean at 1e-12, the figures' traces; the mutation (the order ascending).
-  - **Commit:** `feat(notebook): SHAP per cohort: each model's importance table with the mean |SHAP| per cohort, and a beeswarm per cohort (7.1b)`
-- **[ ] 7.1c The test buildings' SHAP waterfalls (notebook):**
+  - **Commit:** `feat(notebook): SHAP per cohort: each model's importance table with the permutation feature importance's mean and spread on train and validation and the mean |SHAP| per cohort, and a beeswarm per cohort with a row per category level (7.1b)`
+- **[ ] 7.1c The test part explained: permutation importance, SHAP, the waterfalls (notebook):**
   - **7.2's cell** exports `test_models` and `train_val_age_group`;
   - **a button** "Explain the test buildings" (`run_test_explanation`); behind it, `test_shap`
     for all 306 test buildings per model (exact, against `n_shap_background` train +
-    validation rows, seeded);
+    validation rows, seeded), and `test_permutation` (the user's request, 2026-11-10: the
+    permutation importance on the test part, the refit models, `importance_metric`);
+  - **the test importance table** (`test_importance_df`), one per model, mirroring 7.1b's:
+    `perm_fi_mean_test`, `perm_fi_std_test`, the test's mean |SHAP| per cohort and the composite.
+    The caption says the model is the refit one (not the validation table's) and that the
+    table is reported, never used to choose (E11);
   - **per model** a building menu of 7.3's shown k (`test_ranked_buildings`);
   - **a waterfall cell:** a horizontal `go.Waterfall` from the base value to the prediction,
     for 7.3's cohort (the composite: the total, the cohorts summed), the colors from the
     palette's diverging pair; `test_waterfall_figures`;
+  - **Re-planned 2026-11-11 (the probe and the user's answers):**
+    - **the probe** (Check C's 3-trial copy, its own `studies/`): an independent refit on train +
+      validation reproduces `test_predictions` exactly; exact SHAP of the 306 test buildings
+      22.7 s (Model 1) and 11.9 s (Model 2), the test permutation 1.3 s and 1.0 s; base + Σ SHAP
+      equals the prediction to 9e-14 per cohort; `base_values` (306, 3), per building the mean
+      prediction over the background at its own exposure (the total's 7.3–45.2);
+    - **the waterfall from the base** (shap's form): `base=` the building's base, the nine
+      columns' steps by |SHAP| (largest on top), labelled `column = value`, x zoomed to the
+      steps, the mean prediction and the prediction as dotted rules, the true and predicted
+      counts in the title (from 0, the steps of 0.1–1 vanished on a 0–70 axis);
+    - **its own "Cohort" menu** (`test_waterfall_cohort`: the cohorts and composite, composite by
+      default; the user's "each figure its own menus"), not 7.3's;
+    - **red `#e34948` raises, blue `#2a78d6` lowers** (the palette's diverging pair);
+    - the building menus `test_waterfall_buildings`, a `mo.ui.dictionary` of a dropdown per
+      model over 7.3's shown ids;
+    - a change of section 5's "Metric" menu reruns the explanation unclicked and clears it (as
+      it clears section 5's inspection).
   - **the test:** the button's guard;
-  - **Check C:** additivity, the menus' options, each waterfall's values the chosen id's row;
+  - **Check C:** additivity, `test_permutation` recomputed from an independent refit, the
+    test table, the menus' options, each waterfall's values the chosen id's row;
     the mutation (the row by position instead of id). Not run on the user's cache (E11).
-  - **Commit:** `feat(notebook): the test buildings explained: a SHAP waterfall of each model's chosen best or worst building (7.1c)`
+  - **Commit:** `feat(notebook): the test part explained: the permutation importance and SHAP on test, and a waterfall of each model's chosen best or worst building (7.1c)`
 
 ### [x] 7.2 The final refit and the test scores (E11)
 - **Done (2026-11-09), as planned** (the user's answers: the test part returned in both

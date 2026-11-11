@@ -673,6 +673,19 @@ def test_the_plots_open_on_their_forms_and_the_selection_metric(
     assert runs_metric.value == difference_metric.value == selection == "rmse"
 
 
+def test_the_shap_beeswarm_opens_on_the_first_cohort(
+    notebook_defs: dict,
+) -> None:
+    # 7.1b: the beeswarm's menu needs no click and offers the cohorts (SHAP
+    # explains each cohort's count; no composite); its figures exist only
+    # after the inspection's click.
+    cohort = notebook_defs["shap_cohort"]
+    assert list(cohort.options) == notebook_defs["COHORTS"]
+    assert cohort.value == notebook_defs["COHORTS"][0]
+    assert "shap_beeswarm_figures" not in notebook_defs
+    assert "importance_df" not in notebook_defs
+
+
 def test_the_test_evaluation_is_behind_its_button_and_opens_on_the_forest(
     notebook_defs: dict,
 ) -> None:
