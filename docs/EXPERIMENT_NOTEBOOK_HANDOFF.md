@@ -1,4 +1,32 @@
-# Handoff: the experiment notebooks, PR 7 at 7.1e (implemented and checked, not validated by the user); PR 7's close next
+# Handoff: the experiment notebooks, PR 7 closed (the user's PR and merge next); then E11's run, the MLflow runs and D4
+
+**Status (2026-11-12, PR 7 closed, before the user's commit, PR and merge; the next session starts at §6):**
+- **7.1d and 7.1e are committed** as `aaf7196` (the user's; the md5 as checked, no marimo save).
+- **The close** (no notebook or `src` change; `run_close_7.sh`, log `run_close_7.log`): the
+  non-slow suite 1411 passed, 1 skipped, 1 xfailed; mypy 28 files clean; the notebook tests 32;
+  ruff `03` 14, `02` 11, the two test files clean; the user's two format hunks in each notebook;
+  `marimo check` clean; Check B on both; Check C on the EDA (16 s: every frame and the 27
+  figures equal to 7.1e's run) and on the tuning (335 s: every assertion from 7.0 to 7.1e, every
+  shared frame and record equal to 7.1e's run, nothing skipped).
+- **The uncommitted files:** `docs/NOTEBOOK_CACHE_EVALUATION_PLAN.md`, this handoff. The commit:
+
+  ```text
+  docs(notebook): PR 7 closed: the checks on HEAD, the plan's status; the handoff for after the merge
+  ```
+- **The PR text** is in the scratchpad below (`pr_7.md`, for `gh pr create --body-file`), title
+  `feat(notebook): Model 2 by the joint method, the best runs compared, SHAP per cohort and the test evaluation (PR 7)`.
+- **The notebooks' md5:** `02_objective_eda.py` `373c1c39f717935cb08ce14ff6e05a3a`,
+  `03_hyperparameter_tuning.py` `47c8ce343350475eebe8c2007a00397e`.
+- **The test part has still not been run on the user's cache** (E11).
+- **Noticed, left (the user's call):** section 6's text (the paragraph "The same click explains
+  …") does not name 7.1d/7.1e's permutation figure and its Cohort menu.
+- **The scratchpad to copy first:** `/private/tmp/claude-501/-Users-galkampel-Desktop-Projects-age-group-prediction/f701aef6-03a7-4737-9781-4cee1cc6a750/scratchpad`: `checks/` (§4's "Since PR 7's
+  close", "Since 7.1e", "Since 7.1d"), `probes/`, `viewer/`, `new_cells_7_1e/`, the logs
+  `run_close_7.log`, `run_7_1e.log`, `run_7_1e_rest.log`, `pr_7.md`, and the pickles
+  `check_c_close_7_tuning.pkl` (the tuning's reference), `check_c_close_7_eda.pkl` with its two
+  figures' JSON (the EDA's), `check_c_7_1e_*`, `check_c_7_1d_*`, `check_c_7_1b2_beeswarm.json`
+  (section 5's beeswarm; `check_c_7_1e_tuning.py` reads it beside its out pickle),
+  `check_c_3_1l.pkl`, `probe_7_1.pkl`.
 
 **Status (2026-11-12, end of session; 7.1e done and checked; the next session starts at §6):**
 - **7.1e (the user's request after checking 7.1d: "Looks good!"):** the permutation importance
@@ -852,7 +880,8 @@ which the two notebooks now hold: 1–5 in the EDA, 1–4 and 6 (as 5) in the tu
   | `a47a748` | 7.1a: `PermutationImportance` returns scikit-learn's result; the callers build the frame |
   | `57fd52a` | 7.1b: SHAP per cohort, the tables and the beeswarm (with marimo's save from the user's session) |
   | `9779eb2` | 7.1c: the test part explained; 7.1b's save undone (with marimo's save from the user's session) |
-  | (uncommitted) | 7.1d and 7.1e (one commit): the permutation importance drawn, per cohort under a Cohort menu; the scatter by the true total, the shares' n; 7.1c's save undone |
+  | `aaf7196` | 7.1d and 7.1e (one commit): the permutation importance drawn, per cohort under a Cohort menu; the scatter by the true total, the shares' n; 7.1c's save undone |
+  | (uncommitted) | PR 7 closed: the checks on HEAD, the cache plan's status, this handoff for after the merge |
 - **7.0's Check C baselines** (3 trials, both sharing flags off; the cv RMSE) are in the cache
   plan's 7.0 Done note:
   - Model 1, exposure on / off: `lgbm_poisson` 4.4495 / 4.5284, `lgbm_gaussian` 4.4543 /
@@ -1671,6 +1700,14 @@ md5, the commit message. Tick the sub-task and update the status lines.
   - `probes/run_look_7_1e.sh`: 7.1d's variant and both permutation menus on `n_highschool`;
   - **a module-level name in Check C is shared by every block:** 7.1e's first version reused
     `again` (the 7.1c block's SHAP explanation) and failed later; name new variables uniquely.
+- **Since PR 7's close (2026-11-12; the scripts in `/private/tmp/claude-501/-Users-galkampel-Desktop-Projects-age-group-prediction/f701aef6-03a7-4737-9781-4cee1cc6a750/scratchpad/checks`):**
+  - `run_close_7.sh`: the non-slow suite, mypy, Check A on both notebooks, Check B on both,
+    Check C on the EDA (`check_c_eda.py`, against 7.1e's run) and on the tuning
+    (`check_c_7_1e_tuning.py`, `compare_shared.py` against `check_c_7_1e_tuning.pkl`); no
+    mutation, look or screenshot (no code changed since 7.1e's run); about 15 min;
+  - its pickles `check_c_close_7_tuning.pkl` and `check_c_close_7_eda.pkl` (with its two
+    figures' JSON) are the references for the next change; `check_c_7_1e_tuning.py` reads
+    `check_c_7_1b2_beeswarm.json` beside its out pickle.
 - **The scripts of 5.3's session (2026-11-07, the latest copy;** copy from here first): the
   scratchpad named in the status at the top (`checks/` adapted to 5.3; `check_c_5_3.pkl` is
   5.4's reference).
@@ -1932,41 +1969,38 @@ constructor, data in the call; fitting and evaluating as separate steps; no priv
 
 ## 6. Next, and the prompt
 
-**Status (2026-11-12, end of session: 7.1d and 7.1e implemented and checked, not yet checked by the user):**
+**Status (2026-11-12, PR 7 closed, before the user's commit, PR and merge):**
 - PR 7 is on `feat/test-evaluation` (from `main` at `f9c92a5`): 7.0 `a74b2ff`, 7.0b
   `8ef9b3f`, 5.4a `f0d240c`, 5.4b `96030f1`, 7.2 `0316c06`, 7.3 `19e69ec`, 7.1a `a47a748`,
-  7.1b `57fd52a`, 7.1c `9779eb2` (§2's "PR 7"). 7.1d and 7.1e are uncommitted; the user commits
-  them together (with this handoff) as
+  7.1b `57fd52a`, 7.1c `9779eb2`, 7.1d and 7.1e `aaf7196` (§2's "PR 7"). The close (the cache
+  plan's status, this handoff) is uncommitted; the user commits it as
 
   ```text
-  feat(notebook): the permutation importance drawn per cohort, a box of the repeats per column under a Cohort menu for validation and test; the test counts colored by the true total; the shares' number of children and the truth's interval (7.1d, 7.1e)
+  docs(notebook): PR 7 closed: the checks on HEAD, the plan's status; the handoff for after the merge
   ```
+
+  then pushes, opens the PR (the text in the scratchpad's `pr_7.md`) and squash-merges it.
 - The notebooks' md5:
   - `01_eda.py` `4bc1ba3a52dc2ad55d0097a707bd1ccc`;
   - `02_objective_eda.py` `373c1c39f717935cb08ce14ff6e05a3a`;
   - `03_hyperparameter_tuning.py` `47c8ce343350475eebe8c2007a00397e`.
-- Check C's references (§4, "Since 7.1e"): `check_c_7_1e_eda.pkl` (the EDA, with its two
-  figures' JSON) and `check_c_7_1e_tuning.pkl` (the tuning; `check_c_7_1e_tuning.py`), in the
-  scratchpad named in the status at the top. If they are gone, rewrite the scripts from §4 and
-  run Check C on HEAD before the first edit, keeping those pickles.
+- Check C's references (§4, "Since PR 7's close"): `check_c_close_7_eda.pkl` (the EDA, with its
+  two figures' JSON) and `check_c_close_7_tuning.pkl` (the tuning; `check_c_7_1e_tuning.py`), in
+  the scratchpad named in the status at the top. If they are gone, rewrite the scripts from §4
+  and run Check C on HEAD before the first edit, keeping those pickles.
 - The user's cache `studies/` holds 50 studies; a click loads them. **The test part has still not
   been run on it** (E11: the user reads the test part first).
 
 Next, one step per approval, each stopped with a file-by-file summary, the checks, the
 notebooks' md5 and the commit message in a copyable code block:
-1. **7.0, 7.0b, 5.4a, 5.4b, 7.2, 7.3, 7.1a, 7.1b, 7.1c:** done and committed (the cache plan's
-   Done notes).
-2. **7.1d (the user's review of 7.1c) and 7.1e (the permutation importance per cohort):**
-   implemented 2026-11-12 (the cache plan's 7.1d and 7.1e Done notes), every check passed
-   (`run_7_1e.log`, `run_7_1e_rest.log`). The next session first summarizes them and helps the
-   user check them (where each change sits in the notebook, what to look at with `marimo run`);
-   the user commits them together; changes from that check are a new stop.
-3. **Next: PR 7's close** (planned 2026-11-12, approved with 7.1d): re-verify the state;
-   `run_close_7.sh` (the non-slow suite, mypy, Check A–C on both notebooks equal to 7.1e's run;
-   no notebook edit); the cache plan's status; the PR text (a bullet per sub-task and the
-   checks; no "Generated with Claude Code", no Co-Authored-By); the handoff for after the merge
-   (its "Next": the user's E11 run, then MLflow and D4, unless the user names another). MLflow and D4 stay deferred; E11's run of the test part on the user's cache
-   is the user's.
+1. **PR 7's merge (the user's):** after it, record the merge (the squash hash on `main`), delete
+   `feat/test-evaluation` locally (`git branch -D`: `-d` refuses a squash-merged branch) and on
+   GitHub, and start the next branch from `main` (its first commit: this handoff with the merge
+   recorded).
+2. **E11's run (the user's):** the user clicks "Evaluate on the test part" on the real cache once,
+   after reading the test part; the assistant does not run it.
+3. **Then, unless the user names another:** the MLflow runs and D4 (EXPERIMENT_NOTEBOOK_PLAN.md's
+   D4: the comparison table and the final run), planned first.
 
 The user's preferences:
 - plan docs in `docs/`, split into sub-tasks validated one at a time;
@@ -1984,28 +2018,23 @@ The user's preferences:
 
 ```text
 Read docs/EXPERIMENT_NOTEBOOK_HANDOFF.md in full (the status at the top, §1, §2's "PR 7"
-block, §3 (with 7.1c's, 7.1d's and 7.1e's answers), §4's checks (since 7.1c, 7.1d and 7.1e),
-traps, iCloud notes, §5, §6 first), then docs/NOTEBOOK_CACHE_EVALUATION_PLAN.md (§6: 7.1e's,
-7.1d's and 7.1c's Done notes), then notebooks/03_hyperparameter_tuning.py (section 5 from the
-best runs on; section 6 whole).
+block, §3, §4's checks (since PR 7's close), traps, iCloud notes, §5, §6 first), then
+docs/NOTEBOOK_CACHE_EVALUATION_PLAN.md (its status line and §6), then
+docs/EXPERIMENT_NOTEBOOK_PLAN.md (E11 and D4).
 Verify the state first:
-- the branch feat/test-evaluation; HEAD 9779eb2 (7.1c) with 7.1d and 7.1e uncommitted (the
-  notebook, its test, the cache plan, the handoff), or HEAD my 7.1d+7.1e commit on 9779eb2 with
-  `git status` clean;
+- PR 7 merged into main (its squash hash), or the branch feat/test-evaluation with HEAD my
+  close commit and `git status` clean;
 - the notebooks' md5 (`cat <file> | md5`): 02_objective_eda.py
   373c1c39f717935cb08ce14ff6e05a3a, 03_hyperparameter_tuning.py 47c8ce343350475eebe8c2007a00397e;
 - no iCloud-offloaded files: `find .git src notebooks tests docs configs -flags +dataless -type f
   | grep -vc __pycache__` is 0.
 If anything differs (my marimo editor may have saved over it: trimmed returns, an empty cell),
-stop and show me the diff. Then copy checks/, probes/, viewer/, new_cells_7_1e/, the logs and
-the pickles the status at the top lists from the scratchpad it names (or rewrite them from §4),
-set each script's S= to the new scratchpad, and compile the pycache (§4's iCloud notes).
-First, if 7.1d and 7.1e are not committed: summarize them for me (the file-by-file summary, the
-checks, the md5, the commit message) and help me check the implementation: where each change sits in the
-notebook (cell and line) and what to look at with `marimo run` (read-only). Then wait: I commit
-it, or ask for changes (a new stop, planned first).
-Next: PR 7's close (§6 step 3, planned and approved): wait for my go.
-Don't run the test evaluation on my cache: I read the test part first. My marimo session may be
+stop and show me the diff. Then copy checks/, probes/, viewer/, the logs and the pickles the
+status at the top lists from the scratchpad it names (or rewrite them from §4), set each
+script's S= to the new scratchpad, and compile the pycache (§4's iCloud notes).
+First, if PR 7 is merged: record the merge (§6 step 1) and wait for my commit. Then plan the
+next step (§6: the MLflow runs and D4, unless I name another) in plan mode and wait for my go.
+Don't run the test evaluation on my cache: that run is mine (E11). My marimo session may be
 open: tell me before editing the notebook and remind me to reload it after (not to save from
 it). Keep the implementation simple. Stop each step with a file-by-file summary, the checks, the
 notebooks' md5 and the commit message in a copyable code block. I commit myself: never commit,
