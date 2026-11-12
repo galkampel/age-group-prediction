@@ -23,6 +23,7 @@ import numpy as np
 import optuna
 import pandas as pd
 import pytest
+import shap
 from optuna.samplers import RandomSampler
 from scipy.stats import gaussian_kde
 
@@ -744,3 +745,81 @@ def test_the_test_reading_opens_on_its_defaults(
         "test_selection_counts_df",
     ):
         assert name not in notebook_defs, name
+
+
+def test_the_test_explanation_is_behind_its_button(
+    notebook_defs: dict,
+) -> None:
+    # 7.1c (E11): the test evaluation's click also explains the refit models;
+    # a script run explains nothing. The test beeswarm's cohort and the
+    # waterfalls' end and cohort need no click: the waterfalls open on each
+    # model's worst buildings for the first cohort (the composite optional);
+    # their building menus exist only after the click.
+    source = NOTEBOOK_PATH.read_text(encoding="utf-8")
+    cells = [
+        cell
+        for cell in source.split("@app.cell")
+        if "test_shap, test_permutation = " in cell
+    ]
+    assert len(cells) == 1
+    assert "mo.stop(not run_test_evaluation.value)" in cells[0]
+    cohorts = notebook_defs["COHORTS"]
+    beeswarm_cohort = notebook_defs["test_beeswarm_cohort"]
+    assert list(beeswarm_cohort.options) == cohorts
+    assert beeswarm_cohort.value == cohorts[0]
+    end = notebook_defs["test_waterfall_end"]
+    assert list(end.options) == ["best", "worst"]
+    assert end.value == "worst"
+    waterfall_cohort = notebook_defs["test_waterfall_cohort"]
+    assert list(waterfall_cohort.options) == [*cohorts, "composite"]
+    assert waterfall_cohort.value == cohorts[0]
+    for name in (
+        "test_models",
+        "test_shap",
+        "test_permutation",
+        "test_importance_df",
+        "test_beeswarm_figures",
+        "test_waterfall_buildings",
+        "test_waterfall_figures",
+    ):
+        assert name not in notebook_defs, name
+
+
+def test_the_beeswarm_figure_draws_a_row_per_column_and_per_level(
+    notebook_defs: dict,
+) -> None:
+    # 7.1b, a function since 7.1c (section 5's and the test part's): the
+    # columns by the cohort's mean |SHAP|, the largest on top; a category a
+    # row per sorted level, kept at its place, in gray; one colorbar for the
+    # numeric rows; the dots' jitter seeded.
+    beeswarm_figure = notebook_defs["beeswarm_figure"]
+    X = pd.DataFrame(
+        {"x": [1.0, 2.0, 3.0, 4.0], "s": ["b", "a", "b", "a"], "z": [5.0] * 4}
+    )
+    values = np.empty((4, 3, 2))
+    values[:, :, 0] = [0.1, -0.5, 1.0]
+    values[:, :, 1] = [-1.0, 0.5, 0.1]
+    explanation = shap.Explanation(
+        values=values,
+        base_values=np.zeros((4, 2)),
+        feature_names=list(X.columns),
+        output_names=["cohort_a", "cohort_b"],
+    )
+    figure = beeswarm_figure(explanation, X, "cohort_a", 0)
+    labels = ["z", "s = a", "s = b", "x"]
+    assert [trace.name for trace in figure.data] == labels
+    assert list(figure.layout.yaxis.ticktext) == labels
+    level_rows = [trace for trace in figure.data if " = " in trace.name]
+    assert [trace.marker.color for trace in level_rows] == ["#898781"] * 2
+    assert [list(trace.customdata) for trace in level_rows] == [["a", "a"], ["b", "b"]]
+    assert sum(bool(trace.marker.showscale) for trace in figure.data) == 1
+    jitter = np.random.default_rng(0).uniform(-0.3, 0.3, len(X))
+    np.testing.assert_array_equal(figure.data[0].y, 3 + jitter)
+    np.testing.assert_array_equal(figure.data[3].x, [0.1] * 4)
+    other_cohort = beeswarm_figure(explanation, X, "cohort_b", 0)
+    assert [trace.name for trace in other_cohort.data] == [
+        "x",
+        "s = a",
+        "s = b",
+        "z",
+    ]

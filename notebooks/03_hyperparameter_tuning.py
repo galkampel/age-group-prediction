@@ -2107,65 +2107,63 @@ def _(COHORTS, mo):
 
 
 @app.cell
-def _(go, mo, model1_shap, model2_shap, np, pd, seed, shap_cohort, shap_rows):
-    # The palette's tokens, as in the test reading's figures; a column's value
-    # on the sequential blue ramp (steps 250, 400, 550, 700); a category's
-    # levels (unordered) each in its own row, in the muted gray: a row holds
-    # one level, so its value has no low or high.
-    _surface, _ink, _muted, _grid, _axis = (
-        "#fcfcfb",
-        "#52514e",
-        "#898781",
-        "#e1e0d9",
-        "#c3c2b7",
-    )
-    _blues = ["#86b6ef", "#3987e5", "#1c5cab", "#0d366b"]
-    _cohort = shap_cohort.value
-    # One jitter, so each row of dots spreads the same way in every figure.
-    _jitter = np.random.default_rng(seed).uniform(-0.3, 0.3, len(shap_rows.X))
-    shap_beeswarm_figures = {}
-    for _model, _shap in (
-        ("independent_cohorts", model1_shap),
-        ("total_times_probability", model2_shap),
-    ):
-        _values = _shap.values[:, :, _shap.output_names.index(_cohort)]
+def _(go, np, pd):
+    def beeswarm_figure(explanation, X, cohort, random_state):
+        """A beeswarm of `cohort`'s SHAP values in `explanation` (rows,
+        columns, cohorts), its rows `X`: a row of dots per column, the columns
+        by the cohort's mean |SHAP| (the largest on top), each dot a row at its
+        SHAP value, colored by the column's value, low to high over `X`; a
+        category's levels (unordered) each in its own row, in the muted gray:
+        a row holds one level, so its value has no low or high.
+        `random_state` seeds the dots' vertical jitter."""
+        # The palette's tokens, as in the test reading's figures; a column's
+        # value on the sequential blue ramp (steps 250, 400, 550, 700).
+        surface, ink, muted, grid, axis = (
+            "#fcfcfb",
+            "#52514e",
+            "#898781",
+            "#e1e0d9",
+            "#c3c2b7",
+        )
+        blues = ["#86b6ef", "#3987e5", "#1c5cab", "#0d366b"]
+        # One jitter, so each row of dots spreads the same way in every figure.
+        jitter = np.random.default_rng(random_state).uniform(-0.3, 0.3, len(X))
+        values = explanation.values[:, :, explanation.output_names.index(cohort)]
         # The columns by the cohort's mean |SHAP|, the largest on top; a
         # numeric column one row, a category a row per level, kept together
         # at the column's place: (label, column, its rows, whether a level).
-        _order = np.argsort(-np.abs(_values).mean(axis=0), kind="stable")
-        _rows = []
-        for _column_position in _order:
-            _column = _shap.feature_names[_column_position]
-            _raw = shap_rows.X[_column]
-            if pd.api.types.is_numeric_dtype(_raw):
-                _rows.append(
-                    (_column, _column_position, np.full(len(_raw), True), False)
-                )
+        order = np.argsort(-np.abs(values).mean(axis=0), kind="stable")
+        rows = []
+        for column_position in order:
+            column = explanation.feature_names[column_position]
+            raw = X[column]
+            if pd.api.types.is_numeric_dtype(raw):
+                rows.append((column, column_position, np.full(len(raw), True), False))
             else:
-                for _level in sorted(_raw.unique()):
-                    _rows.append(
+                for level in sorted(raw.unique()):
+                    rows.append(
                         (
-                            f"{_column} = {_level}",
-                            _column_position,
-                            (_raw == _level).to_numpy(),
+                            f"{column} = {level}",
+                            column_position,
+                            (raw == level).to_numpy(),
                             True,
                         )
                     )
-        _figure = go.Figure()
-        _scale_shown = False
-        for _position, (_label, _column_position, _mask, _is_level) in enumerate(_rows):
-            _column = _shap.feature_names[_column_position]
-            _raw = shap_rows.X[_column][_mask]
-            if not _is_level:
-                # The value scaled to the column's range over the explained
-                # rows; a constant column divides by 1.
-                _range = (_raw.max() - _raw.min()) or 1
-                _marker = {
-                    "color": ((_raw - _raw.min()) / _range).to_numpy(),
-                    "colorscale": _blues,
+        figure = go.Figure()
+        scale_shown = False
+        for position, (label, column_position, mask, is_level) in enumerate(rows):
+            column = explanation.feature_names[column_position]
+            raw = X[column][mask]
+            if not is_level:
+                # The value scaled to the column's range over the rows; a
+                # constant column divides by 1.
+                value_range = (raw.max() - raw.min()) or 1
+                marker = {
+                    "color": ((raw - raw.min()) / value_range).to_numpy(),
+                    "colorscale": blues,
                     "cmin": 0,
                     "cmax": 1,
-                    "showscale": not _scale_shown,
+                    "showscale": not scale_shown,
                     "colorbar": {
                         "title": {"text": "value"},
                         "thickness": 12,
@@ -2173,55 +2171,77 @@ def _(go, mo, model1_shap, model2_shap, np, pd, seed, shap_cohort, shap_rows):
                         "ticktext": ["low", "high"],
                     },
                 }
-                _scale_shown = True
-                _value_text = "%{customdata:.4g}"
+                scale_shown = True
+                value_text = "%{customdata:.4g}"
             else:
-                _marker = {"color": _muted}
-                _value_text = "%{customdata}"
-            _figure.add_trace(
+                marker = {"color": muted}
+                value_text = "%{customdata}"
+            figure.add_trace(
                 go.Scatter(
-                    x=_values[_mask, _column_position],
-                    y=len(_rows) - 1 - _position + _jitter[_mask],
+                    x=values[mask, column_position],
+                    y=len(rows) - 1 - position + jitter[mask],
                     mode="markers",
-                    name=_label,
+                    name=label,
                     showlegend=False,
-                    marker={"size": 6, "opacity": 0.8, **_marker},
-                    customdata=_raw.to_numpy(),
+                    marker={"size": 6, "opacity": 0.8, **marker},
+                    customdata=raw.to_numpy(),
                     hovertemplate=(
-                        f"{_column} {_value_text}<br>SHAP %{{x:.3f}}<extra></extra>"
+                        f"{column} {value_text}<br>SHAP %{{x:.3f}}<extra></extra>"
                     ),
                 )
             )
-        _figure.update_layout(
-            height=60 + 45 * len(_rows),
+        figure.update_layout(
+            height=60 + 45 * len(rows),
             template="plotly_white",
-            paper_bgcolor=_surface,
-            plot_bgcolor=_surface,
+            paper_bgcolor=surface,
+            plot_bgcolor=surface,
             font={
                 "family": "system-ui, -apple-system, Segoe UI, sans-serif",
-                "color": _ink,
+                "color": ink,
                 "size": 12,
             },
             margin={"l": 190, "r": 20, "t": 20, "b": 50},
             hovermode="closest",
         )
-        _figure.update_yaxes(
-            tickvals=list(range(len(_rows)))[::-1],
-            ticktext=[row[0] for row in _rows],
-            gridcolor=_grid,
+        figure.update_yaxes(
+            tickvals=list(range(len(rows)))[::-1],
+            ticktext=[row[0] for row in rows],
+            gridcolor=grid,
             zeroline=False,
-            linecolor=_axis,
-            tickfont={"color": _ink},
+            linecolor=axis,
+            tickfont={"color": ink},
         )
-        _figure.update_xaxes(
-            title_text=f"SHAP value (children, {_cohort})",
-            gridcolor=_grid,
+        figure.update_xaxes(
+            title_text=f"SHAP value (children, {cohort})",
+            gridcolor=grid,
             zeroline=True,
-            zerolinecolor=_axis,
-            linecolor=_axis,
-            tickfont={"color": _muted},
+            zerolinecolor=axis,
+            linecolor=axis,
+            tickfont={"color": muted},
         )
-        shap_beeswarm_figures[_model] = _figure
+        return figure
+
+    return (beeswarm_figure,)
+
+
+@app.cell
+def _(
+    beeswarm_figure,
+    mo,
+    model1_shap,
+    model2_shap,
+    seed,
+    shap_cohort,
+    shap_rows,
+):
+    _cohort = shap_cohort.value
+    shap_beeswarm_figures = {
+        model: beeswarm_figure(explanation, shap_rows.X, _cohort, seed)
+        for model, explanation in (
+            ("independent_cohorts", model1_shap),
+            ("total_times_probability", model2_shap),
+        )
+    }
     _views = []
     for _model, _figure in shap_beeswarm_figures.items():
         _views += [mo.md(f"**{_model}**"), _figure]
@@ -2259,6 +2279,13 @@ def _(mo):
     their features; one model's true and predicted counts per building; and,
     for all the test buildings or one neighborhood, the children, the cohort
     shares and the scores, true and of both models.
+
+    The same click explains the refit models on the test part, after the
+    test scores: the permutation importance and every test building's SHAP
+    values, a table per model, and a beeswarm per cohort. Under the best and
+    worst buildings, a waterfall per model shows one building at a chosen
+    rank, from its mean prediction over the background to its prediction, a
+    step per column. Reported, never used to choose.
     """)
     return
 
@@ -2268,7 +2295,9 @@ def _(mo):
     run_test_evaluation = mo.ui.run_button(label="Evaluate on the test part")
     mo.md(
         f"{run_test_evaluation} each model's best run: refit on the training and "
-        "validation parts, scored once on the test part."
+        "validation parts, scored once on the test part, and explained there (the "
+        "permutation importance on section 5's metric and the SHAP values of every "
+        "test building; a minute or two more)."
     )
     return (run_test_evaluation,)
 
@@ -2309,7 +2338,12 @@ def _(
     # components; the test part predicted once and scored, every metric per
     # cohort and for the composite, with the bootstrap over its
     # neighborhoods (one evaluator: the two models' replicates pair).
-    test_predictions, test_replicate_scores, _scores_by_run = {}, {}, {}
+    test_models, test_predictions, test_replicate_scores, _scores_by_run = (
+        {},
+        {},
+        {},
+        {},
+    )
     for _model_name, _run in best_runs.items():
         if _model_name == "independent_cohorts":
             _model = build_independent_cohorts_model(
@@ -2328,6 +2362,8 @@ def _(
             train_val_age_group.Y,
             exposure=train_val_age_group.exposure,
         )
+        # Kept for the explanation of the test buildings.
+        test_models[_model_name] = _model
         test_predictions[_model_name] = _model.predict(
             test_age_group.X, exposure=test_age_group.exposure
         )
@@ -2395,9 +2431,11 @@ def _(
     return (
         test_difference_df,
         test_difference_replicates,
+        test_models,
         test_predictions,
         test_replicate_scores,
         test_scores_df,
+        train_val_age_group,
     )
 
 
@@ -2500,6 +2538,158 @@ def _(
             mo.ui.table(test_scores_df.round(4)),
             mo.md("**The paired difference on the test part, per cohort and metric**"),
             mo.ui.table(test_difference_df.round(4)),
+        ]
+    )
+    return
+
+
+@app.cell
+def _(
+    PermutationImportance,
+    ShapExplainer,
+    importance_metric,
+    mo,
+    n_repeats,
+    n_shap_background,
+    np,
+    run_test_evaluation,
+    seed,
+    test_age_group,
+    test_models,
+    train_val_age_group,
+):
+    mo.stop(not run_test_evaluation.value)
+    # The same click explains the refit models on every test building:
+    # SHAP against a background drawn from the rows they were fitted on
+    # (training and validation), and the permutation importance on the test
+    # part. Reported, never used to choose (E11).
+    _background = train_val_age_group.X.iloc[
+        np.random.default_rng(seed).choice(
+            len(train_val_age_group.X), size=n_shap_background, replace=False
+        )
+    ]
+    _importance = PermutationImportance(importance_metric, n_repeats, random_state=seed)
+    test_shap, test_permutation = {}, {}
+    for _model_name, _model in test_models.items():
+        test_shap[_model_name] = ShapExplainer(method="exact", n_jobs=-1).explain(
+            _model, test_age_group.X, _background, exposure=test_age_group.exposure
+        )
+        # scikit-learn's result, its arrays in X's column order.
+        test_permutation[_model_name] = _importance.compute_importances(
+            _model,
+            test_age_group.X,
+            test_age_group.Y,
+            exposure=test_age_group.exposure,
+        )
+    return test_permutation, test_shap
+
+
+@app.cell
+def _(
+    importance_metric,
+    mo,
+    np,
+    pd,
+    test_permutation,
+    test_scores_df,
+    test_shap,
+):
+    # As section 5's tables, on the test part: per model and raw column, the
+    # permutation importance's mean and spread, and the mean |SHAP| over the
+    # test buildings per cohort and for the composite.
+    _tables = []
+    for _model, _explanation in test_shap.items():
+        _mean_abs_shap = np.abs(_explanation.values).mean(axis=0)
+        _table = pd.DataFrame(
+            {
+                "perm_fi_mean_test": test_permutation[_model].importances_mean,
+                "perm_fi_std_test": test_permutation[_model].importances_std,
+                **{
+                    f"mean_abs_shap_{cohort}": _mean_abs_shap[:, position]
+                    for position, cohort in enumerate(_explanation.output_names)
+                },
+                "mean_abs_shap_composite": np.abs(_explanation.values).mean(
+                    axis=(0, 2)
+                ),
+            },
+            index=_explanation.feature_names,
+        )
+        _table = _table.rename_axis("column").reset_index()
+        _table.insert(0, "model", _model)
+        _tables.append(_table)
+    test_importance_df = pd.concat(_tables, ignore_index=True)
+    # Each model's table, headed by its run, its rows in X's column order.
+    _views = []
+    for _model, _family, _use_exposure in (
+        test_scores_df[["model", "family", "use_exposure"]]
+        .drop_duplicates()
+        .itertuples(index=False)
+    ):
+        _views.append(mo.md(f"**{_model}:** `{_family}`, exposure {_use_exposure}"))
+        _views.append(
+            mo.ui.table(
+                test_importance_df[test_importance_df["model"] == _model]
+                .drop(columns="model")
+                .reset_index(drop=True)
+                .round(4)
+            )
+        )
+    mo.vstack(
+        [
+            mo.md(
+                "**Feature importance of each model's refit best run on the test "
+                "part, per raw column** (the models refit on the training and "
+                "validation parts, not section 5's; perm_fi_mean_test: the drop of "
+                f"the composite {importance_metric.name} on the test part when the "
+                "column is shuffled; perm_fi_std_test: its spread over the "
+                "repeated shuffles; mean_abs_shap_<cohort>: the mean |SHAP| over "
+                "all the test buildings; mean_abs_shap_composite: their mean over "
+                "the cohorts; reported, never used to choose)"
+            ),
+            *_views,
+        ]
+    )
+    return
+
+
+@app.cell
+def _(COHORTS, mo):
+    # The test beeswarm's cohort: SHAP explains each cohort's count.
+    test_beeswarm_cohort = mo.ui.dropdown(
+        options=COHORTS, value=COHORTS[0], label="Cohort"
+    )
+    return (test_beeswarm_cohort,)
+
+
+@app.cell
+def _(
+    beeswarm_figure,
+    mo,
+    seed,
+    test_age_group,
+    test_beeswarm_cohort,
+    test_shap,
+):
+    _cohort = test_beeswarm_cohort.value
+    test_beeswarm_figures = {
+        model: beeswarm_figure(explanation, test_age_group.X, _cohort, seed)
+        for model, explanation in test_shap.items()
+    }
+    _views = []
+    for _model, _figure in test_beeswarm_figures.items():
+        _views += [mo.md(f"**{_model}**"), _figure]
+    mo.vstack(
+        [
+            mo.md(
+                f"**The SHAP values of {_cohort} per test building** (the refit "
+                "models; each dot a building: how much the column moves its "
+                "predicted count from the mean prediction over the background; "
+                "the columns ordered by their mean |SHAP| for the cohort, the "
+                "largest on top; the color the column's value, low to high over "
+                "the test buildings; a category a row per level, in gray)"
+            ),
+            test_beeswarm_cohort,
+            *_views,
         ]
     )
     return
@@ -2697,6 +2887,179 @@ def _(
                 f"the three scores on {_cohort_text})"
             ),
             *_every_views,
+        ]
+    )
+    return
+
+
+@app.cell
+def _(COHORTS, mo):
+    # The waterfalls' own menus: the best or the worst buildings, and the
+    # cohort they are ranked on and explained for (the composite: the total).
+    test_waterfall_end = mo.ui.radio(
+        options=["best", "worst"], value="worst", inline=True, label="Show"
+    )
+    test_waterfall_cohort = mo.ui.dropdown(
+        options=[*COHORTS, "composite"], value=COHORTS[0], label="Cohort"
+    )
+    return test_waterfall_cohort, test_waterfall_end
+
+
+@app.cell
+def _(
+    mo,
+    test_building_scores_df,
+    test_reading_k,
+    test_reading_metric,
+    test_waterfall_cohort,
+    test_waterfall_end,
+):
+    # Per model its best or worst k buildings on the waterfalls' cohort, by
+    # the tables' metric and k, ranked as the tables rank theirs; a dropdown
+    # each, the first by default.
+    _end, _cohort = test_waterfall_end.value, test_waterfall_cohort.value
+    _metric, _k = test_reading_metric.value, test_reading_k.value
+    _menus = {}
+    for _model in ("independent_cohorts", "total_times_probability"):
+        _scores = (
+            test_building_scores_df[
+                (test_building_scores_df["model"] == _model)
+                & (test_building_scores_df["cohort"] == _cohort)
+            ]
+            .set_index("building_id")[[_metric]]
+            .sort_values(_metric, ascending=False, kind="stable")
+        )
+        if _end == "best":
+            _chosen = _scores.nsmallest(_k, _metric)
+        elif _end == "worst":
+            _chosen = _scores.nlargest(_k, _metric)
+        else:
+            raise ValueError(f"unknown end {_end!r}")
+        _options = {
+            f"{rank}: {building_id}": building_id
+            for rank, building_id in enumerate(_chosen.index, start=1)
+        }
+        _menus[_model] = mo.ui.dropdown(
+            options=_options, value=next(iter(_options)), label="Building"
+        )
+    test_waterfall_buildings = mo.ui.dictionary(_menus)
+    return (test_waterfall_buildings,)
+
+
+@app.cell
+def _(
+    COHORTS,
+    go,
+    mo,
+    np,
+    pd,
+    test_age_group,
+    test_predictions,
+    test_reading_k,
+    test_reading_metric,
+    test_shap,
+    test_waterfall_buildings,
+    test_waterfall_cohort,
+    test_waterfall_end,
+):
+    # The palette's tokens, and its diverging pair: red raises the
+    # prediction, blue lowers it.
+    _surface, _ink, _grid, _axis = "#fcfcfb", "#52514e", "#e1e0d9", "#c3c2b7"
+    _raises, _lowers = "#e34948", "#2a78d6"
+    _end, _cohort = test_waterfall_end.value, test_waterfall_cohort.value
+    _metric, _k = test_reading_metric.value, test_reading_k.value
+    # The composite: the total, so the cohorts' values and bases summed.
+    _cohorts = COHORTS if _cohort == "composite" else [_cohort]
+    _count = "the total" if _cohort == "composite" else _cohort
+    test_waterfall_figures = {}
+    for _model, _explanation in test_shap.items():
+        # The building chosen in the model's dropdown, its row found by its id.
+        _building_id = test_waterfall_buildings.value[_model]
+        _position = test_age_group.ids.tolist().index(_building_id)
+        _outputs = [_explanation.output_names.index(cohort) for cohort in _cohorts]
+        _values = _explanation.values[_position][:, _outputs].sum(axis=1)
+        _base = _explanation.base_values[_position, _outputs].sum()
+        _prediction = test_predictions[_model].iloc[_position][_cohorts].sum()
+        _true = test_age_group.Y.iloc[_position][_cohorts].sum()
+        # From the building's base (the mean prediction over the background
+        # at its number of apartments), a step per column to its prediction,
+        # the largest |SHAP| on top.
+        _order = np.argsort(-np.abs(_values), kind="stable")
+        _labels = []
+        for _j in _order:
+            _raw = test_age_group.X.iloc[_position, _j]
+            _labels.append(
+                f"{_explanation.feature_names[_j]} = "
+                + (f"{_raw:.3g}" if pd.api.types.is_number(_raw) else str(_raw))
+            )
+        _figure = go.Figure(
+            go.Waterfall(
+                orientation="h",
+                base=_base,
+                measure=["relative"] * len(_order),
+                y=_labels,
+                x=_values[_order],
+                text=[f"{value:+.2f}" for value in _values[_order]],
+                textposition="outside",
+                increasing={"marker": {"color": _raises}},
+                decreasing={"marker": {"color": _lowers}},
+                connector={"line": {"color": _axis, "width": 1}},
+                hovertemplate="%{y}: %{x:+.3f}<extra></extra>",
+            )
+        )
+        for _x, _text, _place in (
+            (_base, f"mean prediction {_base:.2f}", "bottom left"),
+            (_prediction, f"predicted {_prediction:.2f}", "top right"),
+        ):
+            _figure.add_vline(
+                x=_x,
+                line={"color": _ink, "dash": "dot", "width": 1},
+                annotation_text=_text,
+                annotation_position=_place,
+            )
+        _figure.update_layout(
+            height=60 + 34 * (len(_order) + 2),
+            template="plotly_white",
+            paper_bgcolor=_surface,
+            plot_bgcolor=_surface,
+            font={
+                "family": "system-ui, -apple-system, Segoe UI, sans-serif",
+                "color": _ink,
+                "size": 12,
+            },
+            margin={"l": 200, "r": 40, "t": 60, "b": 50},
+            title={
+                "text": (
+                    f"{_building_id} ({test_age_group.groups.iloc[_position]}), "
+                    f"{_count}: true {_true}, predicted {_prediction:.2f}"
+                ),
+                "x": 0,
+            },
+        )
+        _figure.update_yaxes(autorange="reversed", gridcolor=_grid)
+        _figure.update_xaxes(
+            title_text=f"children ({_count})", gridcolor=_grid, zeroline=False
+        )
+        test_waterfall_figures[_model] = _figure
+    _views = []
+    for _model, _figure in test_waterfall_figures.items():
+        _views += [
+            mo.md(f"**{_model}**"),
+            test_waterfall_buildings[_model],
+            _figure,
+        ]
+    mo.vstack(
+        [
+            mo.md(
+                f"**A test building of each model's {_end} {_k} by {_metric} on "
+                f"{_cohort}, explained: {_count}** (each model ranks its own "
+                "buildings, by the tables' metric and k; from the building's mean "
+                "prediction over the background, at its number of apartments, a "
+                "step per column to its prediction, the largest on top; red raises "
+                "the prediction, blue lowers it)"
+            ),
+            mo.hstack([test_waterfall_end, test_waterfall_cohort], justify="start"),
+            *_views,
         ]
     )
     return

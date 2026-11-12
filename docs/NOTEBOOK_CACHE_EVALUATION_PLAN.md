@@ -20,7 +20,7 @@ its test; `02_experiments.py` unchanged. **Updated 2026-11-08:** 6.2 committed (
 D42 recorded (§0: RMSE tunes and selects, a setting, with 7.0). **Updated 2026-11-08:** D42
 committed (`4344071`); 6.3 done (§5): `03_hyperparameter_tuning.py` (md5
 `2dbb80a38b13321bdc6c78bd5537d01f`), the equality test, `02_experiments.py` removed.
-6.3 committed (`abd8960`, with the user's edits); **PR 6 closed** (2026-11-08: the tuning section's summary; the non-slow suite 1401 passed, mypy 28 files, Check A–C on both notebooks equal to 6.2's and 6.3's runs; `03`'s md5 `1f86f7da2c906cb83e807ad42a051303`). **Updated 2026-11-08:** PR 6 merged as #25 (`f9c92a5` on `main`, identical to `e2cab60`); PR 7's branch `feat/test-evaluation` created from it. **Updated 2026-11-08:** 7.0 done (§6): Model 2 by the joint method, RMSE the tuner's objective, F4's two functions, the model labels; the first 100-trial click (22 studies tuned). **Updated 2026-11-08:** 7.0b done (§6): each model's best run in its own table, one cohort and metric filter. **Updated 2026-11-09:** the ridge plot against the forest plot probed (the handoff's §5): the user chose the redesigned forest for both figures; 5.4 split into 5.4a and 5.4b (§4); 5.4a done and committed (`f0d240c`, with the user's `metric_name` edit; `03`'s md5 `b0c6c70333dbe2c153bb2a34ea35e9a9`). **Updated 2026-11-09:** 5.4b done (§4): the paired difference with its own plot switch (ridge first) and metric menu (all six), the runs' "Metric" menu, the importance on the chosen loss; `03`'s md5 `2a2eb2576071e02f91eef47c7677344a`; committed as `96030f1`. **Updated 2026-11-09:** PR 7's order changed (the user): the test evaluation (7.2, 7.3) before SHAP per cohort (7.1, last); 7.2 done (§6): the best runs refit on train + validation and scored once on the test part; the notebooks' md5 `02` `373c1c39f717935cb08ce14ff6e05a3a`, `03` `5ef93a47e800c442302b537c57730a01`. 7.2 committed as `0316c06` (with marimo's trims of two returns). **Next: 7.3 (§6), then 7.1.**
+6.3 committed (`abd8960`, with the user's edits); **PR 6 closed** (2026-11-08: the tuning section's summary; the non-slow suite 1401 passed, mypy 28 files, Check A–C on both notebooks equal to 6.2's and 6.3's runs; `03`'s md5 `1f86f7da2c906cb83e807ad42a051303`). **Updated 2026-11-08:** PR 6 merged as #25 (`f9c92a5` on `main`, identical to `e2cab60`); PR 7's branch `feat/test-evaluation` created from it. **Updated 2026-11-08:** 7.0 done (§6): Model 2 by the joint method, RMSE the tuner's objective, F4's two functions, the model labels; the first 100-trial click (22 studies tuned). **Updated 2026-11-08:** 7.0b done (§6): each model's best run in its own table, one cohort and metric filter. **Updated 2026-11-09:** the ridge plot against the forest plot probed (the handoff's §5): the user chose the redesigned forest for both figures; 5.4 split into 5.4a and 5.4b (§4); 5.4a done and committed (`f0d240c`, with the user's `metric_name` edit; `03`'s md5 `b0c6c70333dbe2c153bb2a34ea35e9a9`). **Updated 2026-11-09:** 5.4b done (§4): the paired difference with its own plot switch (ridge first) and metric menu (all six), the runs' "Metric" menu, the importance on the chosen loss; `03`'s md5 `2a2eb2576071e02f91eef47c7677344a`; committed as `96030f1`. **Updated 2026-11-09:** PR 7's order changed (the user): the test evaluation (7.2, 7.3) before SHAP per cohort (7.1, last); 7.2 done (§6): the best runs refit on train + validation and scored once on the test part; the notebooks' md5 `02` `373c1c39f717935cb08ce14ff6e05a3a`, `03` `5ef93a47e800c442302b537c57730a01`. 7.2 committed as `0316c06` (with marimo's trims of two returns). **Updated 2026-11-11:** 7.3 committed (`19e69ec`), 7.1a (`a47a748`), 7.1b (`57fd52a`, with marimo's save: four trimmed returns and an empty cell, undone in 7.1c); 7.1c done (§6): the test part explained on the test evaluation's click (the permutation importance and SHAP on test, a beeswarm per cohort through `beeswarm_figure`; under the best/worst tables a waterfall per model at a chosen rank); `03`'s md5 `66214dcd3a26a9de3faa8e90a22baffe`. **Next: PR 7's close.**
 
 The companion docs: [EXPERIMENT_NOTEBOOK_HANDOFF.md](EXPERIMENT_NOTEBOOK_HANDOFF.md) (the state,
 how to work, the checks, the traps, iCloud), [NOTEBOOK_METRICS_LOOP_EDA_PLAN.md](NOTEBOOK_METRICS_LOOP_EDA_PLAN.md)
@@ -1293,7 +1293,7 @@ before the split (PR 6), and the tuning's (5.4 and the rest) after it (PR 7).
 
 **The order since 2026-11-09 (the user):** 7.2, 7.3, then 7.1.
 
-### [ ] 7.1 SHAP per cohort, the permutation result, the test buildings' waterfalls (last since 2026-11-09)
+### [x] 7.1 SHAP per cohort, the permutation result, the test buildings' waterfalls (last since 2026-11-09)
 - **Planned 2026-11-10** (the user's answers, all the recommended options; the user's two notes
   at the planning: `PermutationImportance` returns scikit-learn's result object, the caller
   builds a frame; a local SHAP view, a waterfall, of 7.3's best/worst k test buildings).
@@ -1423,7 +1423,74 @@ before the split (PR 6), and the tuning's (5.4 and the rest) after it (PR 7).
   - **Check C:** the per-cohort columns exactly, the composite equal to the reference and the
     per-cohort mean at 1e-12, the figures' traces; the mutation (the order ascending).
   - **Commit:** `feat(notebook): SHAP per cohort: each model's importance table with the permutation feature importance's mean and spread on train and validation and the mean |SHAP| per cohort, and a beeswarm per cohort with a row per category level (7.1b)`
-- **[ ] 7.1c The test part explained: permutation importance, SHAP, the waterfalls (notebook):**
+- **[x] 7.1c The test part explained: permutation importance, SHAP, the waterfalls (notebook).**
+  **Done (2026-11-11), revised at the user's review of the first version** (the user's answers:
+  a beeswarm of the test buildings too, through a function section 5 shares; marimo's save in
+  `57fd52a` undone; then, at the review: SHAP exact (9 columns: 512 evaluations per row, about the
+  permutation method's default budget, without its noise); nothing cached (seeded, a minute or two;
+  the results belong to the deferred MLflow runs as artifacts); the explanation integrated where it
+  explains, not a separate block: no second button, the waterfalls under the best/worst tables;
+  then, at the review of the waterfalls: a building dropdown per model of its best or worst k, a
+  shared Best/Worst switch, and the waterfalls' own Cohort (a cohort by default, the composite
+  optional) that ranks the k and is explained, by the tables' metric and k):
+  - **`03`:**
+    - **marimo's saves undone** (in `57fd52a` and three times in the user's session during 7.1c): the
+      trimmed returns restored, the empty last cell removed (ruff `03` 14, `marimo check` clean);
+    - **`beeswarm_figure(explanation, X, cohort, random_state)`** (a cell before section 5's
+      beeswarm, like `forest_figure`): 7.1b's per-model body moved as is; section 5's cell calls it
+      per model with `shap_rows.X` and `seed`, its figures byte-identical (JSON equal to 7.1b's run);
+    - **7.2's cell** keeps each refit model in `test_models` and returns it and
+      `train_val_age_group`; its button's sentence says the click also explains;
+    - **section 6's text:** a paragraph on the explanation;
+    - **after 7.2's display, on the same click** (`mo.stop(not run_test_evaluation.value)`): the
+      background (`n_shap_background` train + validation rows, `default_rng(seed)`), `test_shap`
+      (exact, all 306 buildings) and `test_permutation` (`importance_metric`, `n_repeats`, `seed`)
+      per model; `test_importance_df` (`perm_fi_mean_test`, `perm_fi_std_test`, the mean |SHAP| per
+      cohort and the composite) and a table per model headed by its run (the caption: the refit
+      models, reported, never used to choose); `test_beeswarm_cohort` (the cohorts, the first) and
+      `test_beeswarm_figures`;
+    - **under the tables:** `test_waterfall_end` (best / worst, worst) and
+      `test_waterfall_cohort` (the cohorts and the composite, the first cohort);
+      `test_waterfall_buildings` (a dropdown per model, `rank: id`, of its best or worst k on the
+      waterfalls' cohort by the tables' metric and k, ranked as the tables rank theirs, the first
+      chosen); `test_waterfall_figures`: per model the chosen building, its row by its id, the
+      waterfalls' cohort (the composite: the total); from its base a step per column, the largest
+      |SHAP| on top, labelled `column = value`, red raises / blue lowers; the mean prediction and
+      the prediction as dotted rules; the building, the true and predicted counts in the title.
+      7.3's tables cell is unchanged.
+  - **The tests:** `test_the_test_explanation_is_behind_its_button` (the guard on the test
+    evaluation's button, the menus' defaults, no explanation name without a click);
+    `test_the_beeswarm_figure_draws_a_row_per_column_and_per_level` (a hand-made explanation: the
+    order, the level rows gray and sorted, one colorbar, the jitter, another cohort's order).
+  - **Checks:**
+    - the notebook tests 31 passed;
+    - ruff `03` 14, `02` 11 (as at `a47a748`); the test file clean; the user's two format hunks;
+      `marimo check` clean;
+    - Check B on both;
+    - Check C on the EDA: every frame and figure equal to 7.1b's run;
+    - **Check C on the tuning** (`check_c_7_1c_tuning.py`, 262 s): `test_models` reproduce
+      `test_predictions`; `test_shap` and `test_permutation` equal exactly to an independent
+      refit's against an independent background; additivity 8.5e-14 / 4.3e-14; both test tables
+      from marimo's inline data; the menus' defaults; each model's dropdown ids recomputed from
+      `test_building_scores_df` (the worst 5 by rmse on `n_kindergarten`, the first chosen), and on
+      the composite the worst table's ids; each waterfall on `n_kindergarten` (each model's
+      `B_000945`: base 16.292 − 1.146 = 15.146 and 16.207 − 0.251 = 15.956, true 33) with its order,
+      labels, colors, rules and title; the test beeswarms' rows recomputed as 7.1b2's; section 5's
+      beeswarm JSON equal to 7.1b's run; every earlier frame and record equal to 7.1b's run (the
+      new reference `check_c_7_1c_tuning.pkl`);
+    - **a variant look** (`probes/run_look_7_1c.sh`: the tables by `mae`, the waterfalls' best on
+      the composite, each dropdown's second building, the test beeswarm's `n_highschool`): the
+      worst and best 5 recomputed; `B_000716`: base 13.446 + 1.053 = 14.499 (true 14);
+    - **the mutations** (`run_mutants_7_1c.sh`): the waterfall's row by the building's position
+      in its dropdown instead of by id, caught at the waterfall's base; the level mask flipped
+      inside `beeswarm_figure`, caught at section 5's beeswarm;
+    - the non-slow suite 1410 passed, 1 skipped, 1 xfailed; mypy 28 files clean;
+    - the 3-trial copy's waterfalls and beeswarms screenshotted (`shots_7_1c/`) and read.
+  - **Not run on the user's cache** (E11).
+  - The notebooks' md5: `02` `373c1c39f717935cb08ce14ff6e05a3a`, `03`
+    `66214dcd3a26a9de3faa8e90a22baffe`.
+  - **Commit:** `feat(notebook): the test part explained: the permutation importance and SHAP on test after the test scores, a beeswarm per cohort, and under the best and worst buildings a waterfall per model of a chosen best or worst building and cohort (7.1c)`
+  - **The plan:**
   - **7.2's cell** exports `test_models` and `train_val_age_group`;
   - **a button** "Explain the test buildings" (`run_test_explanation`); behind it, `test_shap`
     for all 306 test buildings per model (exact, against `n_shap_background` train +
