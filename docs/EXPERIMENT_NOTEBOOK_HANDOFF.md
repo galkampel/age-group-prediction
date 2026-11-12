@@ -1,4 +1,39 @@
-# Handoff: the experiment notebooks, PR 7 merged (#26); a simplification review next, then the MLflow plan
+# Handoff: the experiment notebooks, PR 7 merged (#26); the simplification review written, its decisions next, then the MLflow plan
+
+**Status (2026-11-12, the review written and decided, before the user's commit; next S1):**
+- **The review for overcomplication is written** as
+  [SIMPLIFICATION_REVIEW_PLAN.md](SIMPLIFICATION_REVIEW_PLAN.md): 8 sub-tasks recommended to
+  accept (S1–S8, each with its steps, its validation, its commit message and the model to
+  implement it with: Opus 5.5, or Fable for S5 and S7), 8 findings recommended to leave
+  (L1–L8), each with a **Decision** line the
+  user marks. Docs only: no notebook, `src` or test change.
+- **The verdict:** the package is not overcomplicated (one small merge, S8); the weight is in
+  `03` after the runs (repeated blocks, S1–S3 and S5; a menu that sets the permutation
+  importance's metric, S4); the EDA's coordinate descent could leave (S7).
+- **Three sub-tasks change what is shown:** S4 (the importance's metric), S5 (every figure's
+  JSON, the look kept), S7 (the EDA shows two models).
+- **S4's side effect is expected from marimo's rule, not yet probed.**
+- **The user's decisions (2026-11-12):** S1–S8 all accepted (S7 as (b): coordinate descent
+  leaves the EDA notebook, the two `src` methods stay; S4 by best practice, without waiting for
+  the manual check); L1–L8 all left as they are.
+- **Next:** the accepted sub-tasks, one stop each, in the order S1, S2, S3, S4, S6, S7, S5, S8
+  (the review plan's §3 and §4; Opus 5.5 for all but S5 and S7, which are planned and done
+  with Fable); then the MLflow plan (§6, step 2).
+- **The uncommitted files:** `docs/SIMPLIFICATION_REVIEW_PLAN.md`, this handoff. HEAD
+  `bd90f66`. The commit:
+
+  ```text
+  docs(notebook): the review for overcomplication of the tuning and the figures, as sub-tasks to accept or reject
+  ```
+- **The notebooks' md5 (unchanged):** `02_objective_eda.py` `373c1c39f717935cb08ce14ff6e05a3a`,
+  `03_hyperparameter_tuning.py` `47c8ce343350475eebe8c2007a00397e`.
+- **The test part has still not been run on the user's cache** (E11, the user's).
+- **The scratchpad to copy first:** `/private/tmp/claude-501/-Users-galkampel-Desktop-Projects-age-group-prediction/a655f82e-bc56-46e9-8f40-acd442dc310a/scratchpad`: `checks/`, `probes/`, `viewer/`,
+  `new_cells_7_1e/` (each script's `S=` set to it), the logs `run_close_7.log`, `run_7_1e.log`,
+  `run_7_1e_rest.log`, `pr_7.md`, the pickles `check_c_close_7_tuning.pkl` and
+  `check_c_close_7_eda.pkl` with its two figures' JSON (the references), `check_c_7_1e_*`,
+  `check_c_7_1d_*`, `check_c_7_1b2_beeswarm.json`, `check_c_3_1l.pkl`, `probe_7_1.pkl`, and a
+  compiled `pycache/`. No check was run in this session.
 
 **Status (2026-11-12, PR 7 merged; the next session starts at §6):**
 - **PR 7 is merged** as #26, squashed into `main` as `574287e` (its tree identical to the close
