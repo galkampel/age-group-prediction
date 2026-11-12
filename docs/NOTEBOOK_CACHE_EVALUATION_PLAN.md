@@ -20,7 +20,7 @@ its test; `02_experiments.py` unchanged. **Updated 2026-11-08:** 6.2 committed (
 D42 recorded (§0: RMSE tunes and selects, a setting, with 7.0). **Updated 2026-11-08:** D42
 committed (`4344071`); 6.3 done (§5): `03_hyperparameter_tuning.py` (md5
 `2dbb80a38b13321bdc6c78bd5537d01f`), the equality test, `02_experiments.py` removed.
-6.3 committed (`abd8960`, with the user's edits); **PR 6 closed** (2026-11-08: the tuning section's summary; the non-slow suite 1401 passed, mypy 28 files, Check A–C on both notebooks equal to 6.2's and 6.3's runs; `03`'s md5 `1f86f7da2c906cb83e807ad42a051303`). **Updated 2026-11-08:** PR 6 merged as #25 (`f9c92a5` on `main`, identical to `e2cab60`); PR 7's branch `feat/test-evaluation` created from it. **Updated 2026-11-08:** 7.0 done (§6): Model 2 by the joint method, RMSE the tuner's objective, F4's two functions, the model labels; the first 100-trial click (22 studies tuned). **Updated 2026-11-08:** 7.0b done (§6): each model's best run in its own table, one cohort and metric filter. **Updated 2026-11-09:** the ridge plot against the forest plot probed (the handoff's §5): the user chose the redesigned forest for both figures; 5.4 split into 5.4a and 5.4b (§4); 5.4a done and committed (`f0d240c`, with the user's `metric_name` edit; `03`'s md5 `b0c6c70333dbe2c153bb2a34ea35e9a9`). **Updated 2026-11-09:** 5.4b done (§4): the paired difference with its own plot switch (ridge first) and metric menu (all six), the runs' "Metric" menu, the importance on the chosen loss; `03`'s md5 `2a2eb2576071e02f91eef47c7677344a`; committed as `96030f1`. **Updated 2026-11-09:** PR 7's order changed (the user): the test evaluation (7.2, 7.3) before SHAP per cohort (7.1, last); 7.2 done (§6): the best runs refit on train + validation and scored once on the test part; the notebooks' md5 `02` `373c1c39f717935cb08ce14ff6e05a3a`, `03` `5ef93a47e800c442302b537c57730a01`. 7.2 committed as `0316c06` (with marimo's trims of two returns). **Updated 2026-11-11:** 7.3 committed (`19e69ec`), 7.1a (`a47a748`), 7.1b (`57fd52a`, with marimo's save: four trimmed returns and an empty cell, undone in 7.1c); 7.1c done (§6): the test part explained on the test evaluation's click (the permutation importance and SHAP on test, a beeswarm per cohort through `beeswarm_figure`; under the best/worst tables a waterfall per model at a chosen rank); `03`'s md5 `66214dcd3a26a9de3faa8e90a22baffe`. **Next: PR 7's close.**
+6.3 committed (`abd8960`, with the user's edits); **PR 6 closed** (2026-11-08: the tuning section's summary; the non-slow suite 1401 passed, mypy 28 files, Check A–C on both notebooks equal to 6.2's and 6.3's runs; `03`'s md5 `1f86f7da2c906cb83e807ad42a051303`). **Updated 2026-11-08:** PR 6 merged as #25 (`f9c92a5` on `main`, identical to `e2cab60`); PR 7's branch `feat/test-evaluation` created from it. **Updated 2026-11-08:** 7.0 done (§6): Model 2 by the joint method, RMSE the tuner's objective, F4's two functions, the model labels; the first 100-trial click (22 studies tuned). **Updated 2026-11-08:** 7.0b done (§6): each model's best run in its own table, one cohort and metric filter. **Updated 2026-11-09:** the ridge plot against the forest plot probed (the handoff's §5): the user chose the redesigned forest for both figures; 5.4 split into 5.4a and 5.4b (§4); 5.4a done and committed (`f0d240c`, with the user's `metric_name` edit; `03`'s md5 `b0c6c70333dbe2c153bb2a34ea35e9a9`). **Updated 2026-11-09:** 5.4b done (§4): the paired difference with its own plot switch (ridge first) and metric menu (all six), the runs' "Metric" menu, the importance on the chosen loss; `03`'s md5 `2a2eb2576071e02f91eef47c7677344a`; committed as `96030f1`. **Updated 2026-11-09:** PR 7's order changed (the user): the test evaluation (7.2, 7.3) before SHAP per cohort (7.1, last); 7.2 done (§6): the best runs refit on train + validation and scored once on the test part; the notebooks' md5 `02` `373c1c39f717935cb08ce14ff6e05a3a`, `03` `5ef93a47e800c442302b537c57730a01`. 7.2 committed as `0316c06` (with marimo's trims of two returns). **Updated 2026-11-11:** 7.3 committed (`19e69ec`), 7.1a (`a47a748`), 7.1b (`57fd52a`, with marimo's save: four trimmed returns and an empty cell, undone in 7.1c); 7.1c done (§6): the test part explained on the test evaluation's click (the permutation importance and SHAP on test, a beeswarm per cohort through `beeswarm_figure`; under the best/worst tables a waterfall per model at a chosen rank); `03`'s md5 `66214dcd3a26a9de3faa8e90a22baffe`. **Updated 2026-11-12:** 7.1c committed (`9779eb2`, with marimo's save from the user's session, undone in 7.1d); 7.1d done (§6, the user's review of 7.1c): the permutation importance drawn (a box of the repeats per column under each importance table, section 5 and the test), the test count scatter colored by the true total, the shares bars' n children and the truth's 95% interval; `03`'s md5 `fed0b570d008aea48cf1474838c745a9`. **Updated 2026-11-12:** 7.1e done (§6, the user's request after checking 7.1d): the permutation importance per cohort, a Cohort menu over section 5's and the test's figures; 7.1d and 7.1e share one commit; `03`'s md5 `47c8ce343350475eebe8c2007a00397e`. **Next: PR 7's close.**
 
 The companion docs: [EXPERIMENT_NOTEBOOK_HANDOFF.md](EXPERIMENT_NOTEBOOK_HANDOFF.md) (the state,
 how to work, the checks, the traps, iCloud), [NOTEBOOK_METRICS_LOOP_EDA_PLAN.md](NOTEBOOK_METRICS_LOOP_EDA_PLAN.md)
@@ -1526,6 +1526,105 @@ before the split (PR 6), and the tuning's (5.4 and the rest) after it (PR 7).
     test table, the menus' options, each waterfall's values the chosen id's row;
     the mutation (the row by position instead of id). Not run on the user's cache (E11).
   - **Commit:** `feat(notebook): the test part explained: the permutation importance and SHAP on test, and a waterfall of each model's chosen best or worst building (7.1c)`
+  - **Committed** as `9779eb2` (2026-11-12), with marimo's save from the user's session (3 split
+    signatures, 6 trimmed returns, a reordered return, an empty last cell; ruff `03` 21, `marimo
+    check` one issue): undone in 7.1d.
+- **[x] 7.1d The user's review of 7.1c: the permutation importance drawn, the count scatter by the
+  true total, the shares' n (notebook).** **Done (2026-11-12)** (the user's notes: no plot of the
+  permutation importance; the scatter colored by the true total, since the question is whether
+  the models struggle as n grows, not the apartments; the number of children behind the shares,
+  a small n a noisy share; the answers: a box of the repeats, n with an interval on the truth):
+  - **`03`:**
+    - **marimo's save in `9779eb2` undone** (`66214dcd`'s bytes back; ruff `03` 14, `marimo
+      check` clean);
+    - **`permutation_figure(results, feature_names, metric_name)`** (a function cell before
+      section 5's importance cell): per split of `results` (`{split: scikit-learn's result}`) a
+      horizontal box of each column's drops over the `n_repeats` shuffles (`importances`), the
+      mean dashed, grouped; the columns by the last split's mean (the largest on top), the last
+      split in blue `#2a78d6`, an earlier one in the muted gray; a dotted rule at 0;
+    - **section 5's importance cell:** under each model's table its figure (train and
+      validation; `permutation_figures`), a caption sentence;
+    - **section 6's test importance cell:** the same on the test part
+      (`test_permutation_figures`);
+    - **the counts cell (7.3):** the scatter colored by `total_true` (colorbar "true total"), the
+      hover the building, its neighborhood and its true children; `n_apartments` gone (its only
+      role was 7.3's exposure; on the composite the color repeats x);
+    - **the statistics cell (7.3):** the shares bars' title `n = <true children> (predicted:
+      <each model's total>)`, each bar's count in its hover, the true bars' 95% interval
+      ±1.96·√(p(1−p)/n) (each child counted as independent; children of one building share it,
+      so the noise is larger); the caption says so. The measured noise: all 7,399 test children
+      ±0.010–0.011; N_144's 179 (3 buildings) ±0.065–0.072; a neighborhood's median 48 about
+      ±0.13.
+  - **The test:** `test_the_permutation_figure_draws_a_box_per_split_ordered_by_the_last` (a
+    hand-made `Bunch` per split: the boxes' x and y, the order by the last split's mean, the
+    colors, the rule, a single split).
+  - **Checks** (`run_7_1d.sh`, `run_7_1d_title.sh` after the bars' title aligned to the plot):
+    - the notebook tests 32 passed;
+    - ruff `03` 14, `02` 11; the test file clean; the user's two format hunks; `marimo check`
+      clean;
+    - Check B on both;
+    - Check C on the EDA: every frame and figure equal to 7.1c's run;
+    - **Check C on the tuning** (`check_c_7_1d_tuning.py`, from 7.1c's by
+      `make_check_c_7_1d.py`, 271 s): each permutation figure's boxes the results'
+      `importances` in the recomputed order (section 5's two splits, the test's one), the
+      colors, the rule, the height, the caption; the scatter's colors and hover `total_true`;
+      the bars' counts, the true bars' interval and the title recomputed; every frame and record
+      equal to 7.1c's run (`check_c_7_1c_tuning.pkl`);
+    - **the variant look** (`run_look_7_1d.sh`: 7.1c's, and the neighborhood `N_144`): its n
+      179 (predicted 140.1 and 137.1), shares 0.408 / 0.274 / 0.318 ± 0.072 / 0.065 / 0.068;
+    - **the mutation** (the columns ordered descending) caught by Check C and by the test;
+    - the non-slow suite 1411 passed, 1 skipped, 1 xfailed; mypy 28 files clean;
+    - the 3-trial copy's new figures screenshotted (`shots_7_1d/`) and read.
+  - **Not run on the user's cache** (E11).
+  - The notebooks' md5: `02` `373c1c39f717935cb08ce14ff6e05a3a`, `03`
+    `fed0b570d008aea48cf1474838c745a9`.
+  - **Commit:** `feat(notebook): the permutation importance drawn, a box of the repeats per column under each importance table; the test counts colored by the true total; the shares' number of children and the truth's interval (7.1d)`
+    (shared with 7.1e: the commit message below).
+- **[x] 7.1e The permutation importance per cohort (notebook).** **Done (2026-11-12)** (the user,
+  after checking 7.1d: a figure of the test permutation importance with a choice of the
+  composite or a cohort; the answers: notebook only, no `src` change; validation too; 7.1d still
+  uncommitted, so one commit):
+  - **`03`:**
+    - **`importance_metrics`** (a cell before the SHAP rows): `{"composite": importance_metric,
+      cohort: Metric(f"{name}_{cohort}", functools.partial(importance_metric.function,
+      cohort=cohort), direction)}` (a partial, not a lambda: a lambda in the loop would bind the
+      last cohort); `functools` imported in section 5's imports cell;
+    - **the inspection cells:** `model1_permutation`, `model2_permutation` are `{cohort:
+      {"train": result, "val": result}}` over `importance_metrics`, one `PermutationImportance`
+      per cohort (the same seed: the same shuffles); **the test's explanation cell:**
+      `test_permutation` is `{model: {cohort: result}}`;
+    - **the tables** read `["composite"]` (their numbers unchanged); 7.1d's figures left the
+      table cells (each caption: "the permutation importance per cohort is drawn below");
+    - **section 5:** `permutation_cohort` (composite first, then the cohorts) and a figure cell
+      (`permutation_figures`, train and validation of the chosen cohort, the caption naming the
+      score); **section 6:** `test_permutation_cohort` and `test_permutation_figures`, after the
+      test tables, before the test beeswarm;
+    - **`permutation_figure`'s third parameter** is `score_name` (x: `drop in the <score_name>
+      when shuffled`; on the composite the same title as 7.1d's).
+  - **The tests:** the two menus' options and defaults (in the beeswarm-menu test and the test
+    explanation's test), no figure without a click; the figure test with `score_name`.
+  - **Checks** (`run_7_1e.sh`; `run_7_1e_rest.sh` reran the tuning's Check C onward after a name
+    clash in the check script):
+    - the notebook tests 32 passed; ruff `03` 14, `02` 11; the test file clean; the user's two
+      format hunks; `marimo check` clean;
+    - Check B on both; Check C on the EDA: every frame and figure equal to 7.1d's run;
+    - **Check C on the tuning** (`check_c_7_1e_tuning.py`, from 7.1d's by
+      `make_check_c_7_1e.py`, 341 s): `importance_metrics` (names, directions, each cohort's
+      score equal to `metric(y, ŷ, cohort=…)` and unlike the composite's); each cohort's train,
+      validation and test results recomputed against an independent cohort metric (and unlike
+      the composite's); the composite's equal to 7.1d's; the default figures by
+      `check_permutation_figure`; the menus and captions; every frame equal to 7.1d's run;
+    - **the variant look** (`run_look_7_1e.sh`, both menus on `n_highschool`): each figure's
+      boxes that cohort's results in its order, its x title; the top columns on validation
+      `avg_household_size`, `6_rooms_share`, then `5_rooms_share` (Model 1) or `median_age`
+      (Model 2);
+    - **the mutation** (the cohort metrics without `cohort=`) caught;
+    - the non-slow suite 1411 passed, 1 skipped, 1 xfailed; mypy 28 files clean;
+    - the screenshots (`shots_7_1e/`) read.
+  - **Not run on the user's cache** (E11).
+  - The notebooks' md5: `02` `373c1c39f717935cb08ce14ff6e05a3a`, `03`
+    `47c8ce343350475eebe8c2007a00397e`.
+  - **Commit (7.1d and 7.1e together):** `feat(notebook): the permutation importance drawn per cohort, a box of the repeats per column under a Cohort menu for validation and test; the test counts colored by the true total; the shares' number of children and the truth's interval (7.1d, 7.1e)`
 
 ### [x] 7.2 The final refit and the test scores (E11)
 - **Done (2026-11-09), as planned** (the user's answers: the test part returned in both

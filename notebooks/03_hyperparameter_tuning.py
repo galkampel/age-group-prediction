@@ -649,6 +649,7 @@ def _(mo):
 @app.cell
 def _():
     import dataclasses
+    import functools
 
     import numpy as np
     import optuna
@@ -693,6 +694,7 @@ def _():
         build_total_times_probability_model,
         compute_metrics,
         dataclasses,
+        functools,
         gaussian_kde,
         go,
         make_subplots,
@@ -1912,6 +1914,25 @@ def _(importance_metric, mo):
 
 
 @app.cell
+def _(COHORTS, Metric, functools, importance_metric):
+    # The permutation importance's score: the composite, and each cohort
+    # scored alone (the metric's cohort=); a partial, not a lambda, so each
+    # metric keeps its own cohort.
+    importance_metrics = {
+        "composite": importance_metric,
+        **{
+            cohort: Metric(
+                f"{importance_metric.name}_{cohort}",
+                functools.partial(importance_metric.function, cohort=cohort),
+                importance_metric.direction,
+            )
+            for cohort in COHORTS
+        },
+    }
+    return (importance_metrics,)
+
+
+@app.cell
 def _(
     AgeGroupDataset,
     n_shap_background,
@@ -1938,7 +1959,7 @@ def _(
     PermutationImportance,
     ShapExplainer,
     best_model1,
-    importance_metric,
+    importance_metrics,
     mo,
     n_repeats,
     run_inspection,
@@ -1955,21 +1976,16 @@ def _(
     # table, on training the overfit check. SHAP, exact at nine columns, of the
     # validation subsample against the training background; the values explain
     # the count (the rows' exposure), per row, column and cohort.
-    _importance = PermutationImportance(importance_metric, n_repeats, random_state=seed)
-    # scikit-learn's results, their arrays in X's column order.
+    # scikit-learn's results per cohort (the composite first) and split, their
+    # arrays in X's column order.
     model1_permutation = {
-        "train": _importance.compute_importances(
-            best_model1,
-            train_age_group.X,
-            train_age_group.Y,
-            exposure=train_age_group.exposure,
-        ),
-        "val": _importance.compute_importances(
-            best_model1,
-            val_age_group.X,
-            val_age_group.Y,
-            exposure=val_age_group.exposure,
-        ),
+        cohort: {
+            split: PermutationImportance(
+                metric, n_repeats, random_state=seed
+            ).compute_importances(best_model1, part.X, part.Y, exposure=part.exposure)
+            for split, part in (("train", train_age_group), ("val", val_age_group))
+        }
+        for cohort, metric in importance_metrics.items()
     }
     model1_shap = ShapExplainer(method="exact", n_jobs=-1).explain(
         best_model1, shap_rows.X, shap_background, exposure=shap_rows.exposure
@@ -1982,7 +1998,7 @@ def _(
     PermutationImportance,
     ShapExplainer,
     best_model2,
-    importance_metric,
+    importance_metrics,
     mo,
     n_repeats,
     run_inspection,
@@ -1995,26 +2011,100 @@ def _(
     mo.stop(
         not run_inspection.value, mo.md("Click the button to inspect the best runs.")
     )
-    _importance = PermutationImportance(importance_metric, n_repeats, random_state=seed)
-    # scikit-learn's results, their arrays in X's column order.
+    # scikit-learn's results per cohort (the composite first) and split, their
+    # arrays in X's column order.
     model2_permutation = {
-        "train": _importance.compute_importances(
-            best_model2,
-            train_age_group.X,
-            train_age_group.Y,
-            exposure=train_age_group.exposure,
-        ),
-        "val": _importance.compute_importances(
-            best_model2,
-            val_age_group.X,
-            val_age_group.Y,
-            exposure=val_age_group.exposure,
-        ),
+        cohort: {
+            split: PermutationImportance(
+                metric, n_repeats, random_state=seed
+            ).compute_importances(best_model2, part.X, part.Y, exposure=part.exposure)
+            for split, part in (("train", train_age_group), ("val", val_age_group))
+        }
+        for cohort, metric in importance_metrics.items()
     }
     model2_shap = ShapExplainer(method="exact", n_jobs=-1).explain(
         best_model2, shap_rows.X, shap_background, exposure=shap_rows.exposure
     )
     return model2_permutation, model2_shap
+
+
+@app.cell
+def _(go, np):
+    def permutation_figure(results, feature_names, score_name):
+        """The permutation importance of each split in `results` ({split:
+        scikit-learn's result}, in display order): per column a box of the
+        drops over the repeated shuffles, a box per split, the mean dashed;
+        the columns by the last split's mean drop (the largest on top), the
+        last split in blue, an earlier one in the muted gray; a dotted rule
+        at 0, where shuffling the column changes nothing. `score_name` names
+        the score that drops (the composite's or a cohort's metric)."""
+        # The palette's tokens, as in the beeswarm.
+        surface, ink, muted, grid, axis, blue = (
+            "#fcfcfb",
+            "#52514e",
+            "#898781",
+            "#e1e0d9",
+            "#c3c2b7",
+            "#2a78d6",
+        )
+        splits = list(results)
+        # Ascending: a category axis draws its first category at the bottom.
+        order = np.argsort(results[splits[-1]].importances_mean, kind="stable")
+        columns = [feature_names[position] for position in order]
+        figure = go.Figure()
+        for split in splits:
+            # A row per column, a column per repeat.
+            importances = results[split].importances[order]
+            figure.add_trace(
+                go.Box(
+                    x=importances.ravel(),
+                    y=np.repeat(columns, importances.shape[1]),
+                    name=split,
+                    orientation="h",
+                    boxmean=True,
+                    marker={"color": blue if split == splits[-1] else muted},
+                    line={"width": 1.5},
+                )
+            )
+        figure.add_vline(x=0, line={"color": ink, "width": 1, "dash": "dot"})
+        figure.update_layout(
+            boxmode="group",
+            height=80 + 28 * len(splits) * len(columns),
+            template="plotly_white",
+            paper_bgcolor=surface,
+            plot_bgcolor=surface,
+            font={
+                "family": "system-ui, -apple-system, Segoe UI, sans-serif",
+                "color": ink,
+                "size": 12,
+            },
+            legend={
+                "orientation": "h",
+                "x": 0,
+                "xanchor": "left",
+                "y": 1.02,
+                "yanchor": "bottom",
+                "traceorder": "normal",
+            },
+            margin={"l": 150, "r": 20, "t": 40, "b": 50},
+        )
+        figure.update_yaxes(
+            categoryorder="array",
+            categoryarray=columns,
+            gridcolor=grid,
+            linecolor=axis,
+            tickfont={"color": ink},
+        )
+        figure.update_xaxes(
+            title_text=f"drop in the {score_name} when shuffled",
+            gridcolor=grid,
+            zeroline=False,
+            linecolor=axis,
+            tickfont={"color": muted},
+        )
+        return figure
+
+    return (permutation_figure,)
 
 
 @app.cell
@@ -2036,8 +2126,8 @@ def _(
     # feature_names.
     _rows = []
     for _model, _permutation, _shap in [
-        ("independent_cohorts", model1_permutation, model1_shap),
-        ("total_times_probability", model2_permutation, model2_shap),
+        ("independent_cohorts", model1_permutation["composite"], model1_shap),
+        ("total_times_probability", model2_permutation["composite"], model2_shap),
     ]:
         _mean_abs_shap = np.abs(_shap.values).mean(axis=0)
         _table = pd.DataFrame(
@@ -2090,12 +2180,63 @@ def _(
                 "mean_abs_shap_<cohort>: how much the column moves the cohort's "
                 "predicted count, the mean |SHAP| over the explained validation "
                 "rows, no labels needed; mean_abs_shap_composite: their mean over "
-                "the cohorts)"
+                "the cohorts; the permutation importance per cohort is drawn below)"
             ),
             *_views,
         ]
     )
     return
+
+
+@app.cell
+def _(COHORTS, mo):
+    # The permutation figure's score: the composite or one cohort.
+    permutation_cohort = mo.ui.dropdown(
+        options=["composite", *COHORTS], value="composite", label="Cohort"
+    )
+    return (permutation_cohort,)
+
+
+@app.cell
+def _(
+    importance_metric,
+    mo,
+    model1_permutation,
+    model2_permutation,
+    n_repeats,
+    permutation_cohort,
+    permutation_figure,
+    train_age_group,
+):
+    _cohort = permutation_cohort.value
+    permutation_figures = {
+        model: permutation_figure(
+            permutation[_cohort],
+            list(train_age_group.X.columns),
+            f"{_cohort} {importance_metric.name}",
+        )
+        for model, permutation in (
+            ("independent_cohorts", model1_permutation),
+            ("total_times_probability", model2_permutation),
+        )
+    }
+    _views = []
+    for _model, _figure in permutation_figures.items():
+        _views += [mo.md(f"**{_model}**"), _figure]
+    mo.vstack(
+        [
+            mo.md(
+                "**The permutation importance of each model's best run, per "
+                f"column: the drop of the {_cohort} {importance_metric.name} when "
+                f"the column is shuffled** (a box over the {n_repeats} shuffles, "
+                "train in gray, validation in blue; the line the median, the "
+                "dashed line the mean; the columns by their validation mean)"
+            ),
+            permutation_cohort,
+            *_views,
+        ]
+    )
+    return (permutation_figures,)
 
 
 @app.cell
@@ -2225,15 +2366,7 @@ def _(go, np, pd):
 
 
 @app.cell
-def _(
-    beeswarm_figure,
-    mo,
-    model1_shap,
-    model2_shap,
-    seed,
-    shap_cohort,
-    shap_rows,
-):
+def _(beeswarm_figure, mo, model1_shap, model2_shap, seed, shap_cohort, shap_rows):
     _cohort = shap_cohort.value
     shap_beeswarm_figures = {
         model: beeswarm_figure(explanation, shap_rows.X, _cohort, seed)
@@ -2259,7 +2392,7 @@ def _(
             *_views,
         ]
     )
-    return
+    return (shap_beeswarm_figures,)
 
 
 @app.cell(hide_code=True)
@@ -2547,7 +2680,7 @@ def _(
 def _(
     PermutationImportance,
     ShapExplainer,
-    importance_metric,
+    importance_metrics,
     mo,
     n_repeats,
     n_shap_background,
@@ -2568,42 +2701,40 @@ def _(
             len(train_val_age_group.X), size=n_shap_background, replace=False
         )
     ]
-    _importance = PermutationImportance(importance_metric, n_repeats, random_state=seed)
     test_shap, test_permutation = {}, {}
     for _model_name, _model in test_models.items():
         test_shap[_model_name] = ShapExplainer(method="exact", n_jobs=-1).explain(
             _model, test_age_group.X, _background, exposure=test_age_group.exposure
         )
-        # scikit-learn's result, its arrays in X's column order.
-        test_permutation[_model_name] = _importance.compute_importances(
-            _model,
-            test_age_group.X,
-            test_age_group.Y,
-            exposure=test_age_group.exposure,
-        )
+        # scikit-learn's results per cohort (the composite first), their arrays
+        # in X's column order.
+        test_permutation[_model_name] = {
+            cohort: PermutationImportance(
+                metric, n_repeats, random_state=seed
+            ).compute_importances(
+                _model,
+                test_age_group.X,
+                test_age_group.Y,
+                exposure=test_age_group.exposure,
+            )
+            for cohort, metric in importance_metrics.items()
+        }
     return test_permutation, test_shap
 
 
 @app.cell
-def _(
-    importance_metric,
-    mo,
-    np,
-    pd,
-    test_permutation,
-    test_scores_df,
-    test_shap,
-):
+def _(importance_metric, mo, np, pd, test_permutation, test_scores_df, test_shap):
     # As section 5's tables, on the test part: per model and raw column, the
     # permutation importance's mean and spread, and the mean |SHAP| over the
     # test buildings per cohort and for the composite.
     _tables = []
     for _model, _explanation in test_shap.items():
+        _composite = test_permutation[_model]["composite"]
         _mean_abs_shap = np.abs(_explanation.values).mean(axis=0)
         _table = pd.DataFrame(
             {
-                "perm_fi_mean_test": test_permutation[_model].importances_mean,
-                "perm_fi_std_test": test_permutation[_model].importances_std,
+                "perm_fi_mean_test": _composite.importances_mean,
+                "perm_fi_std_test": _composite.importances_std,
                 **{
                     f"mean_abs_shap_{cohort}": _mean_abs_shap[:, position]
                     for position, cohort in enumerate(_explanation.output_names)
@@ -2644,12 +2775,60 @@ def _(
                 "column is shuffled; perm_fi_std_test: its spread over the "
                 "repeated shuffles; mean_abs_shap_<cohort>: the mean |SHAP| over "
                 "all the test buildings; mean_abs_shap_composite: their mean over "
-                "the cohorts; reported, never used to choose)"
+                "the cohorts; reported, never used to choose; the permutation "
+                "importance per cohort is drawn below)"
             ),
             *_views,
         ]
     )
-    return
+    return (test_importance_df,)
+
+
+@app.cell
+def _(COHORTS, mo):
+    # The test permutation figure's score: the composite or one cohort.
+    test_permutation_cohort = mo.ui.dropdown(
+        options=["composite", *COHORTS], value="composite", label="Cohort"
+    )
+    return (test_permutation_cohort,)
+
+
+@app.cell
+def _(
+    importance_metric,
+    mo,
+    n_repeats,
+    permutation_figure,
+    test_age_group,
+    test_permutation,
+    test_permutation_cohort,
+):
+    _cohort = test_permutation_cohort.value
+    test_permutation_figures = {
+        model: permutation_figure(
+            {"test": permutation[_cohort]},
+            list(test_age_group.X.columns),
+            f"{_cohort} {importance_metric.name}",
+        )
+        for model, permutation in test_permutation.items()
+    }
+    _views = []
+    for _model, _figure in test_permutation_figures.items():
+        _views += [mo.md(f"**{_model}**"), _figure]
+    mo.vstack(
+        [
+            mo.md(
+                "**The permutation importance of each refit model on the test part, "
+                f"per column: the drop of the {_cohort} {importance_metric.name} "
+                f"when the column is shuffled** (a box over the {n_repeats} "
+                "shuffles; the line the median, the dashed line the mean; reported, "
+                "never used to choose)"
+            ),
+            test_permutation_cohort,
+            *_views,
+        ]
+    )
+    return (test_permutation_figures,)
 
 
 @app.cell
@@ -2662,14 +2841,7 @@ def _(COHORTS, mo):
 
 
 @app.cell
-def _(
-    beeswarm_figure,
-    mo,
-    seed,
-    test_age_group,
-    test_beeswarm_cohort,
-    test_shap,
-):
+def _(beeswarm_figure, mo, seed, test_age_group, test_beeswarm_cohort, test_shap):
     _cohort = test_beeswarm_cohort.value
     test_beeswarm_figures = {
         model: beeswarm_figure(explanation, test_age_group.X, _cohort, seed)
@@ -2692,7 +2864,7 @@ def _(
             *_views,
         ]
     )
-    return
+    return (test_beeswarm_figures,)
 
 
 @app.cell
@@ -2889,7 +3061,7 @@ def _(
             *_every_views,
         ]
     )
-    return
+    return (test_ranked_buildings,)
 
 
 @app.cell
@@ -2902,7 +3074,7 @@ def _(COHORTS, mo):
     test_waterfall_cohort = mo.ui.dropdown(
         options=[*COHORTS, "composite"], value=COHORTS[0], label="Cohort"
     )
-    return test_waterfall_cohort, test_waterfall_end
+    return test_waterfall_end, test_waterfall_cohort
 
 
 @app.cell
@@ -3062,13 +3234,13 @@ def _(
             *_views,
         ]
     )
-    return
+    return (test_waterfall_figures,)
 
 
 @app.cell
 def _(go, mo, test_buildings_df, test_figures_cohort, test_reading_model):
     # The forest's palette: each model in its color, the truth in the muted
-    # ink; the number of apartments on the sequential blue ramp (steps 250,
+    # ink; the true total of children on the sequential blue ramp (steps 250,
     # 400, 550, 700, so the lightest still shows on the surface).
     _model_colors = {
         "independent_cohorts": "#2a78d6",
@@ -3110,8 +3282,9 @@ def _(go, mo, test_buildings_df, test_figures_cohort, test_reading_model):
     test_counts_histogram.update_layout(barmode="overlay")
     test_counts_histogram.update_xaxes(title_text=f"{_count} count")
     test_counts_histogram.update_yaxes(title_text="buildings")
-    # Each building's true count against its prediction, colored by its
-    # number of apartments; on the dotted line they are equal.
+    # Each building's true count against its prediction, colored by its true
+    # total of children (on the composite, x again): whether the errors grow
+    # with the building's children; on the dotted line they are equal.
     _top = max(_true.max(), _predicted.max()) * 1.05
     test_counts_scatter = go.Figure(
         [
@@ -3130,16 +3303,16 @@ def _(go, mo, test_buildings_df, test_figures_cohort, test_reading_model):
                 showlegend=False,
                 marker={
                     "size": 8,
-                    "color": _buildings["n_apartments"],
+                    "color": _buildings["total_true"],
                     "colorscale": _blues,
-                    "colorbar": {"title": {"text": "n_apartments"}, "thickness": 12},
+                    "colorbar": {"title": {"text": "true total"}, "thickness": 12},
                     "line": {"width": 1, "color": _surface},
                 },
                 customdata=_buildings.reset_index()[
-                    ["building_id", "neighborhood_id", "n_apartments"]
+                    ["building_id", "neighborhood_id", "total_true"]
                 ].to_numpy(),
                 hovertemplate=(
-                    "%{customdata[0]} (%{customdata[1]}), %{customdata[2]} apartments"
+                    "%{customdata[0]} (%{customdata[1]}), %{customdata[2]} children"
                     "<br>true %{x}, predicted %{y:.2f}<extra></extra>"
                 ),
             ),
@@ -3190,12 +3363,12 @@ def _(go, mo, test_buildings_df, test_figures_cohort, test_reading_model):
             test_counts_histogram,
             mo.md(
                 "Each building's true count against its prediction, equal on the "
-                "dotted line, the color its number of apartments"
+                "dotted line, the color its true total of children"
             ),
             test_counts_scatter,
         ]
     )
-    return
+    return test_counts_histogram, test_counts_scatter
 
 
 @app.cell
@@ -3206,6 +3379,7 @@ def _(
     compute_metrics,
     go,
     mo,
+    np,
     pd,
     test_age_group,
     test_neighborhood,
@@ -3288,7 +3462,13 @@ def _(
         }
     ).reset_index()
     # The shares as grouped bars: the truth in the muted ink, each model in
-    # its color.
+    # its color. A share of n children varies by about sqrt(p (1 - p) / n):
+    # the true bars carry that 95% interval, each child counted as
+    # independent (children of one building share it, so the noise is larger).
+    _counts = test_selection_counts_df.set_index("cohort")
+    _n_children = _counts.loc["total", "true"]
+    _true_shares = test_selection_shares_df["true"].to_numpy()
+    _true_interval = 1.96 * np.sqrt(_true_shares * (1 - _true_shares) / _n_children)
     test_selection_shares_bars = go.Figure(
         [
             go.Bar(
@@ -3296,7 +3476,22 @@ def _(
                 y=test_selection_shares_df[_series],
                 name=_series,
                 marker={"color": _bar_color, "line": {"width": 2, "color": _surface}},
-                hovertemplate=f"%{{x}} {_series} share %{{y:.3f}}<extra></extra>",
+                error_y=(
+                    {
+                        "type": "data",
+                        "array": _true_interval,
+                        "color": _ink,
+                        "thickness": 1.5,
+                        "width": 6,
+                    }
+                    if _series == "true"
+                    else None
+                ),
+                customdata=_counts.loc[COHORTS, _series].to_numpy(),
+                hovertemplate=(
+                    f"%{{x}} {_series} share %{{y:.3f}}, "
+                    "%{customdata:.1f} children<extra></extra>"
+                ),
             )
             for _series, _bar_color in (
                 ("true", _muted),
@@ -3304,10 +3499,22 @@ def _(
             )
         ]
     )
+    _predicted_totals = ", ".join(
+        f"{model} {_counts.loc['total', model]:.1f}" for model in _predicted
+    )
     test_selection_shares_bars.update_layout(
+        title={
+            "text": (
+                f"n = {_n_children:.0f} true children (predicted: {_predicted_totals})"
+            ),
+            "x": 0,
+            "xref": "paper",
+            "xanchor": "left",
+            "font": {"size": 13},
+        },
         barmode="group",
         bargap=0.3,
-        height=360,
+        height=380,
         template="plotly_white",
         paper_bgcolor=_surface,
         plot_bgcolor=_surface,
@@ -3323,7 +3530,7 @@ def _(
             "y": 1.02,
             "yanchor": "bottom",
         },
-        margin={"l": 50, "r": 20, "t": 50, "b": 50},
+        margin={"l": 50, "r": 20, "t": 80, "b": 50},
     )
     test_selection_shares_bars.update_xaxes(linecolor=_axis, tickfont={"color": _muted})
     test_selection_shares_bars.update_yaxes(
@@ -3344,7 +3551,10 @@ def _(
             mo.md("**Its children**, per cohort and in total"),
             mo.ui.table(test_selection_counts_df.round(4)),
             mo.md(
-                "**Its cohort shares** (each cohort's children over all the children)"
+                "**Its cohort shares** (each cohort's children over all the "
+                "children; the bars' n children in the title, the true bars' 95% "
+                "interval ±1.96·√(p(1−p)/n): the smaller n, the noisier the true "
+                "share, so a gap inside the interval is noise)"
             ),
             mo.ui.table(test_selection_shares_df.round(4)),
             test_selection_shares_bars,
@@ -3355,12 +3565,13 @@ def _(
             mo.ui.table(test_selection_scores_df.round(4)),
         ]
     )
-    return
-
-
-@app.cell
-def _():
-    return
+    return (
+        test_selection_buildings_df,
+        test_selection_counts_df,
+        test_selection_scores_df,
+        test_selection_shares_bars,
+        test_selection_shares_df,
+    )
 
 
 if __name__ == "__main__":

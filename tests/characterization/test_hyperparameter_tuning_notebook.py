@@ -26,6 +26,7 @@ import pytest
 import shap
 from optuna.samplers import RandomSampler
 from scipy.stats import gaussian_kde
+from sklearn.utils import Bunch
 
 from age_group_prediction.hyperparameter_tuning import (
     suggest_independent_cohorts_components,
@@ -679,12 +680,21 @@ def test_the_shap_beeswarm_opens_on_the_first_cohort(
 ) -> None:
     # 7.1b: the beeswarm's menu needs no click and offers the cohorts (SHAP
     # explains each cohort's count; no composite); its figures exist only
-    # after the inspection's click.
+    # after the inspection's click. 7.1e: the permutation figure's menu, the
+    # composite first, then each cohort.
     cohort = notebook_defs["shap_cohort"]
     assert list(cohort.options) == notebook_defs["COHORTS"]
     assert cohort.value == notebook_defs["COHORTS"][0]
-    assert "shap_beeswarm_figures" not in notebook_defs
-    assert "importance_df" not in notebook_defs
+    permutation_cohort = notebook_defs["permutation_cohort"]
+    assert list(permutation_cohort.options) == ["composite", *notebook_defs["COHORTS"]]
+    assert permutation_cohort.value == "composite"
+    for name in (
+        "shap_beeswarm_figures",
+        "importance_df",
+        "model1_permutation",
+        "permutation_figures",
+    ):
+        assert name not in notebook_defs, name
 
 
 def test_the_test_evaluation_is_behind_its_button_and_opens_on_the_forest(
@@ -767,6 +777,9 @@ def test_the_test_explanation_is_behind_its_button(
     beeswarm_cohort = notebook_defs["test_beeswarm_cohort"]
     assert list(beeswarm_cohort.options) == cohorts
     assert beeswarm_cohort.value == cohorts[0]
+    permutation_cohort = notebook_defs["test_permutation_cohort"]
+    assert list(permutation_cohort.options) == ["composite", *cohorts]
+    assert permutation_cohort.value == "composite"
     end = notebook_defs["test_waterfall_end"]
     assert list(end.options) == ["best", "worst"]
     assert end.value == "worst"
@@ -778,6 +791,7 @@ def test_the_test_explanation_is_behind_its_button(
         "test_shap",
         "test_permutation",
         "test_importance_df",
+        "test_permutation_figures",
         "test_beeswarm_figures",
         "test_waterfall_buildings",
         "test_waterfall_figures",
@@ -823,3 +837,38 @@ def test_the_beeswarm_figure_draws_a_row_per_column_and_per_level(
         "s = b",
         "z",
     ]
+
+
+def test_the_permutation_figure_draws_a_box_per_split_ordered_by_the_last(
+    notebook_defs: dict,
+) -> None:
+    # 7.1d: per split a box of each column's drops over the repeats, the
+    # columns by the last split's mean (the largest on top: a category axis
+    # draws its first category at the bottom), the last split in blue, an
+    # earlier one in gray, a dotted rule at 0.
+    permutation_figure = notebook_defs["permutation_figure"]
+    train = Bunch(
+        importances=np.array([[0.9, 1.1], [0.0, 0.2], [0.4, 0.6]]),
+        importances_mean=np.array([1.0, 0.1, 0.5]),
+    )
+    val = Bunch(
+        importances=np.array([[0.1, 0.3], [-0.1, 0.1], [0.5, 0.7]]),
+        importances_mean=np.array([0.2, 0.0, 0.6]),
+    )
+    figure = permutation_figure(
+        {"train": train, "val": val}, ["a", "b", "c"], "composite rmse"
+    )
+    assert [trace.name for trace in figure.data] == ["train", "val"]
+    assert [trace.marker.color for trace in figure.data] == ["#898781", "#2a78d6"]
+    assert list(figure.layout.yaxis.categoryarray) == ["b", "a", "c"]
+    assert list(figure.data[1].y) == ["b", "b", "a", "a", "c", "c"]
+    np.testing.assert_array_equal(figure.data[1].x, [-0.1, 0.1, 0.1, 0.3, 0.5, 0.7])
+    np.testing.assert_array_equal(figure.data[0].x, [0.0, 0.2, 0.9, 1.1, 0.4, 0.6])
+    assert [(shape.x0, shape.line.dash) for shape in figure.layout.shapes] == [
+        (0, "dot")
+    ]
+    assert figure.layout.xaxis.title.text == "drop in the composite rmse when shuffled"
+    test_only = permutation_figure({"test": train}, ["a", "b", "c"], "n_x rmse")
+    assert list(test_only.layout.yaxis.categoryarray) == ["b", "c", "a"]
+    assert test_only.layout.xaxis.title.text == "drop in the n_x rmse when shuffled"
+    assert [trace.marker.color for trace in test_only.data] == ["#2a78d6"]
