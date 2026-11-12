@@ -1,4 +1,17 @@
-# Handoff: the experiment notebooks, PR 7 closed (the user's PR and merge next); then E11's run, the MLflow runs and D4
+# Handoff: the experiment notebooks, PR 7 merged (#26); a simplification review next, then the MLflow plan
+
+**Status (2026-11-12, PR 7 merged; the next session starts at §6):**
+- **PR 7 is merged** as #26, squashed into `main` as `574287e` (its tree identical to the close
+  commit `4b279fb`); `feat/test-evaluation` deleted locally and on GitHub.
+- **The branch `feat/mlflow-runs`** is from `main` at `574287e`; its first commit is this update.
+- **Next (the user's, 2026-11-12):** before the MLflow plan, a **review for overcomplication**
+  of the hyperparameter tuning and the visualization, with the simplifications it proposes
+  (§6). The review and the plan are written in the next session.
+- **The notebooks' md5 (unchanged):** `02_objective_eda.py` `373c1c39f717935cb08ce14ff6e05a3a`,
+  `03_hyperparameter_tuning.py` `47c8ce343350475eebe8c2007a00397e`.
+- **The test part has still not been run on the user's cache** (E11, the user's).
+- **The scratchpad to copy first:** the one named in the status below (PR 7's close), with the
+  same files.
 
 **Status (2026-11-12, PR 7 closed, before the user's commit, PR and merge; the next session starts at §6):**
 - **7.1d and 7.1e are committed** as `aaf7196` (the user's; the md5 as checked, no marimo save).
@@ -862,7 +875,7 @@ which the two notebooks now hold: 1–5 in the EDA, 1–4 and 6 (as 5) in the tu
 
 ## 2. State
 
-### PR 7 (2026-11-08, open; `feat/test-evaluation`)
+### PR 7 (2026-11-12, closed: merged as #26, `574287e`; `feat/test-evaluation`)
 
 - **Commits** (from `main` at `f9c92a5`):
 
@@ -881,7 +894,10 @@ which the two notebooks now hold: 1–5 in the EDA, 1–4 and 6 (as 5) in the tu
   | `57fd52a` | 7.1b: SHAP per cohort, the tables and the beeswarm (with marimo's save from the user's session) |
   | `9779eb2` | 7.1c: the test part explained; 7.1b's save undone (with marimo's save from the user's session) |
   | `aaf7196` | 7.1d and 7.1e (one commit): the permutation importance drawn, per cohort under a Cohort menu; the scatter by the true total, the shares' n; 7.1c's save undone |
-  | (uncommitted) | PR 7 closed: the checks on HEAD, the cache plan's status, this handoff for after the merge |
+  | `4b279fb` | PR 7 closed: the checks on HEAD, the cache plan's status, this handoff for after the merge |
+
+  The merge: #26, squashed into `main` as `574287e`, identical to `4b279fb`; the branch
+  deleted locally and on GitHub. `feat/mlflow-runs` starts from it.
 - **7.0's Check C baselines** (3 trials, both sharing flags off; the cv RMSE) are in the cache
   plan's 7.0 Done note:
   - Model 1, exposure on / off: `lgbm_poisson` 4.4495 / 4.5284, `lgbm_gaussian` 4.4543 /
@@ -1969,17 +1985,13 @@ constructor, data in the call; fitting and evaluating as separate steps; no priv
 
 ## 6. Next, and the prompt
 
-**Status (2026-11-12, PR 7 closed, before the user's commit, PR and merge):**
-- PR 7 is on `feat/test-evaluation` (from `main` at `f9c92a5`): 7.0 `a74b2ff`, 7.0b
-  `8ef9b3f`, 5.4a `f0d240c`, 5.4b `96030f1`, 7.2 `0316c06`, 7.3 `19e69ec`, 7.1a `a47a748`,
-  7.1b `57fd52a`, 7.1c `9779eb2`, 7.1d and 7.1e `aaf7196` (§2's "PR 7"). The close (the cache
-  plan's status, this handoff) is uncommitted; the user commits it as
+**Status (2026-11-12, PR 7 merged as #26, `574287e`):**
+- `main` holds PRs 3–7. The branch `feat/mlflow-runs` is from `main` at `574287e`; its first
+  commit is this handoff with the merge recorded (the user's):
 
   ```text
-  docs(notebook): PR 7 closed: the checks on HEAD, the plan's status; the handoff for after the merge
+  docs(notebook): the handoff after PR #26's merge; a simplification review of the tuning and the figures next, then the MLflow plan
   ```
-
-  then pushes, opens the PR (the text in the scratchpad's `pr_7.md`) and squash-merges it.
 - The notebooks' md5:
   - `01_eda.py` `4bc1ba3a52dc2ad55d0097a707bd1ccc`;
   - `02_objective_eda.py` `373c1c39f717935cb08ce14ff6e05a3a`;
@@ -1989,18 +2001,32 @@ constructor, data in the call; fitting and evaluating as separate steps; no priv
   the scratchpad named in the status at the top. If they are gone, rewrite the scripts from §4
   and run Check C on HEAD before the first edit, keeping those pickles.
 - The user's cache `studies/` holds 50 studies; a click loads them. **The test part has still not
-  been run on it** (E11: the user reads the test part first).
+  been run on it** (E11: the user's run, at any time).
 
-Next, one step per approval, each stopped with a file-by-file summary, the checks, the
-notebooks' md5 and the commit message in a copyable code block:
-1. **PR 7's merge (the user's):** after it, record the merge (the squash hash on `main`), delete
-   `feat/test-evaluation` locally (`git branch -D`: `-d` refuses a squash-merged branch) and on
-   GitHub, and start the next branch from `main` (its first commit: this handoff with the merge
-   recorded).
-2. **E11's run (the user's):** the user clicks "Evaluate on the test part" on the real cache once,
-   after reading the test part; the assistant does not run it.
-3. **Then, unless the user names another:** the MLflow runs and D4 (EXPERIMENT_NOTEBOOK_PLAN.md's
-   D4: the comparison table and the final run), planned first.
+Next (the user's, 2026-11-12), one step per approval, each stopped with a file-by-file summary,
+the checks, the notebooks' md5 and the commit message in a copyable code block:
+1. **A review for overcomplication, before the MLflow plan** (read-only; planned first in plan
+   mode). Is the code overcomplicated, and can it be simplified? Two areas:
+   - **the hyperparameter tuning:** the package `src/age_group_prediction/hyperparameter_tuning/`
+     (`params.py`, `search_spaces.py`, `components.py`, `builders.py`, `aggregation.py`,
+     `cross_validation.py`, `__init__.py`; about 1240 lines) and the notebooks' tuning cells
+     (the run settings, the loops, the records, the runs and scores tables, F4's two functions,
+     `build_trials_table`);
+   - **the visualization** (only in the notebooks; no `src` module plots): `03`'s
+     `forest_figure`, `ridge_figure`, `permutation_figure`, `beeswarm_figure`, the waterfall
+     cell, 7.3's count and share figures, and `02`'s EDA figure cells.
+
+   Each finding judged against the user's rules (§3's "do not overcomplicate", §4's "The user's
+   style", the API preferences): what can be removed, merged or made plainer; its evidence (the
+   lines, what reads it, what a change would break or change in the outputs); a recommendation
+   and its trade-off. The findings go into a new plan doc in `docs/`, as sub-tasks the user
+   accepts or rejects one by one; each accepted simplification is its own stop, its outputs
+   unchanged unless the user decides otherwise (Check C equal to the close's run), a valid path
+   kept (the study cache's names, the records' keys), a `src` change its own approved stop.
+2. **Then the MLflow plan** (in plan mode, after the review's decisions): the MLflow runs and
+   D4 (EXPERIMENT_NOTEBOOK_PLAN.md: the comparison table and the final run, E11), and what
+   happens to the old `tracking/` package (the old stack's; the roadmap deletes it).
+3. **E11's run** of the test part on the user's cache is the user's, at any time.
 
 The user's preferences:
 - plan docs in `docs/`, split into sub-tasks validated one at a time;
@@ -2018,12 +2044,15 @@ The user's preferences:
 
 ```text
 Read docs/EXPERIMENT_NOTEBOOK_HANDOFF.md in full (the status at the top, §1, §2's "PR 7"
-block, §3, §4's checks (since PR 7's close), traps, iCloud notes, §5, §6 first), then
-docs/NOTEBOOK_CACHE_EVALUATION_PLAN.md (its status line and §6), then
-docs/EXPERIMENT_NOTEBOOK_PLAN.md (E11 and D4).
+block, §3, §4 (how to work, the checks since PR 7's close, the traps, the iCloud notes, the
+user's style), §5, §6 first), then docs/EXPERIMENT_NOTEBOOK_PLAN.md (E11 and D4), then the
+code to review: src/age_group_prediction/hyperparameter_tuning/ (every file), the tuning cells
+of notebooks/03_hyperparameter_tuning.py and notebooks/02_objective_eda.py, and their figure
+code (03's forest_figure, ridge_figure, permutation_figure, beeswarm_figure, the waterfall and
+7.3's figures; 02's EDA figures).
 Verify the state first:
-- PR 7 merged into main (its squash hash), or the branch feat/test-evaluation with HEAD my
-  close commit and `git status` clean;
+- the branch feat/mlflow-runs, HEAD my commit of the handoff after PR #26's merge (on main's
+  574287e), `git status` clean;
 - the notebooks' md5 (`cat <file> | md5`): 02_objective_eda.py
   373c1c39f717935cb08ce14ff6e05a3a, 03_hyperparameter_tuning.py 47c8ce343350475eebe8c2007a00397e;
 - no iCloud-offloaded files: `find .git src notebooks tests docs configs -flags +dataless -type f
@@ -2032,8 +2061,11 @@ If anything differs (my marimo editor may have saved over it: trimmed returns, a
 stop and show me the diff. Then copy checks/, probes/, viewer/, the logs and the pickles the
 status at the top lists from the scratchpad it names (or rewrite them from §4), set each
 script's S= to the new scratchpad, and compile the pycache (§4's iCloud notes).
-First, if PR 7 is merged: record the merge (§6 step 1) and wait for my commit. Then plan the
-next step (§6: the MLflow runs and D4, unless I name another) in plan mode and wait for my go.
+Then plan, in plan mode, a review for overcomplication (§6 step 1): is the hyperparameter
+tuning (the package and the notebook cells) and the visualization overcomplicated, and what can
+be simplified? Read-only; each finding with its evidence, what it would break, a
+recommendation and the trade-off; written as a plan doc in docs/ with sub-tasks I accept or
+reject one by one. Wait for my go. The MLflow plan comes after the review's decisions.
 Don't run the test evaluation on my cache: that run is mine (E11). My marimo session may be
 open: tell me before editing the notebook and remind me to reload it after (not to save from
 it). Keep the implementation simple. Stop each step with a file-by-file summary, the checks, the
