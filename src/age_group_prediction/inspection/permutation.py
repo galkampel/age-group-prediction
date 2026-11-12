@@ -13,6 +13,7 @@ import numpy as np
 import pandas as pd
 from pydantic.dataclasses import dataclass as pydantic_dataclass
 from sklearn.inspection import permutation_importance
+from sklearn.utils import Bunch
 
 from .._config import STRICT
 from ..modeling import BaseAgeGroupModel
@@ -25,7 +26,7 @@ __all__ = ["PermutationImportance"]
 # Settings are checked when the object is built, not after the repeats.
 @pydantic_dataclass(frozen=True, config=STRICT)
 class PermutationImportance:
-    """Permutation importance of a fitted model, one row per column of ``X``.
+    """Permutation importance of a fitted model, per column of ``X``.
 
     Each column is shuffled ``n_repeats`` times and the model scored on
     ``metric`` each time. With a score where greater is better,
@@ -52,13 +53,14 @@ class PermutationImportance:
         y: Target,
         *,
         exposure: Exposure | None = None,
-    ) -> pd.DataFrame:
+    ) -> Bunch:
         """Shuffle each column of ``X`` in turn and score the fitted ``model`` on ``y``.
 
         ``X`` is the raw table (the model transforms it inside ``predict``);
         ``X``, ``y`` and ``exposure`` are paired by position. Returns
-        ``importance_mean`` and ``importance_std`` over the repeats, indexed
-        by ``X``'s columns.
+        scikit-learn's result: ``importances`` (a row per column of ``X``, a
+        column per repeat), ``importances_mean`` and ``importances_std`` over
+        the repeats, each in ``X``'s column order.
         """
         # scikit-learn scores "greater is better", so a loss is negated: the
         # drop of the score is then positive for a column the model uses.
@@ -87,10 +89,4 @@ class PermutationImportance:
                 "some permutation scores are not finite; check the data and "
                 "that the metric suits the model"
             )
-        return pd.DataFrame(
-            {
-                "importance_mean": result.importances_mean,
-                "importance_std": result.importances_std,
-            },
-            index=X.columns,
-        )
+        return result

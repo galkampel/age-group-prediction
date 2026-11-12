@@ -242,8 +242,11 @@ def _(mo, pd):
     # TPE's random start: the trials drawn at random before its model guides the
     # draws; 10% of the budget, Optuna's default (D31).
     n_startup_trials = 10
+    # The tuner's objective, the composite's cross-validated score every study
+    # minimizes: "rmse" or "poisson_deviance" (D42).
+    objective_metric = "rmse"
     # The metric that picks each model's best run, by its composite score on
-    # validation: "rmse" or "poisson_deviance" (D34; the deviance still tunes).
+    # validation: "rmse" or "poisson_deviance" (D34, D42).
     selection_metric = "rmse"
     n_resamples = 1000
     # The bootstrap interval's level is 1 - alpha: 95%.
@@ -263,6 +266,7 @@ def _(mo, pd):
         "n_splits": n_splits,
         "n_trials": n_trials,
         "n_startup_trials": n_startup_trials,
+        "objective_metric": objective_metric,
         "selection_metric": selection_metric,
         "n_resamples": n_resamples,
         "alpha": alpha,
@@ -284,6 +288,7 @@ def _(mo, pd):
         n_splits,
         n_startup_trials,
         n_trials,
+        objective_metric,
         seed,
         selection_metric,
         split_method,
@@ -351,7 +356,7 @@ def _(
         f"split n_train={len(train_index)} n_val={len(val_index)} "
         f"n_test={len(test_index)}"
     )
-    return splitter, train_age_group, val_age_group
+    return splitter, test_age_group, train_age_group, val_age_group
 
 
 @app.cell
@@ -624,11 +629,18 @@ def _(mo):
     ## 5) Hyperparameter tuning
 
     One Optuna study per model family and exposure, on the composite's
-    cross-validated Poisson deviance (the total times probability model by
-    coordinate descent until PR 7). Each run's best model is refit on the
+    cross-validated `objective_metric` (RMSE; D42); the total times
+    probability model's family is a pair, both components drawn in each trial
+    (the joint method, D40; the objective EDA compares it with coordinate
+    descent). Each run's best model is refit on the
     training part and scored on validation; each model's best run is the
     lowest validation score by `selection_metric`, bootstrapped over whole
-    neighborhoods and inspected behind its button. The objective EDA
+    neighborhoods and inspected behind its button (the permutation importance
+    and the SHAP values per cohort). The two best runs' paired
+    difference, per bootstrap replicate, shows whether one is better; a
+    "Metric" menu chooses the metric of the plots and, unless it is bias, of
+    the permutation importance (`selection_metric` by default). The
+    objective EDA
     (`02_objective_eda.py`) describes the studies' storage and their trials.
     """)
     return
@@ -637,16 +649,17 @@ def _(mo):
 @app.cell
 def _():
     import dataclasses
+    import functools
 
     import numpy as np
     import optuna
     import plotly.graph_objects as go
     from plotly.subplots import make_subplots
+    from scipy.stats import gaussian_kde
 
     from age_group_prediction.hyperparameter_tuning import (
         CountComponent,
         CrossValidationTuner,
-        LogisticParams,
         ProbabilityComponent,
         build_independent_cohorts_model,
         build_total_times_probability_model,
@@ -673,7 +686,6 @@ def _():
         BootstrapEvaluator,
         CountComponent,
         CrossValidationTuner,
-        LogisticParams,
         Metric,
         PermutationImportance,
         ProbabilityComponent,
@@ -682,6 +694,8 @@ def _():
         build_total_times_probability_model,
         compute_metrics,
         dataclasses,
+        functools,
+        gaussian_kde,
         go,
         make_subplots,
         mean_absolute_error_loss,
@@ -701,22 +715,21 @@ def _(
     mean_bias_error,
     mean_poisson_deviance_loss,
     multinomial_log_loss,
+    objective_metric,
     root_mean_squared_error_loss,
     selection_metric,
     wmape_loss,
 ):
-    # The primary metric: the study's objective and the permutation
-    # importance's score, with the direction Optuna is given; a loss, so
-    # "minimize".
+    # Each metric with the direction Optuna is given; a loss, so "minimize".
     POISSON_DEVIANCE = Metric(
         "poisson_deviance", mean_poisson_deviance_loss, direction="minimize"
     )
     LOG_LOSS = Metric("log_loss", multinomial_log_loss, direction="minimize")
     RMSE = Metric("rmse", root_mean_squared_error_loss, direction="minimize")
 
-    # Every metric, the primary first: each run's score table (each cohort
-    # through `cohort=`, then the composite) and the bootstrap of the best
-    # runs. The count metrics pool the (building, cohort) cells. Bias is
+    # Every metric: what every trial records, each run's score table (each
+    # cohort through `cohort=`, then the composite) and the bootstrap of the
+    # best runs. The count metrics pool the (building, cohort) cells. Bias is
     # signed, so its direction is nominal: only the permutation importance
     # reads one.
     METRICS = (
@@ -727,6 +740,14 @@ def _(
         Metric("wmape", wmape_loss, direction="minimize"),
         Metric("bias", mean_bias_error, direction="minimize"),
     )
+    # The objective metric: the tuner's objective, the score every study
+    # minimizes.
+    if objective_metric == "rmse":
+        OBJECTIVE_METRIC = RMSE
+    elif objective_metric == "poisson_deviance":
+        OBJECTIVE_METRIC = POISSON_DEVIANCE
+    else:
+        raise ValueError(f"unknown objective_metric {objective_metric!r}")
     # The selection metric: it picks each model's best run (the composite's
     # point score on validation) and is the forest plots' metric.
     if selection_metric == "rmse":
@@ -735,7 +756,7 @@ def _(
         SELECTION_METRIC = POISSON_DEVIANCE
     else:
         raise ValueError(f"unknown selection_metric {selection_metric!r}")
-    return METRICS, POISSON_DEVIANCE, SELECTION_METRIC
+    return METRICS, OBJECTIVE_METRIC, SELECTION_METRIC
 
 
 @app.cell
@@ -751,7 +772,7 @@ def _(Y, np):
 def _(
     CrossValidationTuner,
     METRICS,
-    POISSON_DEVIANCE,
+    OBJECTIVE_METRIC,
     config_hash,
     cv,
     mo,
@@ -787,14 +808,14 @@ def _(
             }.items()
         )
     )
-    # The study's design, the same for every run: the Poisson deviance of the
+    # The study's design, the same for every run: the objective metric of the
     # composite on each fold, the plain mean over them, the first
     # n_startup_trials of n_trials at random; each trial fits its folds in
     # n_splits processes (D13, D20, D26) and records its cross-validated score
     # on every metric, from the same fold predictions.
     tuner = CrossValidationTuner(
         cv=cv,
-        objective_metric=POISSON_DEVIANCE,
+        objective_metric=OBJECTIVE_METRIC,
         n_trials=n_trials,
         n_startup_trials=n_startup_trials,
         n_jobs=n_splits,
@@ -820,20 +841,24 @@ def _(
 
 
 @app.cell
-def _(LogisticParams, PROBABILITY_FEATURE_TRANSFORMERS, ProbabilityComponent):
-    # The total times probability model's fixed probabilities in coordinate
-    # descent's step 1, here and in the objective EDA. The composite
-    # deviance is the total's deviance plus the probabilities' log loss, so a
-    # fixed classifier adds the same constant to every trial and any one finds
-    # the same best total: the cheapest.
-    MODEL2_FIXED_PROBABILITY_COMPONENT = ProbabilityComponent(
-        name="probability",
-        family="logistic",
-        calibration_method=None,
-        estimator_params=LogisticParams(C=1.0),
-        feature_transformer=PROBABILITY_FEATURE_TRANSFORMERS["logistic"]["glm_base"],
-    )
-    return (MODEL2_FIXED_PROBABILITY_COMPONENT,)
+def _(ProbabilityComponent, dataclasses):
+    def find_feature_transformer_name(component, candidates):
+        """The name of `component`'s feature transformer among `candidates`
+        (a family's candidates by name), found by identity."""
+        return next(
+            transformer_name
+            for transformer_name, transformer in candidates.items()
+            if transformer is component.feature_transformer
+        )
+
+    def read_hyperparameters(component):
+        """`component`'s hyperparameters, a classifier's with its calibration."""
+        hyperparameters = dataclasses.asdict(component.estimator_params)
+        if isinstance(component, ProbabilityComponent):
+            hyperparameters["calibration_method"] = component.calibration_method
+        return hyperparameters
+
+    return find_feature_transformer_name, read_hyperparameters
 
 
 @app.cell
@@ -928,6 +953,7 @@ def _(
     build_study_name,
     compute_metrics,
     cv_groups,
+    find_feature_transformer_name,
     mo,
     pd,
     run_model1,
@@ -1005,12 +1031,8 @@ def _(
             {
                 **_run_settings,
                 "feature_transformers": {
-                    component.name: next(
-                        transformer_name
-                        for transformer_name, transformer in COUNT_FEATURE_TRANSFORMERS[
-                            _family
-                        ].items()
-                        if transformer is component.feature_transformer
+                    component.name: find_feature_transformer_name(
+                        component, COUNT_FEATURE_TRANSFORMERS[_family]
                     )
                     for component in _best_components
                 },
@@ -1027,7 +1049,7 @@ def _(
 
 
 @app.cell
-def _(MODEL1_RUNS, dataclasses, pd, tuner):
+def _(MODEL1_RUNS, pd, read_hyperparameters, tuner):
     _run_rows, _score_rows = [], []
     for _run in MODEL1_RUNS:
         _settings = {
@@ -1043,7 +1065,7 @@ def _(MODEL1_RUNS, dataclasses, pd, tuner):
                 **_settings,
                 "feature_transformers": _run["feature_transformers"],
                 "hyperparameters": {
-                    component.name: dataclasses.asdict(component.estimator_params)
+                    component.name: read_hyperparameters(component)
                     for component in _run["components"]
                 },
                 f"cv_{tuner.objective_metric.name}": _run["cv_best"],
@@ -1084,157 +1106,150 @@ def _(mo, model1_runs_df, model1_scores_df):
 
 @app.cell
 def _():
-    # The total times probability model by coordinate descent (2.3a). Step 1
-    # tunes the total, one run per count family × exposure on or off, in the
-    # order of their seeds (the i-th study gets seed + i); step 2 tunes the
-    # probabilities, one run per classifier family, seeded after step 1's.
-    MODEL2_TOTAL_RUN_SETTINGS = [
-        {"total_family": "lgbm_poisson", "use_exposure": True},
-        {"total_family": "lgbm_poisson", "use_exposure": False},
-        {"total_family": "lgbm_gaussian", "use_exposure": True},
-        {"total_family": "lgbm_gaussian", "use_exposure": False},
-        {"total_family": "poisson_glm", "use_exposure": True},
-        {"total_family": "poisson_glm", "use_exposure": False},
-        {"total_family": "nb2", "use_exposure": True},
-        {"total_family": "nb2", "use_exposure": False},
+    # The total times probability model's runs, in the order of their seeds
+    # (the i-th study gets seed + i): a pair of a count family for the total
+    # and a classifier family for the probabilities, × exposure on or off.
+    # Each trial draws both components (the joint method, D40).
+    MODEL2_RUN_SETTINGS = [
+        {
+            "total_family": "lgbm_poisson",
+            "probability_family": "logistic",
+            "use_exposure": True,
+        },
+        {
+            "total_family": "lgbm_poisson",
+            "probability_family": "logistic",
+            "use_exposure": False,
+        },
+        {
+            "total_family": "lgbm_poisson",
+            "probability_family": "lgbm",
+            "use_exposure": True,
+        },
+        {
+            "total_family": "lgbm_poisson",
+            "probability_family": "lgbm",
+            "use_exposure": False,
+        },
+        {
+            "total_family": "lgbm_gaussian",
+            "probability_family": "logistic",
+            "use_exposure": True,
+        },
+        {
+            "total_family": "lgbm_gaussian",
+            "probability_family": "logistic",
+            "use_exposure": False,
+        },
+        {
+            "total_family": "lgbm_gaussian",
+            "probability_family": "lgbm",
+            "use_exposure": True,
+        },
+        {
+            "total_family": "lgbm_gaussian",
+            "probability_family": "lgbm",
+            "use_exposure": False,
+        },
+        {
+            "total_family": "poisson_glm",
+            "probability_family": "logistic",
+            "use_exposure": True,
+        },
+        {
+            "total_family": "poisson_glm",
+            "probability_family": "logistic",
+            "use_exposure": False,
+        },
+        {
+            "total_family": "poisson_glm",
+            "probability_family": "lgbm",
+            "use_exposure": True,
+        },
+        {
+            "total_family": "poisson_glm",
+            "probability_family": "lgbm",
+            "use_exposure": False,
+        },
+        {
+            "total_family": "nb2",
+            "probability_family": "logistic",
+            "use_exposure": True,
+        },
+        {
+            "total_family": "nb2",
+            "probability_family": "logistic",
+            "use_exposure": False,
+        },
+        {
+            "total_family": "nb2",
+            "probability_family": "lgbm",
+            "use_exposure": True,
+        },
+        {
+            "total_family": "nb2",
+            "probability_family": "lgbm",
+            "use_exposure": False,
+        },
     ]
-    MODEL2_PROBABILITY_RUN_SETTINGS = [
-        {"probability_family": "logistic"},
-        {"probability_family": "lgbm"},
-    ]
-    return MODEL2_PROBABILITY_RUN_SETTINGS, MODEL2_TOTAL_RUN_SETTINGS
+    return (MODEL2_RUN_SETTINGS,)
 
 
 @app.cell
 def _(mo):
     run_model2 = mo.ui.run_button(label="Tune the total times probability model")
     mo.md(
-        f"{run_model2} by coordinate descent: 8 runs of the total, one per entry of "
-        "`MODEL2_TOTAL_RUN_SETTINGS`, then 2 of the probabilities, one per entry of "
-        "`MODEL2_PROBABILITY_RUN_SETTINGS`, with the best total fixed; then the 16 "
-        "pairs scored. Each trial fits its folds in parallel."
+        f"{run_model2} 16 runs in one loop, one per entry of `MODEL2_RUN_SETTINGS` "
+        "(a family pair × exposure on or off); each trial fits its folds in parallel."
     )
     return (run_model2,)
 
 
 @app.cell
 def _(
+    COHORTS,
     COUNT_FEATURE_TRANSFORMERS,
     CountComponent,
-    MODEL2_FIXED_PROBABILITY_COMPONENT,
-    MODEL2_TOTAL_RUN_SETTINGS,
+    METRICS,
+    MODEL2_RUN_SETTINGS,
     PREDICTION_FLOOR,
+    PROBABILITY_FEATURE_TRANSFORMERS,
+    ProbabilityComponent,
     build_study_name,
+    build_total_times_probability_model,
+    compute_metrics,
     cv_groups,
+    find_feature_transformer_name,
     mo,
+    pd,
     run_model2,
     seed,
     train_age_group,
     tuner,
+    val_age_group,
 ):
     mo.stop(
         not run_model2.value,
         mo.md("Click the button to tune the total times probability model."),
     )
-    # Step 1: the totals, one after another, the i-th seeded seed + i, the
-    # probabilities fixed. A failed trial is caught by the study; any other
-    # error ends the loop, and the records made so far are lost.
-    MODEL2_TOTAL_RUNS = []
-    for _i, _run_settings in enumerate(MODEL2_TOTAL_RUN_SETTINGS):
+    # The total times probability model's runs, one after another, the i-th
+    # seeded seed + i. A failed trial is caught by the study; any other error
+    # ends the loop, and the records made so far are lost.
+    MODEL2_RUNS = []
+    for _i, _run_settings in enumerate(MODEL2_RUN_SETTINGS):
         _total_family = _run_settings["total_family"]
+        _probability_family = _run_settings["probability_family"]
         _use_exposure = _run_settings["use_exposure"]
         _study_seed = seed + _i
-        _study, _seconds = tuner.tune_total_component(
+        _study, _seconds = tuner.tune_total_times_probability_model(
             train_age_group.X,
             train_age_group.Y,
             train_age_group.exposure,
             cv_groups,
             total_family=_total_family,
+            probability_family=_probability_family,
             use_exposure=_use_exposure,
             total_feature_transformer_dict=COUNT_FEATURE_TRANSFORMERS[_total_family],
-            probability_component=MODEL2_FIXED_PROBABILITY_COMPONENT,
-            y_min=PREDICTION_FLOOR,
-            random_state=seed,
-            study_seed=_study_seed,
-            study_name=build_study_name(
-                "total_times_probability_coordinate_descent_total",
-                _run_settings,
-                tuner.objective_metric.name,
-                _study_seed,
-            ),
-        )
-        # The best total, read from the best trial's parameters by its type
-        # (D25); the run keeps it, its transformer's name, its value, trial
-        # counts and seconds. The trials are not kept: the objective EDA studies
-        # them.
-        _total_component = CountComponent.from_params(
-            _study.best_params,
-            name="total",
-            family=_total_family,
-            use_exposure=_use_exposure,
-            feature_transformer_dict=COUNT_FEATURE_TRANSFORMERS[_total_family],
-        )
-        _states = [trial.state.name for trial in _study.trials]
-        MODEL2_TOTAL_RUNS.append(
-            {
-                **_run_settings,
-                "feature_transformers": {
-                    "total": next(
-                        transformer_name
-                        for transformer_name, transformer in COUNT_FEATURE_TRANSFORMERS[
-                            _total_family
-                        ].items()
-                        if transformer is _total_component.feature_transformer
-                    )
-                },
-                "component": _total_component,
-                "cv_best": _study.best_value,
-                "n_complete": _states.count("COMPLETE"),
-                "n_failed": _states.count("FAIL"),
-                "seconds": _seconds,
-            }
-        )
-    return (MODEL2_TOTAL_RUNS,)
-
-
-@app.cell
-def _(
-    MODEL2_PROBABILITY_RUN_SETTINGS,
-    MODEL2_TOTAL_RUNS,
-    MODEL2_TOTAL_RUN_SETTINGS,
-    PREDICTION_FLOOR,
-    PROBABILITY_FEATURE_TRANSFORMERS,
-    ProbabilityComponent,
-    build_study_name,
-    cv_groups,
-    mo,
-    run_model2,
-    seed,
-    train_age_group,
-    tuner,
-):
-    mo.stop(
-        not run_model2.value,
-        mo.md("Click the button to tune the total times probability model."),
-    )
-    # Step 2: the probabilities, one after another, seeded after step 1's runs,
-    # step 1's best total by cv fixed. The total adds the same constant to
-    # every trial, so each run's best value is the cv of its pair with that
-    # total.
-    _best_total_component = min(MODEL2_TOTAL_RUNS, key=lambda run: run["cv_best"])[
-        "component"
-    ]
-    MODEL2_PROBABILITY_RUNS = []
-    for _j, _run_settings in enumerate(MODEL2_PROBABILITY_RUN_SETTINGS):
-        _probability_family = _run_settings["probability_family"]
-        _study_seed = seed + len(MODEL2_TOTAL_RUN_SETTINGS) + _j
-        _study, _seconds = tuner.tune_probability_component(
-            train_age_group.X,
-            train_age_group.Y,
-            train_age_group.exposure,
-            cv_groups,
-            total_component=_best_total_component,
-            probability_family=_probability_family,
             probability_feature_transformer_dict=PROBABILITY_FEATURE_TRANSFORMERS[
                 _probability_family
             ],
@@ -1242,11 +1257,21 @@ def _(
             random_state=seed,
             study_seed=_study_seed,
             study_name=build_study_name(
-                "total_times_probability_coordinate_descent_probability",
+                "total_times_probability_joint",
                 _run_settings,
                 tuner.objective_metric.name,
                 _study_seed,
             ),
+        )
+        # The best components, read from the best trial's parameters by their
+        # type (the two parts share LightGBM's parameter names; each reads its
+        # own), are the model scored and the record kept (D25).
+        _total_component = CountComponent.from_params(
+            _study.best_params,
+            name="total",
+            family=_total_family,
+            use_exposure=_use_exposure,
+            feature_transformer_dict=COUNT_FEATURE_TRANSFORMERS[_total_family],
         )
         _probability_component = ProbabilityComponent.from_params(
             _study.best_params,
@@ -1256,107 +1281,53 @@ def _(
                 _probability_family
             ],
         )
+        _best_components = (_total_component, _probability_component)
+        # The best model refit on the training part; every metric on training
+        # and validation, per cohort and for the composite: its point score.
+        _model = build_total_times_probability_model(
+            *_best_components, y_min=PREDICTION_FLOOR, random_state=seed
+        ).fit(train_age_group.X, train_age_group.Y, exposure=train_age_group.exposure)
+        _scores_by_dataset = {}
+        for _dataset_name, _dataset in (
+            ("train", train_age_group),
+            ("val", val_age_group),
+        ):
+            _y_pred = _model.predict(_dataset.X, exposure=_dataset.exposure)
+            _dataset_scores = compute_metrics(
+                _dataset.Y, _y_pred, METRICS, cohorts=[*COHORTS, "composite"]
+            ).stack()
+            _scores_by_dataset[_dataset_name] = _dataset_scores.to_frame("score")
+        # The run's settings and its best model: the fitted model, its
+        # components and their transformers' names (found by identity among
+        # each family's candidates); its value, trial counts and seconds. The
+        # trials are not kept: the objective EDA studies them.
         _states = [trial.state.name for trial in _study.trials]
-        MODEL2_PROBABILITY_RUNS.append(
+        MODEL2_RUNS.append(
             {
                 **_run_settings,
                 "feature_transformers": {
-                    "probability": next(
-                        transformer_name
-                        for transformer_name, transformer in PROBABILITY_FEATURE_TRANSFORMERS[
-                            _probability_family
-                        ].items()
-                        if transformer is _probability_component.feature_transformer
-                    )
+                    "total": find_feature_transformer_name(
+                        _total_component, COUNT_FEATURE_TRANSFORMERS[_total_family]
+                    ),
+                    "probability": find_feature_transformer_name(
+                        _probability_component,
+                        PROBABILITY_FEATURE_TRANSFORMERS[_probability_family],
+                    ),
                 },
-                "component": _probability_component,
+                "model": _model,
+                "components": _best_components,
                 "cv_best": _study.best_value,
                 "n_complete": _states.count("COMPLETE"),
                 "n_failed": _states.count("FAIL"),
                 "seconds": _seconds,
+                "scores": pd.concat(_scores_by_dataset, names=["dataset"]),
             }
         )
-    return (MODEL2_PROBABILITY_RUNS,)
-
-
-@app.cell
-def _(
-    COHORTS,
-    METRICS,
-    MODEL2_PROBABILITY_RUNS,
-    MODEL2_TOTAL_RUNS,
-    PREDICTION_FLOOR,
-    build_total_times_probability_model,
-    compute_metrics,
-    cv_groups,
-    pd,
-    seed,
-    train_age_group,
-    tuner,
-    val_age_group,
-):
-    # The 16 pairs, each step-1 total with each step-2 classifier, their runs'
-    # best components, scored with no search: the pair's cross-validated
-    # value, then the refit on the training part scored on training and
-    # validation (point scores).
-    MODEL2_RUNS = []
-    for _total_run in MODEL2_TOTAL_RUNS:
-        for _probability_run in MODEL2_PROBABILITY_RUNS:
-            _best_components = (
-                _total_run["component"],
-                _probability_run["component"],
-            )
-            _model = build_total_times_probability_model(
-                *_best_components, y_min=PREDICTION_FLOOR, random_state=seed
-            )
-            _cv_best = tuner.cross_validate(
-                _model,
-                train_age_group.X,
-                train_age_group.Y,
-                train_age_group.exposure,
-                cv_groups,
-            )[tuner.objective_metric.name]
-            _model.fit(
-                train_age_group.X, train_age_group.Y, exposure=train_age_group.exposure
-            )
-            _scores_by_dataset = {}
-            for _dataset_name, _dataset in (
-                ("train", train_age_group),
-                ("val", val_age_group),
-            ):
-                _y_pred = _model.predict(_dataset.X, exposure=_dataset.exposure)
-                _dataset_scores = compute_metrics(
-                    _dataset.Y, _y_pred, METRICS, cohorts=[*COHORTS, "composite"]
-                ).stack()
-                _scores_by_dataset[_dataset_name] = _dataset_scores.to_frame("score")
-            # The pair's settings and its best model: the fitted model, its
-            # components and their transformers' names; its value, and its two
-            # studies' trial counts and seconds summed (a study shared by
-            # several pairs counts in each).
-            MODEL2_RUNS.append(
-                {
-                    "total_family": _total_run["total_family"],
-                    "probability_family": _probability_run["probability_family"],
-                    "use_exposure": _total_run["use_exposure"],
-                    "feature_transformers": {
-                        **_total_run["feature_transformers"],
-                        **_probability_run["feature_transformers"],
-                    },
-                    "model": _model,
-                    "components": _best_components,
-                    "cv_best": _cv_best,
-                    "n_complete": _total_run["n_complete"]
-                    + _probability_run["n_complete"],
-                    "n_failed": _total_run["n_failed"] + _probability_run["n_failed"],
-                    "seconds": _total_run["seconds"] + _probability_run["seconds"],
-                    "scores": pd.concat(_scores_by_dataset, names=["dataset"]),
-                }
-            )
     return (MODEL2_RUNS,)
 
 
 @app.cell
-def _(MODEL2_RUNS, ProbabilityComponent, dataclasses, pd, tuner):
+def _(MODEL2_RUNS, pd, read_hyperparameters, tuner):
     _run_rows, _score_rows = [], []
     for _run in MODEL2_RUNS:
         # A family pair reads as one family, so both models' tables have the same
@@ -1365,24 +1336,17 @@ def _(MODEL2_RUNS, ProbabilityComponent, dataclasses, pd, tuner):
             "family": f"{_run['total_family']}+{_run['probability_family']}",
             "use_exposure": _run["use_exposure"],
         }
-        # The kept model, its two studies merged: each component's feature
-        # transformer and hyperparameters (the classifier's with its
-        # calibration), the pair's cross-validated objective, the two studies'
-        # trials and seconds.
-        _hyperparameters = {}
-        for _component in _run["components"]:
-            _hyperparameters[_component.name] = dataclasses.asdict(
-                _component.estimator_params
-            )
-            if isinstance(_component, ProbabilityComponent):
-                _hyperparameters[_component.name]["calibration_method"] = (
-                    _component.calibration_method
-                )
+        # The kept model: each component's feature transformer and
+        # hyperparameters (the classifier's with its calibration), its
+        # cross-validated objective, its trials and seconds.
         _run_rows.append(
             {
                 **_settings,
                 "feature_transformers": _run["feature_transformers"],
-                "hyperparameters": _hyperparameters,
+                "hyperparameters": {
+                    component.name: read_hyperparameters(component)
+                    for component in _run["components"]
+                },
                 f"cv_{tuner.objective_metric.name}": _run["cv_best"],
                 "n_complete": _run["n_complete"],
                 "n_failed": _run["n_failed"],
@@ -1404,11 +1368,10 @@ def _(mo, model2_runs_df, model2_scores_df):
     mo.vstack(
         [
             mo.md(
-                "**The total times probability model by coordinate descent: each "
-                "pair's model** (family: the total's + the probabilities'; each "
-                "component's feature transformer and hyperparameters; the pair's "
-                "cross-validated objective; its two studies' trials and seconds, "
-                "summed)"
+                "**The total times probability model: each run's best model** "
+                "(family: the total's + the probabilities'; each component's "
+                "feature transformer and hyperparameters; its cross-validated "
+                "objective; its trials and seconds)"
             ),
             mo.ui.table(model2_runs_df.round(4)),
             mo.md(
@@ -1450,6 +1413,12 @@ def _(
         ],
     )
     best_model1, best_model2 = _best_run1["model"], _best_run2["model"]
+    # The two run records by the model's label: the test evaluation refits
+    # them from their components.
+    best_runs = {
+        "independent_cohorts": _best_run1,
+        "total_times_probability": _best_run2,
+    }
     # The two bootstrapped on validation, every metric per cohort and for the
     # composite, by one evaluator: both score the same replicate rows, so their
     # replicates pair row by row. Each score with its replicates' mean, median,
@@ -1486,129 +1455,481 @@ def _(
     best_runs_val_scores_df = pd.concat(
         _scores_by_run, names=["model", "family", "use_exposure"]
     ).reset_index()
-    mo.vstack(
-        [
-            mo.md(
-                f"**Each model's best run by the {SELECTION_METRIC.name} of the "
-                "composite on validation, bootstrapped on validation:** "
-                + "; ".join(
-                    f"{model} `{family}`, exposure {use_exposure}"
-                    for model, family, use_exposure in _scores_by_run
-                )
-                + " (each score with its replicates' mean, median, SD and 95% "
-                "interval)"
-            ),
-            mo.ui.table(best_runs_val_scores_df.round(4)),
-        ]
+    mo.md(
+        f"**Each model's best run by the {SELECTION_METRIC.name} of the "
+        "composite on validation, bootstrapped on validation:** "
+        + "; ".join(
+            f"{model} `{family}`, exposure {use_exposure}"
+            for model, family, use_exposure in _scores_by_run
+        )
+        + " (each score with its replicates' mean, median, SD and 95% "
+        "interval; a table per model below)"
     )
-    return best_model1, best_model2, best_runs_val_scores_df
+    return (
+        best_model1,
+        best_model2,
+        best_replicate_scores,
+        best_runs,
+        best_runs_val_scores_df,
+    )
 
 
 @app.cell
-def _(go, make_subplots):
-    def forest_figure(scores, metric_name, lower_column, upper_column, rule_at=None):
-        """A forest plot of `metric_name`: a panel per cohort, each on its own
-        scale, and a row per run (the first on top), the dot its score and
-        the bar its interval from `lower_column` to `upper_column`. `scores`
-        is long, a row per run, cohort and metric, with the columns `model`,
-        `family`, `use_exposure`, `cohort`, `metric`, `score` and the two
-        bounds. `rule_at` draws a vertical line at that value in every panel
-        (0 for a difference)."""
-        surface, ink, color = "#fcfcfb", "#52514e", "#2a78d6"
-        metric_scores = scores[scores["metric"] == metric_name]
-        cohorts = list(metric_scores["cohort"].unique())
-        figure = make_subplots(
-            rows=1, cols=len(cohorts), shared_yaxes=True, subplot_titles=cohorts
+def _(COHORTS, METRICS, mo):
+    # What the best runs' tables show: one cohort (the composite by default)
+    # and the chosen metrics (all by default); one choice filters both tables.
+    best_runs_cohort = mo.ui.dropdown(
+        options=[*COHORTS, "composite"], value="composite", label="Cohort"
+    )
+    best_runs_metrics = mo.ui.multiselect(
+        options=[metric.name for metric in METRICS],
+        value=[metric.name for metric in METRICS],
+        label="Metrics",
+    )
+    return best_runs_cohort, best_runs_metrics
+
+
+@app.cell
+def _(best_runs_cohort, best_runs_metrics, best_runs_val_scores_df, mo):
+    # Each model's best run in its own table, the chosen cohort and metrics in
+    # METRICS' order, so the two tables compare row by row.
+    _chosen = best_runs_val_scores_df[
+        (best_runs_val_scores_df["cohort"] == best_runs_cohort.value)
+        & best_runs_val_scores_df["metric"].isin(best_runs_metrics.value)
+    ]
+    _views = []
+    for _model, _family, _use_exposure in (
+        best_runs_val_scores_df[["model", "family", "use_exposure"]]
+        .drop_duplicates()
+        .itertuples(index=False)
+    ):
+        _views.append(mo.md(f"**{_model}:** `{_family}`, exposure {_use_exposure}"))
+        # A fresh index: the frame's row positions would show as a column.
+        _rows = _chosen[_chosen["model"] == _model].reset_index(drop=True)
+        _views.append(mo.ui.table(_rows.round(4)))
+    mo.vstack(
+        [mo.hstack([best_runs_cohort, best_runs_metrics], justify="start"), *_views]
+    )
+    return
+
+
+@app.cell
+def _(gaussian_kde, go, make_subplots, np):
+    def forest_figure(
+        scores,
+        metric_name,
+        lower_column,
+        upper_column,
+        share_x_axis=False,
+        rule_at=None,
+    ):
+        """A forest plot of `metric_name`: a row per cohort, the composite
+        first, and in each row a dot per model (the first on top) at its
+        score, the bar its interval from `lower_column` to `upper_column`.
+        `scores` is long, a row per model, cohort and metric, with the columns
+        `model`, `cohort`, `metric`, `score` and the two bounds; the legend
+        names the models. Each row has its own x scale unless `share_x_axis`;
+        `rule_at` draws a vertical line at that value in every row (0 for a
+        difference)."""
+        # The dataviz skill's reference palette: the three categorical colors
+        # that stay apart for colorblind readers, then the surface, the inks,
+        # the gridline and the axis line.
+        colors = ["#2a78d6", "#eb6834", "#1baf7a"]
+        surface, ink, muted, grid, axis = (
+            "#fcfcfb",
+            "#52514e",
+            "#898781",
+            "#e1e0d9",
+            "#c3c2b7",
         )
-        for column, cohort in enumerate(cohorts, start=1):
-            cohort_scores = metric_scores[metric_scores["cohort"] == cohort]
-            score = cohort_scores["score"]
-            run_labels = (
-                cohort_scores["model"]
-                + ": "
-                + cohort_scores["family"]
-                + ", exposure "
-                + cohort_scores["use_exposure"].astype(str)
-            )
-            figure.add_trace(
-                go.Scatter(
-                    x=score,
-                    y=run_labels,
-                    mode="markers",
-                    marker={"size": 9, "color": color},
-                    error_x={
-                        "type": "data",
-                        "symmetric": False,
-                        "array": cohort_scores[upper_column] - score,
-                        "arrayminus": score - cohort_scores[lower_column],
-                        "color": color,
-                        "thickness": 2,
-                        "width": 6,
-                    },
-                    customdata=cohort_scores[[lower_column, upper_column]].to_numpy(),
-                    hovertemplate=(
-                        f"%{{y}}<br>{cohort} {metric_name} %{{x:.4f}}"
-                        "<br>interval %{customdata[0]:.4f} to %{customdata[1]:.4f}"
-                        "<extra></extra>"
+        metric_scores = scores[scores["metric"] == metric_name]
+        # The composite first, then the cohorts in their order.
+        cohorts = sorted(
+            metric_scores["cohort"].unique(), key=lambda cohort: cohort != "composite"
+        )
+        models = list(metric_scores["model"].unique())
+        figure = make_subplots(
+            rows=len(cohorts),
+            cols=1,
+            shared_xaxes=share_x_axis,
+            vertical_spacing=0.11,
+            subplot_titles=cohorts,
+        )
+        for row, cohort in enumerate(cohorts, start=1):
+            for position, model in enumerate(models):
+                color = colors[position]
+                point = metric_scores[
+                    (metric_scores["cohort"] == cohort)
+                    & (metric_scores["model"] == model)
+                ].iloc[0]
+                figure.add_trace(
+                    go.Scatter(
+                        x=[point["score"]],
+                        y=[position],
+                        mode="markers",
+                        name=model,
+                        legendgroup=model,
+                        showlegend=row == 1,
+                        marker={
+                            "size": 10,
+                            "color": color,
+                            "line": {"width": 2, "color": surface},
+                        },
+                        error_x={
+                            "type": "data",
+                            "symmetric": False,
+                            "array": [point[upper_column] - point["score"]],
+                            "arrayminus": [point["score"] - point[lower_column]],
+                            "color": color,
+                            "thickness": 2,
+                            "width": 0,
+                        },
+                        customdata=[[point[lower_column], point[upper_column]]],
+                        hovertemplate=(
+                            f"{model}<br>{cohort} {metric_name} %{{x:.4f}}"
+                            "<br>interval %{customdata[0]:.4f} to %{customdata[1]:.4f}"
+                            "<extra></extra>"
+                        ),
                     ),
-                    showlegend=False,
-                ),
-                row=1,
-                col=column,
-            )
+                    row=row,
+                    col=1,
+                )
+            figure.update_yaxes(range=[len(models) - 0.4, -0.6], row=row, col=1)
             if rule_at is not None:
                 figure.add_vline(
-                    x=rule_at, line_width=1, line_color=ink, row=1, col=column
+                    x=rule_at, line_width=1, line_color=ink, row=row, col=1
                 )
-        figure.update_yaxes(autorange="reversed")
+        height = 110 * len(cohorts) + 130
         figure.update_layout(
-            title=metric_name,
-            height=300,
+            height=height,
             template="plotly_white",
             paper_bgcolor=surface,
             plot_bgcolor=surface,
+            font={
+                "family": "system-ui, -apple-system, Segoe UI, sans-serif",
+                "color": ink,
+                "size": 12,
+            },
+            showlegend=len(models) > 1,
+            legend={
+                "orientation": "h",
+                "x": 0,
+                "xanchor": "left",
+                "y": 1 - 12 / height,
+                "yanchor": "top",
+                "yref": "container",
+            },
+            margin={"l": 30, "r": 20, "t": 80, "b": 50},
             hovermode="closest",
         )
+        figure.update_xaxes(
+            gridcolor=grid, zeroline=False, linecolor=axis, tickfont={"color": muted}
+        )
+        figure.update_xaxes(title_text=metric_name, row=len(cohorts), col=1)
+        figure.update_yaxes(showgrid=False, zeroline=False, showticklabels=False)
+        # Each row's title (its cohort) at the row's top left.
+        figure.update_annotations(x=0, xanchor="left")
         return figure
 
-    return (forest_figure,)
+    def ridge_figure(replicate_scores, metric_name, share_x_axis=False, rule_at=None):
+        """A ridge plot of `metric_name`: a row per cohort, the composite
+        first, and in each row each model's bootstrap replicates as a density
+        (a Gaussian KDE between the replicates' extremes; the row's highest
+        density on top). `replicate_scores` is {model: its replicates, a row
+        per replicate and a column per cohort and metric}; the legend names
+        the models. Each row has its own x scale unless `share_x_axis`;
+        `rule_at` draws a vertical line at that value in every row (0 for a
+        difference)."""
+        # The forest's palette: the three categorical colors, the surface, the
+        # inks, the gridline and the axis line.
+        colors = ["#2a78d6", "#eb6834", "#1baf7a"]
+        surface, ink, muted, grid, axis = (
+            "#fcfcfb",
+            "#52514e",
+            "#898781",
+            "#e1e0d9",
+            "#c3c2b7",
+        )
+        models = list(replicate_scores)
+        # The composite first, then the cohorts in their order.
+        cohorts = sorted(
+            replicate_scores[models[0]].columns.unique(level="cohort"),
+            key=lambda cohort: cohort != "composite",
+        )
+        figure = make_subplots(
+            rows=len(cohorts),
+            cols=1,
+            shared_xaxes=share_x_axis,
+            vertical_spacing=0.11,
+            subplot_titles=cohorts,
+        )
+        for row, cohort in enumerate(cohorts, start=1):
+            # Each model's density by a Gaussian KDE (Scott's bandwidth) on 200
+            # points between its replicates' extremes; the row's curves on one
+            # height scale; a 2px line and a 10% wash.
+            curves = {}
+            for model in models:
+                replicates = replicate_scores[model][(cohort, metric_name)]
+                x_values = np.linspace(replicates.min(), replicates.max(), 200)
+                curves[model] = (x_values, gaussian_kde(replicates)(x_values))
+            row_highest = max(density.max() for _, density in curves.values())
+            for position, model in enumerate(models):
+                x_values, density = curves[model]
+                figure.add_trace(
+                    go.Scatter(
+                        x=x_values,
+                        y=density / row_highest,
+                        mode="lines",
+                        fill="tozeroy",
+                        fillcolor=colors[position] + "1a",
+                        line={"width": 2, "color": colors[position]},
+                        name=model,
+                        legendgroup=model,
+                        showlegend=row == 1,
+                        hovertemplate=(
+                            f"{model}<br>{cohort} {metric_name} %{{x:.4f}}"
+                            "<extra></extra>"
+                        ),
+                    ),
+                    row=row,
+                    col=1,
+                )
+            figure.update_yaxes(range=[0, 1.1], row=row, col=1)
+            if rule_at is not None:
+                figure.add_vline(
+                    x=rule_at, line_width=1, line_color=ink, row=row, col=1
+                )
+        height = 110 * len(cohorts) + 130
+        figure.update_layout(
+            height=height,
+            template="plotly_white",
+            paper_bgcolor=surface,
+            plot_bgcolor=surface,
+            font={
+                "family": "system-ui, -apple-system, Segoe UI, sans-serif",
+                "color": ink,
+                "size": 12,
+            },
+            showlegend=len(models) > 1,
+            legend={
+                "orientation": "h",
+                "x": 0,
+                "xanchor": "left",
+                "y": 1 - 12 / height,
+                "yanchor": "top",
+                "yref": "container",
+            },
+            margin={"l": 30, "r": 20, "t": 80, "b": 50},
+            hovermode="closest",
+        )
+        figure.update_xaxes(
+            gridcolor=grid, zeroline=False, linecolor=axis, tickfont={"color": muted}
+        )
+        figure.update_xaxes(title_text=metric_name, row=len(cohorts), col=1)
+        figure.update_yaxes(showgrid=False, zeroline=False, showticklabels=False)
+        # Each row's title (its cohort) at the row's top left.
+        figure.update_annotations(x=0, xanchor="left")
+        return figure
+
+    return forest_figure, ridge_figure
+
+
+@app.cell
+def _(SELECTION_METRIC, mo):
+    # The form of the best runs' plot: the forest (each run's score and 95%
+    # interval) or the ridge (the density of each run's bootstrap
+    # replicates); and its metric, the selection metric by default, which the
+    # permutation importance also scores unless it is bias.
+    best_runs_plot = mo.ui.radio(
+        options=["forest", "ridge"], value="forest", inline=True, label="Plot"
+    )
+    best_runs_metric = mo.ui.dropdown(
+        options=["rmse", "poisson_deviance", "bias"],
+        value=SELECTION_METRIC.name,
+        label="Metric",
+    )
+    return best_runs_metric, best_runs_plot
 
 
 @app.cell
 def _(
     CI_BOUND_NAMES,
+    METRICS,
     SELECTION_METRIC,
+    best_replicate_scores,
+    best_runs_metric,
+    best_runs_plot,
     best_runs_val_scores_df,
     forest_figure,
     mo,
+    ridge_figure,
 ):
-    best_forest_figure = forest_figure(
-        best_runs_val_scores_df,
-        SELECTION_METRIC.name,
-        CI_BOUND_NAMES["lower"],
-        CI_BOUND_NAMES["upper"],
-    )
+    # The permutation importance's metric: the chosen one when it is a loss;
+    # for bias, a signed score, the selection metric.
+    if best_runs_metric.value in ("rmse", "poisson_deviance"):
+        importance_metric = {metric.name: metric for metric in METRICS}[
+            best_runs_metric.value
+        ]
+    elif best_runs_metric.value == "bias":
+        importance_metric = SELECTION_METRIC
+    else:
+        raise ValueError(f"unknown metric {best_runs_metric.value!r}")
+    if best_runs_plot.value == "forest":
+        best_runs_figure = forest_figure(
+            best_runs_val_scores_df,
+            best_runs_metric.value,
+            CI_BOUND_NAMES["lower"],
+            CI_BOUND_NAMES["upper"],
+        )
+    elif best_runs_plot.value == "ridge":
+        best_runs_figure = ridge_figure(best_replicate_scores, best_runs_metric.value)
+    else:
+        raise ValueError(f"unknown plot {best_runs_plot.value!r}")
     mo.vstack(
         [
             mo.md(
-                "**Each model's best run on validation: the selection metric per "
-                "cohort and for the composite** (the dot its score, the bar its 95% "
-                "bootstrap interval)"
+                "**Each model's best run on validation: the chosen metric per "
+                "cohort and for the composite** (a row per cohort, the composite "
+                "first; the dot the run's score, the bar its 95% bootstrap interval, "
+                "the colors named in the legend; the ridge shows instead the density "
+                "of the run's 1000 bootstrap replicates)"
             ),
-            best_forest_figure,
+            mo.hstack([best_runs_plot, best_runs_metric], justify="start"),
+            best_runs_figure,
+        ]
+    )
+    return (importance_metric,)
+
+
+@app.cell
+def _(METRICS, SELECTION_METRIC, mo):
+    # The paired difference's own plot, the ridge first, and its own metric,
+    # any of the six (the selection metric by default).
+    best_difference_plot = mo.ui.radio(
+        options=["forest", "ridge"], value="ridge", inline=True, label="Plot"
+    )
+    best_difference_metric = mo.ui.dropdown(
+        options=[metric.name for metric in METRICS],
+        value=SELECTION_METRIC.name,
+        label="Metric",
+    )
+    return best_difference_metric, best_difference_plot
+
+
+@app.cell
+def _(
+    CI_BOUND_NAMES,
+    alpha,
+    best_difference_metric,
+    best_difference_plot,
+    best_replicate_scores,
+    best_runs_val_scores_df,
+    forest_figure,
+    mo,
+    pd,
+    ridge_figure,
+):
+    # The two best runs' paired difference per replicate: both were scored on
+    # the same replicate rows (one evaluator), so the difference keeps the
+    # pairing, and its interval is far narrower than either run's. Below 0
+    # the total times probability model scores lower.
+    _difference_name = "total_times_probability - independent_cohorts"
+    best_difference_replicates = (
+        best_replicate_scores["total_times_probability"]
+        - best_replicate_scores["independent_cohorts"]
+    )
+    _point_scores = best_runs_val_scores_df.set_index(["model", "cohort", "metric"])[
+        "score"
+    ]
+    # A row per cohort and metric: the point scores' difference, then the
+    # replicates' statistics, as for each run.
+    best_difference_df = (
+        pd.DataFrame(
+            {
+                "score": _point_scores["total_times_probability"]
+                - _point_scores["independent_cohorts"],
+                "mean": best_difference_replicates.mean(),
+                "median": best_difference_replicates.median(),
+                "sd": best_difference_replicates.std(),
+                CI_BOUND_NAMES["lower"]: best_difference_replicates.quantile(alpha / 2),
+                CI_BOUND_NAMES["upper"]: best_difference_replicates.quantile(
+                    1 - alpha / 2
+                ),
+            }
+        )
+        .rename_axis(["cohort", "metric"])
+        .reset_index()
+    )
+    best_difference_df.insert(0, "model", _difference_name)
+    # The chosen plot and metric, one x axis for every cohort so the rule at
+    # 0 lines up.
+    if best_difference_plot.value == "forest":
+        best_difference_figure = forest_figure(
+            best_difference_df,
+            best_difference_metric.value,
+            CI_BOUND_NAMES["lower"],
+            CI_BOUND_NAMES["upper"],
+            share_x_axis=True,
+            rule_at=0,
+        )
+    elif best_difference_plot.value == "ridge":
+        best_difference_figure = ridge_figure(
+            {_difference_name: best_difference_replicates},
+            best_difference_metric.value,
+            share_x_axis=True,
+            rule_at=0,
+        )
+    else:
+        raise ValueError(f"unknown plot {best_difference_plot.value!r}")
+    mo.vstack(
+        [
+            mo.md(
+                f"**The paired difference on validation, {_difference_name}: "
+                f"{best_difference_metric.value} per cohort and for the composite** "
+                "(per bootstrap replicate, so the pairing counts; below 0 the total "
+                "times probability model scores lower; 0 inside the 95% interval: no "
+                "difference shown; for bias the sign gives the direction, not which "
+                "model is better)"
+            ),
+            mo.hstack([best_difference_plot, best_difference_metric], justify="start"),
+            best_difference_figure,
+            mo.md(
+                "**The difference on every metric** (for bias the sign gives the "
+                "direction of the change, not which model is better)"
+            ),
+            mo.ui.table(best_difference_df.round(4)),
         ]
     )
     return
 
 
 @app.cell
-def _(mo):
+def _(importance_metric, mo):
     run_inspection = mo.ui.run_button(label="Inspect the best runs")
     mo.md(
-        f"{run_inspection} each model's best run: the permutation importance and "
-        "SHAP (about two minutes)."
+        f"{run_inspection} each model's best run: the permutation importance on "
+        f"{importance_metric.name} and the SHAP values per cohort (about two minutes)."
     )
     return (run_inspection,)
+
+
+@app.cell
+def _(COHORTS, Metric, functools, importance_metric):
+    # The permutation importance's score: the composite, and each cohort
+    # scored alone (the metric's cohort=); a partial, not a lambda, so each
+    # metric keeps its own cohort.
+    importance_metrics = {
+        "composite": importance_metric,
+        **{
+            cohort: Metric(
+                f"{importance_metric.name}_{cohort}",
+                functools.partial(importance_metric.function, cohort=cohort),
+                importance_metric.direction,
+            )
+            for cohort in COHORTS
+        },
+    }
+    return (importance_metrics,)
 
 
 @app.cell
@@ -1635,13 +1956,12 @@ def _(
 
 @app.cell
 def _(
-    POISSON_DEVIANCE,
     PermutationImportance,
     ShapExplainer,
     best_model1,
+    importance_metrics,
     mo,
     n_repeats,
-    pd,
     run_inspection,
     seed,
     shap_background,
@@ -1652,28 +1972,21 @@ def _(
     mo.stop(
         not run_inspection.value, mo.md("Click the button to inspect the best runs.")
     )
-    # Permutation importance of the primary metric: on validation the decision
+    # Permutation importance of its metric: on validation the decision
     # table, on training the overfit check. SHAP, exact at nine columns, of the
     # validation subsample against the training background; the values explain
     # the count (the rows' exposure), per row, column and cohort.
-    _importance = PermutationImportance(POISSON_DEVIANCE, n_repeats, random_state=seed)
-    model1_permutation = pd.concat(
-        {
-            "train": _importance.compute_importances(
-                best_model1,
-                train_age_group.X,
-                train_age_group.Y,
-                exposure=train_age_group.exposure,
-            ),
-            "val": _importance.compute_importances(
-                best_model1,
-                val_age_group.X,
-                val_age_group.Y,
-                exposure=val_age_group.exposure,
-            ),
-        },
-        names=["split", "column"],
-    )
+    # scikit-learn's results per cohort (the composite first) and split, their
+    # arrays in X's column order.
+    model1_permutation = {
+        cohort: {
+            split: PermutationImportance(
+                metric, n_repeats, random_state=seed
+            ).compute_importances(best_model1, part.X, part.Y, exposure=part.exposure)
+            for split, part in (("train", train_age_group), ("val", val_age_group))
+        }
+        for cohort, metric in importance_metrics.items()
+    }
     model1_shap = ShapExplainer(method="exact", n_jobs=-1).explain(
         best_model1, shap_rows.X, shap_background, exposure=shap_rows.exposure
     )
@@ -1682,13 +1995,12 @@ def _(
 
 @app.cell
 def _(
-    POISSON_DEVIANCE,
     PermutationImportance,
     ShapExplainer,
     best_model2,
+    importance_metrics,
     mo,
     n_repeats,
-    pd,
     run_inspection,
     seed,
     shap_background,
@@ -1699,24 +2011,17 @@ def _(
     mo.stop(
         not run_inspection.value, mo.md("Click the button to inspect the best runs.")
     )
-    _importance = PermutationImportance(POISSON_DEVIANCE, n_repeats, random_state=seed)
-    model2_permutation = pd.concat(
-        {
-            "train": _importance.compute_importances(
-                best_model2,
-                train_age_group.X,
-                train_age_group.Y,
-                exposure=train_age_group.exposure,
-            ),
-            "val": _importance.compute_importances(
-                best_model2,
-                val_age_group.X,
-                val_age_group.Y,
-                exposure=val_age_group.exposure,
-            ),
-        },
-        names=["split", "column"],
-    )
+    # scikit-learn's results per cohort (the composite first) and split, their
+    # arrays in X's column order.
+    model2_permutation = {
+        cohort: {
+            split: PermutationImportance(
+                metric, n_repeats, random_state=seed
+            ).compute_importances(best_model2, part.X, part.Y, exposure=part.exposure)
+            for split, part in (("train", train_age_group), ("val", val_age_group))
+        }
+        for cohort, metric in importance_metrics.items()
+    }
     model2_shap = ShapExplainer(method="exact", n_jobs=-1).explain(
         best_model2, shap_rows.X, shap_background, exposure=shap_rows.exposure
     )
@@ -1724,7 +2029,88 @@ def _(
 
 
 @app.cell
+def _(go, np):
+    def permutation_figure(results, feature_names, score_name):
+        """The permutation importance of each split in `results` ({split:
+        scikit-learn's result}, in display order): per column a box of the
+        drops over the repeated shuffles, a box per split, the mean dashed;
+        the columns by the last split's mean drop (the largest on top), the
+        last split in blue, an earlier one in the muted gray; a dotted rule
+        at 0, where shuffling the column changes nothing. `score_name` names
+        the score that drops (the composite's or a cohort's metric)."""
+        # The palette's tokens, as in the beeswarm.
+        surface, ink, muted, grid, axis, blue = (
+            "#fcfcfb",
+            "#52514e",
+            "#898781",
+            "#e1e0d9",
+            "#c3c2b7",
+            "#2a78d6",
+        )
+        splits = list(results)
+        # Ascending: a category axis draws its first category at the bottom.
+        order = np.argsort(results[splits[-1]].importances_mean, kind="stable")
+        columns = [feature_names[position] for position in order]
+        figure = go.Figure()
+        for split in splits:
+            # A row per column, a column per repeat.
+            importances = results[split].importances[order]
+            figure.add_trace(
+                go.Box(
+                    x=importances.ravel(),
+                    y=np.repeat(columns, importances.shape[1]),
+                    name=split,
+                    orientation="h",
+                    boxmean=True,
+                    marker={"color": blue if split == splits[-1] else muted},
+                    line={"width": 1.5},
+                )
+            )
+        figure.add_vline(x=0, line={"color": ink, "width": 1, "dash": "dot"})
+        figure.update_layout(
+            boxmode="group",
+            height=80 + 28 * len(splits) * len(columns),
+            template="plotly_white",
+            paper_bgcolor=surface,
+            plot_bgcolor=surface,
+            font={
+                "family": "system-ui, -apple-system, Segoe UI, sans-serif",
+                "color": ink,
+                "size": 12,
+            },
+            legend={
+                "orientation": "h",
+                "x": 0,
+                "xanchor": "left",
+                "y": 1.02,
+                "yanchor": "bottom",
+                "traceorder": "normal",
+            },
+            margin={"l": 150, "r": 20, "t": 40, "b": 50},
+        )
+        figure.update_yaxes(
+            categoryorder="array",
+            categoryarray=columns,
+            gridcolor=grid,
+            linecolor=axis,
+            tickfont={"color": ink},
+        )
+        figure.update_xaxes(
+            title_text=f"drop in the {score_name} when shuffled",
+            gridcolor=grid,
+            zeroline=False,
+            linecolor=axis,
+            tickfont={"color": muted},
+        )
+        return figure
+
+    return (permutation_figure,)
+
+
+@app.cell
 def _(
+    best_runs_val_scores_df,
+    importance_metric,
     mo,
     model1_permutation,
     model1_shap,
@@ -1734,49 +2120,1458 @@ def _(
     pd,
 ):
     # The two importances side by side, per model and raw column: the permutation
-    # importance on validation (its rank decides) and on training, and the mean
-    # |SHAP| over the explained rows and the cohorts (D18).
+    # importance on validation (the decision) and on training (the overfit
+    # check), and the mean |SHAP| over the explained rows per cohort and for the
+    # composite (D18). Both hold arrays in X's column order, SHAP's
+    # feature_names.
     _rows = []
     for _model, _permutation, _shap in [
-        ("model1", model1_permutation, model1_shap),
-        ("model2", model2_permutation, model2_shap),
+        ("independent_cohorts", model1_permutation["composite"], model1_shap),
+        ("total_times_probability", model2_permutation["composite"], model2_shap),
     ]:
+        _mean_abs_shap = np.abs(_shap.values).mean(axis=0)
         _table = pd.DataFrame(
             {
-                "perm_mean_train": _permutation.loc["train", "importance_mean"],
-                "perm_mean_val": _permutation.loc["val", "importance_mean"],
-                "perm_std_val": _permutation.loc["val", "importance_std"],
-                "mean_abs_shap": pd.Series(
-                    np.abs(_shap.values).mean(axis=(0, 2)), index=_shap.feature_names
-                ),
-            }
+                "perm_fi_mean_train": _permutation["train"].importances_mean,
+                "perm_fi_std_train": _permutation["train"].importances_std,
+                "perm_fi_mean_val": _permutation["val"].importances_mean,
+                "perm_fi_std_val": _permutation["val"].importances_std,
+                **{
+                    f"mean_abs_shap_{cohort}": _mean_abs_shap[:, position]
+                    for position, cohort in enumerate(_shap.output_names)
+                },
+                # Over the rows and the cohorts at once: the mean over the
+                # cohorts, up to the last bit.
+                "mean_abs_shap_composite": np.abs(_shap.values).mean(axis=(0, 2)),
+            },
+            index=_shap.feature_names,
         )
-        _table["perm_rank"] = _table["perm_mean_val"].rank(ascending=False).astype(int)
-        _table["shap_rank"] = _table["mean_abs_shap"].rank(ascending=False).astype(int)
-        _rows.append(_table.rename_axis("column").reset_index().assign(model=_model))
-    importance_df = pd.concat(_rows, ignore_index=True)[
-        [
-            "model",
-            "column",
-            "perm_mean_train",
-            "perm_mean_val",
-            "perm_std_val",
-            "perm_rank",
-            "mean_abs_shap",
-            "shap_rank",
-        ]
-    ]
+        _table = _table.rename_axis("column").reset_index()
+        _table.insert(0, "model", _model)
+        _rows.append(_table)
+    importance_df = pd.concat(_rows, ignore_index=True)
+    # Each model's table, its rows in X's column order, so the two compare row
+    # by row.
+    _views = []
+    for _model, _family, _use_exposure in (
+        best_runs_val_scores_df[["model", "family", "use_exposure"]]
+        .drop_duplicates()
+        .itertuples(index=False)
+    ):
+        _views.append(mo.md(f"**{_model}:** `{_family}`, exposure {_use_exposure}"))
+        _views.append(
+            mo.ui.table(
+                importance_df[importance_df["model"] == _model]
+                .drop(columns="model")
+                .reset_index(drop=True)
+                .round(4)
+            )
+        )
     mo.vstack(
         [
             mo.md(
-                "**Feature importance of the best runs** (perm: the drop of the cohort "
-                "Poisson deviance when the column is shuffled; mean_abs_shap: mean |SHAP| "
-                "of the predicted count over the explained rows and cohorts)"
+                "**Feature importance of each model's best run, per raw column** "
+                "(perm_fi_mean_val: the permutation feature importance, the drop of "
+                f"the composite {importance_metric.name} on validation when the "
+                "column is shuffled, the decision; perm_fi_mean_train: the same on "
+                "the training rows, what the model fitted, so a column high there "
+                "and near 0 on validation is overfit; perm_fi_std_train, "
+                "perm_fi_std_val: the spread over the repeated shuffles; "
+                "mean_abs_shap_<cohort>: how much the column moves the cohort's "
+                "predicted count, the mean |SHAP| over the explained validation "
+                "rows, no labels needed; mean_abs_shap_composite: their mean over "
+                "the cohorts; the permutation importance per cohort is drawn below)"
             ),
-            mo.md(f"```text\n{importance_df.round(4).to_string(index=False)}\n```"),
+            *_views,
         ]
     )
     return
+
+
+@app.cell
+def _(COHORTS, mo):
+    # The permutation figure's score: the composite or one cohort.
+    permutation_cohort = mo.ui.dropdown(
+        options=["composite", *COHORTS], value="composite", label="Cohort"
+    )
+    return (permutation_cohort,)
+
+
+@app.cell
+def _(
+    importance_metric,
+    mo,
+    model1_permutation,
+    model2_permutation,
+    n_repeats,
+    permutation_cohort,
+    permutation_figure,
+    train_age_group,
+):
+    _cohort = permutation_cohort.value
+    permutation_figures = {
+        model: permutation_figure(
+            permutation[_cohort],
+            list(train_age_group.X.columns),
+            f"{_cohort} {importance_metric.name}",
+        )
+        for model, permutation in (
+            ("independent_cohorts", model1_permutation),
+            ("total_times_probability", model2_permutation),
+        )
+    }
+    _views = []
+    for _model, _figure in permutation_figures.items():
+        _views += [mo.md(f"**{_model}**"), _figure]
+    mo.vstack(
+        [
+            mo.md(
+                "**The permutation importance of each model's best run, per "
+                f"column: the drop of the {_cohort} {importance_metric.name} when "
+                f"the column is shuffled** (a box over the {n_repeats} shuffles, "
+                "train in gray, validation in blue; the line the median, the "
+                "dashed line the mean; the columns by their validation mean)"
+            ),
+            permutation_cohort,
+            *_views,
+        ]
+    )
+    return (permutation_figures,)
+
+
+@app.cell
+def _(COHORTS, mo):
+    # The beeswarm's cohort: the SHAP values explain each cohort's predicted
+    # count, and each cohort orders the columns its own way.
+    shap_cohort = mo.ui.dropdown(options=COHORTS, value=COHORTS[0], label="Cohort")
+    return (shap_cohort,)
+
+
+@app.cell
+def _(go, np, pd):
+    def beeswarm_figure(explanation, X, cohort, random_state):
+        """A beeswarm of `cohort`'s SHAP values in `explanation` (rows,
+        columns, cohorts), its rows `X`: a row of dots per column, the columns
+        by the cohort's mean |SHAP| (the largest on top), each dot a row at its
+        SHAP value, colored by the column's value, low to high over `X`; a
+        category's levels (unordered) each in its own row, in the muted gray:
+        a row holds one level, so its value has no low or high.
+        `random_state` seeds the dots' vertical jitter."""
+        # The palette's tokens, as in the test reading's figures; a column's
+        # value on the sequential blue ramp (steps 250, 400, 550, 700).
+        surface, ink, muted, grid, axis = (
+            "#fcfcfb",
+            "#52514e",
+            "#898781",
+            "#e1e0d9",
+            "#c3c2b7",
+        )
+        blues = ["#86b6ef", "#3987e5", "#1c5cab", "#0d366b"]
+        # One jitter, so each row of dots spreads the same way in every figure.
+        jitter = np.random.default_rng(random_state).uniform(-0.3, 0.3, len(X))
+        values = explanation.values[:, :, explanation.output_names.index(cohort)]
+        # The columns by the cohort's mean |SHAP|, the largest on top; a
+        # numeric column one row, a category a row per level, kept together
+        # at the column's place: (label, column, its rows, whether a level).
+        order = np.argsort(-np.abs(values).mean(axis=0), kind="stable")
+        rows = []
+        for column_position in order:
+            column = explanation.feature_names[column_position]
+            raw = X[column]
+            if pd.api.types.is_numeric_dtype(raw):
+                rows.append((column, column_position, np.full(len(raw), True), False))
+            else:
+                for level in sorted(raw.unique()):
+                    rows.append(
+                        (
+                            f"{column} = {level}",
+                            column_position,
+                            (raw == level).to_numpy(),
+                            True,
+                        )
+                    )
+        figure = go.Figure()
+        scale_shown = False
+        for position, (label, column_position, mask, is_level) in enumerate(rows):
+            column = explanation.feature_names[column_position]
+            raw = X[column][mask]
+            if not is_level:
+                # The value scaled to the column's range over the rows; a
+                # constant column divides by 1.
+                value_range = (raw.max() - raw.min()) or 1
+                marker = {
+                    "color": ((raw - raw.min()) / value_range).to_numpy(),
+                    "colorscale": blues,
+                    "cmin": 0,
+                    "cmax": 1,
+                    "showscale": not scale_shown,
+                    "colorbar": {
+                        "title": {"text": "value"},
+                        "thickness": 12,
+                        "tickvals": [0, 1],
+                        "ticktext": ["low", "high"],
+                    },
+                }
+                scale_shown = True
+                value_text = "%{customdata:.4g}"
+            else:
+                marker = {"color": muted}
+                value_text = "%{customdata}"
+            figure.add_trace(
+                go.Scatter(
+                    x=values[mask, column_position],
+                    y=len(rows) - 1 - position + jitter[mask],
+                    mode="markers",
+                    name=label,
+                    showlegend=False,
+                    marker={"size": 6, "opacity": 0.8, **marker},
+                    customdata=raw.to_numpy(),
+                    hovertemplate=(
+                        f"{column} {value_text}<br>SHAP %{{x:.3f}}<extra></extra>"
+                    ),
+                )
+            )
+        figure.update_layout(
+            height=60 + 45 * len(rows),
+            template="plotly_white",
+            paper_bgcolor=surface,
+            plot_bgcolor=surface,
+            font={
+                "family": "system-ui, -apple-system, Segoe UI, sans-serif",
+                "color": ink,
+                "size": 12,
+            },
+            margin={"l": 190, "r": 20, "t": 20, "b": 50},
+            hovermode="closest",
+        )
+        figure.update_yaxes(
+            tickvals=list(range(len(rows)))[::-1],
+            ticktext=[row[0] for row in rows],
+            gridcolor=grid,
+            zeroline=False,
+            linecolor=axis,
+            tickfont={"color": ink},
+        )
+        figure.update_xaxes(
+            title_text=f"SHAP value (children, {cohort})",
+            gridcolor=grid,
+            zeroline=True,
+            zerolinecolor=axis,
+            linecolor=axis,
+            tickfont={"color": muted},
+        )
+        return figure
+
+    return (beeswarm_figure,)
+
+
+@app.cell
+def _(beeswarm_figure, mo, model1_shap, model2_shap, seed, shap_cohort, shap_rows):
+    _cohort = shap_cohort.value
+    shap_beeswarm_figures = {
+        model: beeswarm_figure(explanation, shap_rows.X, _cohort, seed)
+        for model, explanation in (
+            ("independent_cohorts", model1_shap),
+            ("total_times_probability", model2_shap),
+        )
+    }
+    _views = []
+    for _model, _figure in shap_beeswarm_figures.items():
+        _views += [mo.md(f"**{_model}**"), _figure]
+    mo.vstack(
+        [
+            mo.md(
+                f"**The SHAP values of {_cohort} per explained validation row** "
+                "(each dot a row: how much the column moves its predicted count "
+                "from the mean prediction over the background; the columns ordered "
+                "by their mean |SHAP| for the cohort, the largest on top; the color "
+                "the column's value, low to high over the explained rows; a "
+                "category a row per level, in gray)"
+            ),
+            shap_cohort,
+            *_views,
+        ]
+    )
+    return (shap_beeswarm_figures,)
+
+
+@app.cell(hide_code=True)
+def _(mo):
+    mo.md(r"""
+    ## 6) The test evaluation
+
+    The test part stands for production (E11): each model's best run, chosen
+    on validation, is refit on the training and validation parts together,
+    then the test part is predicted once and scored, with the bootstrap over
+    its neighborhoods. Validation stays the selection evidence; the test
+    score is reported, never used to choose.
+
+    The test predictions are then read (the menus): each model's best or
+    worst test buildings by a metric over each building's own cells (one
+    cohort, or the composite), with their true and predicted counts and
+    their features; one model's true and predicted counts per building; and,
+    for all the test buildings or one neighborhood, the children, the cohort
+    shares and the scores, true and of both models.
+
+    The same click explains the refit models on the test part, after the
+    test scores: the permutation importance and every test building's SHAP
+    values, a table per model, and a beeswarm per cohort. Under the best and
+    worst buildings, a waterfall per model shows one building at a chosen
+    rank, from its mean prediction over the background to its prediction, a
+    step per column. Reported, never used to choose.
+    """)
+    return
+
+
+@app.cell
+def _(mo):
+    run_test_evaluation = mo.ui.run_button(label="Evaluate on the test part")
+    mo.md(
+        f"{run_test_evaluation} each model's best run: refit on the training and "
+        "validation parts, scored once on the test part, and explained there (the "
+        "permutation importance on section 5's metric and the SHAP values of every "
+        "test building; a minute or two more)."
+    )
+    return (run_test_evaluation,)
+
+
+@app.cell
+def _(
+    AgeGroupDataset,
+    CI_BOUND_NAMES,
+    COHORTS,
+    METRICS,
+    PREDICTION_FLOOR,
+    alpha,
+    best_runs,
+    bootstrap_evaluator,
+    build_independent_cohorts_model,
+    build_total_times_probability_model,
+    compute_metrics,
+    mo,
+    pd,
+    run_test_evaluation,
+    seed,
+    test_age_group,
+    train_age_group,
+    val_age_group,
+):
+    mo.stop(
+        not run_test_evaluation.value,
+        mo.md("Click the button to evaluate the best runs on the test part."),
+    )
+    # The training and validation parts together, part by part.
+    train_val_age_group = AgeGroupDataset(
+        *(
+            pd.concat([train_part, val_part])
+            for train_part, val_part in zip(train_age_group, val_age_group, strict=True)
+        )
+    )
+    # Each model's best run, chosen on validation, refit on them from its
+    # components; the test part predicted once and scored, every metric per
+    # cohort and for the composite, with the bootstrap over its
+    # neighborhoods (one evaluator: the two models' replicates pair).
+    test_models, test_predictions, test_replicate_scores, _scores_by_run = (
+        {},
+        {},
+        {},
+        {},
+    )
+    for _model_name, _run in best_runs.items():
+        if _model_name == "independent_cohorts":
+            _model = build_independent_cohorts_model(
+                _run["components"], y_min=PREDICTION_FLOOR, random_state=seed
+            )
+            _family = _run["family"]
+        elif _model_name == "total_times_probability":
+            _model = build_total_times_probability_model(
+                *_run["components"], y_min=PREDICTION_FLOOR, random_state=seed
+            )
+            _family = f"{_run['total_family']}+{_run['probability_family']}"
+        else:
+            raise ValueError(f"unknown model {_model_name!r}")
+        _model.fit(
+            train_val_age_group.X,
+            train_val_age_group.Y,
+            exposure=train_val_age_group.exposure,
+        )
+        # Kept for the explanation of the test buildings.
+        test_models[_model_name] = _model
+        test_predictions[_model_name] = _model.predict(
+            test_age_group.X, exposure=test_age_group.exposure
+        )
+        _replicate_scores = bootstrap_evaluator.evaluate(
+            test_age_group.Y,
+            test_predictions[_model_name],
+            test_age_group.groups,
+            metrics=METRICS,
+            cohorts=[*COHORTS, "composite"],
+        )
+        test_replicate_scores[_model_name] = _replicate_scores
+        _scores_by_run[_model_name, _family, _run["use_exposure"]] = pd.DataFrame(
+            {
+                "score": compute_metrics(
+                    test_age_group.Y,
+                    test_predictions[_model_name],
+                    METRICS,
+                    cohorts=[*COHORTS, "composite"],
+                ).stack(),
+                "mean": _replicate_scores.mean(),
+                "median": _replicate_scores.median(),
+                "sd": _replicate_scores.std(),
+                CI_BOUND_NAMES["lower"]: _replicate_scores.quantile(alpha / 2),
+                CI_BOUND_NAMES["upper"]: _replicate_scores.quantile(1 - alpha / 2),
+            }
+        )
+    # A row per best run, cohort and metric, as on validation.
+    test_scores_df = pd.concat(
+        _scores_by_run, names=["model", "family", "use_exposure"]
+    ).reset_index()
+    # The two runs' paired difference per test replicate, as on validation.
+    _difference_name = "total_times_probability - independent_cohorts"
+    test_difference_replicates = (
+        test_replicate_scores["total_times_probability"]
+        - test_replicate_scores["independent_cohorts"]
+    )
+    _point_scores = test_scores_df.set_index(["model", "cohort", "metric"])["score"]
+    test_difference_df = (
+        pd.DataFrame(
+            {
+                "score": _point_scores["total_times_probability"]
+                - _point_scores["independent_cohorts"],
+                "mean": test_difference_replicates.mean(),
+                "median": test_difference_replicates.median(),
+                "sd": test_difference_replicates.std(),
+                CI_BOUND_NAMES["lower"]: test_difference_replicates.quantile(alpha / 2),
+                CI_BOUND_NAMES["upper"]: test_difference_replicates.quantile(
+                    1 - alpha / 2
+                ),
+            }
+        )
+        .rename_axis(["cohort", "metric"])
+        .reset_index()
+    )
+    test_difference_df.insert(0, "model", _difference_name)
+    mo.md(
+        "**Each model's best run refit on the training and validation parts "
+        f"({len(train_val_age_group.X)} rows) and scored once on the test part "
+        f"({len(test_age_group.X)} rows):** "
+        + "; ".join(
+            f"{model} `{family}`, exposure {use_exposure}"
+            for model, family, use_exposure in _scores_by_run
+        )
+    )
+    return (
+        test_difference_df,
+        test_difference_replicates,
+        test_models,
+        test_predictions,
+        test_replicate_scores,
+        test_scores_df,
+        train_val_age_group,
+    )
+
+
+@app.cell
+def _(METRICS, SELECTION_METRIC, mo):
+    # The test section's plot and metric: the forest first, any of the six
+    # metrics (the selection metric by default).
+    test_plot = mo.ui.radio(
+        options=["forest", "ridge"], value="forest", inline=True, label="Plot"
+    )
+    test_metric = mo.ui.dropdown(
+        options=[metric.name for metric in METRICS],
+        value=SELECTION_METRIC.name,
+        label="Metric",
+    )
+    return test_metric, test_plot
+
+
+@app.cell
+def _(
+    CI_BOUND_NAMES,
+    best_runs_val_scores_df,
+    forest_figure,
+    mo,
+    pd,
+    ridge_figure,
+    test_difference_df,
+    test_difference_replicates,
+    test_metric,
+    test_plot,
+    test_replicate_scores,
+    test_scores_df,
+):
+    _difference_name = test_difference_df["model"].iloc[0]
+    if test_plot.value == "forest":
+        test_runs_figure = forest_figure(
+            test_scores_df,
+            test_metric.value,
+            CI_BOUND_NAMES["lower"],
+            CI_BOUND_NAMES["upper"],
+        )
+        test_difference_figure = forest_figure(
+            test_difference_df,
+            test_metric.value,
+            CI_BOUND_NAMES["lower"],
+            CI_BOUND_NAMES["upper"],
+            share_x_axis=True,
+            rule_at=0,
+        )
+    elif test_plot.value == "ridge":
+        test_runs_figure = ridge_figure(test_replicate_scores, test_metric.value)
+        test_difference_figure = ridge_figure(
+            {_difference_name: test_difference_replicates},
+            test_metric.value,
+            share_x_axis=True,
+            rule_at=0,
+        )
+    else:
+        raise ValueError(f"unknown plot {test_plot.value!r}")
+    # Each model's composite score per metric on validation (refit on the
+    # training part: the selection evidence, optimistic) and on test (refit on
+    # the training and validation parts: the fair score).
+    val_against_test_df = pd.DataFrame(
+        {
+            _dataset: _scores[_scores["cohort"] == "composite"].set_index(
+                ["model", "metric"]
+            )["score"]
+            for _dataset, _scores in (
+                ("val", best_runs_val_scores_df),
+                ("test", test_scores_df),
+            )
+        }
+    )
+    val_against_test_df = val_against_test_df.reset_index()
+    mo.vstack(
+        [
+            mo.md(
+                "**Each model's best run on the test part: the chosen metric per "
+                "cohort and for the composite** (refit on the training and "
+                "validation parts; the dot the test score, the bar its 95% "
+                "bootstrap interval over the test neighborhoods; the ridge the "
+                "replicates' density)"
+            ),
+            mo.hstack([test_plot, test_metric], justify="start"),
+            test_runs_figure,
+            mo.md(
+                f"**Their paired difference on the test part, {_difference_name}** "
+                "(below 0 the total times probability model scores lower; 0 inside "
+                "the interval: no difference shown; for bias the sign gives the "
+                "direction, not which model is better)"
+            ),
+            test_difference_figure,
+            mo.md(
+                "**Validation against test, the composite** (validation: refit on "
+                "the training part, the selection evidence; test: refit on the "
+                "training and validation parts, scored once)"
+            ),
+            mo.ui.table(val_against_test_df.round(4)),
+            mo.md("**The test scores, per cohort and metric**"),
+            mo.ui.table(test_scores_df.round(4)),
+            mo.md("**The paired difference on the test part, per cohort and metric**"),
+            mo.ui.table(test_difference_df.round(4)),
+        ]
+    )
+    return
+
+
+@app.cell
+def _(
+    PermutationImportance,
+    ShapExplainer,
+    importance_metrics,
+    mo,
+    n_repeats,
+    n_shap_background,
+    np,
+    run_test_evaluation,
+    seed,
+    test_age_group,
+    test_models,
+    train_val_age_group,
+):
+    mo.stop(not run_test_evaluation.value)
+    # The same click explains the refit models on every test building:
+    # SHAP against a background drawn from the rows they were fitted on
+    # (training and validation), and the permutation importance on the test
+    # part. Reported, never used to choose (E11).
+    _background = train_val_age_group.X.iloc[
+        np.random.default_rng(seed).choice(
+            len(train_val_age_group.X), size=n_shap_background, replace=False
+        )
+    ]
+    test_shap, test_permutation = {}, {}
+    for _model_name, _model in test_models.items():
+        test_shap[_model_name] = ShapExplainer(method="exact", n_jobs=-1).explain(
+            _model, test_age_group.X, _background, exposure=test_age_group.exposure
+        )
+        # scikit-learn's results per cohort (the composite first), their arrays
+        # in X's column order.
+        test_permutation[_model_name] = {
+            cohort: PermutationImportance(
+                metric, n_repeats, random_state=seed
+            ).compute_importances(
+                _model,
+                test_age_group.X,
+                test_age_group.Y,
+                exposure=test_age_group.exposure,
+            )
+            for cohort, metric in importance_metrics.items()
+        }
+    return test_permutation, test_shap
+
+
+@app.cell
+def _(importance_metric, mo, np, pd, test_permutation, test_scores_df, test_shap):
+    # As section 5's tables, on the test part: per model and raw column, the
+    # permutation importance's mean and spread, and the mean |SHAP| over the
+    # test buildings per cohort and for the composite.
+    _tables = []
+    for _model, _explanation in test_shap.items():
+        _composite = test_permutation[_model]["composite"]
+        _mean_abs_shap = np.abs(_explanation.values).mean(axis=0)
+        _table = pd.DataFrame(
+            {
+                "perm_fi_mean_test": _composite.importances_mean,
+                "perm_fi_std_test": _composite.importances_std,
+                **{
+                    f"mean_abs_shap_{cohort}": _mean_abs_shap[:, position]
+                    for position, cohort in enumerate(_explanation.output_names)
+                },
+                "mean_abs_shap_composite": np.abs(_explanation.values).mean(
+                    axis=(0, 2)
+                ),
+            },
+            index=_explanation.feature_names,
+        )
+        _table = _table.rename_axis("column").reset_index()
+        _table.insert(0, "model", _model)
+        _tables.append(_table)
+    test_importance_df = pd.concat(_tables, ignore_index=True)
+    # Each model's table, headed by its run, its rows in X's column order.
+    _views = []
+    for _model, _family, _use_exposure in (
+        test_scores_df[["model", "family", "use_exposure"]]
+        .drop_duplicates()
+        .itertuples(index=False)
+    ):
+        _views.append(mo.md(f"**{_model}:** `{_family}`, exposure {_use_exposure}"))
+        _views.append(
+            mo.ui.table(
+                test_importance_df[test_importance_df["model"] == _model]
+                .drop(columns="model")
+                .reset_index(drop=True)
+                .round(4)
+            )
+        )
+    mo.vstack(
+        [
+            mo.md(
+                "**Feature importance of each model's refit best run on the test "
+                "part, per raw column** (the models refit on the training and "
+                "validation parts, not section 5's; perm_fi_mean_test: the drop of "
+                f"the composite {importance_metric.name} on the test part when the "
+                "column is shuffled; perm_fi_std_test: its spread over the "
+                "repeated shuffles; mean_abs_shap_<cohort>: the mean |SHAP| over "
+                "all the test buildings; mean_abs_shap_composite: their mean over "
+                "the cohorts; reported, never used to choose; the permutation "
+                "importance per cohort is drawn below)"
+            ),
+            *_views,
+        ]
+    )
+    return (test_importance_df,)
+
+
+@app.cell
+def _(COHORTS, mo):
+    # The test permutation figure's score: the composite or one cohort.
+    test_permutation_cohort = mo.ui.dropdown(
+        options=["composite", *COHORTS], value="composite", label="Cohort"
+    )
+    return (test_permutation_cohort,)
+
+
+@app.cell
+def _(
+    importance_metric,
+    mo,
+    n_repeats,
+    permutation_figure,
+    test_age_group,
+    test_permutation,
+    test_permutation_cohort,
+):
+    _cohort = test_permutation_cohort.value
+    test_permutation_figures = {
+        model: permutation_figure(
+            {"test": permutation[_cohort]},
+            list(test_age_group.X.columns),
+            f"{_cohort} {importance_metric.name}",
+        )
+        for model, permutation in test_permutation.items()
+    }
+    _views = []
+    for _model, _figure in test_permutation_figures.items():
+        _views += [mo.md(f"**{_model}**"), _figure]
+    mo.vstack(
+        [
+            mo.md(
+                "**The permutation importance of each refit model on the test part, "
+                f"per column: the drop of the {_cohort} {importance_metric.name} "
+                f"when the column is shuffled** (a box over the {n_repeats} "
+                "shuffles; the line the median, the dashed line the mean; reported, "
+                "never used to choose)"
+            ),
+            test_permutation_cohort,
+            *_views,
+        ]
+    )
+    return (test_permutation_figures,)
+
+
+@app.cell
+def _(COHORTS, mo):
+    # The test beeswarm's cohort: SHAP explains each cohort's count.
+    test_beeswarm_cohort = mo.ui.dropdown(
+        options=COHORTS, value=COHORTS[0], label="Cohort"
+    )
+    return (test_beeswarm_cohort,)
+
+
+@app.cell
+def _(beeswarm_figure, mo, seed, test_age_group, test_beeswarm_cohort, test_shap):
+    _cohort = test_beeswarm_cohort.value
+    test_beeswarm_figures = {
+        model: beeswarm_figure(explanation, test_age_group.X, _cohort, seed)
+        for model, explanation in test_shap.items()
+    }
+    _views = []
+    for _model, _figure in test_beeswarm_figures.items():
+        _views += [mo.md(f"**{_model}**"), _figure]
+    mo.vstack(
+        [
+            mo.md(
+                f"**The SHAP values of {_cohort} per test building** (the refit "
+                "models; each dot a building: how much the column moves its "
+                "predicted count from the mean prediction over the background; "
+                "the columns ordered by their mean |SHAP| for the cohort, the "
+                "largest on top; the color the column's value, low to high over "
+                "the test buildings; a category a row per level, in gray)"
+            ),
+            test_beeswarm_cohort,
+            *_views,
+        ]
+    )
+    return (test_beeswarm_figures,)
+
+
+@app.cell
+def _(COHORTS, SELECTION_METRIC, mo, test_age_group):
+    # The reading of the test predictions. The tables: each model's best or
+    # worst k buildings by a metric over each building's own cells, one cohort
+    # or the composite (its three cohorts); the metric a count loss finite on
+    # every building (wmape divides by 0 when a cohort has no child, bias is
+    # signed, log loss needs a child). The count figures: the model and the
+    # cohort (the composite: the total). The statistics: all the test
+    # buildings, or one neighborhood's.
+    RANKING_METRIC_NAMES = ["rmse", "mae", "poisson_deviance"]
+    test_reading_end = mo.ui.radio(
+        options=["best", "worst"], value="worst", inline=True, label="Show"
+    )
+    test_reading_cohort = mo.ui.dropdown(
+        options=[*COHORTS, "composite"], value="composite", label="Cohort"
+    )
+    test_reading_metric = mo.ui.dropdown(
+        options=RANKING_METRIC_NAMES, value=SELECTION_METRIC.name, label="Rank by"
+    )
+    test_reading_k = mo.ui.number(start=1, stop=50, value=5, label="k")
+    test_reading_model = mo.ui.dropdown(
+        options=["independent_cohorts", "total_times_probability"],
+        value="independent_cohorts",
+        label="Model",
+    )
+    test_figures_cohort = mo.ui.dropdown(
+        options=[*COHORTS, "composite"], value="composite", label="Cohort"
+    )
+    test_neighborhood = mo.ui.dropdown(
+        options=["all", *sorted(test_age_group.groups.unique())],
+        value="all",
+        searchable=True,
+        label="Neighborhood",
+    )
+    return (
+        RANKING_METRIC_NAMES,
+        test_figures_cohort,
+        test_neighborhood,
+        test_reading_cohort,
+        test_reading_end,
+        test_reading_k,
+        test_reading_metric,
+        test_reading_model,
+    )
+
+
+@app.cell
+def _(
+    COHORTS,
+    METRICS,
+    RANKING_METRIC_NAMES,
+    compute_metrics,
+    pd,
+    test_age_group,
+    test_predictions,
+):
+    # Each test building as each model predicts it: its ids and features, the
+    # true and the predicted count per cohort, and the totals.
+    _ranking_metrics = [
+        metric for metric in METRICS if metric.name in RANKING_METRIC_NAMES
+    ]
+    _buildings, _scores = [], []
+    for _model_name, _predictions in test_predictions.items():
+        _table = pd.DataFrame(
+            {
+                "model": _model_name,
+                "building_id": test_age_group.ids,
+                "neighborhood_id": test_age_group.groups,
+            }
+        ).join(test_age_group.X)
+        for _cohort in COHORTS:
+            _table[f"{_cohort}_true"] = test_age_group.Y[_cohort]
+            _table[f"{_cohort}_predicted"] = _predictions[_cohort]
+        _table["total_true"] = test_age_group.Y.sum(axis=1)
+        _table["total_predicted"] = _predictions.sum(axis=1)
+        _buildings.append(_table)
+        # Each building scored on its own cells: each cohort's, and the
+        # composite's (its three cohorts).
+        for _position, _building_id in enumerate(test_age_group.ids):
+            _scores.append(
+                compute_metrics(
+                    test_age_group.Y.iloc[[_position]],
+                    _predictions.iloc[[_position]],
+                    _ranking_metrics,
+                    cohorts=[*COHORTS, "composite"],
+                )
+                .reset_index()
+                .assign(model=_model_name, building_id=_building_id)
+            )
+    test_buildings_df = pd.concat(_buildings, ignore_index=True)
+    test_building_scores_df = pd.concat(_scores, ignore_index=True)[
+        ["model", "building_id", "cohort", *RANKING_METRIC_NAMES]
+    ]
+    return test_building_scores_df, test_buildings_df
+
+
+@app.cell
+def _(
+    COHORTS,
+    RANKING_METRIC_NAMES,
+    mo,
+    test_building_scores_df,
+    test_buildings_df,
+    test_reading_cohort,
+    test_reading_end,
+    test_reading_k,
+    test_reading_metric,
+):
+    _end, _cohort, _metric, _k = (
+        test_reading_end.value,
+        test_reading_cohort.value,
+        test_reading_metric.value,
+        test_reading_k.value,
+    )
+    _counts = [
+        "neighborhood_id",
+        *[f"{cohort}_{kind}" for cohort in COHORTS for kind in ("true", "predicted")],
+    ]
+    _cohort_text = (
+        "the composite (its three cohorts)" if _cohort == "composite" else _cohort
+    )
+    # Per model: its buildings in a residual table's order (the ids, the true
+    # and the predicted counts, then the scores derived from them, on the
+    # chosen cohort), worst first; its best or worst k with their features.
+    test_ranked_buildings, _chosen_views, _every_views = {}, [], []
+    for _model in ("independent_cohorts", "total_times_probability"):
+        _buildings = (
+            test_buildings_df[test_buildings_df["model"] == _model]
+            .drop(columns="model")
+            .set_index("building_id")
+        )
+        # The features, with the 3-room share (the one the shares leave out:
+        # the four sum to 1) before the 4-room share.
+        _features = _buildings.drop(columns=[*_counts, "total_true", "total_predicted"])
+        _features.insert(
+            _features.columns.get_loc("4_rooms_share"),
+            "3_rooms_share",
+            1
+            - _features[["4_rooms_share", "5_rooms_share", "6_rooms_share"]].sum(
+                axis=1
+            ),
+        )
+        _ranked = (
+            _buildings[_counts]
+            .join(
+                test_building_scores_df[
+                    (test_building_scores_df["model"] == _model)
+                    & (test_building_scores_df["cohort"] == _cohort)
+                ].set_index("building_id")[RANKING_METRIC_NAMES]
+            )
+            .sort_values(_metric, ascending=False, kind="stable")
+        )
+        if _end == "best":
+            _chosen = _ranked.nsmallest(_k, _metric)
+        elif _end == "worst":
+            _chosen = _ranked.nlargest(_k, _metric)
+        else:
+            raise ValueError(f"unknown end {_end!r}")
+        test_ranked_buildings[_model] = (
+            _chosen[[*_counts, _metric]].join(_features).reset_index()
+        )
+        _chosen_views += [
+            mo.md(f"**{_model}: its {_end} {_k}**"),
+            mo.ui.table(test_ranked_buildings[_model].round(4)),
+        ]
+        _every_views += [
+            mo.md(f"**{_model}: every test building, worst first**"),
+            mo.ui.table(_ranked.reset_index().round(4)),
+        ]
+    mo.vstack(
+        [
+            mo.md(
+                f"**Each model's {_end} {_k} test buildings by their {_metric} on "
+                f"{_cohort_text}** (each model ranks its own; the score over the "
+                "building's own cells; each row the true and the predicted counts, "
+                "the score, then the features)"
+            ),
+            mo.hstack(
+                [
+                    test_reading_end,
+                    test_reading_cohort,
+                    test_reading_metric,
+                    test_reading_k,
+                ],
+                justify="start",
+            ),
+            *_chosen_views,
+            mo.md(
+                "**Every test building** (the true and the predicted counts, then "
+                f"the three scores on {_cohort_text})"
+            ),
+            *_every_views,
+        ]
+    )
+    return (test_ranked_buildings,)
+
+
+@app.cell
+def _(COHORTS, mo):
+    # The waterfalls' own menus: the best or the worst buildings, and the
+    # cohort they are ranked on and explained for (the composite: the total).
+    test_waterfall_end = mo.ui.radio(
+        options=["best", "worst"], value="worst", inline=True, label="Show"
+    )
+    test_waterfall_cohort = mo.ui.dropdown(
+        options=[*COHORTS, "composite"], value=COHORTS[0], label="Cohort"
+    )
+    return test_waterfall_end, test_waterfall_cohort
+
+
+@app.cell
+def _(
+    mo,
+    test_building_scores_df,
+    test_reading_k,
+    test_reading_metric,
+    test_waterfall_cohort,
+    test_waterfall_end,
+):
+    # Per model its best or worst k buildings on the waterfalls' cohort, by
+    # the tables' metric and k, ranked as the tables rank theirs; a dropdown
+    # each, the first by default.
+    _end, _cohort = test_waterfall_end.value, test_waterfall_cohort.value
+    _metric, _k = test_reading_metric.value, test_reading_k.value
+    _menus = {}
+    for _model in ("independent_cohorts", "total_times_probability"):
+        _scores = (
+            test_building_scores_df[
+                (test_building_scores_df["model"] == _model)
+                & (test_building_scores_df["cohort"] == _cohort)
+            ]
+            .set_index("building_id")[[_metric]]
+            .sort_values(_metric, ascending=False, kind="stable")
+        )
+        if _end == "best":
+            _chosen = _scores.nsmallest(_k, _metric)
+        elif _end == "worst":
+            _chosen = _scores.nlargest(_k, _metric)
+        else:
+            raise ValueError(f"unknown end {_end!r}")
+        _options = {
+            f"{rank}: {building_id}": building_id
+            for rank, building_id in enumerate(_chosen.index, start=1)
+        }
+        _menus[_model] = mo.ui.dropdown(
+            options=_options, value=next(iter(_options)), label="Building"
+        )
+    test_waterfall_buildings = mo.ui.dictionary(_menus)
+    return (test_waterfall_buildings,)
+
+
+@app.cell
+def _(
+    COHORTS,
+    go,
+    mo,
+    np,
+    pd,
+    test_age_group,
+    test_predictions,
+    test_reading_k,
+    test_reading_metric,
+    test_shap,
+    test_waterfall_buildings,
+    test_waterfall_cohort,
+    test_waterfall_end,
+):
+    # The palette's tokens, and its diverging pair: red raises the
+    # prediction, blue lowers it.
+    _surface, _ink, _grid, _axis = "#fcfcfb", "#52514e", "#e1e0d9", "#c3c2b7"
+    _raises, _lowers = "#e34948", "#2a78d6"
+    _end, _cohort = test_waterfall_end.value, test_waterfall_cohort.value
+    _metric, _k = test_reading_metric.value, test_reading_k.value
+    # The composite: the total, so the cohorts' values and bases summed.
+    _cohorts = COHORTS if _cohort == "composite" else [_cohort]
+    _count = "the total" if _cohort == "composite" else _cohort
+    test_waterfall_figures = {}
+    for _model, _explanation in test_shap.items():
+        # The building chosen in the model's dropdown, its row found by its id.
+        _building_id = test_waterfall_buildings.value[_model]
+        _position = test_age_group.ids.tolist().index(_building_id)
+        _outputs = [_explanation.output_names.index(cohort) for cohort in _cohorts]
+        _values = _explanation.values[_position][:, _outputs].sum(axis=1)
+        _base = _explanation.base_values[_position, _outputs].sum()
+        _prediction = test_predictions[_model].iloc[_position][_cohorts].sum()
+        _true = test_age_group.Y.iloc[_position][_cohorts].sum()
+        # From the building's base (the mean prediction over the background
+        # at its number of apartments), a step per column to its prediction,
+        # the largest |SHAP| on top.
+        _order = np.argsort(-np.abs(_values), kind="stable")
+        _labels = []
+        for _j in _order:
+            _raw = test_age_group.X.iloc[_position, _j]
+            _labels.append(
+                f"{_explanation.feature_names[_j]} = "
+                + (f"{_raw:.3g}" if pd.api.types.is_number(_raw) else str(_raw))
+            )
+        _figure = go.Figure(
+            go.Waterfall(
+                orientation="h",
+                base=_base,
+                measure=["relative"] * len(_order),
+                y=_labels,
+                x=_values[_order],
+                text=[f"{value:+.2f}" for value in _values[_order]],
+                textposition="outside",
+                increasing={"marker": {"color": _raises}},
+                decreasing={"marker": {"color": _lowers}},
+                connector={"line": {"color": _axis, "width": 1}},
+                hovertemplate="%{y}: %{x:+.3f}<extra></extra>",
+            )
+        )
+        for _x, _text, _place in (
+            (_base, f"mean prediction {_base:.2f}", "bottom left"),
+            (_prediction, f"predicted {_prediction:.2f}", "top right"),
+        ):
+            _figure.add_vline(
+                x=_x,
+                line={"color": _ink, "dash": "dot", "width": 1},
+                annotation_text=_text,
+                annotation_position=_place,
+            )
+        _figure.update_layout(
+            height=60 + 34 * (len(_order) + 2),
+            template="plotly_white",
+            paper_bgcolor=_surface,
+            plot_bgcolor=_surface,
+            font={
+                "family": "system-ui, -apple-system, Segoe UI, sans-serif",
+                "color": _ink,
+                "size": 12,
+            },
+            margin={"l": 200, "r": 40, "t": 60, "b": 50},
+            title={
+                "text": (
+                    f"{_building_id} ({test_age_group.groups.iloc[_position]}), "
+                    f"{_count}: true {_true}, predicted {_prediction:.2f}"
+                ),
+                "x": 0,
+            },
+        )
+        _figure.update_yaxes(autorange="reversed", gridcolor=_grid)
+        _figure.update_xaxes(
+            title_text=f"children ({_count})", gridcolor=_grid, zeroline=False
+        )
+        test_waterfall_figures[_model] = _figure
+    _views = []
+    for _model, _figure in test_waterfall_figures.items():
+        _views += [
+            mo.md(f"**{_model}**"),
+            test_waterfall_buildings[_model],
+            _figure,
+        ]
+    mo.vstack(
+        [
+            mo.md(
+                f"**A test building of each model's {_end} {_k} by {_metric} on "
+                f"{_cohort}, explained: {_count}** (each model ranks its own "
+                "buildings, by the tables' metric and k; from the building's mean "
+                "prediction over the background, at its number of apartments, a "
+                "step per column to its prediction, the largest on top; red raises "
+                "the prediction, blue lowers it)"
+            ),
+            mo.hstack([test_waterfall_end, test_waterfall_cohort], justify="start"),
+            *_views,
+        ]
+    )
+    return (test_waterfall_figures,)
+
+
+@app.cell
+def _(go, mo, test_buildings_df, test_figures_cohort, test_reading_model):
+    # The forest's palette: each model in its color, the truth in the muted
+    # ink; the true total of children on the sequential blue ramp (steps 250,
+    # 400, 550, 700, so the lightest still shows on the surface).
+    _model_colors = {
+        "independent_cohorts": "#2a78d6",
+        "total_times_probability": "#eb6834",
+    }
+    _surface, _ink, _muted, _grid, _axis = (
+        "#fcfcfb",
+        "#52514e",
+        "#898781",
+        "#e1e0d9",
+        "#c3c2b7",
+    )
+    _blues = ["#86b6ef", "#3987e5", "#1c5cab", "#0d366b"]
+    _model, _cohort = test_reading_model.value, test_figures_cohort.value
+    _color = _model_colors[_model]
+    # The chosen cohort's counts per building, or the buildings' totals.
+    _count = "total" if _cohort == "composite" else _cohort
+    _buildings = test_buildings_df[test_buildings_df["model"] == _model].set_index(
+        "building_id"
+    )
+    _true, _predicted = _buildings[f"{_count}_true"], _buildings[f"{_count}_predicted"]
+    # The true counts and the predicted means over the same bins.
+    test_counts_histogram = go.Figure(
+        [
+            go.Histogram(
+                x=_values,
+                name=_name,
+                bingroup="counts",
+                marker={"color": _trace_color},
+                opacity=0.6,
+                hovertemplate=f"{_name} %{{x}}: %{{y}} buildings<extra></extra>",
+            )
+            for _name, _values, _trace_color in (
+                ("true", _true, _muted),
+                ("predicted", _predicted, _color),
+            )
+        ]
+    )
+    test_counts_histogram.update_layout(barmode="overlay")
+    test_counts_histogram.update_xaxes(title_text=f"{_count} count")
+    test_counts_histogram.update_yaxes(title_text="buildings")
+    # Each building's true count against its prediction, colored by its true
+    # total of children (on the composite, x again): whether the errors grow
+    # with the building's children; on the dotted line they are equal.
+    _top = max(_true.max(), _predicted.max()) * 1.05
+    test_counts_scatter = go.Figure(
+        [
+            go.Scatter(
+                x=[0, _top],
+                y=[0, _top],
+                mode="lines",
+                line={"color": _ink, "width": 1, "dash": "dot"},
+                hoverinfo="skip",
+                showlegend=False,
+            ),
+            go.Scatter(
+                x=_true,
+                y=_predicted,
+                mode="markers",
+                showlegend=False,
+                marker={
+                    "size": 8,
+                    "color": _buildings["total_true"],
+                    "colorscale": _blues,
+                    "colorbar": {"title": {"text": "true total"}, "thickness": 12},
+                    "line": {"width": 1, "color": _surface},
+                },
+                customdata=_buildings.reset_index()[
+                    ["building_id", "neighborhood_id", "total_true"]
+                ].to_numpy(),
+                hovertemplate=(
+                    "%{customdata[0]} (%{customdata[1]}), %{customdata[2]} children"
+                    "<br>true %{x}, predicted %{y:.2f}<extra></extra>"
+                ),
+            ),
+        ]
+    )
+    test_counts_scatter.update_xaxes(title_text=f"true {_count}", range=[0, _top])
+    test_counts_scatter.update_yaxes(title_text=f"predicted {_count}", range=[0, _top])
+    for _figure in (test_counts_histogram, test_counts_scatter):
+        _figure.update_layout(
+            height=400,
+            template="plotly_white",
+            paper_bgcolor=_surface,
+            plot_bgcolor=_surface,
+            font={
+                "family": "system-ui, -apple-system, Segoe UI, sans-serif",
+                "color": _ink,
+                "size": 12,
+            },
+            legend={
+                "orientation": "h",
+                "x": 0,
+                "xanchor": "left",
+                "y": 1.02,
+                "yanchor": "bottom",
+            },
+            margin={"l": 50, "r": 20, "t": 50, "b": 50},
+            hovermode="closest",
+        )
+        _figure.update_xaxes(
+            gridcolor=_grid, zeroline=False, linecolor=_axis, tickfont={"color": _muted}
+        )
+        _figure.update_yaxes(
+            gridcolor=_grid, zeroline=False, linecolor=_axis, tickfont={"color": _muted}
+        )
+    _count_text = "the total" if _cohort == "composite" else _cohort
+    mo.vstack(
+        [
+            mo.md(
+                f"**The true and the predicted counts of {_model} per test building: "
+                f"{_count_text}**"
+            ),
+            mo.hstack([test_reading_model, test_figures_cohort], justify="start"),
+            mo.md(
+                "The true counts and the predicted means over the same bins (a "
+                "model predicts a mean, so even a perfect model's histogram is "
+                "narrower than the counts')"
+            ),
+            test_counts_histogram,
+            mo.md(
+                "Each building's true count against its prediction, equal on the "
+                "dotted line, the color its true total of children"
+            ),
+            test_counts_scatter,
+        ]
+    )
+    return test_counts_histogram, test_counts_scatter
+
+
+@app.cell
+def _(
+    COHORTS,
+    METRICS,
+    RANKING_METRIC_NAMES,
+    compute_metrics,
+    go,
+    mo,
+    np,
+    pd,
+    test_age_group,
+    test_neighborhood,
+    test_predictions,
+):
+    _model_colors = {
+        "independent_cohorts": "#2a78d6",
+        "total_times_probability": "#eb6834",
+    }
+    _surface, _ink, _muted, _grid, _axis = (
+        "#fcfcfb",
+        "#52514e",
+        "#898781",
+        "#e1e0d9",
+        "#c3c2b7",
+    )
+    # The selection: every test building, or one neighborhood's.
+    if test_neighborhood.value == "all":
+        _mask = pd.Series(True, index=test_age_group.groups.index)
+        _selection_text = f"all {len(_mask)} test buildings"
+    else:
+        _mask = test_age_group.groups == test_neighborhood.value
+        _selection_text = (
+            f"neighborhood {test_neighborhood.value}: its {_mask.sum()} test buildings"
+        )
+    _true = test_age_group.Y[_mask]
+    _predicted = {
+        model: predictions[_mask] for model, predictions in test_predictions.items()
+    }
+    # Its buildings: each cohort's true count and each model's prediction.
+    test_selection_buildings_df = pd.DataFrame(
+        {
+            "building_id": test_age_group.ids[_mask],
+            "neighborhood_id": test_age_group.groups[_mask],
+        }
+    )
+    for _cohort in COHORTS:
+        test_selection_buildings_df[f"{_cohort}_true"] = _true[_cohort]
+        for _model, _model_predictions in _predicted.items():
+            test_selection_buildings_df[f"{_cohort}_{_model}"] = _model_predictions[
+                _cohort
+            ]
+    test_selection_buildings_df = test_selection_buildings_df.reset_index(drop=True)
+    # Its children per cohort and in total, and the pooled shares: each
+    # cohort's children over all the children, so each child counts once.
+    test_selection_counts_df = pd.DataFrame(
+        {
+            "true": [*_true.sum(), _true.sum().sum()],
+            **{
+                model: [*predictions.sum(), predictions.sum().sum()]
+                for model, predictions in _predicted.items()
+            },
+        },
+        index=pd.Index([*COHORTS, "total"], name="cohort"),
+    ).reset_index()
+    test_selection_shares_df = (
+        pd.DataFrame(
+            {
+                "true": _true.sum() / _true.sum().sum(),
+                **{
+                    model: predictions.sum() / predictions.sum().sum()
+                    for model, predictions in _predicted.items()
+                },
+            }
+        )
+        .rename_axis("cohort")
+        .reset_index()
+    )
+    # Each model's scores over the selection's cells, per cohort and for the
+    # composite.
+    _ranking_metrics = [
+        metric for metric in METRICS if metric.name in RANKING_METRIC_NAMES
+    ]
+    test_selection_scores_df = pd.DataFrame(
+        {
+            model: compute_metrics(
+                _true, predictions, _ranking_metrics, cohorts=[*COHORTS, "composite"]
+            ).stack()
+            for model, predictions in _predicted.items()
+        }
+    ).reset_index()
+    # The shares as grouped bars: the truth in the muted ink, each model in
+    # its color. A share of n children varies by about sqrt(p (1 - p) / n):
+    # the true bars carry that 95% interval, each child counted as
+    # independent (children of one building share it, so the noise is larger).
+    _counts = test_selection_counts_df.set_index("cohort")
+    _n_children = _counts.loc["total", "true"]
+    _true_shares = test_selection_shares_df["true"].to_numpy()
+    _true_interval = 1.96 * np.sqrt(_true_shares * (1 - _true_shares) / _n_children)
+    test_selection_shares_bars = go.Figure(
+        [
+            go.Bar(
+                x=COHORTS,
+                y=test_selection_shares_df[_series],
+                name=_series,
+                marker={"color": _bar_color, "line": {"width": 2, "color": _surface}},
+                error_y=(
+                    {
+                        "type": "data",
+                        "array": _true_interval,
+                        "color": _ink,
+                        "thickness": 1.5,
+                        "width": 6,
+                    }
+                    if _series == "true"
+                    else None
+                ),
+                customdata=_counts.loc[COHORTS, _series].to_numpy(),
+                hovertemplate=(
+                    f"%{{x}} {_series} share %{{y:.3f}}, "
+                    "%{customdata:.1f} children<extra></extra>"
+                ),
+            )
+            for _series, _bar_color in (
+                ("true", _muted),
+                *_model_colors.items(),
+            )
+        ]
+    )
+    _predicted_totals = ", ".join(
+        f"{model} {_counts.loc['total', model]:.1f}" for model in _predicted
+    )
+    test_selection_shares_bars.update_layout(
+        title={
+            "text": (
+                f"n = {_n_children:.0f} true children (predicted: {_predicted_totals})"
+            ),
+            "x": 0,
+            "xref": "paper",
+            "xanchor": "left",
+            "font": {"size": 13},
+        },
+        barmode="group",
+        bargap=0.3,
+        height=380,
+        template="plotly_white",
+        paper_bgcolor=_surface,
+        plot_bgcolor=_surface,
+        font={
+            "family": "system-ui, -apple-system, Segoe UI, sans-serif",
+            "color": _ink,
+            "size": 12,
+        },
+        legend={
+            "orientation": "h",
+            "x": 0,
+            "xanchor": "left",
+            "y": 1.02,
+            "yanchor": "bottom",
+        },
+        margin={"l": 50, "r": 20, "t": 80, "b": 50},
+    )
+    test_selection_shares_bars.update_xaxes(linecolor=_axis, tickfont={"color": _muted})
+    test_selection_shares_bars.update_yaxes(
+        title_text="share of the children",
+        gridcolor=_grid,
+        zeroline=False,
+        tickfont={"color": _muted},
+    )
+    mo.vstack(
+        [
+            mo.md(
+                f"**The statistics of {_selection_text}, true and each model's "
+                "predicted**"
+            ),
+            test_neighborhood,
+            mo.md("**Its buildings** (each cohort's true count, then each model's)"),
+            mo.ui.table(test_selection_buildings_df.round(4)),
+            mo.md("**Its children**, per cohort and in total"),
+            mo.ui.table(test_selection_counts_df.round(4)),
+            mo.md(
+                "**Its cohort shares** (each cohort's children over all the "
+                "children; the bars' n children in the title, the true bars' 95% "
+                "interval ±1.96·√(p(1−p)/n): the smaller n, the noisier the true "
+                "share, so a gap inside the interval is noise)"
+            ),
+            mo.ui.table(test_selection_shares_df.round(4)),
+            test_selection_shares_bars,
+            mo.md(
+                "**Each model's scores over its cells**, per cohort and for the "
+                "composite"
+            ),
+            mo.ui.table(test_selection_scores_df.round(4)),
+        ]
+    )
+    return (
+        test_selection_buildings_df,
+        test_selection_counts_df,
+        test_selection_scores_df,
+        test_selection_shares_bars,
+        test_selection_shares_df,
+    )
 
 
 if __name__ == "__main__":

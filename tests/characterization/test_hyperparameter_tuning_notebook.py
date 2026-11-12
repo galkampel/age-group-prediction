@@ -19,9 +19,14 @@ import subprocess
 import sys
 from pathlib import Path
 
+import numpy as np
 import optuna
+import pandas as pd
 import pytest
+import shap
 from optuna.samplers import RandomSampler
+from scipy.stats import gaussian_kde
+from sklearn.utils import Bunch
 
 from age_group_prediction.hyperparameter_tuning import (
     suggest_independent_cohorts_components,
@@ -124,6 +129,7 @@ def test_a_setting_missing_or_changed_in_a_settings_mapping_is_caught(
         "n_splits": "5",
         "n_trials": "100",
         "n_startup_trials": "10",
+        "objective_metric": "rmse",
         "selection_metric": "rmse",
         "n_resamples": "1000",
         "alpha": "0.05",
@@ -353,6 +359,9 @@ def test_a_missing_entry_in_the_params_is_named(notebook_defs: dict) -> None:
 def test_a_study_is_named_by_the_settings_that_shape_it(notebook_defs: dict) -> None:
     # A stored study is loaded by its name alone, so a setting left out of the
     # directory's or the file's name would load a stale study after a change.
+    # The file's name holds the objective, the tuner's (D42).
+    assert notebook_defs["tuner"].objective_metric is notebook_defs["OBJECTIVE_METRIC"]
+    assert notebook_defs["OBJECTIVE_METRIC"].name == "rmse"
     assert notebook_defs["tuner"].storage_dir == (
         PROJECT_ROOT
         / "studies"
@@ -393,13 +402,17 @@ def test_the_run_settings_are_the_ones_the_baselines_were_recorded_with(
         }
         for family, use_exposure in arms
     ]
-    assert notebook_defs["MODEL2_TOTAL_RUN_SETTINGS"] == [
-        {"total_family": family, "use_exposure": use_exposure}
-        for family, use_exposure in arms
-    ]
-    assert notebook_defs["MODEL2_PROBABILITY_RUN_SETTINGS"] == [
-        {"probability_family": "logistic"},
-        {"probability_family": "lgbm"},
+    # The total times probability model's runs: a family pair × exposure, the
+    # first the objective EDA's joint run (seed + 0), so its study is shared.
+    assert notebook_defs["MODEL2_RUN_SETTINGS"] == [
+        {
+            "total_family": total_family,
+            "probability_family": probability_family,
+            "use_exposure": use_exposure,
+        }
+        for total_family in ("lgbm_poisson", "lgbm_gaussian", "poisson_glm", "nb2")
+        for probability_family in ("logistic", "lgbm")
+        for use_exposure in (True, False)
     ]
 
 
@@ -435,12 +448,13 @@ def test_the_two_notebooks_share_one_setup(
         "n_splits",
         "n_trials",
         "n_startup_trials",
+        "objective_metric",
         "COHORTS",
         "PREDICTION_FLOOR",
         "cv_groups",
     ):
         assert tuning[name] == eda[name], name
-    for part in ("train_age_group", "val_age_group"):
+    for part in ("train_age_group", "val_age_group", "test_age_group"):
         for field, tuning_values, eda_values in zip(
             tuning[part]._fields, tuning[part], eda[part], strict=True
         ):
@@ -455,7 +469,7 @@ def test_the_two_notebooks_share_one_setup(
             for family, candidates in eda[name].items()
         }, name
     assert [m.name for m in tuning["METRICS"]] == [m.name for m in eda["METRICS"]]
-    assert tuning["POISSON_DEVIANCE"].name == eda["POISSON_DEVIANCE"].name
+    assert tuning["OBJECTIVE_METRIC"].name == eda["OBJECTIVE_METRIC"].name
     tuning_tuner, eda_tuner = tuning["tuner"], eda["tuner"]
     assert tuning_tuner.storage_dir == eda_tuner.storage_dir
     assert tuning_tuner.objective_metric.name == eda_tuner.objective_metric.name
@@ -473,13 +487,17 @@ def test_the_two_notebooks_share_one_setup(
                 "share_hyperparams": True,
                 "share_feature_transformer": False,
             },
-            "poisson_deviance",
+            "rmse",
             42,
         ),
         (
-            "total_times_probability_coordinate_descent_total",
-            {"total_family": "lgbm_poisson", "use_exposure": True},
-            "poisson_deviance",
+            "total_times_probability_joint",
+            {
+                "total_family": "lgbm_poisson",
+                "probability_family": "logistic",
+                "use_exposure": True,
+            },
+            "rmse",
             42,
         ),
     ]
@@ -487,7 +505,370 @@ def test_the_two_notebooks_share_one_setup(
         assert tuning["build_study_name"](*arguments) == eda["build_study_name"](
             *arguments
         )
-    assert (
-        tuning["MODEL2_FIXED_PROBABILITY_COMPONENT"].to_dict()
-        == eda["MODEL2_FIXED_PROBABILITY_COMPONENT"].to_dict()
+    # F4: the transformer's name and the hyperparameters are read by one pair
+    # of functions, copied in both notebooks: the same results on the same
+    # components (a cohort's count component, and a joint draw's total and
+    # probabilities, the classifier with its calibration).
+    trial = optuna.create_study(sampler=RandomSampler(seed=3)).ask()
+    count_transformers = tuning["COUNT_FEATURE_TRANSFORMERS"]["lgbm_gaussian"]
+    probability_transformers = tuning["PROBABILITY_FEATURE_TRANSFORMERS"]["lgbm"]
+    components = suggest_total_times_probability_components(
+        trial,
+        total_family="lgbm_gaussian",
+        probability_family="lgbm",
+        use_exposure=True,
+        total_feature_transformer_dict=count_transformers,
+        probability_feature_transformer_dict=probability_transformers,
     )
+    trial = optuna.create_study(sampler=RandomSampler(seed=4)).ask()
+    nb2_transformers = tuning["COUNT_FEATURE_TRANSFORMERS"]["nb2"]
+    components += suggest_independent_cohorts_components(
+        trial,
+        family="nb2",
+        use_exposure=False,
+        cohorts=tuning["COHORTS"],
+        feature_transformer_dict=nb2_transformers,
+        share_hyperparams=False,
+        share_feature_transformer=False,
+    )
+    candidates = (count_transformers, probability_transformers) + (
+        nb2_transformers,
+    ) * len(tuning["COHORTS"])
+    for component, component_candidates in zip(components, candidates, strict=True):
+        assert tuning["find_feature_transformer_name"](
+            component, component_candidates
+        ) == eda["find_feature_transformer_name"](component, component_candidates)
+        assert tuning["read_hyperparameters"](component) == eda["read_hyperparameters"](
+            component
+        )
+    assert "calibration_method" in tuning["read_hyperparameters"](components[1])
+
+
+def test_the_best_runs_tables_show_the_composite_and_every_metric_by_default(
+    notebook_defs: dict,
+) -> None:
+    # 7.0b: one cohort and one metric choice filter both models' best-run
+    # tables; a click must open on the composite with every metric shown.
+    cohort = notebook_defs["best_runs_cohort"]
+    metrics = notebook_defs["best_runs_metrics"]
+    metric_names = [metric.name for metric in notebook_defs["METRICS"]]
+    assert list(cohort.options) == [*notebook_defs["COHORTS"], "composite"]
+    assert cohort.value == "composite"
+    assert list(metrics.options) == metric_names
+    assert list(metrics.value) == metric_names
+
+
+def test_the_forest_figure_draws_a_row_per_cohort_and_a_trace_per_model(
+    notebook_defs: dict,
+) -> None:
+    # 5.4a: a row per cohort, the composite first; in each row a dot per model
+    # at its score, the bar its interval; one legend entry per model; the
+    # rule in every row. The rows of another metric are not drawn.
+    forest_figure = notebook_defs["forest_figure"]
+    scores = pd.DataFrame(
+        [
+            {"model": model, "cohort": cohort, "metric": metric}
+            for metric in ("rmse", "mae")
+            for model in ("model_a", "model_b")
+            for cohort in ("cohort_x", "cohort_y", "composite")
+        ]
+    )
+    scores["score"] = range(len(scores))
+    scores["lower"] = scores["score"] - 0.5
+    scores["upper"] = scores["score"] + 1.0
+    figure = forest_figure(scores, "rmse", "lower", "upper")
+    cohorts = ["composite", "cohort_x", "cohort_y"]
+    assert [annotation.text for annotation in figure.layout.annotations] == cohorts
+    assert [trace.name for trace in figure.data if trace.showlegend] == [
+        "model_a",
+        "model_b",
+    ]
+    assert figure.layout.showlegend
+    rmse = scores[scores["metric"] == "rmse"].set_index(["cohort", "model"])
+    traces = iter(figure.data)
+    for row, cohort in enumerate(cohorts, start=1):
+        for position, model in enumerate(["model_a", "model_b"]):
+            trace = next(traces)
+            axis = "" if row == 1 else str(row)
+            assert (trace.name, trace.xaxis, trace.yaxis) == (
+                model,
+                f"x{axis}",
+                f"y{axis}",
+            )
+            assert list(trace.y) == [position]
+            assert list(trace.x) == [rmse.loc[(cohort, model), "score"]]
+            assert list(trace.error_x.array) == [1.0]
+            assert list(trace.error_x.arrayminus) == [0.5]
+    assert next(traces, None) is None
+    assert not figure.layout.shapes
+    ruled = forest_figure(
+        scores, "rmse", "lower", "upper", share_x_axis=True, rule_at=0
+    )
+    assert len(ruled.layout.shapes) == 3
+    assert all(shape.x0 == shape.x1 == 0 for shape in ruled.layout.shapes)
+    one_model = forest_figure(
+        scores[scores["model"] == "model_a"], "rmse", "lower", "upper"
+    )
+    assert not one_model.layout.showlegend
+
+
+def test_the_ridge_draws_a_density_per_model_in_a_row_per_cohort(
+    notebook_defs: dict,
+) -> None:
+    # 5.4a: a row per cohort, the composite first; in each row each model's
+    # replicates as a density (a Gaussian KDE between their extremes), the
+    # row's highest density 1; no dots or bars; one legend entry per model;
+    # the rule in every row. The columns of another metric are not drawn.
+    ridge_figure = notebook_defs["ridge_figure"]
+    models = ["model_a", "model_b"]
+    columns = pd.MultiIndex.from_product(
+        [["cohort_x", "cohort_y", "composite"], ["rmse", "mae"]],
+        names=["cohort", "metric"],
+    )
+    rng = np.random.default_rng(0)
+    replicate_scores = {
+        model: pd.DataFrame(rng.normal(4.5, 0.3, (200, len(columns))), columns=columns)
+        for model in models
+    }
+    figure = ridge_figure(replicate_scores, "rmse")
+    cohorts = ["composite", "cohort_x", "cohort_y"]
+    assert [annotation.text for annotation in figure.layout.annotations] == cohorts
+    assert len(figure.data) == 6 and all(trace.mode == "lines" for trace in figure.data)
+    assert [trace.name for trace in figure.data if trace.showlegend] == models
+    for row, cohort in enumerate(cohorts):
+        curves = figure.data[2 * row : 2 * row + 2]
+        densities = {}
+        for model in models:
+            replicates = replicate_scores[model][(cohort, "rmse")]
+            x_values = np.linspace(replicates.min(), replicates.max(), 200)
+            densities[model] = (x_values, gaussian_kde(replicates)(x_values))
+        highest = max(density.max() for _, density in densities.values())
+        for model, curve in zip(models, curves, strict=True):
+            x_values, density = densities[model]
+            axis = "" if row == 0 else str(row + 1)
+            assert (curve.name, curve.xaxis) == (model, f"x{axis}")
+            np.testing.assert_array_equal(curve.x, x_values)
+            np.testing.assert_allclose(curve.y, density / highest)
+        assert max(max(curve.y) for curve in curves) == pytest.approx(1.0)
+    assert not figure.layout.shapes
+    ruled = ridge_figure(replicate_scores, "rmse", share_x_axis=True, rule_at=0)
+    assert len(ruled.layout.shapes) == 3
+    assert all(shape.x0 == shape.x1 == 0 for shape in ruled.layout.shapes)
+
+
+def test_the_plots_open_on_their_forms_and_the_selection_metric(
+    notebook_defs: dict,
+) -> None:
+    # 5.4b: the best runs' plot opens on the forest, the paired difference's
+    # on the ridge; both metric menus on the selection metric. The runs' menu
+    # (which also sets the permutation importance's metric, bias excepted)
+    # offers the two selection metrics and bias; the difference's, all six.
+    assert notebook_defs["best_runs_plot"].value == "forest"
+    assert notebook_defs["best_difference_plot"].value == "ridge"
+    selection = notebook_defs["SELECTION_METRIC"].name
+    runs_metric = notebook_defs["best_runs_metric"]
+    assert list(runs_metric.options) == ["rmse", "poisson_deviance", "bias"]
+    difference_metric = notebook_defs["best_difference_metric"]
+    assert list(difference_metric.options) == [
+        metric.name for metric in notebook_defs["METRICS"]
+    ]
+    assert runs_metric.value == difference_metric.value == selection == "rmse"
+
+
+def test_the_shap_beeswarm_opens_on_the_first_cohort(
+    notebook_defs: dict,
+) -> None:
+    # 7.1b: the beeswarm's menu needs no click and offers the cohorts (SHAP
+    # explains each cohort's count; no composite); its figures exist only
+    # after the inspection's click. 7.1e: the permutation figure's menu, the
+    # composite first, then each cohort.
+    cohort = notebook_defs["shap_cohort"]
+    assert list(cohort.options) == notebook_defs["COHORTS"]
+    assert cohort.value == notebook_defs["COHORTS"][0]
+    permutation_cohort = notebook_defs["permutation_cohort"]
+    assert list(permutation_cohort.options) == ["composite", *notebook_defs["COHORTS"]]
+    assert permutation_cohort.value == "composite"
+    for name in (
+        "shap_beeswarm_figures",
+        "importance_df",
+        "model1_permutation",
+        "permutation_figures",
+    ):
+        assert name not in notebook_defs, name
+
+
+def test_the_test_evaluation_is_behind_its_button_and_opens_on_the_forest(
+    notebook_defs: dict,
+) -> None:
+    # 7.2 (E11): the test part is scored once, on a click; a script run
+    # evaluates nothing. The test section's plot opens on the forest and the
+    # selection metric, any of the six offered.
+    source = NOTEBOOK_PATH.read_text(encoding="utf-8")
+    cells = [
+        cell for cell in source.split("@app.cell") if "train_val_age_group = " in cell
+    ]
+    assert len(cells) == 1
+    assert "mo.stop(\n        not run_test_evaluation.value" in cells[0]
+    assert "test_scores_df" not in notebook_defs
+    assert notebook_defs["test_plot"].value == "forest"
+    metric_names = [metric.name for metric in notebook_defs["METRICS"]]
+    assert list(notebook_defs["test_metric"].options) == metric_names
+    assert notebook_defs["test_metric"].value == notebook_defs["SELECTION_METRIC"].name
+
+
+def test_the_test_reading_opens_on_its_defaults(
+    notebook_defs: dict,
+) -> None:
+    # 7.3: the reading of the test predictions needs no click for its menus;
+    # its frames and figures exist only after the test evaluation's click. The
+    # tables show each model's worst 5 by a count loss finite on every
+    # building; the figures have their own model and cohort; the statistics
+    # cover all the test buildings or one neighborhood.
+    assert notebook_defs["RANKING_METRIC_NAMES"] == ["rmse", "mae", "poisson_deviance"]
+    end = notebook_defs["test_reading_end"]
+    assert list(end.options) == ["best", "worst"]
+    assert end.value == "worst"
+    cohort = notebook_defs["test_reading_cohort"]
+    assert list(cohort.options) == [*notebook_defs["COHORTS"], "composite"]
+    assert cohort.value == "composite"
+    metric = notebook_defs["test_reading_metric"]
+    assert list(metric.options) == notebook_defs["RANKING_METRIC_NAMES"]
+    assert metric.value == notebook_defs["SELECTION_METRIC"].name == "rmse"
+    k = notebook_defs["test_reading_k"]
+    assert (k.start, k.stop, k.value) == (1, 50, 5)
+    model = notebook_defs["test_reading_model"]
+    assert list(model.options) == ["independent_cohorts", "total_times_probability"]
+    assert model.value == "independent_cohorts"
+    figures_cohort = notebook_defs["test_figures_cohort"]
+    assert list(figures_cohort.options) == list(cohort.options)
+    assert figures_cohort.value == "composite"
+    neighborhood = notebook_defs["test_neighborhood"]
+    test_neighborhoods = sorted(notebook_defs["test_age_group"].groups.unique())
+    assert list(neighborhood.options) == ["all", *test_neighborhoods]
+    assert neighborhood.value == "all"
+    assert "test_figures_level" not in notebook_defs
+    for name in (
+        "test_buildings_df",
+        "test_building_scores_df",
+        "test_ranked_buildings",
+        "test_counts_histogram",
+        "test_selection_counts_df",
+    ):
+        assert name not in notebook_defs, name
+
+
+def test_the_test_explanation_is_behind_its_button(
+    notebook_defs: dict,
+) -> None:
+    # 7.1c (E11): the test evaluation's click also explains the refit models;
+    # a script run explains nothing. The test beeswarm's cohort and the
+    # waterfalls' end and cohort need no click: the waterfalls open on each
+    # model's worst buildings for the first cohort (the composite optional);
+    # their building menus exist only after the click.
+    source = NOTEBOOK_PATH.read_text(encoding="utf-8")
+    cells = [
+        cell
+        for cell in source.split("@app.cell")
+        if "test_shap, test_permutation = " in cell
+    ]
+    assert len(cells) == 1
+    assert "mo.stop(not run_test_evaluation.value)" in cells[0]
+    cohorts = notebook_defs["COHORTS"]
+    beeswarm_cohort = notebook_defs["test_beeswarm_cohort"]
+    assert list(beeswarm_cohort.options) == cohorts
+    assert beeswarm_cohort.value == cohorts[0]
+    permutation_cohort = notebook_defs["test_permutation_cohort"]
+    assert list(permutation_cohort.options) == ["composite", *cohorts]
+    assert permutation_cohort.value == "composite"
+    end = notebook_defs["test_waterfall_end"]
+    assert list(end.options) == ["best", "worst"]
+    assert end.value == "worst"
+    waterfall_cohort = notebook_defs["test_waterfall_cohort"]
+    assert list(waterfall_cohort.options) == [*cohorts, "composite"]
+    assert waterfall_cohort.value == cohorts[0]
+    for name in (
+        "test_models",
+        "test_shap",
+        "test_permutation",
+        "test_importance_df",
+        "test_permutation_figures",
+        "test_beeswarm_figures",
+        "test_waterfall_buildings",
+        "test_waterfall_figures",
+    ):
+        assert name not in notebook_defs, name
+
+
+def test_the_beeswarm_figure_draws_a_row_per_column_and_per_level(
+    notebook_defs: dict,
+) -> None:
+    # 7.1b, a function since 7.1c (section 5's and the test part's): the
+    # columns by the cohort's mean |SHAP|, the largest on top; a category a
+    # row per sorted level, kept at its place, in gray; one colorbar for the
+    # numeric rows; the dots' jitter seeded.
+    beeswarm_figure = notebook_defs["beeswarm_figure"]
+    X = pd.DataFrame(
+        {"x": [1.0, 2.0, 3.0, 4.0], "s": ["b", "a", "b", "a"], "z": [5.0] * 4}
+    )
+    values = np.empty((4, 3, 2))
+    values[:, :, 0] = [0.1, -0.5, 1.0]
+    values[:, :, 1] = [-1.0, 0.5, 0.1]
+    explanation = shap.Explanation(
+        values=values,
+        base_values=np.zeros((4, 2)),
+        feature_names=list(X.columns),
+        output_names=["cohort_a", "cohort_b"],
+    )
+    figure = beeswarm_figure(explanation, X, "cohort_a", 0)
+    labels = ["z", "s = a", "s = b", "x"]
+    assert [trace.name for trace in figure.data] == labels
+    assert list(figure.layout.yaxis.ticktext) == labels
+    level_rows = [trace for trace in figure.data if " = " in trace.name]
+    assert [trace.marker.color for trace in level_rows] == ["#898781"] * 2
+    assert [list(trace.customdata) for trace in level_rows] == [["a", "a"], ["b", "b"]]
+    assert sum(bool(trace.marker.showscale) for trace in figure.data) == 1
+    jitter = np.random.default_rng(0).uniform(-0.3, 0.3, len(X))
+    np.testing.assert_array_equal(figure.data[0].y, 3 + jitter)
+    np.testing.assert_array_equal(figure.data[3].x, [0.1] * 4)
+    other_cohort = beeswarm_figure(explanation, X, "cohort_b", 0)
+    assert [trace.name for trace in other_cohort.data] == [
+        "x",
+        "s = a",
+        "s = b",
+        "z",
+    ]
+
+
+def test_the_permutation_figure_draws_a_box_per_split_ordered_by_the_last(
+    notebook_defs: dict,
+) -> None:
+    # 7.1d: per split a box of each column's drops over the repeats, the
+    # columns by the last split's mean (the largest on top: a category axis
+    # draws its first category at the bottom), the last split in blue, an
+    # earlier one in gray, a dotted rule at 0.
+    permutation_figure = notebook_defs["permutation_figure"]
+    train = Bunch(
+        importances=np.array([[0.9, 1.1], [0.0, 0.2], [0.4, 0.6]]),
+        importances_mean=np.array([1.0, 0.1, 0.5]),
+    )
+    val = Bunch(
+        importances=np.array([[0.1, 0.3], [-0.1, 0.1], [0.5, 0.7]]),
+        importances_mean=np.array([0.2, 0.0, 0.6]),
+    )
+    figure = permutation_figure(
+        {"train": train, "val": val}, ["a", "b", "c"], "composite rmse"
+    )
+    assert [trace.name for trace in figure.data] == ["train", "val"]
+    assert [trace.marker.color for trace in figure.data] == ["#898781", "#2a78d6"]
+    assert list(figure.layout.yaxis.categoryarray) == ["b", "a", "c"]
+    assert list(figure.data[1].y) == ["b", "b", "a", "a", "c", "c"]
+    np.testing.assert_array_equal(figure.data[1].x, [-0.1, 0.1, 0.1, 0.3, 0.5, 0.7])
+    np.testing.assert_array_equal(figure.data[0].x, [0.0, 0.2, 0.9, 1.1, 0.4, 0.6])
+    assert [(shape.x0, shape.line.dash) for shape in figure.layout.shapes] == [
+        (0, "dot")
+    ]
+    assert figure.layout.xaxis.title.text == "drop in the composite rmse when shuffled"
+    test_only = permutation_figure({"test": train}, ["a", "b", "c"], "n_x rmse")
+    assert list(test_only.layout.yaxis.categoryarray) == ["b", "c", "a"]
+    assert test_only.layout.xaxis.title.text == "drop in the n_x rmse when shuffled"
+    assert [trace.marker.color for trace in test_only.data] == ["#2a78d6"]

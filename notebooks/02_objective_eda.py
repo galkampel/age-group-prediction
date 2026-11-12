@@ -244,6 +244,9 @@ def _(mo, pd):
     # TPE's random start: the trials drawn at random before its model guides the
     # draws; 10% of the budget, Optuna's default (D31).
     n_startup_trials = 10
+    # The tuner's objective, the composite's cross-validated score every study
+    # minimizes: "rmse" or "poisson_deviance" (D42).
+    objective_metric = "rmse"
 
     # What every run logs.
     EXPERIMENT_SETTINGS = {
@@ -254,6 +257,7 @@ def _(mo, pd):
         "n_splits": n_splits,
         "n_trials": n_trials,
         "n_startup_trials": n_startup_trials,
+        "objective_metric": objective_metric,
     }
     print(
         "experiment_settings "
@@ -264,6 +268,7 @@ def _(mo, pd):
         n_splits,
         n_startup_trials,
         n_trials,
+        objective_metric,
         seed,
         split_method,
         test_size,
@@ -336,7 +341,7 @@ def _(
         f"split n_train={len(train_index)} n_val={len(val_index)} "
         f"n_test={len(test_index)}"
     )
-    return splitter, train_age_group, val_age_group
+    return splitter, test_age_group, train_age_group, val_age_group
 
 
 @app.cell
@@ -638,8 +643,7 @@ def _(mo):
     the legend hides one), the y-axis over the bulk of the trials. The
     independent cohorts model keeps the sharing flags of its runs in the
     tuning notebook (one set of hyperparameters, a transformer per cohort).
-    The total times probability model is tuned by coordinate descent, as its
-    runs in the tuning notebook: its
+    The total times probability model is tuned by coordinate descent: its
     total with the probabilities fixed at a plain logistic model, then its
     logistic probabilities with that best total fixed; its `cv_best` is the
     second study's value, the pair's, and its seconds are the two studies'.
@@ -649,8 +653,9 @@ def _(mo):
     seconds the study's. Coordinate descent gives each part its own
     `n_trials` and is exact under the Poisson deviance only; the joint study
     searches both parts' dimensions at once in `n_trials`. At 100 trials the
-    two were the same within the noise, so the tuning notebook switches to
-    the joint method (D40).
+    two were the same within the noise, so the tuning notebook tunes it by
+    the joint method (D40). The tuner's own objective is `objective_metric`
+    (RMSE since D42); each EDA study replaces it with its objective.
     The expected caveat: the log loss scores each row's proportions only
     (the row divided by its sum), so under it the independent cohorts
     model's scale and the total times probability model's total get no
@@ -665,7 +670,8 @@ def _(mo):
     what the study tunes (the model, or the total times probability model's
     coordinate-descent step), its run settings, its objective and its seed.
     So a changed setting is a new study, and a study run in both notebooks
-    (each model's first run under the Poisson deviance) is tuned once. Delete
+    (each model's first run under the tuner's objective, the total times
+    probability model's by the joint method) is tuned once. Delete
     a study's file to tune it again: a change to the code or the search
     spaces is not detected.
     """)
@@ -731,21 +737,21 @@ def _(
     mean_bias_error,
     mean_poisson_deviance_loss,
     multinomial_log_loss,
+    objective_metric,
     root_mean_squared_error_loss,
     wmape_loss,
 ):
-    # The primary metric: the tuner's objective, with the direction Optuna is
-    # given; a loss, so "minimize".
+    # Each metric with the direction Optuna is given; a loss, so "minimize".
     POISSON_DEVIANCE = Metric(
         "poisson_deviance", mean_poisson_deviance_loss, direction="minimize"
     )
     LOG_LOSS = Metric("log_loss", multinomial_log_loss, direction="minimize")
     RMSE = Metric("rmse", root_mean_squared_error_loss, direction="minimize")
 
-    # Every metric, the primary first: what every trial records and the refit
-    # best models' validation scores (each cohort through `cohort=`, then the
-    # composite). The count metrics pool the (building, cohort) cells. Bias is
-    # signed, so its direction is nominal.
+    # Every metric: what every trial records and the refit best models'
+    # validation scores (each cohort through `cohort=`, then the composite).
+    # The count metrics pool the (building, cohort) cells. Bias is signed, so
+    # its direction is nominal.
     METRICS = (
         POISSON_DEVIANCE,
         LOG_LOSS,
@@ -754,9 +760,17 @@ def _(
         Metric("wmape", wmape_loss, direction="minimize"),
         Metric("bias", mean_bias_error, direction="minimize"),
     )
+    # The objective metric: the tuner's objective, the score every study
+    # minimizes (the EDA's studies replace it with each of EDA_OBJECTIVES).
+    if objective_metric == "rmse":
+        OBJECTIVE_METRIC = RMSE
+    elif objective_metric == "poisson_deviance":
+        OBJECTIVE_METRIC = POISSON_DEVIANCE
+    else:
+        raise ValueError(f"unknown objective_metric {objective_metric!r}")
     # The objective EDA's objectives, the same objects as in METRICS.
     EDA_OBJECTIVES = (LOG_LOSS, POISSON_DEVIANCE, RMSE)
-    return EDA_OBJECTIVES, METRICS, POISSON_DEVIANCE
+    return EDA_OBJECTIVES, METRICS, OBJECTIVE_METRIC
 
 
 @app.cell
@@ -772,7 +786,7 @@ def _(Y, np):
 def _(
     CrossValidationTuner,
     METRICS,
-    POISSON_DEVIANCE,
+    OBJECTIVE_METRIC,
     config_hash,
     cv,
     mo,
@@ -808,14 +822,14 @@ def _(
             }.items()
         )
     )
-    # The study's design, the same for every run: the Poisson deviance of the
+    # The study's design, the same for every run: the objective metric of the
     # composite on each fold, the plain mean over them, the first
     # n_startup_trials of n_trials at random; each trial fits its folds in
     # n_splits processes (D13, D20, D26) and records its cross-validated score
     # on every metric, from the same fold predictions.
     tuner = CrossValidationTuner(
         cv=cv,
-        objective_metric=POISSON_DEVIANCE,
+        objective_metric=OBJECTIVE_METRIC,
         n_trials=n_trials,
         n_startup_trials=n_startup_trials,
         n_jobs=n_splits,
@@ -841,6 +855,27 @@ def _(
 
 
 @app.cell
+def _(ProbabilityComponent, dataclasses):
+    def find_feature_transformer_name(component, candidates):
+        """The name of `component`'s feature transformer among `candidates`
+        (a family's candidates by name), found by identity."""
+        return next(
+            transformer_name
+            for transformer_name, transformer in candidates.items()
+            if transformer is component.feature_transformer
+        )
+
+    def read_hyperparameters(component):
+        """`component`'s hyperparameters, a classifier's with its calibration."""
+        hyperparameters = dataclasses.asdict(component.estimator_params)
+        if isinstance(component, ProbabilityComponent):
+            hyperparameters["calibration_method"] = component.calibration_method
+        return hyperparameters
+
+    return find_feature_transformer_name, read_hyperparameters
+
+
+@app.cell
 def _(LogisticParams, PROBABILITY_FEATURE_TRANSFORMERS, ProbabilityComponent):
     # The total times probability model's fixed probabilities in coordinate
     # descent's step 1. The composite deviance is the total's deviance plus
@@ -858,7 +893,7 @@ def _(LogisticParams, PROBABILITY_FEATURE_TRANSFORMERS, ProbabilityComponent):
 
 
 @app.cell
-def _(ProbabilityComponent, pd):
+def _(find_feature_transformer_name, pd, read_hyperparameters):
     def build_trials_table(
         study, objective, metric_names, components_by_trial, feature_transformer_dict
     ):
@@ -872,20 +907,16 @@ def _(ProbabilityComponent, pd):
         transformer's name is found by identity."""
         trial_records = []
         for trial, components in zip(study.trials, components_by_trial, strict=True):
-            feature_transformers, hyperparameters = {}, {}
-            for component in components:
-                candidates = feature_transformer_dict[component.name]
-                feature_transformers[component.name] = next(
-                    transformer_name
-                    for transformer_name, transformer in candidates.items()
-                    if transformer is component.feature_transformer
+            feature_transformers = {
+                component.name: find_feature_transformer_name(
+                    component, feature_transformer_dict[component.name]
                 )
-                estimator_params = component.to_dict()["estimator_params"]
-                if isinstance(component, ProbabilityComponent):
-                    estimator_params["calibration_method"] = (
-                        component.calibration_method
-                    )
-                hyperparameters[component.name] = estimator_params
+                for component in components
+            }
+            hyperparameters = {
+                component.name: read_hyperparameters(component)
+                for component in components
+            }
             trial_records.append(
                 {
                     "id": trial.number,
@@ -942,8 +973,8 @@ def _(
     # The independent cohorts model's EDA run: one study per objective, each
     # seeded seed, so the three share their startup draws (M8); the tuner's
     # design but its metric. A failed trial is caught by the study. The run
-    # settings of the tuning notebook's first run: its deviance study is that
-    # run's.
+    # settings of the tuning notebook's first run: its study on the tuner's
+    # objective is that run's.
     _run_settings = {
         "family": "lgbm_poisson",
         "use_exposure": True,
@@ -1053,11 +1084,10 @@ def _(
     val_age_group,
 ):
     mo.stop(not run_eda.value, mo.md("Click the button to run the objective EDA."))
-    # The total times probability model's EDA run, by coordinate descent as its
-    # runs in the tuning notebook: per objective, step 1 tunes the total with
-    # the fixed classifier, step 2 the probabilities with step 1's best total;
-    # every study seeded seed (M8). Step 2's value is the pair's cv: its fixed
-    # total is the pair's.
+    # The total times probability model's EDA run, by coordinate descent: per
+    # objective, step 1 tunes the total with the fixed classifier, step 2 the
+    # probabilities with step 1's best total; every study seeded seed (M8).
+    # Step 2's value is the pair's cv: its fixed total is the pair's.
     _total_family, _probability_family, _use_exposure = "lgbm_poisson", "logistic", True
     _metric_names = [metric.name for metric in METRICS]
     _feature_transformer_dict = {
@@ -1222,7 +1252,9 @@ def _(
     mo.stop(not run_eda.value, mo.md("Click the button to run the objective EDA."))
     # The total times probability model's EDA run by the joint method, to compare
     # with coordinate descent's above on the same setting: per objective, one
-    # study whose every trial draws both components, seeded seed (M8).
+    # study whose every trial draws both components, seeded seed (M8). The run
+    # settings of the tuning notebook's first run: its study on the tuner's
+    # objective is that run's.
     _run_settings = {
         "total_family": "lgbm_poisson",
         "probability_family": "logistic",
@@ -1331,13 +1363,13 @@ def _(
     _metric_names = [metric.name for metric in METRICS]
     _rows = []
     for _model, _trials, _scores in (
-        ("model1", eda_model1_trials_df, eda_model1_df),
+        ("independent_cohorts", eda_model1_trials_df, eda_model1_df),
         (
-            "model2",
+            "total_times_probability_coordinate_descent",
             eda_model2_trials_df[eda_model2_trials_df["step"] == "probability"],
             eda_model2_df,
         ),
-        ("model2_joint", eda_model2_joint_trials_df, eda_model2_joint_df),
+        ("total_times_probability", eda_model2_joint_trials_df, eda_model2_joint_df),
     ):
         for _objective, _study_trials in _trials.groupby("objective", sort=False):
             _best = _study_trials.loc[_study_trials[_objective].idxmin()]
@@ -1366,9 +1398,10 @@ def _(
             mo.md(
                 "**The objective EDA: the best model per objective** (each study's "
                 "best trial, the total times probability model's by coordinate "
-                "descent (model2) in its probability step, by the joint method "
-                "(model2_joint) in its one study; cv_: its cross-validated scores; "
-                "val_: the refit's composite on validation)"
+                "descent (total_times_probability_coordinate_descent) in its "
+                "probability step, by the joint method (total_times_probability) "
+                "in its one study; cv_: its cross-validated scores; val_: the "
+                "refit's composite on validation)"
             ),
             mo.ui.table(eda_best_df.round(4)),
         ]
@@ -1417,9 +1450,9 @@ def _(
     _surface, _ink = "#fcfcfb", "#52514e"
     eda_figures = {}
     for _model, _trials in (
-        ("model1", eda_model1_trials_df),
-        ("model2", eda_model2_trials_df),
-        ("model2_joint", eda_model2_joint_trials_df),
+        ("independent_cohorts", eda_model1_trials_df),
+        ("total_times_probability_coordinate_descent", eda_model2_trials_df),
+        ("total_times_probability", eda_model2_joint_trials_df),
     ):
         for _objective, _study_trials in _trials.groupby("objective", sort=False):
             _study_trials = _study_trials.reset_index(drop=True)
@@ -1428,11 +1461,11 @@ def _(
                 & (eda_best_df["objective"] == _objective),
                 "best_id",
             ].iloc[0]
-            if _model in ("model1", "model2_joint"):
+            if _model in ("independent_cohorts", "total_times_probability"):
                 _labels = "trial " + _study_trials["id"].astype(str)
                 _is_best = _study_trials["id"] == _best_id
                 _probability_start = None
-            elif _model == "model2":
+            elif _model == "total_times_probability_coordinate_descent":
                 _labels = (
                     _study_trials["step"] + " trial " + _study_trials["id"].astype(str)
                 )
@@ -1519,30 +1552,33 @@ def _(
                 "**The independent cohorts model: every metric per trial** (the "
                 "study of the chosen objective; the star its best trial)"
             ),
-            eda_figures["model1", eda_objective.value],
+            eda_figures["independent_cohorts", eda_objective.value],
             mo.md(
                 "**The total times probability model by coordinate descent: every "
                 "metric per trial** (the total step's trials, then the probability "
                 "step's; the star its best trial, in the probability step)"
             ),
-            eda_figures["model2", eda_objective.value],
+            eda_figures[
+                "total_times_probability_coordinate_descent", eda_objective.value
+            ],
             mo.md(
                 "**The total times probability model by the joint method: every "
                 "metric per trial** (one study drawing both components; the star its "
                 "best trial)"
             ),
-            eda_figures["model2_joint", eda_objective.value],
+            eda_figures["total_times_probability", eda_objective.value],
         ]
     )
     return
 
 
 @app.cell
-def _(METRICS, mo):
-    # The recorded metric on which the EDA's objectives are compared.
+def _(METRICS, mo, tuner):
+    # The recorded metric on which the EDA's objectives are compared; the
+    # tuner's objective by default.
     eda_recorded_metric = mo.ui.dropdown(
         options=[metric.name for metric in METRICS],
-        value=METRICS[0].name,
+        value=tuner.objective_metric.name,
         label="Recorded metric",
     )
     return (eda_recorded_metric,)
@@ -1574,15 +1610,15 @@ def _(
     _surface, _ink = "#fcfcfb", "#52514e"
     eda_metric_figures = {}
     for _model, _trials in (
-        ("model1", eda_model1_trials_df),
-        ("model2", eda_model2_trials_df),
-        ("model2_joint", eda_model2_joint_trials_df),
+        ("independent_cohorts", eda_model1_trials_df),
+        ("total_times_probability_coordinate_descent", eda_model2_trials_df),
+        ("total_times_probability", eda_model2_joint_trials_df),
     ):
-        if _model in ("model1", "model2_joint"):
+        if _model in ("independent_cohorts", "total_times_probability"):
             _x_column, _boxmode = "objective", "overlay"
             _labels = "trial " + _trials["id"].astype(str)
             _best_candidates = _trials
-        elif _model == "model2":
+        elif _model == "total_times_probability_coordinate_descent":
             _x_column, _boxmode = "step", "group"
             _labels = _trials["step"] + " trial " + _trials["id"].astype(str)
             _best_candidates = _trials[_trials["step"] == "probability"]
@@ -1670,19 +1706,21 @@ def _(
                 "chosen metric** (a box per objective's study with every trial; the "
                 "star its best trial)"
             ),
-            eda_metric_figures["model1", eda_recorded_metric.value],
+            eda_metric_figures["independent_cohorts", eda_recorded_metric.value],
             mo.md(
                 "**The total times probability model by coordinate descent: the "
                 "objectives compared on the chosen metric** (each step's trials; the "
                 "star its best trial, in the probability step)"
             ),
-            eda_metric_figures["model2", eda_recorded_metric.value],
+            eda_metric_figures[
+                "total_times_probability_coordinate_descent", eda_recorded_metric.value
+            ],
             mo.md(
                 "**The total times probability model by the joint method: the "
                 "objectives compared on the chosen metric** (a box per objective's "
                 "study with every trial; the star its best trial)"
             ),
-            eda_metric_figures["model2_joint", eda_recorded_metric.value],
+            eda_metric_figures["total_times_probability", eda_recorded_metric.value],
         ]
     )
     return

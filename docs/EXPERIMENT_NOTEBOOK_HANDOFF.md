@@ -1,4 +1,428 @@
-# Handoff: the experiment notebooks, PR 6 (two notebooks) closed; PR 7 (7.0) next
+# Handoff: the experiment notebooks, PR 7 closed (the user's PR and merge next); then E11's run, the MLflow runs and D4
+
+**Status (2026-11-12, PR 7 closed, before the user's commit, PR and merge; the next session starts at §6):**
+- **7.1d and 7.1e are committed** as `aaf7196` (the user's; the md5 as checked, no marimo save).
+- **The close** (no notebook or `src` change; `run_close_7.sh`, log `run_close_7.log`): the
+  non-slow suite 1411 passed, 1 skipped, 1 xfailed; mypy 28 files clean; the notebook tests 32;
+  ruff `03` 14, `02` 11, the two test files clean; the user's two format hunks in each notebook;
+  `marimo check` clean; Check B on both; Check C on the EDA (16 s: every frame and the 27
+  figures equal to 7.1e's run) and on the tuning (335 s: every assertion from 7.0 to 7.1e, every
+  shared frame and record equal to 7.1e's run, nothing skipped).
+- **The uncommitted files:** `docs/NOTEBOOK_CACHE_EVALUATION_PLAN.md`, this handoff. The commit:
+
+  ```text
+  docs(notebook): PR 7 closed: the checks on HEAD, the plan's status; the handoff for after the merge
+  ```
+- **The PR text** is in the scratchpad below (`pr_7.md`, for `gh pr create --body-file`), title
+  `feat(notebook): Model 2 by the joint method, the best runs compared, SHAP per cohort and the test evaluation (PR 7)`.
+- **The notebooks' md5:** `02_objective_eda.py` `373c1c39f717935cb08ce14ff6e05a3a`,
+  `03_hyperparameter_tuning.py` `47c8ce343350475eebe8c2007a00397e`.
+- **The test part has still not been run on the user's cache** (E11).
+- **Noticed, left (the user's call):** section 6's text (the paragraph "The same click explains
+  …") does not name 7.1d/7.1e's permutation figure and its Cohort menu.
+- **The scratchpad to copy first:** `/private/tmp/claude-501/-Users-galkampel-Desktop-Projects-age-group-prediction/f701aef6-03a7-4737-9781-4cee1cc6a750/scratchpad`: `checks/` (§4's "Since PR 7's
+  close", "Since 7.1e", "Since 7.1d"), `probes/`, `viewer/`, `new_cells_7_1e/`, the logs
+  `run_close_7.log`, `run_7_1e.log`, `run_7_1e_rest.log`, `pr_7.md`, and the pickles
+  `check_c_close_7_tuning.pkl` (the tuning's reference), `check_c_close_7_eda.pkl` with its two
+  figures' JSON (the EDA's), `check_c_7_1e_*`, `check_c_7_1d_*`, `check_c_7_1b2_beeswarm.json`
+  (section 5's beeswarm; `check_c_7_1e_tuning.py` reads it beside its out pickle),
+  `check_c_3_1l.pkl`, `probe_7_1.pkl`.
+
+**Status (2026-11-12, end of session; 7.1e done and checked; the next session starts at §6):**
+- **7.1e (the user's request after checking 7.1d: "Looks good!"):** the permutation importance
+  per cohort, a Cohort menu (composite, then each cohort) over section 5's figure (train and
+  validation) and over the test's, notebook-only (the user's answers: no `src` change;
+  validation too). The cache plan's 7.1e Done note has the design and the checks.
+- **7.1d and 7.1e are uncommitted and share one commit** (the user's answer; HEAD `9779eb2`):
+
+  ```text
+  feat(notebook): the permutation importance drawn per cohort, a box of the repeats per column under a Cohort menu for validation and test; the test counts colored by the true total; the shares' number of children and the truth's interval (7.1d, 7.1e)
+  ```
+- **Every check passed** (`run_7_1e.log`: Check A, B, the EDA's Check C; `run_7_1e_rest.log`: the
+  tuning's Check C, the mutation, the look, the screenshots, the suite 1411, mypy). **Left: the
+  user checks it (`marimo run`, read-only) and commits, or asks for changes.**
+- **The uncommitted files:** `notebooks/03_hyperparameter_tuning.py`,
+  `tests/characterization/test_hyperparameter_tuning_notebook.py`,
+  `docs/NOTEBOOK_CACHE_EVALUATION_PLAN.md`, this handoff.
+- **The notebooks' md5:** `02_objective_eda.py` `373c1c39f717935cb08ce14ff6e05a3a`,
+  `03_hyperparameter_tuning.py` `47c8ce343350475eebe8c2007a00397e`.
+- **The test part has still not been run on the user's cache** (E11).
+- **The scratchpad to copy first:** `/private/tmp/claude-501/-Users-galkampel-Desktop-Projects-age-group-prediction/0befa878-cb03-487e-a0b1-7f0b82b7351f/scratchpad`: `checks/` (§4's "Since 7.1e" and "Since 7.1d"),
+  `probes/` (`look_7_1e.py`, `run_look_7_1e.sh`, …), `viewer/`, `new_cells_7_1e/`,
+  `new_cells_7_1d/`, `nb_7_1d.py`, the logs `run_7_1e.log`, `run_7_1e_rest.log`, and the pickles
+  `check_c_7_1e_tuning.pkl` (the tuning's reference), `check_c_7_1e_eda.pkl` with its two
+  figures' JSON (the EDA's), `check_c_7_1b2_beeswarm.json` (section 5's beeswarm),
+  `check_c_7_1d_*`, `check_c_3_1l.pkl`, `probe_7_1.pkl`.
+
+**Status (2026-11-12, end of session; the user checks 7.1d later; the next session starts at §6):**
+- **7.1c is committed** as `9779eb2` (the user's), with marimo's save from the user's session (3
+  split signatures, 6 trimmed returns, a reordered return, an empty last cell): undone in 7.1d
+  (the user's answer).
+- **7.1d is done, uncommitted** (the cache plan's 7.1d Done note; §3's 7.1d answers): the
+  user's review of 7.1c. The permutation importance drawn (`permutation_figure`: a box of the
+  repeats per column under each importance table, section 5's train and validation, section 6's
+  test); the test count scatter colored by the true total of children (not `n_apartments`); the
+  shares bars' n children in the title and the true bars' 95% interval.
+- **Every check passed** (`run_7_1d.log`, `run_7_1d_title.log`): the notebook tests 32, ruff `03`
+  14 and `02` 11, `marimo check` clean, Check B, Check C on both (every frame equal to 7.1c's
+  run), the look, the mutation, the screenshots, the suite 1411, mypy. **Left: the user
+  checks the implementation in the next session (`marimo run`, read-only) and commits it, or
+  asks for changes (a new stop).** The user's marimo session held the old code at the end of
+  this one: if it saved over the notebook, the md5 differs (show the diff, as in 7.1c's).
+- **The uncommitted files:** `notebooks/03_hyperparameter_tuning.py`,
+  `tests/characterization/test_hyperparameter_tuning_notebook.py`,
+  `docs/NOTEBOOK_CACHE_EVALUATION_PLAN.md`, this handoff. HEAD `9779eb2`.
+- **The notebooks' md5:** `02_objective_eda.py` `373c1c39f717935cb08ce14ff6e05a3a`,
+  `03_hyperparameter_tuning.py` `fed0b570d008aea48cf1474838c745a9`.
+- **The test part has still not been run on the user's cache** (E11).
+- **The scratchpad to copy first:** `/private/tmp/claude-501/-Users-galkampel-Desktop-Projects-age-group-prediction/0befa878-cb03-487e-a0b1-7f0b82b7351f/scratchpad`: `checks/` (§4's "Since 7.1d": `run_7_1d.sh`,
+  `run_7_1d_title.sh`, `run_c_tuning_7_1d.sh`, `check_c_7_1d_tuning.py` and
+  `make_check_c_7_1d.py`, `run_mutants_7_1d.sh`, and the older scripts), `probes/`
+  (`look_7_1d.py`, `run_look_7_1d.sh`, …), `viewer/`, `new_cells_7_1d/`, `nb_revised3.py`, the
+  logs `run_7_1d.log`, `run_7_1d_title.log`, and the pickles `check_c_7_1d_tuning.pkl` (the
+  tuning's reference), `check_c_7_1d_eda.pkl` with its two figures' JSON (the EDA's),
+  `check_c_7_1b2_beeswarm.json` (section 5's beeswarm), `check_c_7_1c_*`, `check_c_7_1b2_*`,
+  `check_c_3_1l.pkl`, `probe_7_1.pkl`.
+
+**Status (2026-11-11, end of session; the user had no time to validate; the next session starts at §6):**
+- **7.1c is implemented, revised twice at the user's reviews, uncommitted** (the cache plan's 7.1c
+  Done note; §3's 7.1c answers). The current design:
+  - "Evaluate on the test part" also explains the refit models (exact SHAP and the permutation
+    importance on all 306 test buildings); right after the test scores, a feature-importance table
+    per model and a test beeswarm (own Cohort menu) through `beeswarm_figure`, which section 5's
+    beeswarm also calls (its figures unchanged);
+  - under 7.3's best/worst tables, a waterfall per model: one Show switch (best / worst, worst),
+    the waterfalls' own Cohort (`n_kindergarten` by default, the composite optional) that ranks
+    and is explained, and per model a building dropdown (`rank: id`) of its best or worst k by
+    the tables' metric and k; 7.3's tables cell is unchanged.
+- **The checks of this last version passed** (`run_7_1c.sh`, log `run_7_1c3.log` in the scratchpad
+  below, finished 17:3x): Check A (the notebook tests 31, ruff `03` 14, `02` 11, the two format
+  hunks, `marimo check` clean), Check B on both, Check C on the EDA and on the tuning (262 s), both
+  mutations caught, the variant look, the screenshots, the non-slow suite 1410 passed, mypy 28
+  files clean. The cache plan's 7.1c Done note holds them. **Left: the user validates (with
+  `marimo run`) and commits.**
+- **The uncommitted files:** `notebooks/03_hyperparameter_tuning.py`,
+  `tests/characterization/test_hyperparameter_tuning_notebook.py`,
+  `docs/NOTEBOOK_CACHE_EVALUATION_PLAN.md`, this handoff. HEAD `57fd52a` (7.1b).
+- **The notebooks' md5:** `02_objective_eda.py` `373c1c39f717935cb08ce14ff6e05a3a`,
+  `03_hyperparameter_tuning.py` `66214dcd3a26a9de3faa8e90a22baffe`.
+- **The user's marimo editor session saved over the notebook three times today** (trimmed
+  returns, split signatures, an empty last cell; no logic change): each time the edit was rebuilt
+  on the version before, the trims undone (the user's answer). Tell the user to look with
+  `.venv/bin/marimo run notebooks/03_hyperparameter_tuning.py` (read-only), or to close the
+  editor session before an edit; check the md5 before every edit.
+- **The test part has still not been run on the user's cache** (E11).
+- **The scratchpad to copy first:** `/private/tmp/claude-501/-Users-galkampel-Desktop-Projects-age-group-prediction/d51baf0b-dc98-4c04-b859-52aba2f94828/scratchpad`: `checks/` (`run_7_1c.sh`, `run_c_tuning_7_1c.sh`,
+  `check_c_7_1c_tuning.py` with its `.block` and `make_check_c_7_1c.py`, `run_mutants_7_1c.sh`,
+  `make_copy_tuning.py`, the older scripts), `probes/` (`look_7_1c.py`, `run_look_7_1c.sh`),
+  `viewer/`, `new_cells_7_1c3/` (this version's cells and `revise.py`), the logs `run_7_1c3.log`,
+  `run_7_1c2.log`, and the pickles `check_c_7_1c_tuning.pkl`, `check_c_7_1c_eda.pkl` with its two
+  figures' JSON, `check_c_7_1b2_tuning.pkl`, `check_c_7_1b2_eda.pkl` with its two figures' JSON,
+  `check_c_7_1b2_beeswarm.json` (section 5's beeswarm), `check_c_3_1l.pkl`, `probe_7_1.pkl`.
+
+**Status (2026-11-11, 7.1c done, before the user's commit; the next session starts at §6):**
+- **7.1b is committed** as `57fd52a` (the user's), after its last checks on the gray version
+  passed (the mutation, the screenshots, the suite 1408, mypy). The commit holds marimo's save
+  from the user's session (four trimmed returns, an empty last cell): ruff `03` 18, `marimo
+  check` one warning; 7.1c undoes it (the user's answer).
+- **7.1c is done, revised at the user's review of its first version** (the cache plan's 7.1c
+  Done note): "Evaluate on the test part" also explains the refit models (the permutation
+  importance and exact SHAP on all 306 test buildings), shown after the test scores (a table per
+  model, a beeswarm per cohort through `beeswarm_figure`, which section 5's beeswarm now calls
+  too, its figures unchanged); under the best/worst tables a waterfall per model of a building
+  chosen in its dropdown (its best or worst k on the waterfalls' own cohort, by the tables'
+  metric and k). **Not run on the user's cache** (E11).
+- **The user's marimo editor session saved the notebook three times during 7.1c** (16:31, 17:03
+  and in `57fd52a`: trimmed returns, split signatures, an empty cell): each revision was built on
+  the version before the save, those trims undone. To look while checks run: `marimo run`
+  (read-only).
+- **The uncommitted files:** `notebooks/03_hyperparameter_tuning.py`,
+  `tests/characterization/test_hyperparameter_tuning_notebook.py`,
+  `docs/NOTEBOOK_CACHE_EVALUATION_PLAN.md`, this handoff. HEAD `57fd52a`.
+- **The notebooks' md5:** `02_objective_eda.py` `373c1c39f717935cb08ce14ff6e05a3a`,
+  `03_hyperparameter_tuning.py` `66214dcd3a26a9de3faa8e90a22baffe`.
+- **Next: PR 7's close** (§6).
+- **The scratchpad to copy first:** `/private/tmp/claude-501/-Users-galkampel-Desktop-Projects-age-group-prediction/d51baf0b-dc98-4c04-b859-52aba2f94828/scratchpad`:
+  `checks/` (§4's "Since 7.1c": `run_7_1c.sh`, `run_c_tuning_7_1c.sh`, `check_c_7_1c_tuning.py`,
+  `run_mutants_7_1c.sh`, and the older scripts), `probes/` (`look_7_1c.py`, `run_look_7_1c.sh`,
+  `probe_7_1c.py`, …), `viewer/`, `shots_7_1c/`, and the pickles `check_c_7_1c_tuning.pkl` (the
+  tuning's reference), `check_c_7_1c_eda.pkl` with its two figures' JSON (the EDA's),
+  `check_c_7_1b2_beeswarm.json` (section 5's beeswarm), `check_c_7_1b2_*`, `check_c_3_1l.pkl`,
+  `probe_7_1.pkl`.
+
+**Status (2026-11-11, end of session; implementation paused; the next session starts at §6):**
+- **7.1b is amended at the user's review, not committed** (the cache plan's 7.1b amendment):
+  - `perm` → `perm_fi` with train's spread: `perm_fi_mean_train`, `perm_fi_std_train`,
+    `perm_fi_mean_val`, `perm_fi_std_val`, then the mean |SHAP| columns;
+  - the beeswarm's `school_status` a row per level (`school_status = existing / none /
+    planned`), in gray (the user, after first seeing a color per level: a row holds one level,
+    so its value has no low or high);
+  - the user's question on `n_daycares_500m` answered (the simulator's small, saturating
+    effect; the cache plan's note).
+- **The uncommitted files:** `notebooks/03_hyperparameter_tuning.py`,
+  `tests/characterization/test_hyperparameter_tuning_notebook.py` (7.1b's beeswarm test, unchanged
+  by the amendment), `docs/NOTEBOOK_CACHE_EVALUATION_PLAN.md`, this handoff. HEAD `a47a748`.
+- **The checks of the gray version** (`run_7_1b2.sh`; the session ended during the mutation):
+  - **passed:** the notebook tests 29; ruff `03` 14, `02` 11 (as at HEAD); the user's two
+    format hunks; `marimo check` clean; Check B on both; Check C on the EDA (every frame and
+    figure equal to 7.1b's run); **Check C on the tuning** (187 s: the four `perm_fi` columns
+    recomputed; the beeswarm's 11 rows, the three level rows gray; every other frame equal to
+    7.1b's run with the columns renamed);
+  - **not rerun since the gray change** (they passed on the colored version, md5
+    `ee632893763020b7c43bb2d5dbc6abc7`): the mutation (now `run_mutant_7_1b2.sh`: each
+    level's row holding the other levels' rows, `==` → `!=`), the screenshots (`shots_7_1b2/`),
+    the non-slow suite (1408 passed), mypy (clean). **The next session runs these first**, then
+    the user commits 7.1b with the message in §6.
+- **7.1c is re-planned and approved** (the cache plan's 7.1c "Re-planned 2026-11-11"; the
+  session's plan file `/Users/galkampel/.claude/plans/pasted-content-id-f14f-read-docs-experi-federated-crane.md`,
+  its "Stop 2"): the waterfall from the base, its own "Cohort" menu, red raises / blue lowers;
+  the probe on Check C's 3-trial copy (35 s for both models' test SHAP and permutation). Its
+  test table's columns `perm_fi_mean_test`, `perm_fi_std_test`.
+- **Offered, not answered:** a beeswarm of the test buildings in 7.1c (the same test SHAP; not
+  planned). Ask the user once.
+- **The notebooks' md5:** `02_objective_eda.py` `373c1c39f717935cb08ce14ff6e05a3a`,
+  `03_hyperparameter_tuning.py` `7e0885006782467b5e6b99ca80600ff2`.
+- **The test part has still not been run on the user's cache** (E11).
+- **The scratchpad to copy first:** `/private/tmp/claude-501/-Users-galkampel-Desktop-Projects-age-group-prediction/13f876ba-8c00-49e8-8db8-7048ebb19f94/scratchpad`:
+  - `checks/` (§4's "Since 7.1b's amendment": `run_7_1b2.sh`, `run_c_tuning_7_1b2.sh`,
+    `check_c_7_1b2_tuning.py`, `run_mutant_7_1b2.sh`, and the older scripts);
+  - `probes/` (`probe_7_1c.py`, `run_probe_7_1c.sh`, `draft_school_status.py`,
+    `draft_waterfall_b.py`, 7.1's and 7.3's);
+  - `viewer/beeswarm_7_1b.py` (the beeswarm on the real 100-trial runs' validation SHAP from
+    `probe_7_1.pkl`, the notebook's two cells copied; `.venv/bin/marimo edit <it>`);
+  - `shots_7_1c/` (the waterfall and `school_status` drafts), `shots_7_1b2/`;
+  - the pickles `check_c_7_1b2_tuning.pkl` (the gray version's run: 7.1c's reference),
+    `check_c_7_1b2_eda.pkl` with its two figures' JSON, `check_c_7_1b_*`,
+    `check_c_3_1l.pkl`, `probe_7_1.pkl`.
+
+**Status (2026-11-10, end of session; implementation paused; the next session starts at §6):**
+- **7.1a is committed** as `a47a748` (the user's). **7.1b is done but not committed:** the user
+  validates it first (in their marimo session: "Inspect the best runs" on the real cache loads
+  the studies and runs SHAP, about two minutes; it does not touch the test part), then commits
+  it with the message in §6. The uncommitted files: `notebooks/03_hyperparameter_tuning.py`,
+  `tests/characterization/test_hyperparameter_tuning_notebook.py`,
+  `docs/NOTEBOOK_CACHE_EVALUATION_PLAN.md`, this handoff.
+- **Next: 7.1c** (the cache plan's 7.1c), then PR 7's close.
+- **The notebooks' md5:** `02_objective_eda.py` `373c1c39f717935cb08ce14ff6e05a3a`,
+  `03_hyperparameter_tuning.py` `5cf1856ec35237dc2f5891c7974101b2`.
+- **The test part has still not been run on the user's cache** (E11).
+- **The scratchpad to copy first:** `/private/tmp/claude-501/-Users-galkampel-Desktop-Projects-age-group-prediction/99bdc359-a398-40b1-92af-4986d8d47896/scratchpad`. It holds `checks/` (§4's "Since 7.1"),
+  `probes/` (`probe_7_1.py`, `run_probe_7_1.sh`, `draft_beeswarm_7_1.py`, 7.3's looks),
+  `probe_7_1.pkl` (the real 100-trial best runs' SHAP), `shots_7_1/`, `shots_7_1b/`, and the
+  pickles `check_c_7_1b_tuning.pkl` (the tuning's reference for 7.1c), `check_c_7_1b_eda.pkl`
+  with its two figures' JSON (the EDA's), `check_c_7_1a_*`, `check_c_7_3_*`,
+  `check_c_3_1l.pkl`.
+
+**Status (2026-11-10, 7.1a committed as `a47a748`; 7.1b done, before the user's commit; 7.1c next):**
+- **7.1b is done** (the cache plan's 7.1b Done note): the importance tables per model with the
+  mean |SHAP| per cohort (no ranks), the beeswarm with its own cohort menu.
+- **7.1c gained the permutation importance on the test part** (the user's request after first
+  keeping train and validation): the refit models, `importance_metric`, a test table per model
+  mirroring 7.1b's.
+- **The notebooks' md5:** `02_objective_eda.py` `373c1c39f717935cb08ce14ff6e05a3a`,
+  `03_hyperparameter_tuning.py` `5cf1856ec35237dc2f5891c7974101b2`.
+- **Check C's tuning reference** is now `check_c_7_1b_tuning.pkl` (`run_7_1b.sh`,
+  `run_7_1b_rest.sh`, `check_c_7_1b_tuning.py`, `run_mutant_7_1b.sh`), in the scratchpad named
+  below.
+
+**Status (2026-11-10, 7.1 planned and split; 7.1a done, before the user's commit; 7.1b next):**
+- **7.1 is planned** (the cache plan's 7.1, with the probe on the real best runs) as three
+  sub-tasks after the user's two notes: 7.1a `PermutationImportance` returns scikit-learn's
+  result; 7.1b SHAP per cohort (the tables without ranks, a beeswarm with its own cohort menu);
+  7.1c the test buildings' SHAP waterfalls behind their own button.
+- **7.1a is done** (the cache plan's 7.1a Done note): `src`, its tests, MODEL_INSPECTION.md and
+  `03`'s three inspection cells; `importance_df` and every Check C frame equal to 7.3's run.
+- **The notebooks' md5:** `02_objective_eda.py` `373c1c39f717935cb08ce14ff6e05a3a`,
+  `03_hyperparameter_tuning.py` `858cbfe2f3524ccf2c9b628082491740`.
+- **The test part has still not been run on the user's cache** (E11).
+- **The scratchpad:** `/private/tmp/claude-501/-Users-galkampel-Desktop-Projects-age-group-prediction/99bdc359-a398-40b1-92af-4986d8d47896/scratchpad`.
+  It holds `checks/` (7.3's, plus `run_7_1a.sh`, `run_c_tuning_7_1a.sh`,
+  `check_c_7_1a_tuning.py`, `run_mutant_7_1a.sh`), `probes/` (with `probe_7_1.py`,
+  `run_probe_7_1.sh`, `draft_beeswarm_7_1.py`), `probe_7_1.pkl` (the real runs' SHAP),
+  `shots_7_1/`, and the pickles `check_c_7_1a_tuning.pkl` (the tuning's reference),
+  `check_c_7_1a_eda.pkl` with its two figures' JSON, `check_c_7_3_*`, `check_c_3_1l.pkl`.
+
+**Status (2026-11-09, 7.3 committed and pushed; implementation paused; the next session starts at
+§6):**
+- **7.3 is committed** as `19e69ec` (the user's); `feat/test-evaluation` is level with `origin`.
+  The next sub-task is **7.1, SHAP per cohort** (the cache plan's 7.1), then PR 7's close.
+- **The notebooks' md5:** `01_eda.py` `4bc1ba3a52dc2ad55d0097a707bd1ccc`,
+  `02_objective_eda.py` `373c1c39f717935cb08ce14ff6e05a3a`, `03_hyperparameter_tuning.py`
+  `f44128a70f625c23419f873d5413c368`.
+- **The test part has still not been run on the user's cache** (E11): the user reads it first;
+  Check C runs it on the 3-trial copy only.
+- **The scratchpad to copy first:** `/private/tmp/claude-501/-Users-galkampel-Desktop-Projects-age-group-prediction/f37dc199-6bcb-4a3d-b0f1-d248c4ea76f3/scratchpad`. It holds `checks/` (§4's "Since 7.3": `run_7_3.sh`,
+  `run_c_tuning_7_3.sh`, `check_c_7_3_tuning.py`, `run_mutant_7_3.sh`, `check_b_tuning.py`,
+  `make_copy_tuning.py`, `compare_shared.py`, the EDA's `make_copy_eda.py`, `check_c_eda.py`,
+  `compare.py`, `compare_figures.py`, …), `probes/` (`look_7_3.py`, `run_look_7_3.sh`) and the
+  pickles `check_c_7_3_tuning.pkl` (the tuning's reference), `check_c_7_3_eda.pkl` with its two
+  figures' JSON (the EDA's), `check_c_3_1l.pkl`.
+- **What the user asked for in 7.3's two reviews** (apply to 7.1's tables and figures):
+  - a table in a residual table's order: the identifiers, the observed, the predicted, then
+    the error derived from them;
+  - raw values, not derived columns (no percentiles, anomaly flags, `predicted_minus_true`,
+    `test_minus_val` or totals beside their cohorts);
+  - one table per model (Model 1 first) rather than a model menu over one table;
+  - "per neighborhood" means a **filter** (one neighborhood's statistics), not an
+    aggregation level;
+  - grouped bars over stacked bars; each figure its own menus;
+  - a figure the user cannot read (the count heatmap) is replaced, not explained.
+
+**Status (2026-11-09, 7.3 done, before the user's commit; committed as `19e69ec`):**
+- **7.3 is done, revised twice at the user's reviews** (the cache plan's 7.3 Done note): a
+  Best / Worst switch with one table per model (ids, each cohort's true and predicted, the
+  score, the features with `3_rooms_share`) and each model's every building; the count figures
+  (a histogram, a scatter; the user dropped the count heatmap) under their own model and cohort
+  menus; a neighborhood filter (`all` or one of 129) with the selection's buildings, counts,
+  pooled shares (table, grouped bars) and both models' scores. 7.2's `test_minus_val` removed.
+  28 notebook tests; the suite 1407 passed; mypy clean. **Not run on the user's cache** (E11).
+  The empty cell the user's save added at the end is removed (the user's answer).
+- **The notebooks' md5:** `02_objective_eda.py` `373c1c39f717935cb08ce14ff6e05a3a`,
+  `03_hyperparameter_tuning.py` `f44128a70f625c23419f873d5413c368`.
+- **Check C's tuning reference** is now `check_c_7_3_tuning.pkl` (`run_7_3.sh`,
+  `run_c_tuning_7_3.sh`, `check_c_7_3_tuning.py`, `run_mutant_7_3.sh`; the look
+  `probes/run_look_7_3.sh`), in this session's scratchpad:
+  `/private/tmp/claude-501/-Users-galkampel-Desktop-Projects-age-group-prediction/f37dc199-6bcb-4a3d-b0f1-d248c4ea76f3/scratchpad`
+  (with the EDA's `check_c_7_3_eda.pkl` and its two figures' JSON, `check_c_3_1l.pkl`).
+
+**Status (2026-11-09, 7.2 committed and pushed; implementation paused; the next session starts at
+§6):**
+- **The session's commits** (on `b790457`, the handoff after 7.0b): `f0d240c` 5.4a (with the
+  user's `metric_name` edit), `96030f1` 5.4b, `0316c06` 7.2; `feat/test-evaluation` is level
+  with `origin`. **PR 7's order changed (the user):** 7.2, 7.3, then 7.1.
+- **The notebooks' md5:** `02_objective_eda.py` `373c1c39f717935cb08ce14ff6e05a3a`,
+  `03_hyperparameter_tuning.py` `376052b50cc90504d95ec2ac4dff26e0`.
+- **`0316c06` holds marimo's trims from the user's save** (verified: the code otherwise the
+  stop's; the notebook tests 27 passed, `marimo check` clean, the two format hunks): the test
+  evaluation cell no longer returns `test_predictions` and `train_val_age_group`, the test
+  display cell's return is bare (ruff 14 on `03`, the extra a PLR1711). Check C's
+  `make_copy_tuning.py` restores them (and the earlier trims); 7.3 reads `test_predictions`,
+  so marimo keeps it.
+- **The test part has not been run on the user's cache** (E11): the user reads it first; Check C
+  runs it on the 3-trial copy only.
+- **The user's open marimo session saved over an edit once** (5.4b): tell the user before
+  editing the notebook, ask them to reload it after, and check the md5 before each edit.
+- **The scratchpad to copy first:** `/private/tmp/claude-501/-Users-galkampel-Desktop-Projects-age-group-prediction/7b0b2d5d-c3e3-4184-94e5-b652c6e86fb1/scratchpad`. It holds `checks/` (§4's "Since 5.4":
+  `run_7_2.sh`, `check_c_5_4_tuning.py`, `make_copy_tuning.py`, `compare_shared.py`,
+  `run_mutant_7_2.sh`, …), `probes/` (the ridge-against-forest probe, the real-cache looks:
+  `make_copy_probe.py`, `look_*.py`), `viewer/ridge_vs_forest.py` and the pickles
+  `check_c_7_2_tuning.pkl` (the tuning's reference), `check_c_7_2_eda.pkl` with its two
+  figures' JSON (the EDA's), `check_c_3_1l.pkl`, `click_7_0.pkl`.
+
+**Status (2026-11-09, 7.2 done, before the user's commit; 7.3 next):**
+- **5.4b is committed** as `96030f1`. **PR 7's order changed (the user):** the test evaluation
+  (7.2, 7.3) before SHAP per cohort (7.1, last).
+- **7.2 is done** (the cache plan's 7.2 Done note): both split cells return `test_age_group`;
+  `best_runs` exported; section 6 "The test evaluation" behind "Evaluate on the test part":
+  each best run refit on train + validation (1223 rows), the test part (306) scored once with
+  the bootstrap, the two runs' figure and their difference under the section's own switch and
+  menu, the validation-against-test table, the tables. 27 notebook tests; the suite 1406
+  passed; mypy clean. **Not run on the user's cache** (E11: the user reads the test part first).
+- **The notebooks' md5:** `02_objective_eda.py` `373c1c39f717935cb08ce14ff6e05a3a`,
+  `03_hyperparameter_tuning.py` `5ef93a47e800c442302b537c57730a01`.
+- **Check C's references:** the tuning `check_c_7_2_tuning.pkl`, the EDA `check_c_7_2_eda.pkl`
+  with its two figures' JSON (`run_7_2.sh`, `run_c_tuning_7_2.sh`, `run_mutant_7_2.sh`), in
+  this session's scratchpad (named below).
+- **7.3 (the user's note):** the best and worst test buildings are `k`, 5 by default.
+
+**Status (2026-11-09, 5.4b done, before the user's commit; 7.1 next):**
+- **5.4a is committed** as `f0d240c`, with the user's `metric_name` edit (the cache plan's 5.4).
+- **5.4b is done** (the cache plan's 5.4b Done note, with its amendment): a "Metric" menu
+  (`best_runs_metric`: rmse, poisson_deviance or bias, the selection metric by default) beside
+  the runs' "Plot" switch; the permutation importance on `importance_metric` (the chosen loss;
+  the selection metric for bias); the two best runs' paired bootstrap difference
+  (`best_difference_replicates`, `best_difference_df`, its table) with its own switch (the
+  ridge first) and metric menu (all six). 26 notebook tests; the
+  non-slow suite 1405 passed; mypy 28 files.
+- **The notebooks' md5:** `02_objective_eda.py` `d74bf1357926732ee31c7e1a98e7bd67` (unchanged),
+  `03_hyperparameter_tuning.py` `2a2eb2576071e02f91eef47c7677344a`.
+- **The user's open marimo session saved over an edit once (10:44:29):** reload the notebook
+  in it after each edit, and check the md5 before each one.
+- **Check C's tuning reference** is now `check_c_5_4b2_tuning.pkl` (`check_c_5_4_tuning.py`,
+  `run_5_4b2.sh`, `run_c_tuning_5_4b2.sh`, `run_mutant_5_4b.sh`, `compare_shared.py`), in this
+  session's scratchpad (named in the status below).
+
+**Status (2026-11-09, 5.4a done, before the user's commit; committed as `f0d240c`):**
+- **The probe** (§5): the ridge plot against the forest plot on the real 100-trial best runs;
+  the user chose the **redesigned forest** for both figures. 5.4 is split into 5.4a and 5.4b
+  (the cache plan's 5.4).
+- **5.4a is done** (the cache plan's 5.4a Done note): `forest_figure` redesigned (a row per
+  cohort, the composite first, the two models in the palette's two colors, one legend,
+  `share_x_axis`) and, at the user's requests, `ridge_figure` (each model's replicates as a
+  density per cohort row, no dots or bars) behind a "Plot" switch (forest by default); two
+  characterization tests (25 notebook tests). HEAD was `b790457` (this
+  handoff after 7.0b, on `8ef9b3f`).
+- **The notebooks' md5:** `02_objective_eda.py` `d74bf1357926732ee31c7e1a98e7bd67` (unchanged),
+  `03_hyperparameter_tuning.py` `81e1d02096981ca8c43e9734e45fa96d`.
+- **Check C's tuning reference** is now `check_c_5_4a_tuning.pkl` (`check_c_5_4_tuning.py`,
+  `run_c_tuning_5_4a.sh`; every frame and record equal to 7.0b's run), in this session's
+  scratchpad, `/private/tmp/claude-501/-Users-galkampel-Desktop-Projects-age-group-prediction/7b0b2d5d-c3e3-4184-94e5-b652c6e86fb1/scratchpad`.
+  It holds `checks/` (with `run_5_4a.sh`, `run_c_tuning_5_4a.sh`, `run_mutant_5_4a.sh`),
+  the pickles copied from the scratchpad below (`check_c_7_0_eda.pkl` with its two figures'
+  JSON, `check_c_7_0b_tuning.pkl`, `check_c_6_2.pkl` with its two figures' JSON,
+  `check_c_3_1l.pkl`, `click_7_0.pkl`), `probes/` and `viewer/ridge_vs_forest.py` (the probe).
+
+**Status (2026-11-08, 7.0 and 7.0b committed and pushed; implementation paused; the next session
+starts at §6):**
+- **The commits:**
+  - `a74b2ff` holds 7.0's work under 7.0b's message, kept as is (PR 7 is squash-merged, so the
+    merge's message names both);
+  - `8ef9b3f` is 7.0b.
+
+  Both are pushed to `origin/feat/test-evaluation`.
+- **The notebooks' md5:** `02_objective_eda.py` `d74bf1357926732ee31c7e1a98e7bd67`,
+  `03_hyperparameter_tuning.py` `6ffa4a82c6c6c80069ef7a0da0b443c8`.
+- **The cache:** the user's `studies/` holds 50 studies, so a click of either notebook only loads.
+- **Next (the user, 2026-11-08):** before 5.4, compare a **ridge plot** with today's **forest
+  plot** for the two best models (§5, §6). It is a read-only probe with a viewer app; the user
+  chooses the form, and 5.4 uses it.
+- **The scratchpad to copy first:** `/private/tmp/claude-501/-Users-galkampel-Desktop-Projects-age-group-prediction/beacb9e0-ac25-4bc6-87ca-2917e0d810a3/scratchpad`. It holds `checks/` and the pickles
+  `check_c_7_0_eda.pkl` with its two figures' JSON, `check_c_7_0b_tuning.pkl`,
+  `check_c_7_0_tuning.pkl`, `check_c_6_2.pkl` with its two figures' JSON, `check_c_3_1l.pkl`,
+  `check_c_3_4_first.pkl` and `check_c_5_2b.pkl`.
+
+**Status (2026-11-08, 7.0b done, before the user's commit; the next session starts at §6):**
+- **7.0 is committed** as `a74b2ff`, under 7.0b's message (the user may reword it). **7.0b is
+  done** (the cache plan's 7.0b Done note): below the best-runs sentence, a "Cohort" dropdown
+  (default composite) and a "Metrics" multiselect (default all six) filter two tables, one per
+  model, with today's columns. The EDA's trailing empty cell is removed.
+- The notebooks' md5: `02_objective_eda.py` `d74bf1357926732ee31c7e1a98e7bd67`,
+  `03_hyperparameter_tuning.py` `6ffa4a82c6c6c80069ef7a0da0b443c8`. Check C's tuning reference
+  is now `check_c_7_0b_tuning.pkl` (`run_c_tuning_7_0b.sh`; equal to 7.0's run).
+
+**Status (2026-11-08, 7.0 done, before the user's commit; the next session starts at §6):**
+- **7.0 is done as planned** (the cache plan's 7.0 Done note; §1's "Since 7.0"):
+  - Model 2 by the joint method in the tuning notebook (`MODEL2_RUN_SETTINGS`, 16);
+  - `objective_metric = "rmse"` in both notebooks;
+  - F4's `find_feature_transformer_name` and `read_hyperparameters`;
+  - the model labels `independent_cohorts`, `total_times_probability` (the joint method) and
+    `total_times_probability_coordinate_descent`, the same in both notebooks.
+- **The first 100-trial click** has run on the user's cache: 22 studies tuned, the 28 original
+  files unchanged, 50 files now. The best on validation RMSE:
+
+  | Model | Best run | val RMSE |
+  |---|---|---|
+  | Model 1 | `lgbm_gaussian`, exposure on | 4.5316 |
+  | Model 2 | `lgbm_poisson+logistic`, exposure on | 4.5132 |
+
+- **Check C's references** are now `check_c_7_0_eda.pkl` (with its two figures' JSON) and
+  `check_c_7_0_tuning.pkl` (the final run of `run_7_0.sh`), in this session's scratchpad:
+  `/private/tmp/claude-501/-Users-galkampel-Desktop-Projects-age-group-prediction/beacb9e0-ac25-4bc6-87ca-2917e0d810a3/scratchpad`.
+  It holds `checks/` (§4's "Since 7.0": `run_7_0.sh`, `check_c_7_0_tuning.py`,
+  `run_mutants_7_0.sh`, `run_click_7_0.sh` and `run_click_7_0.py`, `compare_studies_7_0.py`,
+  `compare_figures_7_0.py`) and the older pickles, copied from the scratchpad named below.
+
+**Status (2026-11-08, PR 6 merged; PR 7 not started; the next session starts at §6):**
+- **PR 6 is merged** as #25, squashed into `main` as `f9c92a5` (identical to `e2cab60`, the
+  close's docs commit); `refactor/two-notebooks` deleted locally and on GitHub.
+- **PR 7 is on `feat/test-evaluation`** (from `main` at `f9c92a5`); its first commit is this
+  update. Its plan is the cache plan's §6, from 7.0 (D40, D42, F4).
+- The notebooks' md5 are unchanged since the close: `02_objective_eda.py`
+  `3db331d12e6c994d5df0cf3ef34dc6b8`, `03_hyperparameter_tuning.py`
+  `1f86f7da2c906cb83e807ad42a051303`. The user's cache `studies/` holds 28 studies.
+- Check C's references are `check_c_6_2.pkl` (the EDA, with its two figures' JSON) and
+  `check_c_6_3.pkl` (the tuning), in the scratchpad named in the status below (copy from it
+  first; §4's "Since PR 6").
 
 **Status (2026-11-08, PR 6 closed, before the user's commit; the next session starts at §6):**
 - **6.3 is committed** (`abd8960`, with the user's edits: §2's "PR 6"). **The close:**
@@ -262,6 +686,42 @@ the tuning-cell guard, the study's name, `build_trials_table` on an in-memory st
   `abd8960`): the studies, the best-run rule, the bootstrap, the inspection. marimo's trim left
   `best_replicate_scores` and `best_forest_figure` unexported (5.4's reader will export the
   first again).
+- **Since 7.0 (D40, D42, F4)**, which supersedes the coordinate-descent items of the list below:
+  - the setting `objective_metric = "rmse"` (section 2, in both notebooks) becomes
+    `OBJECTIVE_METRIC` (the metrics cell, if/elif/raise), which the tuner takes;
+  - Model 2 is `MODEL2_RUN_SETTINGS` (16: total family → classifier → exposure on/off), a
+    button, and one loop cell (`tuner.tune_total_times_probability_model`, seeded `seed + i`,
+    stored as `total_times_probability_joint__…`), which builds `MODEL2_RUNS`. The records keep
+    Model 1's fields with the pair's three settings; `n_complete`, `n_failed` and `seconds` are
+    the one study's;
+  - the coordinate-descent cells, `MODEL2_TOTAL_RUNS`, `MODEL2_PROBABILITY_RUNS`, the fixed
+    classifier and `LogisticParams` are gone from the tuning notebook; the EDA keeps coordinate
+    descent and the fixed classifier;
+  - F4: a cell in both notebooks defines `find_feature_transformer_name(component, candidates)`
+    and `read_hyperparameters(component)`. They are read by `build_trials_table` (the EDA), the
+    two run loops and the two runs tables (the tuning);
+  - the EDA's two dropdowns default to `tuner.objective_metric.name`;
+  - the permutation importance still scores the deviance (5.4 changes it);
+  - since 7.0b, the best runs are shown as two tables, one per model, filtered by
+    `best_runs_cohort` (a dropdown, default composite) and `best_runs_metrics` (a multiselect,
+    default all six);
+  - **the model labels, the same in both notebooks** (the user's), replace `model1`, `model2`
+    and `model2_joint`:
+    - `independent_cohorts`;
+    - `total_times_probability` for the joint method;
+    - `total_times_probability_coordinate_descent` for the EDA's coordinate descent.
+
+    They label `eda_best_df`'s `model` column, the EDA figure dictionaries' keys,
+    `importance_df`, and the best runs (`best_replicate_scores`, `best_runs_val_scores_df`).
+    The frames' variable names (`eda_model1_df`, `MODEL2_RUNS`, …) are unchanged.
+  - **since 7.1–7.3:** section 5's importance tables per model (`perm_fi_*` on train and
+    validation, the mean |SHAP| per cohort) and beeswarm (`beeswarm_figure`, a function since
+    7.1c); section 6 the test evaluation (7.2), the reading of the test predictions (7.3) and,
+    on the test evaluation's click, the test part explained (7.1c: `test_shap`,
+    `test_permutation`, `test_importance_df` and `test_beeswarm_figures` after the test scores;
+    `test_waterfall_figures` under the best/worst tables, `test_waterfall_end`,
+    `test_waterfall_cohort` and a building dropdown per model, `test_waterfall_buildings`, its
+    menus).
 
 Its test is `tests/characterization/test_hyperparameter_tuning_notebook.py` (the old test's 14
 and `test_the_two_notebooks_share_one_setup`: the data, the settings, the parts, the folds, the
@@ -402,7 +862,39 @@ which the two notebooks now hold: 1–5 in the EDA, 1–4 and 6 (as 5) in the tu
 
 ## 2. State
 
-### PR 6 (2026-11-08, closed: awaits the user's PR and merge; `refactor/two-notebooks`)
+### PR 7 (2026-11-08, open; `feat/test-evaluation`)
+
+- **Commits** (from `main` at `f9c92a5`):
+
+  | commit | sub-task |
+  |---|---|
+  | `7e148d1` | the handoff after PR #25's merge (the branch's first commit) |
+  | `a74b2ff` | 7.0: Model 2 by the joint method, RMSE as the objective, F4, the labels (committed under 7.0b's message) |
+  | `8ef9b3f` | 7.0b: the best runs' two tables and their filter, the index fix; the EDA's empty cell removed |
+  | `b790457` | the handoff after 7.0b |
+  | `f0d240c` | 5.4a: `forest_figure` redesigned, `ridge_figure` behind a "Plot" switch (with the user's `metric_name` edit) |
+  | `96030f1` | 5.4b: the paired difference (its own switch and menu), the runs' "Metric" menu, the importance on `importance_metric` |
+  | `0316c06` | 7.2: the best runs refit on train + validation, scored once on the test part (with marimo's trims) |
+  | `19e69ec` | 7.3: the test predictions read: each model's best and worst buildings, true against predicted counts, a neighborhood's counts, shares and scores |
+  | `834e754` | the handoff after 7.3 |
+  | `a47a748` | 7.1a: `PermutationImportance` returns scikit-learn's result; the callers build the frame |
+  | `57fd52a` | 7.1b: SHAP per cohort, the tables and the beeswarm (with marimo's save from the user's session) |
+  | `9779eb2` | 7.1c: the test part explained; 7.1b's save undone (with marimo's save from the user's session) |
+  | `aaf7196` | 7.1d and 7.1e (one commit): the permutation importance drawn, per cohort under a Cohort menu; the scatter by the true total, the shares' n; 7.1c's save undone |
+  | (uncommitted) | PR 7 closed: the checks on HEAD, the cache plan's status, this handoff for after the merge |
+- **7.0's Check C baselines** (3 trials, both sharing flags off; the cv RMSE) are in the cache
+  plan's 7.0 Done note:
+  - Model 1, exposure on / off: `lgbm_poisson` 4.4495 / 4.5284, `lgbm_gaussian` 4.4543 /
+    4.5563, `poisson_glm` 4.7888 / 5.0400, `nb2` 4.5570 / 5.0545;
+  - Model 2: the 16 joint runs, run 0 4.4258 (the EDA's joint value).
+
+  At 3 trials the RMSE studies draw the deviance studies' params, so §2's old deviance baselines
+  still hold for those draws.
+- **The 100-trial click** is in the cache plan's 7.0 Done note: 898 s resumed, the studies' own
+  seconds summed to 271 for Model 1 and 880 for Model 2. The best runs are in the status at the
+  top.
+
+### PR 6 (2026-11-08, closed: merged as #25, `f9c92a5`; `refactor/two-notebooks`)
 
 - **Commits** (from `main` at `39dd1aa`):
 
@@ -413,7 +905,10 @@ which the two notebooks now hold: 1–5 in the EDA, 1–4 and 6 (as 5) in the tu
   | `20557f8` | 6.2 `02_objective_eda.py` and its test (F3) |
   | `4344071` | D42 recorded: RMSE to tune and select, with 7.0 |
   | `abd8960` | 6.3 `03_hyperparameter_tuning.py`, the equality test; `02_experiments.py` removed |
-  | (the user's) | PR 6 closed: the tuning section's summary; this handoff for PR 7 |
+  | `e2cab60` | PR 6 closed: the tuning section's summary; this handoff for PR 7 |
+
+  The merge: #25, squashed into `main` as `f9c92a5`, identical to `e2cab60`; the branch
+  deleted locally and on GitHub (`git branch -D`: `-d` refuses a squash-merged branch).
 
 - **The notebooks:** `notebooks/02_objective_eda.py` (sections 1–5) and
   `notebooks/03_hyperparameter_tuning.py` (sections 1–4 and the tuning as 5). The user's edits:
@@ -877,6 +1372,65 @@ and the metrics plan §2 (M1–M9); a later one supersedes an earlier one where 
   equal (6.3). Not a module, not marimo's `@app.function` (6.1's probes). **D42** RMSE tunes and
   selects (supersedes D34's objective half; the EDA cannot tell the two apart), through a setting
   `objective_metric` (the deviance the alternative), with 7.0 in PR 7.
+- **7.0 (2026-11-08), the user's answers:**
+  - `MODEL2_RUN_SETTINGS` lists 16 explicit dicts (`total_family`, `probability_family`,
+    `use_exposure`), in the order total family → classifier → exposure on/off, the i-th seeded
+    `seed + i`. Run 0 is the EDA's joint setting, so its RMSE study is shared.
+  - F4: two per-component functions, `find_feature_transformer_name(component, candidates)`
+    and `read_hyperparameters(component)`, in one cell copied into both notebooks; the
+    equality test pins the copies by behaviour.
+  - Both EDA dropdowns default to the tuner's objective; `METRICS` keeps its order (the
+    deviance first).
+  - The first 100-trial click runs as part of 7.0's checks, on the real cache.
+  - Without asking (nothing reads them there): `MODEL2_FIXED_PROBABILITY_COMPONENT` and
+    `LogisticParams` left the tuning notebook; the EDA keeps both.
+- **7.1 (2026-11-10), the user's answers (all the recommended options) and notes:**
+  - `PermutationImportance.compute_importances` returns scikit-learn's result (a `Bunch`); a
+    caller that needs a frame builds it (the user's note; 7.1a).
+  - The importance table: values only (no ranks), one `mo.ui.table` per model, rows in `X`'s
+    order; mean |SHAP| per cohort, and the composite kept as today's computation.
+  - The beeswarm: its own "Cohort" menu over two figures (Model 1 first); the three cohorts
+    only, no total; a non-numeric column (`school_status`) gray, its level on hover.
+  - The waterfalls (7.1c): 7.3's best/worst k test buildings, a building menu per model; every
+    test building's SHAP computed once behind its own button.
+  - Permutation importance: train and validation in section 5 (the decision and the overfit
+    check), **and the test part too** (the user, after first keeping train and validation): in
+    7.1c, the refit models, `importance_metric`, reported and never used to choose.
+  - Three sub-tasks, `src` first.
+- **7.1b's review (2026-11-11), the user's notes and answers:** `perm` → `perm_fi` (the
+  permutation feature importance), each split's mean and spread, train first; a category's
+  levels a row each in the beeswarm (over one row with a color per level), in gray (the user,
+  after first seeing a color per level: a row holds one level, so no low or high); folded into
+  7.1b before its commit.
+- **7.1c (2026-11-11), the user's answers (all the recommended options):** the waterfall from
+  the building's base (shap's form, x zoomed to the steps, the truth in the title, not a rule);
+  its own "Cohort" menu (composite = the total, by default); red raises, blue lowers (the
+  palette's diverging pair).
+- **7.1c's start (2026-11-11), the user's answers:** a beeswarm of the test buildings too,
+  through a function (`beeswarm_figure`) that section 5's beeswarm calls as well (over a copied
+  cell, or none); marimo's save in `57fd52a` undone (the four returns restored; the empty last
+  cell removed, as in 7.3).
+- **7.1c's review (2026-11-11), the user's notes and answers:** SHAP stays exact (9 columns: 512
+  evaluations per row, about the permutation method's default 500, without its noise); the results
+  are not cached (seeded, a minute or two; they belong to the deferred MLflow runs as artifacts;
+  `mo.persistent_cache` exists in marimo 0.24, unprobed); the explanation integrated where it
+  explains, not a separate block: no second button (the test evaluation's click), the tables and
+  beeswarm after the test scores, the waterfalls under the best/worst tables. Then, at the review
+  of the waterfalls: a building dropdown per model (the same kind for each) of its best or worst
+  k, one Best/Worst switch, and the waterfalls' own Cohort (a cohort by default, the composite
+  optional) that ranks the k and is explained; the tables' metric and k.
+- **7.1d (2026-11-12), the user's review of 7.1c, notes and answers:** the permutation
+  importance had no plot (7.1's answer was tables only): a box of the `n_repeats` drops per
+  column (over the mean ± std), under each table, section 5's train and validation and the
+  test's, through one function; the count scatter colored by the building's true total, not
+  `n_apartments` (the user: the point is whether the models struggle as n grows; the x axis is
+  the cohort's count, so the total adds the building's size, and repeats x on the composite);
+  the shares bars with their n children and a 95% interval on the true bars (a small n, a noisy
+  share); marimo's save in `9779eb2` undone.
+- **7.1e (2026-11-12), the user's request after checking 7.1d ("Looks good!"):** a figure of
+  the test permutation importance with a choice of the composite or a cohort; the answers: in
+  the notebook only (a cohort `Metric` through `functools.partial`, no `src` change), validation
+  too, and 7.1d and 7.1e in one commit (7.1d was still uncommitted).
 - **The user's wish for this work:** do not overcomplicate; the smallest change that works.
   Keep a valid path working and available; reuse inside it is welcome (D29: the joint draw calls
   the component suggest functions).
@@ -1004,6 +1558,156 @@ md5, the commit message. Tick the sub-task and update the status lines.
     `run_6_3.sh` (with the 100-trial click on the real cache, `run_click_tuning.py`, and the
     cache's files compared before and after), `run_mutant_6_3.sh` (the equality test's mutation).
   - Each copy is named after its notebook, with `configs` and `src` symlinked.
+- **Since 7.0** (the scripts in this session's scratchpad, named in the status at the top):
+  - **the EDA:** `make_copy_eda.py` (it finds the figure cells by the
+    `["total_times_probability", …]` display line) and `check_c_eda.py` (the new labels; both
+    dropdowns' defaults and displays on `rmse`). The comparison is `compare.py` on the frames and
+    `compare_figures_7_0.py`, which renames 6.2's keys to the new labels, against 6.2's run.
+  - **the tuning:** `check_c_7_0_tuning.py <copy> <out.pkl>` replaces `check_c_tuning.py`; the
+    old references tuned on the deviance. It checks:
+    - the 24 RMSE baselines;
+    - every study recomputed in memory (`storage_dir=None`). Model 1's are also recomputed
+      under the deviance, reproducing §2's old baselines (the same draws);
+    - every record, both tables, and the 24 stored file names;
+    - the best runs and their fresh bootstrap;
+    - `importance_df` (its labels, ranks, and the permutation part recomputed) and the forest
+      plot.
+  - **the runners:** `run_7_0.sh` (Check A–C on both, the suite, mypy), `run_mutants_7_0.sh`,
+    and `run_click_7_0.sh`. The click runner keeps the original cache listing
+    (`studies_before_7_0.json`), and `compare_studies_7_0.py` checks the old files unchanged and
+    the 22 new names.
+- **Since 5.4 (2026-11-09; the scripts in the scratchpad named in the status at the top):**
+  - `run_7_2.sh`: Check A on both notebooks (the notebook tests, ruff, the format hunks,
+    `marimo check`), Check B on both, Check C on the EDA (`make_copy_eda.py`,
+    `check_c_eda.py`, against `check_c_7_0_eda.pkl` and its figures) and on the tuning
+    (`run_c_tuning_7_2.sh`: `make_copy_tuning.py`, `check_c_5_4_tuning.py`, `compare_shared.py`
+    against the previous run's pickle, then `run_mutant_7_2.sh`), the non-slow suite, mypy;
+  - `check_c_5_4_tuning.py` (from `check_c_7_0_tuning.py`) adds the forest and ridge
+    figures, the paired difference, the menus and `importance_metric`, and 7.2's test
+    evaluation (an independent refit on train + validation, its predictions, a fresh
+    bootstrap, the statistics, the figures, the validation-against-test table);
+  - `compare_shared.py <new> <reference> [skipped frames]`: `compare.py` on the shared frames;
+  - **a look on the real runs** (`probes/run_look_5_4b2.sh` as the model): a copy of the
+    notebook (`make_copy_probe.py`, unchanged but for the trimmed returns) on a copy of
+    `studies/`, every button clicked but the inspection, the figures written as HTML and
+    screenshotted with headless Chrome; the real cache compared before and after.
+- **Since 7.3 (2026-11-09; the scripts in the scratchpad named in the status at the top):**
+  - `run_7_3.sh`: Check A on both notebooks, Check B on both, Check C on the EDA (against
+    7.2's run) and on the tuning (`run_c_tuning_7_3.sh`), the non-slow suite, mypy;
+  - `check_c_7_3_tuning.py` (from `check_c_5_4_tuning.py`): `val_against_test_df` without
+    `test_minus_val`; the reading's frames (`test_buildings_df` 612, `test_building_scores_df`
+    2448, every score recomputed with NumPy); each model's worst 5 at the defaults with every
+    column (`3_rooms_share` = `1 − Σ`); each model's every-building table; the two count
+    figures; the selection `all` (its buildings, counts, pooled shares, bars; the scores equal
+    `test_scores_df`'s);
+  - `run_c_tuning_7_3.sh` compares against 7.2's pickle with `test_minus_val` dropped
+    (`check_c_7_2_tuning_without_test_minus_val.pkl`), then `run_mutant_7_3.sh` (the worst k by
+    `nsmallest`);
+  - `probes/run_look_7_3.sh`: Check C's copy run twice (the defaults; a variant: best,
+    `n_highschool`, Model 2, neighborhood `N_144`, its statistics asserted against masked sums
+    and a fresh `compute_metrics`), the figures as HTML screenshotted with headless Chrome
+    (`shots_7_3/`);
+  - **`mo.ui.table` inlines only its first page** (10 rows) in the output, with
+    `data-total-rows`: Check C compares that page and the count;
+  - zsh's `echo =====` (the `=` expansion) stopped a runner again: use `echo ----`.
+- **Since 7.1 (2026-11-10; the scripts in `/private/tmp/claude-501/-Users-galkampel-Desktop-Projects-age-group-prediction/99bdc359-a398-40b1-92af-4986d8d47896/scratchpad/checks`):**
+  - `run_7_1b.sh`: Check A on both notebooks, Check B on both, Check C on the EDA (against
+    7.1a's run) and on the tuning (`run_c_tuning_7_1b.sh`), the mutation, the screenshots, the
+    non-slow suite, mypy. `run_7_1b_rest.sh` reruns everything after the EDA's Check C.
+  - `check_c_7_1b_tuning.py` (from `check_c_7_3_tuning.py` through 7.1a's):
+    - the permutation results recomputed (`importances` exactly);
+    - the mean |SHAP| per cohort exactly, the composite exactly and the per-cohort mean at
+      1e-12;
+    - both importance tables from marimo's inline data;
+    - the beeswarm's traces, order, jitter, colors and colorbar;
+    - the figures written as HTML to `pages_7_1b/` for the screenshots.
+
+    The 7.0b display check excludes the importance output, which carries the same model
+    headings.
+  - `run_c_tuning_7_1b.sh` compares against 7.1a's pickle with `mean_abs_shap` renamed
+    `mean_abs_shap_composite` and the ranks dropped (`compare.py` ignores the new columns).
+  - The mutations:
+    - `run_mutant_7_1a.sh`: a `src` mutation on a full copy (`src`, `tests`, `configs`,
+      `pyproject.toml`), the sentinel first, pytest with `--rootdir` / `-c` on the copy;
+    - `run_mutant_7_1b.sh`: the beeswarm's order ascending.
+  - `run_guide_blocks.py docs/MODEL_INSPECTION.md`: the guide's 5 output blocks.
+  - **`app.run()`'s defs hold every cell's names,** returned or not: Check C reads
+    `importance_df` although marimo trimmed the cell's return.
+  - **The probe on the real runs** (`probes/run_probe_7_1.sh`): a copy of the notebook on a copy
+    of `studies/`, every button clicked but "Evaluate on the test part" (asserted: no
+    `test_predictions`), the real cache listed before and after; 81 s.
+- **Since 7.1b's amendment (2026-11-11; the scripts in the scratchpad named in the status at
+  the top):**
+  - `run_7_1b2.sh`: Check A on both notebooks, Check B on both, Check C on the EDA (against
+    7.1b's run) and on the tuning (`run_c_tuning_7_1b2.sh`), the mutation, the screenshots, the
+    non-slow suite, mypy (about 10 min);
+  - `check_c_7_1b2_tuning.py` (from `check_c_7_1b_tuning.py`): the four `perm_fi` columns
+    recomputed from both results; each beeswarm's rows (a numeric column one row, a category a
+    row per sorted level at its place, gray `#898781`; every explained row in one level row;
+    the height `60 + 45 × rows`);
+  - `run_c_tuning_7_1b2.sh` compares against 7.1b's pickle with `perm_*` renamed `perm_fi_*`
+    (`check_c_7_1b_tuning_for_7_1b2.pkl`; `perm_fi_std_train` is new);
+  - `run_mutant_7_1b2.sh`: each level's row holding the other levels' rows (`==` → `!=`);
+  - **7.1c's probe** (`probes/run_probe_7_1c.sh`): Check C's 3-trial copy, every button
+    clicked; the refit, the test SHAP and permutation computed outside the notebook, timed,
+    additivity, a draft waterfall per model written as HTML and screenshotted;
+  - **the dataviz validator:** `node <skill>/scripts/validate_palette.js "<hex,…>" --mode light
+    --pairs all` (load the dataviz skill for its path).
+- **Since 7.1c (2026-11-11; the scripts in the scratchpad named in the status at the top):**
+  - `run_7_1c.sh`: Check A on both notebooks, Check B on both, Check C on the EDA (against
+    7.1b2's run) and on the tuning (`run_c_tuning_7_1c.sh`, against `check_c_7_1b2_tuning.pkl`),
+    the mutations, the variant look, the screenshots, the non-slow suite, mypy (about 20 min);
+  - `check_c_7_1c_tuning.py` (from `check_c_7_1b2_tuning.py`, made by `make_check_c_7_1c.py`
+    with its block `check_c_7_1c_tuning.py.block`): 7.2's independent refits kept; section 5's
+    beeswarm JSON equal to `check_c_7_1b2_beeswarm.json` (read beside the out pickle);
+    `test_models`, `test_shap`, `test_permutation` (recomputed exactly), additivity, the test
+    tables, the menus and each model's dropdown ids (`building_ids`, recomputed from
+    `test_building_scores_df`), the waterfalls
+    (`check_waterfall`), the test beeswarms (`check_beeswarm`); its pages in `pages_7_1c/`;
+  - `run_mutants_7_1c.sh` (`KINDS=position` or `level` for one): the waterfall's row by the
+    building's position in its dropdown instead of by id; the level mask flipped in
+    `beeswarm_figure`; each mutant's folder gets a copy of the beeswarm JSON;
+  - `probes/run_look_7_1c.sh`: the copy with the tables by `mae`, the waterfalls' best on the
+    composite, each dropdown's second building, the test beeswarm on `n_highschool`, recomputed
+    (`look_7_1c.py`), pages in `pages_7_1c_look/`;
+  - `make_copy_tuning.py` lists `test_models` in 7.2's restored return.
+- **Since 7.1d (2026-11-12; the scripts in `/private/tmp/claude-501/-Users-galkampel-Desktop-Projects-age-group-prediction/0befa878-cb03-487e-a0b1-7f0b82b7351f/scratchpad/checks`):**
+  - `run_7_1d.sh`: Check A on both notebooks, Check B on both, Check C on the EDA (against
+    7.1c's run) and on the tuning (`run_c_tuning_7_1d.sh`, against `check_c_7_1c_tuning.pkl`),
+    the mutation, the look, the screenshots, the suite, mypy (about 15 min);
+    `run_7_1d_title.sh` reruns Check A, B, the tuning's Check C and the look;
+  - `check_c_7_1d_tuning.py` (from 7.1c's, made by `make_check_c_7_1d.py`):
+    `check_permutation_figure` (the boxes against the results' `importances`, the order by the
+    last split's mean, the colors, the rule, the height) on section 5's and the test's figures;
+    the scatter's colors `total_true`; the bars' counts, interval and title; its pages in
+    `pages_7_1d/`;
+  - `run_mutants_7_1d.sh`: the columns ordered descending, run through Check C and through the
+    test on a full copy;
+  - `probes/run_look_7_1d.sh`: 7.1c's variant and the neighborhood `N_144` (its bars' n and
+    interval recomputed); pages in `pages_7_1d_look/`;
+  - the screenshots need `--window-size=1000,680` (the permutation figure is 584 px tall);
+  - a new scratchpad's pycache needs `compileall` first (pyro's `SyntaxWarning` under `-W
+    error`), as in the iCloud notes.
+- **Since 7.1e (2026-11-12; the scripts in `/private/tmp/claude-501/-Users-galkampel-Desktop-Projects-age-group-prediction/0befa878-cb03-487e-a0b1-7f0b82b7351f/scratchpad/checks`):**
+  - `run_7_1e.sh` (as `run_7_1d.sh`, against 7.1d's runs; about 20 min); `run_7_1e_rest.sh`
+    reruns from the tuning's Check C on;
+  - `check_c_7_1e_tuning.py` (from 7.1d's, made by `make_check_c_7_1e.py`): `importance_metrics`;
+    each cohort's train, validation and test results recomputed against an independent cohort
+    metric (`fresh_cohort_importance`); the menus and the two figure captions; the reference
+    `check_c_7_1d_tuning.pkl`;
+  - `run_mutants_7_1e.sh`: the cohort metrics' partial without `cohort=` (Check C only: no test
+    reaches the clicked metrics);
+  - `probes/run_look_7_1e.sh`: 7.1d's variant and both permutation menus on `n_highschool`;
+  - **a module-level name in Check C is shared by every block:** 7.1e's first version reused
+    `again` (the 7.1c block's SHAP explanation) and failed later; name new variables uniquely.
+- **Since PR 7's close (2026-11-12; the scripts in `/private/tmp/claude-501/-Users-galkampel-Desktop-Projects-age-group-prediction/f701aef6-03a7-4737-9781-4cee1cc6a750/scratchpad/checks`):**
+  - `run_close_7.sh`: the non-slow suite, mypy, Check A on both notebooks, Check B on both,
+    Check C on the EDA (`check_c_eda.py`, against 7.1e's run) and on the tuning
+    (`check_c_7_1e_tuning.py`, `compare_shared.py` against `check_c_7_1e_tuning.pkl`); no
+    mutation, look or screenshot (no code changed since 7.1e's run); about 15 min;
+  - its pickles `check_c_close_7_tuning.pkl` and `check_c_close_7_eda.pkl` (with its two
+    figures' JSON) are the references for the next change; `check_c_7_1e_tuning.py` reads
+    `check_c_7_1b2_beeswarm.json` beside its out pickle.
 - **The scripts of 5.3's session (2026-11-07, the latest copy;** copy from here first): the
   scratchpad named in the status at the top (`checks/` adapted to 5.3; `check_c_5_3.pkl` is
   5.4's reference).
@@ -1205,6 +1909,52 @@ constructor, data in the call; fitting and evaluating as separate steps; no priv
 - **The forest plots (5.3) look bad (the user, 2026-11-07, on the 100-trial runs through the
   viewer app):** to be fixed later (with 5.4's difference plot in PR 7); `forest_figure`'s
   layout is unchanged since 5.3.
+  - **The user's question (2026-11-08): is a ridge plot better?**
+    - The forest plot shows each model's point score and 95% bootstrap interval per cohort.
+    - A ridge plot shows the whole distribution of each model's 1000 bootstrap replicates
+      (`best_replicate_scores`; one evaluator, so the rows pair), stacked per cohort: the
+      overlap and the shape, not only the interval. The same form fits 5.4's paired
+      difference, one density per cohort with a rule at 0.
+  - **The comparison is a read-only design probe:**
+    - both figures built from the real 100-trial best runs' replicates, on a copy of the tuning
+      notebook on the user's cache (the click only loads);
+    - per cohort (the composite first) and per metric (`SELECTION_METRIC` by default);
+    - a ridge per model (a KDE or a histogram of the replicates, the point score marked, the
+      95% interval shaded) against today's forest plot;
+    - the same for 5.4's difference (`total_times_probability − independent_cohorts`), with a
+      rule at 0;
+    - shown in a small viewer app (§4's "For the user to look at figures without a click").
+
+    The user chooses, and 5.4 uses the chosen form.
+  - **Notes:**
+    - `best_replicate_scores` is not exported today (marimo's trim); `make_copy_tuning.py`
+      restores the return in the copy.
+    - Load the dataviz skill before designing the figures (the EDA's figures use its reference
+      palette).
+  - **Done (2026-11-09): the probe, and the user's choice, the redesigned forest for both
+    figures** (the two best runs and their paired difference; 5.4a and 5.4b in the cache
+    plan). The probe (scratchpad `…/7b0b2d5d-c3e3-4184-94e5-b652c6e86fb1/scratchpad`:
+    `probes/`, `viewer/ridge_vs_forest.py`, `shots/`):
+    - a copy of the tuning notebook on a copy of `studies/` (the inspection unclicked) loaded
+      in 31 s, nothing tuned; the copy's and the real cache's 50 files unchanged; the best runs
+      equal to 7.0's click record;
+    - three forms per metric, for the two runs and for the difference: today's forest, a
+      redesigned forest (a row per cohort, the composite first, the two models in the
+      palette's two colors, one legend), and a half-eye ridge (a KDE of the 1000 replicates,
+      the dot and 95% bar under it); each cohort row its own x for the runs, one shared x for
+      the difference (log loss's composite, 1.08, sits far from its cohorts, 0.58–0.67);
+    - **the evidence:** the two marginals nearly coincide (composite RMSE 4.5316 [4.01, 5.08]
+      against 4.5132 [4.00, 5.04]); the replicates are near-normal (half-widths 0.87–1.18 of
+      each other), so a density adds little; they pair strongly (ρ 0.81–0.985), so the
+      difference's interval is 1.7–5.6× narrower (composite RMSE −0.019 [−0.107, 0.083], 0.19
+      wide against 1.05). Every RMSE difference contains 0 (the high school's just:
+      −0.177 [−0.355, 0.007]); log loss's composite difference excludes it
+      (−0.0043 [−0.0076, −0.0011]) though the two marginals overlap; bias's composite
+      difference −0.080 [−0.149, −0.007] means Model 2 is further from 0 (−0.497 against
+      −0.416), not better;
+    - **the user's answers for 5.4:** two sub-tasks (5.4a the redesign, 5.4b the difference
+      and the importance); bias kept in the difference's table with a caption note; the legend
+      names the model only; one characterization test of `forest_figure`.
 - **The EDA figures:** dark mode not selected (the dataviz skill asks for it; marimo's dark theme
   shows them on the light surface); not looked at by the assistant (no browser). The user looked
   at 3.1j's, asked for 3.1k and 3.1l, and approved 3.1k's at 400 trials ("Looks good!").
@@ -1219,35 +1969,38 @@ constructor, data in the call; fitting and evaluating as separate steps; no priv
 
 ## 6. Next, and the prompt
 
-**Status (2026-11-08, PR 6 closed; PR 7 not started):**
-- PR 6 (`refactor/two-notebooks`) is closed: §2's "PR 6" block; the user opens and merges it.
-  The next branch (PR 7, `feat/test-evaluation` from `main` after the merge) starts with a docs
-  commit recording the merge.
+**Status (2026-11-12, PR 7 closed, before the user's commit, PR and merge):**
+- PR 7 is on `feat/test-evaluation` (from `main` at `f9c92a5`): 7.0 `a74b2ff`, 7.0b
+  `8ef9b3f`, 5.4a `f0d240c`, 5.4b `96030f1`, 7.2 `0316c06`, 7.3 `19e69ec`, 7.1a `a47a748`,
+  7.1b `57fd52a`, 7.1c `9779eb2`, 7.1d and 7.1e `aaf7196` (§2's "PR 7"). The close (the cache
+  plan's status, this handoff) is uncommitted; the user commits it as
+
+  ```text
+  docs(notebook): PR 7 closed: the checks on HEAD, the plan's status; the handoff for after the merge
+  ```
+
+  then pushes, opens the PR (the text in the scratchpad's `pr_7.md`) and squash-merges it.
 - The notebooks' md5:
   - `01_eda.py` `4bc1ba3a52dc2ad55d0097a707bd1ccc`;
-  - `02_objective_eda.py` `3db331d12e6c994d5df0cf3ef34dc6b8`;
-  - `03_hyperparameter_tuning.py` `1f86f7da2c906cb83e807ad42a051303`.
-- Check C's references (§4, "Since PR 6"): `check_c_6_2.pkl` (the EDA) and `check_c_6_3.pkl`
-  (the tuning), in the scratchpad named in the status at the top. If they are gone, rewrite the
-  scripts from §4 and run Check C on HEAD before the first edit, keeping those pickles.
+  - `02_objective_eda.py` `373c1c39f717935cb08ce14ff6e05a3a`;
+  - `03_hyperparameter_tuning.py` `47c8ce343350475eebe8c2007a00397e`.
+- Check C's references (§4, "Since PR 7's close"): `check_c_close_7_eda.pkl` (the EDA, with its
+  two figures' JSON) and `check_c_close_7_tuning.pkl` (the tuning; `check_c_7_1e_tuning.py`), in
+  the scratchpad named in the status at the top. If they are gone, rewrite the scripts from §4
+  and run Check C on HEAD before the first edit, keeping those pickles.
+- The user's cache `studies/` holds 50 studies; a click loads them. **The test part has still not
+  been run on it** (E11: the user reads the test part first).
 
 Next, one step per approval, each stopped with a file-by-file summary, the checks, the
 notebooks' md5 and the commit message in a copyable code block:
-1. **PR 6's merge** (the user's).
-2. **PR 7, the tuning notebook's evaluation** (the cache plan's §6):
-   - **7.0 first** (planned with the user), in the tuning notebook:
-     - D40: Model 2 by the joint method, 16 studies, replacing the three coordinate-descent
-       cells;
-     - D42: the objective RMSE through the setting `objective_metric`;
-     - F4: one transformer-name lookup and one hyperparameter read;
-     - both notebooks under D41, the tests' pins, Check C's new baselines, the first click
-       retuning the tuning's studies.
-   - **Then 5.4:** the paired difference from `best_replicate_scores`
-     (`total_times_probability − independent_cohorts` per replicate), its forest plot with
-     `rule_at=0`, and the importance on `SELECTION_METRIC`.
-   - **Then** the forest plots' layout fixed (§5), SHAP per cohort, and the test evaluation.
-
-   MLflow and D4 stay deferred.
+1. **PR 7's merge (the user's):** after it, record the merge (the squash hash on `main`), delete
+   `feat/test-evaluation` locally (`git branch -D`: `-d` refuses a squash-merged branch) and on
+   GitHub, and start the next branch from `main` (its first commit: this handoff with the merge
+   recorded).
+2. **E11's run (the user's):** the user clicks "Evaluate on the test part" on the real cache once,
+   after reading the test part; the assistant does not run it.
+3. **Then, unless the user names another:** the MLflow runs and D4 (EXPERIMENT_NOTEBOOK_PLAN.md's
+   D4: the comparison table and the final run), planned first.
 
 The user's preferences:
 - plan docs in `docs/`, split into sub-tasks validated one at a time;
@@ -1264,27 +2017,27 @@ The user's preferences:
 **The prompt for the next session:**
 
 ```text
-Read docs/EXPERIMENT_NOTEBOOK_HANDOFF.md in full (the status at the top, §2's "PR 6" block,
-§3 (D40-D42), §4's checks (since PR 6, per notebook), traps, iCloud notes, §5, §6 first), then
-docs/NOTEBOOK_CACHE_EVALUATION_PLAN.md (§0 D32, D40, D42; §6 in full, 7.0 first, and 5.4 in §4),
-then notebooks/03_hyperparameter_tuning.py (the shared cells and section 5: Model 2's three
-coordinate-descent cells, the pairs, the records and tables, the best runs) and the EDA's joint
-run in notebooks/02_objective_eda.py, and both characterization tests.
+Read docs/EXPERIMENT_NOTEBOOK_HANDOFF.md in full (the status at the top, §1, §2's "PR 7"
+block, §3, §4's checks (since PR 7's close), traps, iCloud notes, §5, §6 first), then
+docs/NOTEBOOK_CACHE_EVALUATION_PLAN.md (its status line and §6), then
+docs/EXPERIMENT_NOTEBOOK_PLAN.md (E11 and D4).
 Verify the state first:
-- PR 6 merged into main; the branch feat/test-evaluation from main (create it if I have not);
-- `git status` clean; the notebooks' md5 (`cat <file> | md5`): 02_objective_eda.py
-  3db331d12e6c994d5df0cf3ef34dc6b8, 03_hyperparameter_tuning.py 1f86f7da2c906cb83e807ad42a051303;
+- PR 7 merged into main (its squash hash), or the branch feat/test-evaluation with HEAD my
+  close commit and `git status` clean;
+- the notebooks' md5 (`cat <file> | md5`): 02_objective_eda.py
+  373c1c39f717935cb08ce14ff6e05a3a, 03_hyperparameter_tuning.py 47c8ce343350475eebe8c2007a00397e;
 - no iCloud-offloaded files: `find .git src notebooks tests docs configs -flags +dataless -type f
   | grep -vc __pycache__` is 0.
-If anything differs, stop and show me the diff. Then copy the check scripts (checks/) and the
-pickles check_c_6_2.pkl with its two figures' JSON, check_c_6_3.pkl, check_c_5_2b.pkl,
-check_c_3_1l.pkl and check_c_3_4_first.pkl from the scratchpad the handoff names (or rewrite them
-from §4). Record PR 6's merge in the handoff as the branch's first commit. In plan mode, plan 7.0
-(D40, D42, F4): the run settings' order and seeds, the records' fields, objective_metric in both
-notebooks, the tests' pins, Check C's new baselines; show the design questions with evidence and
-a recommendation, the steps and the commit message in the chat, and implement after my
-approval. Keep the implementation simple. Stop each sub-task with a file-by-file summary, the
-checks, the notebooks' md5 and the commit message in a copyable code block. I commit myself:
-never commit, no Co-Authored-By line, no "Generated with Claude Code" in PR text, never git
+If anything differs (my marimo editor may have saved over it: trimmed returns, an empty cell),
+stop and show me the diff. Then copy checks/, probes/, viewer/, the logs and the pickles the
+status at the top lists from the scratchpad it names (or rewrite them from §4), set each
+script's S= to the new scratchpad, and compile the pycache (§4's iCloud notes).
+First, if PR 7 is merged: record the merge (§6 step 1) and wait for my commit. Then plan the
+next step (§6: the MLflow runs and D4, unless I name another) in plan mode and wait for my go.
+Don't run the test evaluation on my cache: that run is mine (E11). My marimo session may be
+open: tell me before editing the notebook and remind me to reload it after (not to save from
+it). Keep the implementation simple. Stop each step with a file-by-file summary, the checks, the
+notebooks' md5 and the commit message in a copyable code block. I commit myself: never commit,
+no Co-Authored-By line, no "Generated with Claude Code" in PR text, never git
 checkout/stash/reset/mv.
 ```

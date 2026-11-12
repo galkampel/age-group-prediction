@@ -47,8 +47,10 @@ no transformer registry; the candidates are injected, as scikit-learn's
 The notebook's data (sections 1–3: the simulator at 150 neighborhoods × 9 buildings, the
 `random` split of [Splitting §3](SPLITTING.md#3-train-validation-and-test), seed 42), two
 candidate transformers per family, and one short study of each composite, Model 2 also by
-coordinate descent. The notebook runs the same calls at 100 trials, in loops over its run
-settings, Model 2 by coordinate descent.
+coordinate descent. The tuning notebook runs the same calls at 100 trials, in loops over its
+run settings, on its setting `objective_metric` (RMSE since D42, the deviance the alternative),
+Model 2 by the joint method (D40); the objective EDA also tunes Model 2 by coordinate descent,
+to compare the two.
 
 ```python
 import json
@@ -606,10 +608,9 @@ declaration), `cv_best`, `n_complete`, `n_failed`, the seconds, and `scores`: pe
 (`train`, `val`), cohort and metric, `scoring.compute_metrics`'s `score` beside
 the mean, median, SD and percentile bounds of `BootstrapEvaluator.evaluate`'s replicates, the
 bounds named after their level (`ci95_lower`, `ci95_upper` at its setting `alpha = 0.05`); one
-evaluator resamples every model with one seed, so their intervals compare. Model 2's coordinate descent
-keeps a record per step study (its best component and its name, `cv_best`, the trial counts, the seconds)
-and one per pair (its model, components, names, its cross-validated objective as `cv_best`,
-its two studies' trial counts and seconds summed, its `scores`). The notebook shows two
+evaluator resamples every model with one seed, so their intervals compare. Model 2's run, one
+joint study per family pair and exposure (7.0), keeps the same fields as Model 1's, its settings
+`total_family`, `probability_family` and `use_exposure`. The notebook shows two
 tables per model: the kept models (settings, each component's transformer and
 hyperparameters, the cross-validated objective, trials, seconds) and their scores. To save a trials table as JSON use `trials.to_json(orient="records")`:
 `json.dumps(record, default=str)` writes a bare `NaN`, which strict readers reject.

@@ -125,6 +125,7 @@ def test_a_setting_missing_or_changed_in_a_settings_mapping_is_caught(
         "n_splits": "5",
         "n_trials": "100",
         "n_startup_trials": "10",
+        "objective_metric": "rmse",
     }
 
 
