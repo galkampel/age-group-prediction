@@ -1,6 +1,6 @@
 # Handoff: the experiment notebooks, PR 7 merged (#26); the simplification review written, its decisions next, then the MLflow plan
 
-**Status (2026-11-12, the review written and decided, before the user's commit; next S1):**
+**Status (2026-11-12, end of session: the review written, decided and committed as `9b5baf0`; the next session starts at §6 with S1):**
 - **The review for overcomplication is written** as
   [SIMPLIFICATION_REVIEW_PLAN.md](SIMPLIFICATION_REVIEW_PLAN.md): 8 sub-tasks recommended to
   accept (S1–S8, each with its steps, its validation, its commit message and the model to
@@ -19,11 +19,11 @@
 - **Next:** the accepted sub-tasks, one stop each, in the order S1, S2, S3, S4, S6, S7, S5, S8
   (the review plan's §3 and §4; Opus 5.5 for all but S5 and S7, which are planned and done
   with Fable); then the MLflow plan (§6, step 2).
-- **The uncommitted files:** `docs/SIMPLIFICATION_REVIEW_PLAN.md`, this handoff. HEAD
-  `bd90f66`. The commit:
+- **The review's docs are committed** as `9b5baf0` (the user's, on `bd90f66`). **Uncommitted:**
+  this handoff's end-of-session update (§6's status and the next session's prompt). The commit:
 
   ```text
-  docs(notebook): the review for overcomplication of the tuning and the figures, as sub-tasks to accept or reject
+  docs(notebook): the handoff at the session's end: the review decided, S1 next with its prompt
   ```
 - **The notebooks' md5 (unchanged):** `02_objective_eda.py` `373c1c39f717935cb08ce14ff6e05a3a`,
   `03_hyperparameter_tuning.py` `47c8ce343350475eebe8c2007a00397e`.
@@ -2038,6 +2038,22 @@ constructor, data in the call; fitting and evaluating as separate steps; no priv
 - The user's cache `studies/` holds 50 studies; a click loads them. **The test part has still not
   been run on it** (E11: the user's run, at any time).
 
+**Status (2026-11-12, end of session; the review decided; the next session starts at S1):**
+- Step 1 below is **done as a review and decided**:
+  [SIMPLIFICATION_REVIEW_PLAN.md](SIMPLIFICATION_REVIEW_PLAN.md) holds the findings, the
+  user's decisions (S1–S8 accepted, S7 as (b); L1–L8 left) and, per accepted sub-task, the
+  steps, the validation, the mutation and the commit message.
+- **What remains of step 1:** implementing S1, S2, S3, S4, S6, S7, S5, S8 in that order, one
+  stop each. **Opus 5.5** for S1–S4, S6 and S8; **Fable** for S7 and S5 (planned in plan mode
+  first; S5 in four stops, S7 in three).
+- **No check was run in this session** (docs only). The check scripts and the references are
+  in `/private/tmp/claude-501/-Users-galkampel-Desktop-Projects-age-group-prediction/a655f82e-bc56-46e9-8f40-acd442dc310a/scratchpad`, each script's `S=` already set to it and its `pycache/` compiled; a new session
+  copies them to its own scratchpad and sets `S=` again.
+- **Open, the user's (one minute, any time):** S4's manual check (the review plan's S4), to
+  record whether changing the best-runs "Metric" menu discards the inspection results. S4 is
+  accepted either way.
+- The step-2 MLflow plan starts only after the accepted sub-tasks are done or dropped.
+
 Next (the user's, 2026-11-12), one step per approval, each stopped with a file-by-file summary,
 the checks, the notebooks' md5 and the commit message in a copyable code block:
 1. **A review for overcomplication, before the MLflow plan** (read-only; planned first in plan
@@ -2075,36 +2091,39 @@ The user's preferences:
 - the user commits; marimo's editor may trim returns when the user saves (check the md5 and
   show the diff before each sub-task).
 
-**The prompt for the next session:**
+**The prompt for the next session:** (for an Opus 5.5 session; S1 only)
 
 ```text
-Read docs/EXPERIMENT_NOTEBOOK_HANDOFF.md in full (the status at the top, §1, §2's "PR 7"
-block, §3, §4 (how to work, the checks since PR 7's close, the traps, the iCloud notes, the
-user's style), §5, §6 first), then docs/EXPERIMENT_NOTEBOOK_PLAN.md (E11 and D4), then the
-code to review: src/age_group_prediction/hyperparameter_tuning/ (every file), the tuning cells
-of notebooks/03_hyperparameter_tuning.py and notebooks/02_objective_eda.py, and their figure
-code (03's forest_figure, ridge_figure, permutation_figure, beeswarm_figure, the waterfall and
-7.3's figures; 02's EDA figures).
+Read docs/SIMPLIFICATION_REVIEW_PLAN.md in full (the status, §2 the sub-tasks at a glance,
+§3 how a sub-task is done, §4's S1), then docs/EXPERIMENT_NOTEBOOK_HANDOFF.md: the status at
+the top, §4 (how to work, git and the editor, the checks since PR 7's close, the traps, the
+iCloud notes, the user's style) and §6. Then the code S1 names in
+notebooks/03_hyperparameter_tuning.py: the bootstrap evaluator's cell, the best-runs cell, the
+paired-difference cell, the test evaluation cell and the test figures cell.
 Verify the state first:
-- the branch feat/mlflow-runs, HEAD my commit of the handoff after PR #26's merge (on main's
-  574287e), `git status` clean;
+- the branch feat/mlflow-runs, HEAD my commit of the handoff's end-of-session update (on
+  9b5baf0, the review's docs), `git status` clean;
 - the notebooks' md5 (`cat <file> | md5`): 02_objective_eda.py
   373c1c39f717935cb08ce14ff6e05a3a, 03_hyperparameter_tuning.py 47c8ce343350475eebe8c2007a00397e;
 - no iCloud-offloaded files: `find .git src notebooks tests docs configs -flags +dataless -type f
   | grep -vc __pycache__` is 0.
-If anything differs (my marimo editor may have saved over it: trimmed returns, an empty cell),
-stop and show me the diff. Then copy checks/, probes/, viewer/, the logs and the pickles the
-status at the top lists from the scratchpad it names (or rewrite them from §4), set each
-script's S= to the new scratchpad, and compile the pycache (§4's iCloud notes).
-Then plan, in plan mode, a review for overcomplication (§6 step 1): is the hyperparameter
-tuning (the package and the notebook cells) and the visualization overcomplicated, and what can
-be simplified? Read-only; each finding with its evidence, what it would break, a
-recommendation and the trade-off; written as a plan doc in docs/ with sub-tasks I accept or
-reject one by one. Wait for my go. The MLflow plan comes after the review's decisions.
+If anything differs (my marimo editor may have saved over a notebook: trimmed returns, an empty
+cell), stop and show me the diff. Then copy checks/, probes/, viewer/, the logs and the pickles
+from the scratchpad the handoff's top status names into your scratchpad, set each script's S=
+to it, and compile the pycache (§4's iCloud notes). If that scratchpad is gone, tell me before
+rewriting anything.
+Then do sub-task S1 only (the bootstrap statistics and the paired difference as two
+functions), exactly as the review plan's S1 describes: plan it first in plan mode (re-verify
+its line numbers and facts read-only, list the exact edits), wait for my go, implement it, run
+the checks of the review plan's §3 (the runner copied from run_close_7.sh, Check C equal to
+check_c_close_7_tuning.pkl and check_c_close_7_eda.pkl with nothing excepted, and S1's
+mutation). The outputs must not change. Do not start S2.
+Do not do S5 or S7 in this session: they are planned for another model.
 Don't run the test evaluation on my cache: that run is mine (E11). My marimo session may be
 open: tell me before editing the notebook and remind me to reload it after (not to save from
-it). Keep the implementation simple. Stop each step with a file-by-file summary, the checks, the
-notebooks' md5 and the commit message in a copyable code block. I commit myself: never commit,
-no Co-Authored-By line, no "Generated with Claude Code" in PR text, never git
-checkout/stash/reset/mv.
+it). Keep the implementation simple; no private helpers; a notebook function reads no notebook
+global. Stop with a file-by-file summary, the checks, the notebooks' md5 and the commit message
+in a copyable code block; tick S1 and update the status lines in the review plan and at the top
+of the handoff. I commit myself: never commit, no Co-Authored-By line, no "Generated with
+Claude Code" in PR text, never git checkout/stash/reset/mv.
 ```
