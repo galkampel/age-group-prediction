@@ -660,18 +660,17 @@ def test_the_plots_open_on_their_forms_and_the_selection_metric(
     notebook_defs: dict,
 ) -> None:
     # 5.4b: the best runs' plot opens on the forest, the paired difference's
-    # on the ridge; both metric menus on the selection metric. The runs' menu
-    # (which also sets the permutation importance's metric, bias excepted)
-    # offers the two selection metrics and bias; the difference's, all six.
+    # on the ridge; both metric menus on the selection metric. S4: both offer
+    # all six metrics; the runs' menu only draws (the permutation importance
+    # scores the selection metric).
     assert notebook_defs["best_runs_plot"].value == "forest"
     assert notebook_defs["best_difference_plot"].value == "ridge"
     selection = notebook_defs["SELECTION_METRIC"].name
+    metric_names = [metric.name for metric in notebook_defs["METRICS"]]
     runs_metric = notebook_defs["best_runs_metric"]
-    assert list(runs_metric.options) == ["rmse", "poisson_deviance", "bias"]
+    assert list(runs_metric.options) == metric_names
     difference_metric = notebook_defs["best_difference_metric"]
-    assert list(difference_metric.options) == [
-        metric.name for metric in notebook_defs["METRICS"]
-    ]
+    assert list(difference_metric.options) == metric_names
     assert runs_metric.value == difference_metric.value == selection == "rmse"
 
 

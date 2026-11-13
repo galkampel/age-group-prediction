@@ -638,9 +638,9 @@ def _(mo):
     neighborhoods and inspected behind its button (the permutation importance
     and the SHAP values per cohort). The two best runs' paired
     difference, per bootstrap replicate, shows whether one is better; a
-    "Metric" menu chooses the metric of the plots and, unless it is bias, of
-    the permutation importance (`selection_metric` by default). The
-    objective EDA
+    "Metric" menu chooses the metric of each plot (`selection_metric` by
+    default); the permutation importance always scores `selection_metric`.
+    The objective EDA
     (`02_objective_eda.py`) describes the studies' storage and their trials.
     """)
     return
@@ -1777,16 +1777,16 @@ def _(gaussian_kde, go, make_subplots, np):
 
 
 @app.cell
-def _(SELECTION_METRIC, mo):
+def _(METRICS, SELECTION_METRIC, mo):
     # The form of the best runs' plot: the forest (each run's score and 95%
     # interval) or the ridge (the density of each run's bootstrap
-    # replicates); and its metric, the selection metric by default, which the
-    # permutation importance also scores unless it is bias.
+    # replicates); and its metric, any of the six, the selection metric by
+    # default.
     best_runs_plot = mo.ui.radio(
         options=["forest", "ridge"], value="forest", inline=True, label="Plot"
     )
     best_runs_metric = mo.ui.dropdown(
-        options=["rmse", "poisson_deviance", "bias"],
+        options=[metric.name for metric in METRICS],
         value=SELECTION_METRIC.name,
         label="Metric",
     )
@@ -1796,8 +1796,6 @@ def _(SELECTION_METRIC, mo):
 @app.cell
 def _(
     CI_BOUND_NAMES,
-    METRICS,
-    SELECTION_METRIC,
     best_replicate_scores,
     best_runs_metric,
     best_runs_plot,
@@ -1806,16 +1804,6 @@ def _(
     mo,
     ridge_figure,
 ):
-    # The permutation importance's metric: the chosen one when it is a loss;
-    # for bias, a signed score, the selection metric.
-    if best_runs_metric.value in ("rmse", "poisson_deviance"):
-        importance_metric = {metric.name: metric for metric in METRICS}[
-            best_runs_metric.value
-        ]
-    elif best_runs_metric.value == "bias":
-        importance_metric = SELECTION_METRIC
-    else:
-        raise ValueError(f"unknown metric {best_runs_metric.value!r}")
     if best_runs_plot.value == "forest":
         best_runs_figure = forest_figure(
             best_runs_val_scores_df,
@@ -1840,7 +1828,7 @@ def _(
             best_runs_figure,
         ]
     )
-    return (importance_metric,)
+    return
 
 
 @app.cell
@@ -1922,27 +1910,27 @@ def _(
 
 
 @app.cell
-def _(importance_metric, mo):
+def _(SELECTION_METRIC, mo):
     run_inspection = mo.ui.run_button(label="Inspect the best runs")
     mo.md(
         f"{run_inspection} each model's best run: the permutation importance on "
-        f"{importance_metric.name} and the SHAP values per cohort (about two minutes)."
+        f"{SELECTION_METRIC.name} and the SHAP values per cohort (about two minutes)."
     )
     return (run_inspection,)
 
 
 @app.cell
-def _(COHORTS, Metric, functools, importance_metric):
+def _(COHORTS, Metric, SELECTION_METRIC, functools):
     # The permutation importance's score: the composite, and each cohort
     # scored alone (the metric's cohort=); a partial, not a lambda, so each
     # metric keeps its own cohort.
     importance_metrics = {
-        "composite": importance_metric,
+        "composite": SELECTION_METRIC,
         **{
             cohort: Metric(
-                f"{importance_metric.name}_{cohort}",
-                functools.partial(importance_metric.function, cohort=cohort),
-                importance_metric.direction,
+                f"{SELECTION_METRIC.name}_{cohort}",
+                functools.partial(SELECTION_METRIC.function, cohort=cohort),
+                SELECTION_METRIC.direction,
             )
             for cohort in COHORTS
         },
@@ -2095,13 +2083,39 @@ def _(go, np):
 
 
 @app.cell
+def _(np, pd):
+    def build_importance_table(permutation_by_split, explanation):
+        """A row per raw column, in X's column order (`explanation`'s
+        feature_names): the permutation importance's mean and SD over the
+        repeats per split of `permutation_by_split` ({split: scikit-learn's
+        result}, in its order), then the mean |SHAP| over the explained rows
+        per cohort and for the composite (D18)."""
+        columns = {}
+        for split, result in permutation_by_split.items():
+            columns[f"perm_fi_mean_{split}"] = result.importances_mean
+            columns[f"perm_fi_std_{split}"] = result.importances_std
+        mean_abs_shap = np.abs(explanation.values).mean(axis=0)
+        for position, cohort in enumerate(explanation.output_names):
+            columns[f"mean_abs_shap_{cohort}"] = mean_abs_shap[:, position]
+        # Over the rows and the cohorts at once: the mean over the cohorts, up
+        # to the last bit.
+        columns["mean_abs_shap_composite"] = np.abs(explanation.values).mean(
+            axis=(0, 2)
+        )
+        table = pd.DataFrame(columns, index=explanation.feature_names)
+        return table.rename_axis("column").reset_index()
+
+    return (build_importance_table,)
+
+
+@app.cell
 def _(
+    SELECTION_METRIC,
     best_runs_permutation,
     best_runs_shap,
     best_runs_val_scores_df,
-    importance_metric,
+    build_importance_table,
     mo,
-    np,
     pd,
 ):
     # The two importances side by side, per model and raw column: the permutation
@@ -2111,25 +2125,9 @@ def _(
     # feature_names.
     _rows = []
     for _model, _shap in best_runs_shap.items():
-        _permutation = best_runs_permutation[_model]["composite"]
-        _mean_abs_shap = np.abs(_shap.values).mean(axis=0)
-        _table = pd.DataFrame(
-            {
-                "perm_fi_mean_train": _permutation["train"].importances_mean,
-                "perm_fi_std_train": _permutation["train"].importances_std,
-                "perm_fi_mean_val": _permutation["val"].importances_mean,
-                "perm_fi_std_val": _permutation["val"].importances_std,
-                **{
-                    f"mean_abs_shap_{cohort}": _mean_abs_shap[:, position]
-                    for position, cohort in enumerate(_shap.output_names)
-                },
-                # Over the rows and the cohorts at once: the mean over the
-                # cohorts, up to the last bit.
-                "mean_abs_shap_composite": np.abs(_shap.values).mean(axis=(0, 2)),
-            },
-            index=_shap.feature_names,
+        _table = build_importance_table(
+            best_runs_permutation[_model]["composite"], _shap
         )
-        _table = _table.rename_axis("column").reset_index()
         _table.insert(0, "model", _model)
         _rows.append(_table)
     importance_df = pd.concat(_rows, ignore_index=True)
@@ -2155,7 +2153,7 @@ def _(
             mo.md(
                 "**Feature importance of each model's best run, per raw column** "
                 "(perm_fi_mean_val: the permutation feature importance, the drop of "
-                f"the composite {importance_metric.name} on validation when the "
+                f"the composite {SELECTION_METRIC.name} on validation when the "
                 "column is shuffled, the decision; perm_fi_mean_train: the same on "
                 "the training rows, what the model fitted, so a column high there "
                 "and near 0 on validation is overfit; perm_fi_std_train, "
@@ -2182,8 +2180,8 @@ def _(COHORTS, mo):
 
 @app.cell
 def _(
+    SELECTION_METRIC,
     best_runs_permutation,
-    importance_metric,
     mo,
     n_repeats,
     permutation_cohort,
@@ -2195,7 +2193,7 @@ def _(
         model: permutation_figure(
             permutation[_cohort],
             list(train_age_group.X.columns),
-            f"{_cohort} {importance_metric.name}",
+            f"{_cohort} {SELECTION_METRIC.name}",
         )
         for model, permutation in best_runs_permutation.items()
     }
@@ -2206,7 +2204,7 @@ def _(
         [
             mo.md(
                 "**The permutation importance of each model's best run, per "
-                f"column: the drop of the {_cohort} {importance_metric.name} when "
+                f"column: the drop of the {_cohort} {SELECTION_METRIC.name} when "
                 f"the column is shuffled** (a box over the {n_repeats} shuffles, "
                 "train in gray, validation in blue; the line the median, the "
                 "dashed line the mean; the columns by their validation mean)"
@@ -2678,29 +2676,23 @@ def _(
 
 
 @app.cell
-def _(importance_metric, mo, np, pd, test_permutation, test_scores_df, test_shap):
+def _(
+    SELECTION_METRIC,
+    build_importance_table,
+    mo,
+    pd,
+    test_permutation,
+    test_scores_df,
+    test_shap,
+):
     # As section 5's tables, on the test part: per model and raw column, the
     # permutation importance's mean and spread, and the mean |SHAP| over the
     # test buildings per cohort and for the composite.
     _tables = []
     for _model, _explanation in test_shap.items():
-        _composite = test_permutation[_model]["composite"]
-        _mean_abs_shap = np.abs(_explanation.values).mean(axis=0)
-        _table = pd.DataFrame(
-            {
-                "perm_fi_mean_test": _composite.importances_mean,
-                "perm_fi_std_test": _composite.importances_std,
-                **{
-                    f"mean_abs_shap_{cohort}": _mean_abs_shap[:, position]
-                    for position, cohort in enumerate(_explanation.output_names)
-                },
-                "mean_abs_shap_composite": np.abs(_explanation.values).mean(
-                    axis=(0, 2)
-                ),
-            },
-            index=_explanation.feature_names,
+        _table = build_importance_table(
+            {"test": test_permutation[_model]["composite"]}, _explanation
         )
-        _table = _table.rename_axis("column").reset_index()
         _table.insert(0, "model", _model)
         _tables.append(_table)
     test_importance_df = pd.concat(_tables, ignore_index=True)
@@ -2726,7 +2718,7 @@ def _(importance_metric, mo, np, pd, test_permutation, test_scores_df, test_shap
                 "**Feature importance of each model's refit best run on the test "
                 "part, per raw column** (the models refit on the training and "
                 "validation parts, not section 5's; perm_fi_mean_test: the drop of "
-                f"the composite {importance_metric.name} on the test part when the "
+                f"the composite {SELECTION_METRIC.name} on the test part when the "
                 "column is shuffled; perm_fi_std_test: its spread over the "
                 "repeated shuffles; mean_abs_shap_<cohort>: the mean |SHAP| over "
                 "all the test buildings; mean_abs_shap_composite: their mean over "
@@ -2750,7 +2742,7 @@ def _(COHORTS, mo):
 
 @app.cell
 def _(
-    importance_metric,
+    SELECTION_METRIC,
     mo,
     n_repeats,
     permutation_figure,
@@ -2763,7 +2755,7 @@ def _(
         model: permutation_figure(
             {"test": permutation[_cohort]},
             list(test_age_group.X.columns),
-            f"{_cohort} {importance_metric.name}",
+            f"{_cohort} {SELECTION_METRIC.name}",
         )
         for model, permutation in test_permutation.items()
     }
@@ -2774,7 +2766,7 @@ def _(
         [
             mo.md(
                 "**The permutation importance of each refit model on the test part, "
-                f"per column: the drop of the {_cohort} {importance_metric.name} "
+                f"per column: the drop of the {_cohort} {SELECTION_METRIC.name} "
                 f"when the column is shuffled** (a box over the {n_repeats} "
                 "shuffles; the line the median, the dashed line the mean; reported, "
                 "never used to choose)"

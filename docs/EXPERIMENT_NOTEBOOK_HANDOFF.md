@@ -1,4 +1,35 @@
-# Handoff: the experiment notebooks, PR 7 merged (#26); the simplification review decided, S1 done, S2 next, then the MLflow plan
+# Handoff: the experiment notebooks, PR 7 merged (#26); the simplification review: S1–S4 done, S6 next, then S7 and S5 (Fable), S8, then the MLflow plan
+
+**Status (2026-11-13, S1 and S2 committed; S3 + S4 done together and checked, uncommitted; next S6):**
+- **Committed (the user's):** S1 `5bf8e48`, S2 `c01483f` (its message first read S3's, reworded by
+  the user and force-pushed).
+- **S3 + S4** (the user asked for one stop): `build_importance_table` builds sections 5's and 6's
+  importance tables; the permutation importance always scores `SELECTION_METRIC`
+  (`importance_metric` gone), the best runs' "Metric" menu offers the six metrics and only draws;
+  section 5's sentence is the user's choice. Each sub-task's Done note in the review plan has the
+  details.
+- **Every check passed** (`run_S34.sh`, log `run_S34.log`): the suite 1411, mypy 28, the
+  notebook tests 32, ruff `03` 15 (one more `PLR1711`: the best-runs figure cell's bare `return`)
+  / `02` 11, the format hunks, `marimo check`, Check B on both, Check C on both equal to S2's run
+  with nothing excepted; S3's mutation (`run_mutant_S34.sh`) caught.
+- **Uncommitted:** `notebooks/03_hyperparameter_tuning.py`,
+  `tests/characterization/test_hyperparameter_tuning_notebook.py`,
+  `docs/SIMPLIFICATION_REVIEW_PLAN.md`, this handoff. The commit:
+
+  ```text
+  refactor(notebook): the importance table built by one function; the permutation importance on the selection metric, the best runs' Metric menu only draws (S3, S4)
+  ```
+- **The notebooks' md5:** `02_objective_eda.py` `373c1c39f717935cb08ce14ff6e05a3a` (unchanged),
+  `03_hyperparameter_tuning.py` `986a753e9e1da986743cda40450f7f2c`.
+- **The test part has still not been run on the user's cache** (E11).
+- **The scratchpad:** the one named in the status below, now also holding `run_S2.sh`,
+  `run_S34.sh`, their mutants, `check_c_s2_tuning.py` / `check_c_s34_tuning.py` (with their
+  `make_check_c_*.py`), `new_cells_s2/`, `new_cells_s34/`, their logs, and **the next sub-task's
+  references** `check_c_s34_tuning.pkl` and `check_c_s34_eda.pkl` (with its two figures' JSON).
+  The next runner is `run_S34.sh` copied, its outputs renamed and its references these.
+- **Next:** S6 (Opus 5.5); then S7 and S5 (Fable; their probes must first update the scripts
+  that still read `best_model1`, `model1_shap`, `importance_metric`: `probes/make_copy_probe.py`,
+  `probes/look_7_1e.py`, `probes/probe_7_1.py`, `viewer/beeswarm_7_1b.py`); then S8.
 
 **Status (2026-11-13, S1 done and checked, uncommitted; next S2):**
 - **S1** (the review plan's S1, ticked there with its Done note): `summarize_replicates` and

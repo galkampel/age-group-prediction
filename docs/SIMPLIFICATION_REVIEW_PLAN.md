@@ -5,12 +5,15 @@ accepted one (written so that Claude Opus 5.5 can implement it from this file an
 [the handoff](EXPERIMENT_NOTEBOOK_HANDOFF.md) §4). One sub-task per approval. Tick a sub-task
 when it is done and update the status line.
 
-**Status (2026-11-13):** **S1 done and checked, uncommitted** (on HEAD `473c978`, branch
-`feat/mlflow-runs`): every check passed, Check C equal to PR 7's close with nothing excepted (the
-four statistics frames bit-equal), the mutation caught. Next: the user commits S1, then S2. The
-notebooks' md5: `02_objective_eda.py` `373c1c39f717935cb08ce14ff6e05a3a` (unchanged),
-`03_hyperparameter_tuning.py` `89ca8db69185d361b1a8dfef7735ca67`. Check C's references for S2:
-`check_c_s1_tuning.pkl`, `check_c_s1_eda.pkl` (the handoff's top status names the scratchpad).
+**Status (2026-11-13):** S1 committed (`5bf8e48`), S2 committed (`c01483f`); **S3 and S4 done
+together (the user's request) and checked, uncommitted**, on HEAD `c01483f`, branch
+`feat/mlflow-runs`: every check passed, Check C equal to S2's run with nothing excepted (both
+importance tables bit-equal), S3's mutation caught. Next: the user commits S3 + S4, then S6
+(Opus 5.5); then S7 and S5 (Fable); then S8. The notebooks' md5: `02_objective_eda.py`
+`373c1c39f717935cb08ce14ff6e05a3a` (unchanged), `03_hyperparameter_tuning.py`
+`986a753e9e1da986743cda40450f7f2c`. Check C's references for the next sub-task:
+`check_c_s34_tuning.py`'s run `check_c_s34_tuning.pkl` and `check_c_s34_eda.pkl` (the handoff's
+top status names the scratchpad).
 
 **Status (2026-11-12):** the review is written and **decided** (the user's answers): S1–S8
 all accepted (S7 as option (b); S4 without waiting for the manual check); L1–L8 all left as
@@ -166,7 +169,7 @@ line, now the `build_paired_difference(` call).
 refactor(notebook): the bootstrap statistics and the paired difference each in one function (S1)
 ```
 
-### [ ] S2. The inspection becomes one cell over `best_runs`
+### [x] S2. The inspection becomes one cell over `best_runs`
 
 - **Model:** Opus 5.5.
 - **Evidence:** the two inspection cells (1957–1993, 1996–2028) differ only in the model.
@@ -204,12 +207,25 @@ refactor(notebook): the bootstrap statistics and the paired difference each in o
 the new names). Mutation: use `best_runs["independent_cohorts"]["model"]` for both labels;
 Check C must fail on the second model's SHAP.
 
+**Done (2026-11-13, committed by the user as `c01483f`):** as the steps say; the readers loop
+over `best_runs_shap` / `best_runs_permutation` (the importance table's loop body kept for S3);
+the best-runs `return` kept multi-line, so `make_copy_tuning.py` needed no change; the notebook
+test's "not before the click" list names the two new dictionaries. Notebook −74 / +29. `run_S2.sh`
+(log `run_S2.log`): the suite 1411, mypy 28, the notebook tests 32, ruff `03` 14 / `02` 11, the
+format hunks, `marimo check`, Check B on both (`CHECK B S2 OK`), Check C on both equal to S1's
+run with nothing skipped (section 5's beeswarm still equal to 7.1b2's). Check C is
+`check_c_s2_tuning.py`, made by `make_check_c_s2.py` (its 15 reads of the six old names by the
+model's label, and an S2 assertion). `run_mutant_S2.sh`: Check C fails on the second model's
+permutation importance (90 / 90 values). Left: `probes/make_copy_probe.py`, `probes/look_7_1e.py`,
+`probes/probe_7_1.py` and `viewer/beeswarm_7_1b.py` still read the old names (S5.0's probe will
+need them updated).
+
 **Commit:**
 ```text
 refactor(notebook): the best runs inspected in one cell, the results by model label (S2)
 ```
 
-### [ ] S3. The importance table becomes one function
+### [x] S3. The importance table becomes one function
 
 - **Model:** Opus 5.5. Needs S2.
 - **Evidence:** the table is built twice (2127–2152 on train and validation, 2730–2751 on
@@ -233,12 +249,18 @@ refactor(notebook): the best runs inspected in one cell, the results by model la
 **Validate:** the runner passes; both frames equal to the reference, columns in the same
 order. Mutation: `importances_std` → `importances_mean` for the std column; Check C must fail.
 
+**Done (2026-11-13, with S4 in one stop and one commit, the user's request):** as the steps say;
+the new cell (`np, pd`) sits before section 5's importance table cell; both callers drop `np`.
+The checks are S4's below (`run_S34.sh`); `importance_df` and `test_importance_df` bit-equal to
+S2's run. `run_mutant_S34.sh` (this mutation): Check C fails on `perm_fi_std_train` (9 / 9
+values).
+
 **Commit:**
 ```text
 refactor(notebook): the importance table built by one function for validation and test (S3)
 ```
 
-### [ ] S4. The permutation importance scores the selection metric, not a plot's menu
+### [x] S4. The permutation importance scores the selection metric, not a plot's menu
 
 - **Model:** Opus 5.5. The manual check below is no longer a condition (see the decision);
   it is still worth a minute, to record whether the side effect was real.
@@ -277,6 +299,20 @@ refactor(notebook): the importance table built by one function for validation an
 **Validate:** the runner passes; Check C equal to the reference at the defaults (the selection
 metric is `rmse` in both). The test `test_the_plots_open_on_their_forms_and_the_selection_metric`
 still passes; if it pins the menu's three options, update it to six.
+
+**Done (2026-11-13, with S3):** as the steps say. Section 5's sentence (the user's choice): a
+"Metric" menu chooses the metric of each plot (`selection_metric` by default); the permutation
+importance always scores `selection_metric`. The best-runs figure cell now exports nothing (a
+bare `return`: ruff's `PLR1711` 13 → 14, `03` 14 → 15 findings, the same marimo form as the
+others). The test pins the six options. The manual check was not run (not a condition).
+Scratchpad: `make_copy_tuning.py` restores that cell's return as `return (best_runs_figure,)`
+(its old `importance_metric` would raise); `check_c_s34_tuning.py`, made by
+`make_check_c_s34.py` from S2's (11 reads → `SELECTION_METRIC`; the menu's six options;
+`importance_metric` absent; `build_importance_table` callable); Check B's `CHECK B S3 S4 OK`.
+`run_S34.sh` (log `run_S34.log`): the suite 1411, mypy 28, the notebook tests 32, ruff `03` 15 /
+`02` 11, the format hunks, `marimo check` clean, Check B on both, Check C on both equal to S2's
+run with nothing skipped. Left: `probes/look_7_1e.py` and other probes may read
+`importance_metric` (S5.0 updates them).
 
 **Commit:**
 ```text
