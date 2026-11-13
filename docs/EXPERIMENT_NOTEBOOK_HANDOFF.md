@@ -1,4 +1,29 @@
-# Handoff: the experiment notebooks, PR 7 merged (#26); the simplification review written, its decisions next, then the MLflow plan
+# Handoff: the experiment notebooks, PR 7 merged (#26); the simplification review decided, S1 done, S2 next, then the MLflow plan
+
+**Status (2026-11-13, S1 done and checked, uncommitted; next S2):**
+- **S1** (the review plan's S1, ticked there with its Done note): `summarize_replicates` and
+  `build_paired_difference` in one new cell after the bootstrap evaluator's; the four statistics
+  blocks and the two difference blocks are calls. Only `notebooks/03_hyperparameter_tuning.py`
+  changed (and the two docs); no `src` or test change.
+- **Every check passed** (`run_S1.sh`, log `run_S1.log`): the suite 1411, mypy 28, the notebook
+  tests 32, ruff `03` 14 / `02` 11, the format hunks, `marimo check`, Check B on both, Check C on
+  both equal to PR 7's close with nothing excepted; the mutation (`run_mutant_S1.sh`) caught.
+- **The commit (the user's):**
+
+  ```text
+  refactor(notebook): the bootstrap statistics and the paired difference each in one function (S1)
+  ```
+- **The notebooks' md5:** `02_objective_eda.py` `373c1c39f717935cb08ce14ff6e05a3a` (unchanged),
+  `03_hyperparameter_tuning.py` `89ca8db69185d361b1a8dfef7735ca67`.
+- **The test part has still not been run on the user's cache** (E11).
+- **The scratchpad to copy first:** `/private/tmp/claude-501/-Users-galkampel-Desktop-Projects-age-group-prediction/d561fa55-f8a3-41d2-9ef6-8b9217fb07c1/scratchpad`: the same files as the
+  status below lists, each script's `S=` set to it, `pycache/` compiled, plus `run_S1.sh`,
+  `run_mutant_S1.sh`, `new_cells_s1/` (the new cell and `splice_s1.py`), the logs `run_S1.log`,
+  `run_mutant_S1.log`, and **S2's references** `check_c_s1_tuning.pkl` and `check_c_s1_eda.pkl`
+  (with its two figures' JSON). S2's runner is `run_S1.sh` copied, its outputs renamed and its
+  references these.
+- **Next:** S2 (the review plan's §4), in a new Opus 5.5 session; then S3, S4, S6; S7 and S5 with
+  Fable; S8.
 
 **Status (2026-11-12, end of session: the review written, decided and committed as `9b5baf0`; the next session starts at §6 with S1):**
 - **The review for overcomplication is written** as

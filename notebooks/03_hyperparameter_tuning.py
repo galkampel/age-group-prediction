@@ -873,6 +873,52 @@ def _(BootstrapEvaluator, alpha, n_resamples, seed):
 
 
 @app.cell
+def _(pd):
+    def summarize_replicates(scores, replicate_scores, alpha, bound_names):
+        """A row per cohort and metric: `scores`, then the mean, median, SD and
+        percentile interval (its bounds named by `bound_names`) of
+        `replicate_scores`, a column per cohort and metric."""
+        return pd.DataFrame(
+            {
+                "score": scores,
+                "mean": replicate_scores.mean(),
+                "median": replicate_scores.median(),
+                "sd": replicate_scores.std(),
+                bound_names["lower"]: replicate_scores.quantile(alpha / 2),
+                bound_names["upper"]: replicate_scores.quantile(1 - alpha / 2),
+            }
+        )
+
+    def build_paired_difference(scores_df, replicate_scores, alpha, bound_names):
+        """The two best runs' paired difference, total times probability minus
+        independent cohorts: per replicate (both scored on the same replicate
+        rows), and a row per cohort and metric with the point scores'
+        difference and the replicates' statistics."""
+        difference_replicates = (
+            replicate_scores["total_times_probability"]
+            - replicate_scores["independent_cohorts"]
+        )
+        point_scores = scores_df.set_index(["model", "cohort", "metric"])["score"]
+        difference_df = (
+            summarize_replicates(
+                point_scores["total_times_probability"]
+                - point_scores["independent_cohorts"],
+                difference_replicates,
+                alpha,
+                bound_names,
+            )
+            .rename_axis(["cohort", "metric"])
+            .reset_index()
+        )
+        difference_df.insert(
+            0, "model", "total_times_probability - independent_cohorts"
+        )
+        return difference_replicates, difference_df
+
+    return build_paired_difference, summarize_replicates
+
+
+@app.cell
 def _():
     # The independent cohorts model's runs, in the order of their seeds (the
     # i-th study gets seed + i): a count family × exposure on or off. In each,
@@ -1396,6 +1442,7 @@ def _(
     bootstrap_evaluator,
     mo,
     pd,
+    summarize_replicates,
     val_age_group,
 ):
     # Each model's best run, by its point score on the selection metric of the
@@ -1440,15 +1487,13 @@ def _(
             cohorts=[*COHORTS, "composite"],
         )
         best_replicate_scores[_model_name] = _replicate_scores
-        _scores_by_run[_model_name, _family, _run["use_exposure"]] = pd.DataFrame(
-            {
-                "score": _run["scores"].loc["val", "score"],
-                "mean": _replicate_scores.mean(),
-                "median": _replicate_scores.median(),
-                "sd": _replicate_scores.std(),
-                CI_BOUND_NAMES["lower"]: _replicate_scores.quantile(alpha / 2),
-                CI_BOUND_NAMES["upper"]: _replicate_scores.quantile(1 - alpha / 2),
-            }
+        _scores_by_run[_model_name, _family, _run["use_exposure"]] = (
+            summarize_replicates(
+                _run["scores"].loc["val", "score"],
+                _replicate_scores,
+                alpha,
+                CI_BOUND_NAMES,
+            )
         )
     # A row per best run, cohort and metric: the run's model, family and
     # exposure, then its validation score and the bootstrap's statistics.
@@ -1824,43 +1869,19 @@ def _(
     best_difference_plot,
     best_replicate_scores,
     best_runs_val_scores_df,
+    build_paired_difference,
     forest_figure,
     mo,
-    pd,
     ridge_figure,
 ):
     # The two best runs' paired difference per replicate: both were scored on
     # the same replicate rows (one evaluator), so the difference keeps the
     # pairing, and its interval is far narrower than either run's. Below 0
     # the total times probability model scores lower.
-    _difference_name = "total_times_probability - independent_cohorts"
-    best_difference_replicates = (
-        best_replicate_scores["total_times_probability"]
-        - best_replicate_scores["independent_cohorts"]
+    best_difference_replicates, best_difference_df = build_paired_difference(
+        best_runs_val_scores_df, best_replicate_scores, alpha, CI_BOUND_NAMES
     )
-    _point_scores = best_runs_val_scores_df.set_index(["model", "cohort", "metric"])[
-        "score"
-    ]
-    # A row per cohort and metric: the point scores' difference, then the
-    # replicates' statistics, as for each run.
-    best_difference_df = (
-        pd.DataFrame(
-            {
-                "score": _point_scores["total_times_probability"]
-                - _point_scores["independent_cohorts"],
-                "mean": best_difference_replicates.mean(),
-                "median": best_difference_replicates.median(),
-                "sd": best_difference_replicates.std(),
-                CI_BOUND_NAMES["lower"]: best_difference_replicates.quantile(alpha / 2),
-                CI_BOUND_NAMES["upper"]: best_difference_replicates.quantile(
-                    1 - alpha / 2
-                ),
-            }
-        )
-        .rename_axis(["cohort", "metric"])
-        .reset_index()
-    )
-    best_difference_df.insert(0, "model", _difference_name)
+    _difference_name = best_difference_df["model"].iloc[0]
     # The chosen plot and metric, one x axis for every cohort so the rule at
     # 0 lines up.
     if best_difference_plot.value == "forest":
@@ -2446,12 +2467,14 @@ def _(
     best_runs,
     bootstrap_evaluator,
     build_independent_cohorts_model,
+    build_paired_difference,
     build_total_times_probability_model,
     compute_metrics,
     mo,
     pd,
     run_test_evaluation,
     seed,
+    summarize_replicates,
     test_age_group,
     train_age_group,
     val_age_group,
@@ -2508,50 +2531,27 @@ def _(
             cohorts=[*COHORTS, "composite"],
         )
         test_replicate_scores[_model_name] = _replicate_scores
-        _scores_by_run[_model_name, _family, _run["use_exposure"]] = pd.DataFrame(
-            {
-                "score": compute_metrics(
+        _scores_by_run[_model_name, _family, _run["use_exposure"]] = (
+            summarize_replicates(
+                compute_metrics(
                     test_age_group.Y,
                     test_predictions[_model_name],
                     METRICS,
                     cohorts=[*COHORTS, "composite"],
                 ).stack(),
-                "mean": _replicate_scores.mean(),
-                "median": _replicate_scores.median(),
-                "sd": _replicate_scores.std(),
-                CI_BOUND_NAMES["lower"]: _replicate_scores.quantile(alpha / 2),
-                CI_BOUND_NAMES["upper"]: _replicate_scores.quantile(1 - alpha / 2),
-            }
+                _replicate_scores,
+                alpha,
+                CI_BOUND_NAMES,
+            )
         )
     # A row per best run, cohort and metric, as on validation.
     test_scores_df = pd.concat(
         _scores_by_run, names=["model", "family", "use_exposure"]
     ).reset_index()
     # The two runs' paired difference per test replicate, as on validation.
-    _difference_name = "total_times_probability - independent_cohorts"
-    test_difference_replicates = (
-        test_replicate_scores["total_times_probability"]
-        - test_replicate_scores["independent_cohorts"]
+    test_difference_replicates, test_difference_df = build_paired_difference(
+        test_scores_df, test_replicate_scores, alpha, CI_BOUND_NAMES
     )
-    _point_scores = test_scores_df.set_index(["model", "cohort", "metric"])["score"]
-    test_difference_df = (
-        pd.DataFrame(
-            {
-                "score": _point_scores["total_times_probability"]
-                - _point_scores["independent_cohorts"],
-                "mean": test_difference_replicates.mean(),
-                "median": test_difference_replicates.median(),
-                "sd": test_difference_replicates.std(),
-                CI_BOUND_NAMES["lower"]: test_difference_replicates.quantile(alpha / 2),
-                CI_BOUND_NAMES["upper"]: test_difference_replicates.quantile(
-                    1 - alpha / 2
-                ),
-            }
-        )
-        .rename_axis(["cohort", "metric"])
-        .reset_index()
-    )
-    test_difference_df.insert(0, "model", _difference_name)
     mo.md(
         "**Each model's best run refit on the training and validation parts "
         f"({len(train_val_age_group.X)} rows) and scored once on the test part "

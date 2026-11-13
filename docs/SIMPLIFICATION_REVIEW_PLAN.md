@@ -5,6 +5,13 @@ accepted one (written so that Claude Opus 5.5 can implement it from this file an
 [the handoff](EXPERIMENT_NOTEBOOK_HANDOFF.md) §4). One sub-task per approval. Tick a sub-task
 when it is done and update the status line.
 
+**Status (2026-11-13):** **S1 done and checked, uncommitted** (on HEAD `473c978`, branch
+`feat/mlflow-runs`): every check passed, Check C equal to PR 7's close with nothing excepted (the
+four statistics frames bit-equal), the mutation caught. Next: the user commits S1, then S2. The
+notebooks' md5: `02_objective_eda.py` `373c1c39f717935cb08ce14ff6e05a3a` (unchanged),
+`03_hyperparameter_tuning.py` `89ca8db69185d361b1a8dfef7735ca67`. Check C's references for S2:
+`check_c_s1_tuning.pkl`, `check_c_s1_eda.pkl` (the handoff's top status names the scratchpad).
+
 **Status (2026-11-12):** the review is written and **decided** (the user's answers): S1–S8
 all accepted (S7 as option (b); S4 without waiting for the manual check); L1–L8 all left as
 they are. No sub-task is implemented yet: nothing in the notebooks, `src` or the tests has
@@ -105,7 +112,7 @@ Kept in every sub-task: the study cache's file names and the run records' keys.
 Lines are `03_hyperparameter_tuning.py`'s unless marked `02:` or a `src` file. Mark each
 **Decision** line `accept` or `reject`.
 
-### [ ] S1. The bootstrap statistics become one function, the paired difference another
+### [x] S1. The bootstrap statistics become one function, the paired difference another
 
 - **Model:** Opus 5.5.
 - **Evidence:** the frame `score, mean, median, sd, ci95_lower, ci95_upper` is built from
@@ -141,6 +148,18 @@ Lines are `03_hyperparameter_tuning.py`'s unless marked `02:` or a `src` file. M
 
 **Validate:** the runner passes; Check C equal to the reference with nothing excepted.
 Mutation: `alpha / 2` → `alpha` in `summarize_replicates`; Check C must fail on a bound.
+
+**Done (2026-11-13):** as the steps say; the new cell sits after the evaluator cell; the
+validation difference cell no longer reads `pd`; the lines +69 / −69 (the functions' docstrings
+weigh what the copies did). `run_S1.sh` (log `run_S1.log`): the non-slow suite 1411 passed, mypy
+28 files, the notebook tests 32, ruff `03` 14 and `02` 11, the two format hunks each, `marimo
+check` clean, Check B on both (with `CHECK B S1 OK`), Check C on the EDA (3 frames, 9 and 18
+figures identical) and on the tuning (every assertion; all 16 shared frames and both records
+equal to `check_c_close_7_tuning.pkl`, nothing skipped; `best_runs_val_scores_df`,
+`best_difference_df`, `test_scores_df`, `test_difference_df` also bit-equal, `mean` included).
+`run_mutant_S1.sh`: Check C fails on `ci95_lower` (100% of the values). Scratchpad scripts
+changed: `check_b_tuning.py` (the two names), `make_copy_tuning.py` (its difference cell's anchor
+line, now the `build_paired_difference(` call).
 
 **Commit:**
 ```text
