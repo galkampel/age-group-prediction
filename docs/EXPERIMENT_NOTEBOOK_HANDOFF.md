@@ -1,4 +1,29 @@
-# Handoff: the experiment notebooks, PR 7 merged (#26); the simplification review: S1–S4 done, S6 next, then S7 and S5 (Fable), S8, then the MLflow plan
+# Handoff: the experiment notebooks, PR 7 merged (#26); the simplification review: S1–S4 and S6 done, S8 planned, S7 and S5 (Fable), then the MLflow plan
+
+**Status (2026-11-13, S3 + S4 committed as `22edab1`; S6 done and checked, uncommitted; S8 planned):**
+- **S6** (the review plan's S6, ticked with its Done note): the EDA's independent cohorts cell
+  refits `_components_by_trial[_study.best_trial.number]`; only `notebooks/02_objective_eda.py`
+  changed (−11 / +4) and the two docs.
+- **Every check passed** (`run_S6.sh`, log `run_S6.log`): the suite 1411, mypy 28, the notebook
+  tests 32, ruff `03` 15 / `02` 11, the format hunks, `marimo check`, Check B on both, Check C on
+  both equal to S3 + S4's run with nothing excepted; the mutation (`run_mutant_S6.sh`) caught.
+- **The commit (the user's):**
+
+  ```text
+  refactor(notebook): the EDA's best components read from the trials' list (S6)
+  ```
+- **The notebooks' md5:** `02_objective_eda.py` `ba6656a2e3eb94de8a1a21a712e05095`,
+  `03_hyperparameter_tuning.py` `986a753e9e1da986743cda40450f7f2c` (unchanged).
+- **S8 is planned** (in the chat, 2026-11-13): `Component.select_component_params(best_params,
+  name)` beside `set_estimator_params`, both `from_params` call it; one unit test of the method;
+  the guide's table and §-paragraph on `from_params`; `run_S8.sh` against `check_c_s6_*`; the
+  mutation (no `"shared"`) on a full copy must fail the shared-draw test and the new one. It
+  depends on neither S7 nor S5; the user decides whether it goes before them.
+- **The scratchpad** (named in the status below) also holds `run_S6.sh`, `run_mutant_S6.sh`,
+  `new_cells_s6/`, the logs, and **the next references** `check_c_s6_tuning.pkl` and
+  `check_c_s6_eda.pkl` (with its two figures' JSON); the tuning's Check C is still
+  `check_c_s34_tuning.py`.
+- **The test part has still not been run on the user's cache** (E11).
 
 **Status (2026-11-13, S1 and S2 committed; S3 + S4 done together and checked, uncommitted; next S6):**
 - **Committed (the user's):** S1 `5bf8e48`, S2 `c01483f` (its message first read S3's, reworded by

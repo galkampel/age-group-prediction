@@ -5,15 +5,15 @@ accepted one (written so that Claude Opus 5.5 can implement it from this file an
 [the handoff](EXPERIMENT_NOTEBOOK_HANDOFF.md) §4). One sub-task per approval. Tick a sub-task
 when it is done and update the status line.
 
-**Status (2026-11-13):** S1 committed (`5bf8e48`), S2 committed (`c01483f`); **S3 and S4 done
-together (the user's request) and checked, uncommitted**, on HEAD `c01483f`, branch
-`feat/mlflow-runs`: every check passed, Check C equal to S2's run with nothing excepted (both
-importance tables bit-equal), S3's mutation caught. Next: the user commits S3 + S4, then S6
-(Opus 5.5); then S7 and S5 (Fable); then S8. The notebooks' md5: `02_objective_eda.py`
-`373c1c39f717935cb08ce14ff6e05a3a` (unchanged), `03_hyperparameter_tuning.py`
-`986a753e9e1da986743cda40450f7f2c`. Check C's references for the next sub-task:
-`check_c_s34_tuning.py`'s run `check_c_s34_tuning.pkl` and `check_c_s34_eda.pkl` (the handoff's
-top status names the scratchpad).
+**Status (2026-11-13):** S1 (`5bf8e48`), S2 (`c01483f`), S3 + S4 (`22edab1`) committed; **S6
+done and checked, uncommitted**, on HEAD `22edab1`, branch `feat/mlflow-runs`: every check
+passed, Check C equal to S3 + S4's run with nothing excepted, the mutation caught. Next: the
+user commits S6; then S8 (Opus 5.5, planned, may come before S7 and S5: it depends on neither);
+S7 and S5 with Fable. The notebooks' md5: `02_objective_eda.py`
+`ba6656a2e3eb94de8a1a21a712e05095`, `03_hyperparameter_tuning.py`
+`986a753e9e1da986743cda40450f7f2c` (unchanged). Check C's references for the next sub-task:
+`check_c_s6_tuning.pkl` and `check_c_s6_eda.pkl` (the tuning's Check C script is still
+`check_c_s34_tuning.py`; the handoff's top status names the scratchpad).
 
 **Status (2026-11-12):** the review is written and **decided** (the user's answers): S1–S8
 all accepted (S7 as option (b); S4 without waiting for the manual check); L1–L8 all left as
@@ -355,7 +355,7 @@ before and after shown to the user.
 refactor(notebook): the figures' palette and style defined once (S5.1)
 ```
 
-### [ ] S6. The EDA's first cell reads the best components once
+### [x] S6. The EDA's first cell reads the best components once
 
 - **Model:** Opus 5.5.
 - **Evidence:** the independent cohorts cell builds every trial's components (`02:`1012–1024),
@@ -371,6 +371,16 @@ refactor(notebook): the figures' palette and style defined once (S5.1)
    `_best_components = _components_by_trial[_study.best_trial.number]`.
 
 **Validate:** the runner passes; the EDA's frames and 27 figures equal to the reference.
+
+**Done (2026-11-13):** the second build removed; the refit takes
+`_components_by_trial[_study.best_trial.number]` directly under the joint cell's comment ("The
+best trial's model, refit on the training part"), so no `_best_components` name. `02` −11 / +4;
+ruff 11, the format hunks unchanged. `run_S6.sh` (log `run_S6.log`): the suite 1411, mypy 28, the
+notebook tests 32, `marimo check` clean, Check B on both, Check C on the EDA (3 frames, 9 and 18
+figures identical to S3 + S4's run) and on the tuning (unchanged notebook; every frame and
+record equal, nothing skipped). Mutation (`run_mutant_S6.sh`, not in the steps: the logic moved):
+`_components_by_trial[0]` (each 3-trial study's best is trial 1); the EDA's Check C fails on the
+independent cohorts' frame (`poisson_deviance`, 100% of the values).
 
 **Commit:**
 ```text

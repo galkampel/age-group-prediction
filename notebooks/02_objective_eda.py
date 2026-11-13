@@ -1031,18 +1031,11 @@ def _(
                 _feature_transformer_dict,
             )
         )
-        _best_components = tuple(
-            CountComponent.from_params(
-                _study.best_params,
-                name=cohort,
-                family=_family,
-                use_exposure=_use_exposure,
-                feature_transformer_dict=COUNT_FEATURE_TRANSFORMERS[_family],
-            )
-            for cohort in COHORTS
-        )
+        # The best trial's model, refit on the training part.
         _model = build_independent_cohorts_model(
-            _best_components, y_min=PREDICTION_FLOOR, random_state=seed
+            _components_by_trial[_study.best_trial.number],
+            y_min=PREDICTION_FLOOR,
+            random_state=seed,
         ).fit(train_age_group.X, train_age_group.Y, exposure=train_age_group.exposure)
         # Every metric on validation, per cohort and for the composite; the
         # study's value (in its own objective) and its seconds on each row.
