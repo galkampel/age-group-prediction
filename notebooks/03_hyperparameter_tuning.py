@@ -1459,9 +1459,8 @@ def _(
             ("val", "composite", SELECTION_METRIC.name), "score"
         ],
     )
-    best_model1, best_model2 = _best_run1["model"], _best_run2["model"]
-    # The two run records by the model's label: the test evaluation refits
-    # them from their components.
+    # The two run records by the model's label: the inspection explains their
+    # stored models, the test evaluation refits them from their components.
     best_runs = {
         "independent_cohorts": _best_run1,
         "total_times_probability": _best_run2,
@@ -1511,8 +1510,6 @@ def _(
         "interval; a table per model below)"
     )
     return (
-        best_model1,
-        best_model2,
         best_replicate_scores,
         best_runs,
         best_runs_val_scores_df,
@@ -1979,7 +1976,7 @@ def _(
 def _(
     PermutationImportance,
     ShapExplainer,
-    best_model1,
+    best_runs,
     importance_metrics,
     mo,
     n_repeats,
@@ -1997,56 +1994,25 @@ def _(
     # table, on training the overfit check. SHAP, exact at nine columns, of the
     # validation subsample against the training background; the values explain
     # the count (the rows' exposure), per row, column and cohort.
-    # scikit-learn's results per cohort (the composite first) and split, their
-    # arrays in X's column order.
-    model1_permutation = {
-        cohort: {
-            split: PermutationImportance(
-                metric, n_repeats, random_state=seed
-            ).compute_importances(best_model1, part.X, part.Y, exposure=part.exposure)
-            for split, part in (("train", train_age_group), ("val", val_age_group))
+    # scikit-learn's results per model, cohort (the composite first) and split,
+    # their arrays in X's column order; SHAP's explanation per model.
+    best_runs_permutation, best_runs_shap = {}, {}
+    for _model_name, _run in best_runs.items():
+        best_runs_permutation[_model_name] = {
+            cohort: {
+                split: PermutationImportance(
+                    metric, n_repeats, random_state=seed
+                ).compute_importances(
+                    _run["model"], part.X, part.Y, exposure=part.exposure
+                )
+                for split, part in (("train", train_age_group), ("val", val_age_group))
+            }
+            for cohort, metric in importance_metrics.items()
         }
-        for cohort, metric in importance_metrics.items()
-    }
-    model1_shap = ShapExplainer(method="exact", n_jobs=-1).explain(
-        best_model1, shap_rows.X, shap_background, exposure=shap_rows.exposure
-    )
-    return model1_permutation, model1_shap
-
-
-@app.cell
-def _(
-    PermutationImportance,
-    ShapExplainer,
-    best_model2,
-    importance_metrics,
-    mo,
-    n_repeats,
-    run_inspection,
-    seed,
-    shap_background,
-    shap_rows,
-    train_age_group,
-    val_age_group,
-):
-    mo.stop(
-        not run_inspection.value, mo.md("Click the button to inspect the best runs.")
-    )
-    # scikit-learn's results per cohort (the composite first) and split, their
-    # arrays in X's column order.
-    model2_permutation = {
-        cohort: {
-            split: PermutationImportance(
-                metric, n_repeats, random_state=seed
-            ).compute_importances(best_model2, part.X, part.Y, exposure=part.exposure)
-            for split, part in (("train", train_age_group), ("val", val_age_group))
-        }
-        for cohort, metric in importance_metrics.items()
-    }
-    model2_shap = ShapExplainer(method="exact", n_jobs=-1).explain(
-        best_model2, shap_rows.X, shap_background, exposure=shap_rows.exposure
-    )
-    return model2_permutation, model2_shap
+        best_runs_shap[_model_name] = ShapExplainer(method="exact", n_jobs=-1).explain(
+            _run["model"], shap_rows.X, shap_background, exposure=shap_rows.exposure
+        )
+    return best_runs_permutation, best_runs_shap
 
 
 @app.cell
@@ -2130,13 +2096,11 @@ def _(go, np):
 
 @app.cell
 def _(
+    best_runs_permutation,
+    best_runs_shap,
     best_runs_val_scores_df,
     importance_metric,
     mo,
-    model1_permutation,
-    model1_shap,
-    model2_permutation,
-    model2_shap,
     np,
     pd,
 ):
@@ -2146,10 +2110,8 @@ def _(
     # composite (D18). Both hold arrays in X's column order, SHAP's
     # feature_names.
     _rows = []
-    for _model, _permutation, _shap in [
-        ("independent_cohorts", model1_permutation["composite"], model1_shap),
-        ("total_times_probability", model2_permutation["composite"], model2_shap),
-    ]:
+    for _model, _shap in best_runs_shap.items():
+        _permutation = best_runs_permutation[_model]["composite"]
         _mean_abs_shap = np.abs(_shap.values).mean(axis=0)
         _table = pd.DataFrame(
             {
@@ -2220,10 +2182,9 @@ def _(COHORTS, mo):
 
 @app.cell
 def _(
+    best_runs_permutation,
     importance_metric,
     mo,
-    model1_permutation,
-    model2_permutation,
     n_repeats,
     permutation_cohort,
     permutation_figure,
@@ -2236,10 +2197,7 @@ def _(
             list(train_age_group.X.columns),
             f"{_cohort} {importance_metric.name}",
         )
-        for model, permutation in (
-            ("independent_cohorts", model1_permutation),
-            ("total_times_probability", model2_permutation),
-        )
+        for model, permutation in best_runs_permutation.items()
     }
     _views = []
     for _model, _figure in permutation_figures.items():
@@ -2387,14 +2345,11 @@ def _(go, np, pd):
 
 
 @app.cell
-def _(beeswarm_figure, mo, model1_shap, model2_shap, seed, shap_cohort, shap_rows):
+def _(beeswarm_figure, best_runs_shap, mo, seed, shap_cohort, shap_rows):
     _cohort = shap_cohort.value
     shap_beeswarm_figures = {
         model: beeswarm_figure(explanation, shap_rows.X, _cohort, seed)
-        for model, explanation in (
-            ("independent_cohorts", model1_shap),
-            ("total_times_probability", model2_shap),
-        )
+        for model, explanation in best_runs_shap.items()
     }
     _views = []
     for _model, _figure in shap_beeswarm_figures.items():

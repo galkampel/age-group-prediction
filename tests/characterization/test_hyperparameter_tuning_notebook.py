@@ -691,7 +691,8 @@ def test_the_shap_beeswarm_opens_on_the_first_cohort(
     for name in (
         "shap_beeswarm_figures",
         "importance_df",
-        "model1_permutation",
+        "best_runs_permutation",
+        "best_runs_shap",
         "permutation_figures",
     ):
         assert name not in notebook_defs, name
