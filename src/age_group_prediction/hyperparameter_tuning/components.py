@@ -55,6 +55,17 @@ class Component(abc.ABC):
     feature_transformer: FeatureTransformer
 
     @staticmethod
+    def select_component_params(
+        best_params: Mapping[str, Any], name: str
+    ) -> dict[str, Any]:
+        """The entries of ``best_params`` under ``<name>__`` or ``shared__``, the prefix removed."""
+        return {
+            parameter_name.split("__", 1)[1]: value
+            for parameter_name, value in best_params.items()
+            if parameter_name.split("__", 1)[0] in (name, "shared")
+        }
+
+    @staticmethod
     def set_estimator_params[P: EstimatorParams](
         params: Mapping[str, Any], params_class: type[P]
     ) -> P:
@@ -102,11 +113,7 @@ class CountComponent(Component):
         A choice the independent cohorts model shares sits under
         ``shared__`` and counts as the component's own.
         """
-        params = {
-            parameter_name.split("__", 1)[1]: value
-            for parameter_name, value in best_params.items()
-            if parameter_name.split("__", 1)[0] in (name, "shared")
-        }
+        params = cls.select_component_params(best_params, name)
         estimator_params: LGBMParams | PoissonGLMParams | NB2Params
         if family in ("lgbm_poisson", "lgbm_gaussian"):
             estimator_params = cls.set_estimator_params(params, LGBMParams)
@@ -167,11 +174,7 @@ class ProbabilityComponent(Component):
         feature_transformer_dict: Mapping[str, FeatureTransformer],
     ) -> Self:
         """The component ``best_params`` names under ``name``: its family's record, calibration and transformer, through ``feature_transformer_dict``."""
-        params = {
-            parameter_name.split("__", 1)[1]: value
-            for parameter_name, value in best_params.items()
-            if parameter_name.split("__", 1)[0] in (name, "shared")
-        }
+        params = cls.select_component_params(best_params, name)
         estimator_params: LGBMParams | LogisticParams
         if family == "lgbm":
             estimator_params = cls.set_estimator_params(params, LGBMParams)

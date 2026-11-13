@@ -23,7 +23,7 @@ other in order.
 | module | answers | main names |
 |---|---|---|
 | `params` | which hyperparameters an estimator family searches | `LGBMParams`, `PoissonGLMParams`, `NB2Params`, `LogisticParams`, `EstimatorParams` |
-| `components` | what one part of a composite is: family, transformer, estimator params | `CountComponent`, `ProbabilityComponent` (`from_params`, `make_estimator`, `to_dict`), `CountFamily`, `ProbabilityFamily` |
+| `components` | what one part of a composite is: family, transformer, estimator params | `Component` (`select_component_params`), `CountComponent`, `ProbabilityComponent` (`from_params`, `make_estimator`, `to_dict`), `CountFamily`, `ProbabilityFamily` |
 | `search_spaces` | how a trial samples one component's choices | `CountSearchSpace`, `ProbabilitySearchSpace` |
 | `builders` | which components a trial draws for a composite or for one named component, and the composite built from components | `suggest_independent_cohorts_components`, `suggest_total_times_probability_components`, `suggest_count_component`, `suggest_probability_component`, `build_independent_cohorts_model`, `build_total_times_probability_model` |
 | `cross_validation` | a model's cross-validated score, the study of each composite, and the study of one of Model 2's components with the other fixed | `CrossValidationTuner` |
@@ -362,7 +362,7 @@ or `"total"` / `"probability"`), `family`, `feature_transformer` (the object its
 trial's draws (the objective, §5), or by `from_params(best_params, *, name, family, ...,
 feature_transformer_dict)` from a study's parameters (the refit). `from_params` takes the
 entries under `<name>__` and under `shared__` (a choice is shared or the component's own,
-never both), fills the family's record field by field, so a missing entry raises `KeyError`
+never both) through `Component.select_component_params(best_params, name)`, fills the family's record field by field, so a missing entry raises `KeyError`
 naming it, and resolves the transformer's name through the dict.
 
 `make_estimator(*, random_state=None)` is an `if`/`elif` on the family with a raising

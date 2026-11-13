@@ -5,15 +5,16 @@ accepted one (written so that Claude Opus 5.5 can implement it from this file an
 [the handoff](EXPERIMENT_NOTEBOOK_HANDOFF.md) §4). One sub-task per approval. Tick a sub-task
 when it is done and update the status line.
 
-**Status (2026-11-13):** S1 (`5bf8e48`), S2 (`c01483f`), S3 + S4 (`22edab1`) committed; **S6
-done and checked, uncommitted**, on HEAD `22edab1`, branch `feat/mlflow-runs`: every check
-passed, Check C equal to S3 + S4's run with nothing excepted, the mutation caught. Next: the
-user commits S6; then S8 (Opus 5.5, planned, may come before S7 and S5: it depends on neither);
-S7 and S5 with Fable. The notebooks' md5: `02_objective_eda.py`
-`ba6656a2e3eb94de8a1a21a712e05095`, `03_hyperparameter_tuning.py`
-`986a753e9e1da986743cda40450f7f2c` (unchanged). Check C's references for the next sub-task:
-`check_c_s6_tuning.pkl` and `check_c_s6_eda.pkl` (the tuning's Check C script is still
-`check_c_s34_tuning.py`; the handoff's top status names the scratchpad).
+**Status (2026-11-13):** S1 (`5bf8e48`), S2 (`c01483f`), S3 + S4 (`22edab1`), S6 (`81988ea`)
+committed; **S8 done and checked, uncommitted**, on HEAD `81988ea`, branch `feat/mlflow-runs`:
+every check passed, Check C equal to S6's run with nothing excepted, the mutation caught.
+**S7 dropped** (the user, 2026-11-13: option (a); the EDA compares Model 2's two variants). Next:
+the user commits S8; then **S5, the last sub-task**, with Fable in a new session (the handoff's
+§6 prompt); then the MLflow plan. The notebooks' md5 (unchanged by S8):
+`02_objective_eda.py` `ba6656a2e3eb94de8a1a21a712e05095`, `03_hyperparameter_tuning.py`
+`986a753e9e1da986743cda40450f7f2c`. Check C's references for S5: `check_c_s8_tuning.pkl` and
+`check_c_s8_eda.pkl` (the tuning's Check C script is `check_c_s34_tuning.py`; the handoff's top
+status names the scratchpad).
 
 **Status (2026-11-12):** the review is written and **decided** (the user's answers): S1–S8
 all accepted (S7 as option (b); S4 without waiting for the manual check); L1–L8 all left as
@@ -387,7 +388,7 @@ independent cohorts' frame (`poisson_deviance`, 100% of the values).
 refactor(notebook): the EDA's best components read from the trials' list (S6)
 ```
 
-### [ ] S7. Coordinate descent leaves the EDA notebook
+### [—] S7. Coordinate descent leaves the EDA notebook (dropped: option (a), 2026-11-13)
 
 - **Model:** **Fable.** Planned in plan mode first.
 - **Evidence:** D40 settled the comparison (the joint method). What remains for it:
@@ -408,7 +409,9 @@ refactor(notebook): the EDA's best components read from the trials' list (S6)
 - **Trade-off of (b):** about 230 notebook lines and every `step` special case go; the two
   `src` methods are then read by their tests only.
 - **Recommendation:** (b).
-- **Decision:** (b) (the user, 2026-11-12).
+- **Decision:** (b) (the user, 2026-11-12); **changed to (a), keep everything (the user,
+  2026-11-13):** the EDA's purpose is to compare Model 2's two variants, coordinate descent
+  and the joint method, so both stay. S7 is not done; the steps below are kept for the record.
 
 **Steps under (b) (each one a stop):**
 1. **S7.1, the notebook:** remove the coordinate descent cell, `MODEL2_FIXED_PROBABILITY_COMPONENT`
@@ -432,7 +435,7 @@ cache's 50 files unchanged by a 3-trial run (it uses a copy).
 refactor(notebook): coordinate descent removed from the objective EDA; the joint method stays (S7.1)
 ```
 
-### [ ] S8. `from_params` filters the params in one place (`src`)
+### [x] S8. `from_params` filters the params in one place (`src`)
 
 - **Model:** Opus 5.5.
 - **Evidence:** both components select their own params with the same five lines
@@ -454,6 +457,18 @@ refactor(notebook): coordinate descent removed from the objective EDA; the joint
 **Validate:** the unit tests of the package, the non-slow suite, mypy; the runner's Check C on
 the tuning equal with nothing excepted. Mutation: drop `"shared"` from the method; the
 existing shared-draw test must fail.
+
+**Done (2026-11-13):** `Component.select_component_params(best_params, name)` (a public static
+method beside `set_estimator_params`); both `from_params` call it; behaviour unchanged,
+`shared__` included. The unit test
+`test_a_components_params_are_its_own_and_the_shared_entries_unprefixed` (own entries, a
+`shared__` entry, another cohort whose name extends this one's and `total__` left out). The
+guide's module table and its `from_params` paragraph name the method. `run_S8.sh` (log
+`run_S8.log`): the suite 1412 (the new test), mypy 28, the notebook tests 32, ruff clean on the
+package and the test, the notebooks' ruff and hunks unchanged, `marimo check` clean, Check B on
+both, Check C on both equal to S6's run with nothing skipped. `run_mutant_S8.sh` (a full copy,
+the sentinel first): without `"shared"` both the new test and
+`test_a_shared_choice_is_read_as_every_components_own` fail.
 
 **Commit:**
 ```text

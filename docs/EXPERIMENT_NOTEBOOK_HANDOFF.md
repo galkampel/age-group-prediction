@@ -1,4 +1,37 @@
-# Handoff: the experiment notebooks, PR 7 merged (#26); the simplification review: S1–S4 and S6 done, S8 planned, S7 and S5 (Fable), then the MLflow plan
+# Handoff: the experiment notebooks, PR 7 merged (#26); the simplification review: S1–S4, S6, S8 done, S7 dropped, S5 next (Fable), then the MLflow plan
+
+**Status (2026-11-13, end of session: S6 committed as `81988ea`; S8 done and checked, uncommitted; S7 dropped; next S5 with Fable):**
+- **S8** (`src`, the review plan's S8, ticked with its Done note):
+  `Component.select_component_params(best_params, name)`; both `from_params` call it; one unit
+  test; the guide names it. **Every check passed** (`run_S8.sh`, log `run_S8.log`): the suite
+  1412, mypy 28, the notebook tests 32, ruff, `marimo check`, Check B on both, Check C on both
+  equal to S6's run with nothing excepted; the mutation (`run_mutant_S8.sh`, a full copy) fails
+  both shared-entry tests.
+- **The commit (the user's):**
+
+  ```text
+  refactor(tuning): the components' from_params select their params through one method (S8)
+  ```
+  Its files: `src/age_group_prediction/hyperparameter_tuning/components.py`,
+  `tests/unit/test_hyperparameter_tuning_components.py`, `docs/HYPERPARAMETER_TUNING.md`,
+  `docs/SIMPLIFICATION_REVIEW_PLAN.md`, this handoff.
+- **S7 dropped** (the user, 2026-11-13, option (a)): the objective EDA's purpose is to compare
+  Model 2's two variants, coordinate descent and the joint method; both stay.
+- **The notebooks' md5 (unchanged by S8):** `02_objective_eda.py`
+  `ba6656a2e3eb94de8a1a21a712e05095`, `03_hyperparameter_tuning.py`
+  `986a753e9e1da986743cda40450f7f2c`.
+- **The test part has still not been run on the user's cache** (E11).
+- **The scratchpad to copy first:** `/private/tmp/claude-501/-Users-galkampel-Desktop-Projects-age-group-prediction/d561fa55-f8a3-41d2-9ef6-8b9217fb07c1/scratchpad`: `checks/`, `probes/`, `viewer/`, `new_cells_*`, the
+  logs, every pickle and JSON, `pycache/` (each script's `S=` set to it). **S5's references:**
+  `check_c_s8_tuning.pkl`, `check_c_s8_eda.pkl` (with its two figures' JSON); the runner to copy
+  is `run_S8.sh` (the tuning's Check C `check_c_s34_tuning.py`). S5 changes figures' JSON on
+  purpose: its Check C keeps the frames equal and compares the figures as the review plan's S5
+  says. **Before S5.0's probe:** `probes/make_copy_probe.py`, `probes/look_7_1e.py`,
+  `probes/probe_7_1.py`, `viewer/beeswarm_7_1b.py` still read names S2 and S4 removed
+  (`best_model1/2`, `model1_shap`, `model1_permutation`, `importance_metric`): update them
+  (`best_runs[label]["model"]`, `best_runs_shap[label]`, `best_runs_permutation[label]`,
+  `SELECTION_METRIC`).
+- **Next:** S5 with Fable (§6's prompt), then the MLflow plan (§6, step 2).
 
 **Status (2026-11-13, S3 + S4 committed as `22edab1`; S6 done and checked, uncommitted; S8 planned):**
 - **S6** (the review plan's S6, ticked with its Done note): the EDA's independent cohorts cell
@@ -2207,4 +2240,31 @@ global. Stop with a file-by-file summary, the checks, the notebooks' md5 and the
 in a copyable code block; tick S1 and update the status lines in the review plan and at the top
 of the handoff. I commit myself: never commit, no Co-Authored-By line, no "Generated with
 Claude Code" in PR text, never git checkout/stash/reset/mv.
+```
+
+**The prompt for the S5 session** (a Fable session; S5.0 first, each stop approved):
+
+```text
+Read docs/SIMPLIFICATION_REVIEW_PLAN.md (the status, §2, §3 how a sub-task is done, §4's S5;
+S1-S4, S6 and S8 are done, S7 was dropped), then docs/EXPERIMENT_NOTEBOOK_HANDOFF.md: the
+status at the top, §4 (how to work, git and the editor, the checks, the traps, the iCloud notes,
+the user's style) and §6. Then the figure code S5 names: notebooks/03_hyperparameter_tuning.py's
+forest_figure, ridge_figure, permutation_figure, beeswarm_figure, the waterfall, the two count
+figures and the shares bars, and notebooks/02_objective_eda.py's two figure cells.
+Verify the state first: the branch feat/mlflow-runs, HEAD my commit of S8 (on 81988ea),
+`git status` clean; the notebooks' md5 as the handoff's top status; no iCloud-offloaded files.
+If anything differs, stop and show me the diff. Copy the scratchpad the top status names into
+yours, set each script's S= to it, compile the pycache; update the four probe scripts the top
+status lists before S5.0.
+Then plan S5 in plan mode, starting with S5.0 (read-only): screenshots of each figure as today
+and with the shared style, shown to me as pairs, and your recommendation: a plotly template or a
+style_figure function. Wait for my choice. Then S5.1, S5.2, S5.3, one stop each with my approval:
+every frame equal to check_c_s8_*, each figure's traces equal and its effective layout equal (or
+the screenshots alike), screenshots before and after shown to me.
+Don't run the test evaluation on my cache (E11). My marimo session may be open: tell me before
+editing a notebook and remind me to reload it after. Keep it simple; no private helpers; a
+notebook function reads no notebook global. Stop each step with a file-by-file summary, the
+checks, the notebooks' md5 and the commit message in a copyable code block; tick and update the
+status lines. I commit myself: never commit, no Co-Authored-By line, no "Generated with Claude
+Code" in PR text, never git checkout/stash/reset/mv.
 ```
