@@ -1560,16 +1560,24 @@ def _():
     # The figures' palette, the dataviz skill's reference: the three
     # categorical colors that stay apart for colorblind readers, the
     # sequential blue ramp (steps 250, 400, 550, 700, so the lightest still
-    # shows on the surface), then the surface, the inks, the gridline and the
-    # axis line.
+    # shows on the surface), the diverging pair (red raises, blue lowers),
+    # then the surface, the inks, the gridline and the axis line.
     PALETTE = {
         "categorical": ["#2a78d6", "#eb6834", "#1baf7a"],
         "blues": ["#86b6ef", "#3987e5", "#1c5cab", "#0d366b"],
+        "raises": "#e34948",
+        "lowers": "#2a78d6",
         "surface": "#fcfcfb",
         "ink": "#52514e",
         "muted": "#898781",
         "grid": "#e1e0d9",
         "axis": "#c3c2b7",
+    }
+    # Each model's color wherever a figure names it: the forest's, by the
+    # models' order.
+    MODEL_COLORS = {
+        "independent_cohorts": PALETTE["categorical"][0],
+        "total_times_probability": PALETTE["categorical"][1],
     }
 
     def style_figure(figure, palette):
@@ -1595,7 +1603,7 @@ def _():
                 tickfont={"color": palette["muted"]},
             )
 
-    return PALETTE, style_figure
+    return MODEL_COLORS, PALETTE, style_figure
 
 
 @app.cell
@@ -3046,10 +3054,12 @@ def _(
 @app.cell
 def _(
     COHORTS,
+    PALETTE,
     go,
     mo,
     np,
     pd,
+    style_figure,
     test_age_group,
     test_predictions,
     test_reading_k,
@@ -3059,10 +3069,6 @@ def _(
     test_waterfall_cohort,
     test_waterfall_end,
 ):
-    # The palette's tokens, and its diverging pair: red raises the
-    # prediction, blue lowers it.
-    _surface, _ink, _grid, _axis = "#fcfcfb", "#52514e", "#e1e0d9", "#c3c2b7"
-    _raises, _lowers = "#e34948", "#2a78d6"
     _end, _cohort = test_waterfall_end.value, test_waterfall_cohort.value
     _metric, _k = test_reading_metric.value, test_reading_k.value
     # The composite: the total, so the cohorts' values and bases summed.
@@ -3098,9 +3104,9 @@ def _(
                 x=_values[_order],
                 text=[f"{value:+.2f}" for value in _values[_order]],
                 textposition="outside",
-                increasing={"marker": {"color": _raises}},
-                decreasing={"marker": {"color": _lowers}},
-                connector={"line": {"color": _axis, "width": 1}},
+                increasing={"marker": {"color": PALETTE["raises"]}},
+                decreasing={"marker": {"color": PALETTE["lowers"]}},
+                connector={"line": {"color": PALETTE["axis"], "width": 1}},
                 hovertemplate="%{y}: %{x:+.3f}<extra></extra>",
             )
         )
@@ -3110,20 +3116,13 @@ def _(
         ):
             _figure.add_vline(
                 x=_x,
-                line={"color": _ink, "dash": "dot", "width": 1},
+                line={"color": PALETTE["ink"], "dash": "dot", "width": 1},
                 annotation_text=_text,
                 annotation_position=_place,
             )
+        style_figure(_figure, PALETTE)
         _figure.update_layout(
             height=60 + 34 * (len(_order) + 2),
-            template="plotly_white",
-            paper_bgcolor=_surface,
-            plot_bgcolor=_surface,
-            font={
-                "family": "system-ui, -apple-system, Segoe UI, sans-serif",
-                "color": _ink,
-                "size": 12,
-            },
             margin={"l": 200, "r": 40, "t": 60, "b": 50},
             title={
                 "text": (
@@ -3133,10 +3132,8 @@ def _(
                 "x": 0,
             },
         )
-        _figure.update_yaxes(autorange="reversed", gridcolor=_grid)
-        _figure.update_xaxes(
-            title_text=f"children ({_count})", gridcolor=_grid, zeroline=False
-        )
+        _figure.update_yaxes(autorange="reversed", tickfont={"color": PALETTE["ink"]})
+        _figure.update_xaxes(title_text=f"children ({_count})")
         test_waterfall_figures[_model] = _figure
     _views = []
     for _model, _figure in test_waterfall_figures.items():
@@ -3163,24 +3160,20 @@ def _(
 
 
 @app.cell
-def _(go, mo, test_buildings_df, test_figures_cohort, test_reading_model):
-    # The forest's palette: each model in its color, the truth in the muted
-    # ink; the true total of children on the sequential blue ramp (steps 250,
-    # 400, 550, 700, so the lightest still shows on the surface).
-    _model_colors = {
-        "independent_cohorts": "#2a78d6",
-        "total_times_probability": "#eb6834",
-    }
-    _surface, _ink, _muted, _grid, _axis = (
-        "#fcfcfb",
-        "#52514e",
-        "#898781",
-        "#e1e0d9",
-        "#c3c2b7",
-    )
-    _blues = ["#86b6ef", "#3987e5", "#1c5cab", "#0d366b"]
+def _(
+    MODEL_COLORS,
+    PALETTE,
+    go,
+    mo,
+    style_figure,
+    test_buildings_df,
+    test_figures_cohort,
+    test_reading_model,
+):
+    # The model in its color, the truth in the muted ink; the true total of
+    # children on the sequential blue ramp.
     _model, _cohort = test_reading_model.value, test_figures_cohort.value
-    _color = _model_colors[_model]
+    _color = MODEL_COLORS[_model]
     # The chosen cohort's counts per building, or the buildings' totals.
     _count = "total" if _cohort == "composite" else _cohort
     _buildings = test_buildings_df[test_buildings_df["model"] == _model].set_index(
@@ -3199,7 +3192,7 @@ def _(go, mo, test_buildings_df, test_figures_cohort, test_reading_model):
                 hovertemplate=f"{_name} %{{x}}: %{{y}} buildings<extra></extra>",
             )
             for _name, _values, _trace_color in (
-                ("true", _true, _muted),
+                ("true", _true, PALETTE["muted"]),
                 ("predicted", _predicted, _color),
             )
         ]
@@ -3217,7 +3210,7 @@ def _(go, mo, test_buildings_df, test_figures_cohort, test_reading_model):
                 x=[0, _top],
                 y=[0, _top],
                 mode="lines",
-                line={"color": _ink, "width": 1, "dash": "dot"},
+                line={"color": PALETTE["ink"], "width": 1, "dash": "dot"},
                 hoverinfo="skip",
                 showlegend=False,
             ),
@@ -3229,9 +3222,9 @@ def _(go, mo, test_buildings_df, test_figures_cohort, test_reading_model):
                 marker={
                     "size": 8,
                     "color": _buildings["total_true"],
-                    "colorscale": _blues,
+                    "colorscale": PALETTE["blues"],
                     "colorbar": {"title": {"text": "true total"}, "thickness": 12},
-                    "line": {"width": 1, "color": _surface},
+                    "line": {"width": 1, "color": PALETTE["surface"]},
                 },
                 customdata=_buildings.reset_index()[
                     ["building_id", "neighborhood_id", "total_true"]
@@ -3246,16 +3239,9 @@ def _(go, mo, test_buildings_df, test_figures_cohort, test_reading_model):
     test_counts_scatter.update_xaxes(title_text=f"true {_count}", range=[0, _top])
     test_counts_scatter.update_yaxes(title_text=f"predicted {_count}", range=[0, _top])
     for _figure in (test_counts_histogram, test_counts_scatter):
+        style_figure(_figure, PALETTE)
         _figure.update_layout(
             height=400,
-            template="plotly_white",
-            paper_bgcolor=_surface,
-            plot_bgcolor=_surface,
-            font={
-                "family": "system-ui, -apple-system, Segoe UI, sans-serif",
-                "color": _ink,
-                "size": 12,
-            },
             legend={
                 "orientation": "h",
                 "x": 0,
@@ -3265,12 +3251,6 @@ def _(go, mo, test_buildings_df, test_figures_cohort, test_reading_model):
             },
             margin={"l": 50, "r": 20, "t": 50, "b": 50},
             hovermode="closest",
-        )
-        _figure.update_xaxes(
-            gridcolor=_grid, zeroline=False, linecolor=_axis, tickfont={"color": _muted}
-        )
-        _figure.update_yaxes(
-            gridcolor=_grid, zeroline=False, linecolor=_axis, tickfont={"color": _muted}
         )
     _count_text = "the total" if _cohort == "composite" else _cohort
     mo.vstack(
@@ -3300,27 +3280,19 @@ def _(go, mo, test_buildings_df, test_figures_cohort, test_reading_model):
 def _(
     COHORTS,
     METRICS,
+    MODEL_COLORS,
+    PALETTE,
     RANKING_METRIC_NAMES,
     compute_metrics,
     go,
     mo,
     np,
     pd,
+    style_figure,
     test_age_group,
     test_neighborhood,
     test_predictions,
 ):
-    _model_colors = {
-        "independent_cohorts": "#2a78d6",
-        "total_times_probability": "#eb6834",
-    }
-    _surface, _ink, _muted, _grid, _axis = (
-        "#fcfcfb",
-        "#52514e",
-        "#898781",
-        "#e1e0d9",
-        "#c3c2b7",
-    )
     # The selection: every test building, or one neighborhood's.
     if test_neighborhood.value == "all":
         _mask = pd.Series(True, index=test_age_group.groups.index)
@@ -3400,12 +3372,15 @@ def _(
                 x=COHORTS,
                 y=test_selection_shares_df[_series],
                 name=_series,
-                marker={"color": _bar_color, "line": {"width": 2, "color": _surface}},
+                marker={
+                    "color": _bar_color,
+                    "line": {"width": 2, "color": PALETTE["surface"]},
+                },
                 error_y=(
                     {
                         "type": "data",
                         "array": _true_interval,
-                        "color": _ink,
+                        "color": PALETTE["ink"],
                         "thickness": 1.5,
                         "width": 6,
                     }
@@ -3419,14 +3394,15 @@ def _(
                 ),
             )
             for _series, _bar_color in (
-                ("true", _muted),
-                *_model_colors.items(),
+                ("true", PALETTE["muted"]),
+                *MODEL_COLORS.items(),
             )
         ]
     )
     _predicted_totals = ", ".join(
         f"{model} {_counts.loc['total', model]:.1f}" for model in _predicted
     )
+    style_figure(test_selection_shares_bars, PALETTE)
     test_selection_shares_bars.update_layout(
         title={
             "text": (
@@ -3440,14 +3416,6 @@ def _(
         barmode="group",
         bargap=0.3,
         height=380,
-        template="plotly_white",
-        paper_bgcolor=_surface,
-        plot_bgcolor=_surface,
-        font={
-            "family": "system-ui, -apple-system, Segoe UI, sans-serif",
-            "color": _ink,
-            "size": 12,
-        },
         legend={
             "orientation": "h",
             "x": 0,
@@ -3457,13 +3425,9 @@ def _(
         },
         margin={"l": 50, "r": 20, "t": 80, "b": 50},
     )
-    test_selection_shares_bars.update_xaxes(linecolor=_axis, tickfont={"color": _muted})
-    test_selection_shares_bars.update_yaxes(
-        title_text="share of the children",
-        gridcolor=_grid,
-        zeroline=False,
-        tickfont={"color": _muted},
-    )
+    # No gridline through a group of bars.
+    test_selection_shares_bars.update_xaxes(showgrid=False)
+    test_selection_shares_bars.update_yaxes(title_text="share of the children")
     mo.vstack(
         [
             mo.md(

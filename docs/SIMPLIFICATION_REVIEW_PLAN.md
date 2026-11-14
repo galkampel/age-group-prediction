@@ -5,16 +5,17 @@ accepted one (written so that Claude Opus 5.5 can implement it from this file an
 [the handoff](EXPERIMENT_NOTEBOOK_HANDOFF.md) §4). One sub-task per approval. Tick a sub-task
 when it is done and update the status line.
 
-**Status (2026-11-14):** S8 committed (`e9ebf4d`). **S5.0 done** (the probe; the user's choices:
-the `style_figure` function, and the waterfall, the shares bars and `02`'s figures take the
-shared style). **S5.1 done and checked, uncommitted**, on HEAD `e9ebf4d`: every check passed,
-all 21 of `03`'s figures pixel-identical, the mutation caught. Next: the user commits S5.1; then
-S5.2 (`03`'s inline figures), S5.3 (`02`'s two figure cells), each its own stop; then the MLflow
-plan. The notebooks' md5: `02_objective_eda.py` `ba6656a2e3eb94de8a1a21a712e05095` (unchanged),
-`03_hyperparameter_tuning.py` `18cd7adbcb2d2055c751624374e07fd4`. S5.2's references:
-`check_c_s5_1_tuning.pkl`, `check_c_s5_1_eda.pkl`, and for the figures S5.0's dump of HEAD
-`e9ebf4d`, `figures_today_tuning.json` and `figures_today_eda.json` (the handoff's top status
-names the scratchpad).
+**Status (2026-11-14):** S8 (`e9ebf4d`) and S5.1 (`80f6733`) committed. **S5.0 done** (the
+probe; the user's choices: the `style_figure` function, and the waterfall, the shares bars and
+`02`'s figures take the shared style). **S5.2 done and checked, uncommitted**, on HEAD
+`80f6733`: every check passed, the waterfall and the shares bars pixel-equal to the S5.0
+screenshots the user approved, the other 18 figures of `03` pixel-identical, the mutation
+caught. Next: the user commits S5.2; then S5.3 (`02`'s two figure cells), the last stop; then
+the MLflow plan. The notebooks' md5: `02_objective_eda.py` `ba6656a2e3eb94de8a1a21a712e05095`
+(unchanged), `03_hyperparameter_tuning.py` `1117fc7f89b031bb3d11d33c83e700ef`. S5.3's
+references: `check_c_s5_2_tuning.pkl`, `check_c_s5_2_eda.pkl`, and for the figures S5.2's dump,
+`figures_s5_2_tuning.json` and `figures_s5_2_eda.json` (the handoff's top status names the
+scratchpad).
 
 **Status (2026-11-13):** S1 (`5bf8e48`), S2 (`c01483f`), S3 + S4 (`22edab1`), S6 (`81988ea`)
 committed; **S8 done and checked, uncommitted**, on HEAD `81988ea`, branch `feat/mlflow-runs`:
@@ -404,6 +405,27 @@ copy): the comparison fails on 16 figures.
 **Commit (S5.1):**
 ```text
 refactor(notebook): the figures' palette and shared style defined once; the four figure functions take the palette (S5.1)
+```
+
+**S5.2 done (2026-11-14):** the palette cell gains `PALETTE["raises"]` and `PALETTE["lowers"]`
+(the waterfall's diverging pair) and `MODEL_COLORS` (each model's label to its categorical
+color, replacing the two `_model_colors` dictionaries). The waterfall, the two count figures
+and the shares bars read `PALETTE` and call `style_figure`, then set what is their own (the
+waterfall its row labels in ink; the bars no x gridlines). Notebook −88 / +52; no test change.
+`run_S5_2.sh` (log `run_S5_2.log`): the suite 1412, mypy 28, the notebook tests 32, ruff `03`
+15 / `02` 11, the format hunks, `marimo check` clean, Check B on both (`CHECK B S5.1 S5.2 OK`),
+Check C on both equal to S5.1's run with nothing skipped. The figures against S5.1's run: every
+trace equal; 18 of `03`'s layouts identical and pixel-identical (the count figures among them);
+the two waterfalls differ in `xaxis.linecolor`, `xaxis.tickfont.color`, `yaxis.zeroline`,
+`yaxis.linecolor`, `yaxis.tickfont.color`, the bars in `xaxis.gridcolor`, `xaxis.showgrid`,
+`xaxis.zeroline`, `yaxis.linecolor`, and all three are pixel-equal to S5.0's approved
+screenshots (`s5_0/shots/function_kept/`); `02`'s 27 figures unchanged.
+`run_mutant_S5_2.sh` (`raises` `#e34948` → `#e34949` on a copy): the comparison fails on both
+waterfalls' traces.
+
+**Commit (S5.2):**
+```text
+refactor(notebook): the waterfall, the count figures and the shares bars use the palette and the shared style (S5.2)
 ```
 
 ### [x] S6. The EDA's first cell reads the best components once

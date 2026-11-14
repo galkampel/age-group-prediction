@@ -1,6 +1,32 @@
-# Handoff: the experiment notebooks, PR 7 merged (#26); the simplification review: S1–S4, S6, S8 done, S7 dropped, S5.0 and S5.1 done, S5.2 next, then the MLflow plan
+# Handoff: the experiment notebooks, PR 7 merged (#26); the simplification review: S1–S4, S6, S8 done, S7 dropped, S5.0–S5.2 done, S5.3 next, then the MLflow plan
 
-**Status (2026-11-14: S8 committed as `e9ebf4d`; S5.0 done; S5.1 done and checked, uncommitted; next S5.2):**
+**Status (2026-11-14: S5.1 committed as `80f6733`; S5.2 done and checked, uncommitted; next S5.3):**
+- **S5.2** (the review plan's S5 has the details): `PALETTE["raises"]`, `PALETTE["lowers"]` and
+  `MODEL_COLORS` in the palette cell; the waterfall, the two count figures and the shares bars
+  read them and call `style_figure`. **Every check passed** (`run_S5_2.sh`, log
+  `run_S5_2.log`): the suite 1412, mypy 28, the notebook tests 32, ruff `03` 15 / `02` 11, the
+  format hunks, `marimo check`, Check B on both, Check C on both equal to S5.1's run with
+  nothing excepted; the waterfall and the bars pixel-equal to S5.0's approved screenshots, the
+  other 18 of `03`'s figures pixel-identical; the mutation (`run_mutant_S5_2.sh`) caught.
+- **The commit (the user's):**
+
+  ```text
+  refactor(notebook): the waterfall, the count figures and the shares bars use the palette and the shared style (S5.2)
+  ```
+  Its files: `notebooks/03_hyperparameter_tuning.py`, `docs/SIMPLIFICATION_REVIEW_PLAN.md`,
+  this handoff.
+- **The notebooks' md5:** `02_objective_eda.py` `ba6656a2e3eb94de8a1a21a712e05095` (unchanged),
+  `03_hyperparameter_tuning.py` `1117fc7f89b031bb3d11d33c83e700ef`.
+- **The test part has still not been run on the user's cache** (E11).
+- **The scratchpad:** the one the status below names, now also holding `run_S5_2.sh`,
+  `run_mutant_S5_2.sh`, `new_cells_s5_2/splice_s5_2.py`, `s5_2/` (the pairs page), the logs,
+  and **S5.3's references** `check_c_s5_2_tuning.pkl`, `check_c_s5_2_eda.pkl`,
+  `figures_s5_2_tuning.json`, `figures_s5_2_eda.json`.
+- **Next:** S5.3 (`02`'s two figure cells: its own palette cell and `style_figure`, D41; the box
+  figure without x gridlines; the look changes as S5.0's pairs show, and Check C's EDA figure
+  references are regenerated), then S5 is ticked and the MLflow plan follows (§6, step 2).
+
+**Status (2026-11-14: S8 committed as `e9ebf4d`; S5.0 done; S5.1 done and checked, then committed as `80f6733`):**
 - **S5.0** (the probe; the review plan's S5 has the numbers): the shared style as a
   `style_figure(figure, palette)` function, not a plotly template (the user left the choice to
   best practice); the waterfall, the shares bars and `02`'s figures take the shared style (the
