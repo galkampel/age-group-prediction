@@ -308,6 +308,38 @@ def test_the_mlflow_cell_refuses_the_canonical_store(
     assert not (project_copy / "mlartifacts").exists()
 
 
+def test_the_tuning_runs_are_logged_only_behind_their_button(
+    notebook_defs: dict,
+) -> None:
+    # M3: the 24 tuning runs are logged on the button's click only; a script
+    # run builds what each run logs (the shared parameters, the two datasets)
+    # and opens no run (test_a_script_run_opens_no_mlflow_run).
+    source = NOTEBOOK_PATH.read_text(encoding="utf-8")
+    cells = [
+        cell
+        for cell in source.split("@app.cell")
+        if "_run_id = log_tuning_run(" in cell
+    ]
+    assert len(cells) == 1
+    assert re.search(r"mo\.stop\(\s*not log_tuning_runs\.value", cells[0])
+    assert notebook_defs["log_tuning_runs"].value is False
+    assert notebook_defs["shared_params"] == {
+        "config_hash": notebook_defs["config_hash"],
+        **notebook_defs["DATA_SETTINGS"],
+        **notebook_defs["EXPERIMENT_SETTINGS"],
+        "n_train": 917,
+        "n_val": 306,
+        "n_test": 306,
+    }
+    assert len(notebook_defs["shared_params"]) == 22
+    datasets = notebook_defs["tuning_datasets"]
+    assert {context: dataset.name for context, dataset in datasets.items()} == {
+        "training": "train",
+        "validation": "val",
+    }
+    assert all(len(dataset.digest) == 36 for dataset in datasets.values())
+
+
 SHARING = [(False, False), (True, False), (True, True)]
 
 

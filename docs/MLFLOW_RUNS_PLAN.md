@@ -6,8 +6,10 @@ sub-task when it is done and update the status line.
 
 **Status (2026-11-14):** M0 done (the probe; its findings in §1 and in M1–M6's exact calls; the
 user's four choices 11–14), committed `8e1ea98`. M1 done (the MLflow cell; the user's choice
-there: no MLflow global), committed `2451c8a`. M2 done (a run record keeps its study), checked,
-awaiting the user's commit. Next: M3, an Opus 5.5 session (§7, the second prompt).
+there: no MLflow global), committed `2451c8a`. M2 done (a run record keeps its study), committed `dabc406`. M3 done (the 24 tuning runs
+behind a button; the user's choices 15, the trials as CSV at 6 significant digits, and 16, the
+bare `return`), checked, awaiting the user's commit. Next: M4, an Opus 5.5 session (§7, the second
+prompt); it first re-plans its tables under choice 15.
 
 ## 1. The question and the verdict
 
@@ -84,8 +86,13 @@ a store in the scratchpad; every read-back asserted):**
   `==` for the reference comparison).
 - **Read back, each equal:** params as `str(value)` (63 in the copy's Model 1 run 0); metrics as
   `float`; tags; the four JSONs after a JSON round trip; the journal's bytes; 12 of the 13
-  tables exactly (the dict columns of `model1_runs` too). `test_building_scores` differs only by
+  tables (the dict columns of `model1_runs` too). `test_building_scores` differs only by
   its columns' index name (`metric`, from `compute_metrics`): JSON drops it.
+  **Corrected at M3:** the tables were equal only to `assert_frame_equal`'s default tolerance
+  (rtol 1e-5), not exactly. `log_table` writes `to_json(orient="split")` at pandas' default
+  `double_precision=10` (10 decimal places: `2.6185068e-08` comes back `2.62e-08`), its reader
+  adds 1-ulp noise (`0.09158` → `0.09158000000000001`), and an all-`None` column comes back
+  `float64` NaN. Check D's first run (all 24 trials tables) showed it.
 - **Also seen:** a missing folder of the sqlite file is created by MLflow; the artifact folder
   is created at the first artifact; a new store prints two alembic `INFO` lines to stderr
   ("Creating initial MLflow database tables…"); `set_experiment` of a missing experiment prints
@@ -111,6 +118,17 @@ a store in the scratchpad; every read-back asserted):**
 14. **The git tags:** `git_commit` (HEAD) and `git_dirty` (`"true"` when a tracked file is
     modified), read once in the MLflow cell with `git` run in `project_root / "src"` (in Check
     C's copy a symlink to the repo, where `project_root` itself is not a repository).
+
+**The user's choices at M3 (2026-11-14; do not re-ask):**
+
+15. **A logged table's precision is chosen, not MLflow's:** a table is for reading in the UI; the
+    exact record is the journal, `best_params.json` and the `best.*` parameters. The trials are
+    logged as CSV at 6 significant digits, `mlflow.log_text(trials.to_csv(index=False,
+    float_format="%.6g"), "trials.csv")` (tiny hyperparameters keep their digits; the UI shows a
+    `.csv` as a table: the installed bundle's artifact viewer lists `csv`, `tsv`). M4 and M6's
+    tables follow the same rule, planned there (their dict columns need a look).
+16. **marimo's bare `return`** in a logging cell is kept: ruff on `03` goes 15 → 16 at M3 (a 15th
+    PLR1711, like the 14 markdown and display cells); M4 and M6 add one each.
 
 **Settled by the probe without a question:** M2's form, as the plan recommended: the record
 keeps its study (it pickles; the logging needs its name, trials and best parameters, and loading
@@ -189,8 +207,10 @@ no private helpers; the stop's summary, md5 and commit message). Added for this 
    model is M0's probe (`probes/probe_m0.py` in the scratchpad the handoff names): its
    read-back block and `compare_table`. Run it with `MLFLOW_ENABLE_ARTIFACTS_PROGRESS_BAR=false`
    (else a tqdm bar per download). Params compare as `str(value)`, metrics as `float(value)`,
-   the JSONs after `json.loads(json.dumps(...))`, a table with `pd.testing.assert_frame_equal`
-   (exact), `test_building_scores_df` after `.rename_axis(columns=None)`.
+   the JSONs after `json.loads(json.dumps(...))`, a CSV table by its text (exactly equal to the
+   check's own `to_csv(index=False, float_format="%.6g")`) and its values to 6 digits (choice
+   15). Check D runs the copy a second time on Check C's store: the skips and the read-back in
+   one run.
 5. **The notebook tests** (`tests/characterization/test_hyperparameter_tuning_notebook.py`)
    gain a test per sub-task as named below. A script run must leave the store with no run.
 6. **Never click "Evaluate on the test part" or "Log the final run" on the user's cache.**
@@ -328,7 +348,33 @@ written: Model 1's cell has no Model 2 study): Model 1's records each keep the f
   feat(notebook): a run record keeps its study (M2)
   ```
 
-### [ ] M3. "Log the tuning runs"
+### [x] M3. "Log the tuning runs"
+
+**Done 2026-11-14** (`03`'s md5 `fa59251c25ea424474111a3f04c7cc3e`). The four cells after Model
+2's tables cell, as below but for the trials table: CSV at 6 significant digits (the user's
+choice 15, after Check D's first run found `log_table`'s 10-decimal rounding); the imports cell's
+return gains `optuna` (the function's cell reads it; it was imported, not returned). The test
+`test_the_tuning_runs_are_logged_only_behind_their_button` (the stop; `shared_params`, 22;
+the two datasets; the button unclicked); a script run's no-run assertion stays M1's test.
+`checks/run_M3.sh` (log `run_M3.log`; the first run's `run_M3_first.log`): the non-slow suite
+1417 (+1), mypy clean, the notebook tests 37, ruff `03` 16 (choice 16: a 15th PLR1711) / `02`
+11, the two format hunks, `marimo check` clean, Check B on both (`check_b_m3_tuning.py`: M3's
+names, no run), Check C on both equal to M2's run with nothing excepted (its click logs the 24
+runs), the 21 + 27 figures identical (the dump in its own store), the scratch store 24 runs, the
+repo's store unchanged (the listing's one difference: `git status`'s count, the plan edited
+during the run). **Check D** (`checks/check_d_mlflow.py`, new): the copy run a second time on
+Check C's store: "Logged 0 tuning runs, skipped 24 (already logged).", the same 24 run ids; per
+run the key (the check's own study and studies-dir names), the run name, the tags (`git_commit`,
+`git_dirty` from the check's own `git`), the parameters (`str`), the 52 metrics (`float`),
+`trials.csv`'s text exactly and its values to 1e-5, the four JSONs, the journal's bytes, the six
+artifacts, the artifact URI under the scratch location, the two inputs (names, digests, schema
+with `long`). In `run_M3.log` Check D failed on a bug of the check (the study's `None` against
+the CSV's NaN in its value comparison, after the text matched); fixed (both sides parsed from
+CSV) and rerun alone on the same store (`check_d_m3_rerun.log`): OK, 128 s. **The mutation**
+(`run_mutant_M3.sh`, log `run_mutant_M3.log`): the skip's `return None` made `pass`; Check C on
+the mutant passes (its first run logs 24), Check D's second run logs 24 more (the store 48 runs)
+and fails ("Logged 24 tuning runs, skipped 0"). (The script's printed exits read the subshell's
+`$pipestatus`: 0 both; the AssertionError is the result.)
 
 - **Model:** Opus 5.5 (its calls confirmed by M0).
 - **Steps** (the calls as M0 ran them, `probes/probe_m0.py`'s `log_tuning_run`; four new cells
@@ -404,7 +450,8 @@ written: Model 1's cell has no Model 2 study): Model 1's records each keep the f
                     for (dataset, cohort, metric), score in record["scores"]["score"].items()},
                  "seconds": record["seconds"], "n_complete": record["n_complete"], "n_failed": record["n_failed"],
              })
-             mlflow.log_table(trials, "trials.json")
+             # (as built, choice 15: the trials as CSV at 6 significant digits)
+             mlflow.log_text(trials.to_csv(index=False, float_format="%.6g"), "trials.csv")
              mlflow.log_dict({c.name: c.to_dict() for c in record["components"]}, "components.json")
              mlflow.log_dict(study.best_params, "best_params.json")
              mlflow.log_dict(search_space, "search_space.json")
@@ -441,8 +488,8 @@ written: Model 1's cell has no Model 2 study): Model 1's records each keep the f
 - **Tests:** the logging cell holds `mo.stop(not `; a script run leaves no run.
 - **Validate:** Check C equal with nothing excepted. Check D: 24 runs; each run's tags (with
   `git_commit`, `git_dirty`), parameters (`str`) and metrics (`float`) equal the record's
-  values; `load_table("trials.json", run_ids=[id])` exactly equal to the converted trials of
-  `record["study"]`; the four JSONs equal; the journal's bytes equal the copy's file; two
+  values; `trials.csv`'s text exactly equal to the converted trials of `record["study"]` at
+  `float_format="%.6g"` (choice 15; first planned as `load_table("trials.json")`); the four JSONs equal; the journal's bytes equal the copy's file; two
   dataset inputs (contexts `training`, `validation`), their digests `build_dataset`'s, their
   schema not empty (the filter works: under `-W error` without it the schema is silently
   `None`); a second run of the copy on the same store leaves 24 runs and every trials table 3
@@ -510,8 +557,10 @@ written: Model 1's cell has no Model 2 study): Model 1's records each keep the f
        are in the tables.
      - **Tables:** `mlflow.log_table(frame, f"tables/{name}.json")` for `best_runs_val_scores`,
        `best_difference`, `importance`, `model1_runs`, `model1_scores`, `model2_runs`,
-       `model2_scores` (each the `<name>_df` frame; all read back exactly equal in M0, the dict
-       columns too).
+       `model2_scores` (each the `<name>_df` frame; read back equal in M0 only to rtol 1e-5, the
+       dict columns too). **To be re-planned at M4 under choice 15** (CSV at 6 significant
+       digits, as M3's trials; the dict columns of `model1_runs`/`model2_runs` need a look:
+       CSV writes their `repr`).
      - **Figures (18):** `for path, figure in build_part_figures("val",
        best_runs_val_scores_df, best_replicate_scores, best_difference_df,
        best_difference_replicates, best_runs_permutation, best_runs_shap, shap_rows.X,
@@ -575,7 +624,8 @@ written: Model 1's cell has no Model 2 study): Model 1's records each keep the f
      - **Metrics, the composite only (108):** as M4 with the prefix `test/`, from
        `test_scores_df` and `test_difference_df`. No other run holds a `test/` metric.
      - **Tables:** `tables/<name>.json` for `test_scores`, `test_difference`,
-       `val_against_test`, `test_importance`, `test_buildings`, `test_building_scores`.
+       `val_against_test`, `test_importance`, `test_buildings`, `test_building_scores` (the
+       format as M4 settles it under choice 15).
      - **Figures (23):** `build_part_figures("test", test_scores_df, test_replicate_scores,
        test_difference_df, test_difference_replicates, {model: {cohort: {"test": result} for
        cohort, result in by_cohort.items()} for model, by_cohort in test_permutation.items()},
@@ -635,7 +685,7 @@ written: Model 1's cell has no Model 2 study): Model 1's records each keep the f
 | `cv_best`, the point scores, `seconds`, `n_complete`, `n_failed` | tuning run, metrics | |
 | the bootstrap statistics, the paired difference | best runs' run: the composite as metrics, all rows as tables | |
 | the test scores | the final run only | |
-| the trials dataframe of each study | tuning run, `trials.json` | |
+| the trials dataframe of each study | tuning run, `trials.csv` | 6 significant digits (choice 15) |
 | the runs and scores tables | best runs' run, tables | a row of them is a tuning run |
 | `importance_df`; `test_importance_df` | best runs' run; final run | |
 | `val_against_test_df`, `test_buildings_df`, `test_building_scores_df` | final run, tables | |

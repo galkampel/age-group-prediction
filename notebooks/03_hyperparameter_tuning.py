@@ -789,6 +789,7 @@ def _():
         mean_poisson_deviance_loss,
         multinomial_log_loss,
         np,
+        optuna,
         root_mean_squared_error_loss,
         wmape_loss,
     )
@@ -1517,6 +1518,211 @@ def _(mo, model2_runs_df, model2_scores_df):
             mo.ui.table(model2_scores_df.round(4)),
         ]
     )
+    return
+
+
+@app.cell
+def _(
+    DATA_SETTINGS,
+    EXPERIMENT_SETTINGS,
+    config_hash,
+    hashlib,
+    mlflow,
+    pd,
+    test_age_group,
+    train_age_group,
+    val_age_group,
+):
+    # What every run logs as parameters: the data's version and settings, the
+    # experiment's settings (the selection metric among them) and the parts' sizes.
+    shared_params = {
+        "config_hash": config_hash,
+        **DATA_SETTINGS,
+        **EXPERIMENT_SETTINGS,
+        "n_train": len(train_age_group.X),
+        "n_val": len(val_age_group.X),
+        "n_test": len(test_age_group.X),
+    }
+
+    def build_dataset(part, name):
+        """`part` as an MLflow dataset named `name`: its X and Y side by side, the
+        digest the SHA-256 of its rows (pandas' row hashes), its first 36
+        characters (MLflow's limit)."""
+        frame = part.X.join(part.Y)
+        digest = hashlib.sha256(
+            pd.util.hash_pandas_object(frame).to_numpy()
+        ).hexdigest()[:36]
+        return mlflow.data.from_pandas(frame, name=name, digest=digest)
+
+    tuning_datasets = {
+        "training": build_dataset(train_age_group, "train"),
+        "validation": build_dataset(val_age_group, "val"),
+    }
+    return build_dataset, shared_params, tuning_datasets
+
+
+@app.cell
+def _(mlflow, optuna):
+    def log_tuning_run(
+        record,
+        model,
+        run_settings,
+        study_seed,
+        studies_dir,
+        objective_name,
+        shared_params,
+        config_params,
+        datasets,
+        git_tags,
+    ):
+        """One study's run in the active experiment; its id, or None when a FINISHED run
+        has its key (a FAILED one is logged again)."""
+        study = record["study"]
+        run_key = f"{studies_dir.name}/{study.study_name}"
+        if mlflow.search_runs(
+            filter_string=f"tags.run_key = '{run_key}' and attributes.status = 'FINISHED'",
+            output_format="list",
+        ):
+            return None
+        if model == "independent_cohorts":
+            family = run_settings["family"]
+        elif model == "total_times_probability":
+            family = (
+                f"{run_settings['total_family']}+{run_settings['probability_family']}"
+            )
+        else:
+            raise ValueError(f"unknown model {model!r}")
+        # The trials: a row per trial, its seconds a number (a timedelta would come back as
+        # text); the start and end times are in the journal.
+        trials = study.trials_dataframe(
+            attrs=("number", "value", "duration", "params", "user_attrs", "state")
+        )
+        trials["duration"] = trials["duration"].dt.total_seconds()
+        trials = trials.rename(columns={"duration": "seconds"})
+        # The search space the trials drew: each parameter's distribution, as Optuna's JSON.
+        search_space = {}
+        for trial in study.trials:
+            for name, distribution in trial.distributions.items():
+                search_space[name] = optuna.distributions.distribution_to_json(
+                    distribution
+                )
+        with mlflow.start_run(
+            run_name=f"{model} {family} exposure={run_settings['use_exposure']}"
+        ) as run:
+            mlflow.set_tags(
+                {
+                    "run_key": run_key,
+                    "stage": "tuning",
+                    "model": model,
+                    "family": family,
+                    "notebook": "notebooks/03_hyperparameter_tuning.py",
+                    **git_tags,
+                }
+            )
+            mlflow.log_params(
+                {
+                    **run_settings,
+                    **shared_params,
+                    "study_seed": study_seed,
+                    **{
+                        f"feature_transformer.{name}": value
+                        for name, value in record["feature_transformers"].items()
+                    },
+                    **{
+                        f"best.{name}": value
+                        for name, value in study.best_params.items()
+                    },
+                }
+            )
+            mlflow.log_metrics(
+                {
+                    f"cv/{objective_name}": record["cv_best"],
+                    **{
+                        f"{dataset}/{cohort}/{metric}": score
+                        for (dataset, cohort, metric), score in record["scores"][
+                            "score"
+                        ].items()
+                    },
+                    "seconds": record["seconds"],
+                    "n_complete": record["n_complete"],
+                    "n_failed": record["n_failed"],
+                }
+            )
+            # The trials at 6 significant digits, as CSV (the UI shows it as a table);
+            # log_table would round to 10 decimals. The journal keeps the exact values.
+            mlflow.log_text(
+                trials.to_csv(index=False, float_format="%.6g"), "trials.csv"
+            )
+            mlflow.log_dict(
+                {c.name: c.to_dict() for c in record["components"]}, "components.json"
+            )
+            mlflow.log_dict(study.best_params, "best_params.json")
+            mlflow.log_dict(search_space, "search_space.json")
+            mlflow.log_dict(config_params, "config.json")
+            mlflow.log_artifact(
+                str(studies_dir / f"{study.study_name}.log"), artifact_path="study"
+            )
+            for context, dataset in datasets.items():
+                mlflow.log_input(dataset, context=context)
+        return run.info.run_id
+
+    return (log_tuning_run,)
+
+
+@app.cell
+def _(mo):
+    log_tuning_runs = mo.ui.run_button(label="Log the tuning runs")
+    mo.md(
+        f"{log_tuning_runs} 24 runs, one per study, to the experiment the MLflow cell "
+        "names; a run logged before is skipped."
+    )
+    return (log_tuning_runs,)
+
+
+@app.cell
+def _(
+    MODEL1_RUNS,
+    MODEL1_RUN_SETTINGS,
+    MODEL2_RUNS,
+    MODEL2_RUN_SETTINGS,
+    config_params,
+    git_tags,
+    log_tuning_run,
+    log_tuning_runs,
+    mo,
+    seed,
+    shared_params,
+    tuner,
+    tuning_datasets,
+):
+    mo.stop(
+        not log_tuning_runs.value,
+        mo.md("Click the button to log the tuning runs to MLflow."),
+    )
+    # A run per study, the i-th of each model seeded seed + i (as the tune cells).
+    _logged = _skipped = 0
+    for _model, _settings_list, _runs in (
+        ("independent_cohorts", MODEL1_RUN_SETTINGS, MODEL1_RUNS),
+        ("total_times_probability", MODEL2_RUN_SETTINGS, MODEL2_RUNS),
+    ):
+        for _i, (_run_settings, _record) in enumerate(
+            zip(_settings_list, _runs, strict=True)
+        ):
+            _run_id = log_tuning_run(
+                _record,
+                _model,
+                _run_settings,
+                seed + _i,
+                tuner.storage_dir,
+                tuner.objective_metric.name,
+                shared_params,
+                config_params,
+                tuning_datasets,
+                git_tags,
+            )
+            _logged += _run_id is not None
+            _skipped += _run_id is None
+    mo.md(f"Logged {_logged} tuning runs, skipped {_skipped} (already logged).")
     return
 
 
