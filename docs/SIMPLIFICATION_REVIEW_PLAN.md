@@ -5,6 +5,17 @@ accepted one (written so that Claude Opus 5.5 can implement it from this file an
 [the handoff](EXPERIMENT_NOTEBOOK_HANDOFF.md) §4). One sub-task per approval. Tick a sub-task
 when it is done and update the status line.
 
+**Status (2026-11-14):** S8 committed (`e9ebf4d`). **S5.0 done** (the probe; the user's choices:
+the `style_figure` function, and the waterfall, the shares bars and `02`'s figures take the
+shared style). **S5.1 done and checked, uncommitted**, on HEAD `e9ebf4d`: every check passed,
+all 21 of `03`'s figures pixel-identical, the mutation caught. Next: the user commits S5.1; then
+S5.2 (`03`'s inline figures), S5.3 (`02`'s two figure cells), each its own stop; then the MLflow
+plan. The notebooks' md5: `02_objective_eda.py` `ba6656a2e3eb94de8a1a21a712e05095` (unchanged),
+`03_hyperparameter_tuning.py` `18cd7adbcb2d2055c751624374e07fd4`. S5.2's references:
+`check_c_s5_1_tuning.pkl`, `check_c_s5_1_eda.pkl`, and for the figures S5.0's dump of HEAD
+`e9ebf4d`, `figures_today_tuning.json` and `figures_today_eda.json` (the handoff's top status
+names the scratchpad).
+
 **Status (2026-11-13):** S1 (`5bf8e48`), S2 (`c01483f`), S3 + S4 (`22edab1`), S6 (`81988ea`)
 committed; **S8 done and checked, uncommitted**, on HEAD `81988ea`, branch `feat/mlflow-runs`:
 every check passed, Check C equal to S6's run with nothing excepted, the mutation caught.
@@ -351,9 +362,48 @@ figure's traces (`data`) equal to the reference's and its effective layout equal
 template is applied (`figure.full_figure_for_development` or the screenshots); screenshots
 before and after shown to the user.
 
-**Commit (one per stop, for example):**
+**S5.0 done (2026-11-14, read-only):** each figure of the two 3-trial copies written as JSON
+(`probes/dump_figures_s5.py`: 21 of `03`, 27 of `02`), then rebuilt with the shared style as a
+function and as a template, screenshotted with headless Chrome and compared pixel by pixel
+(`probes/restyle_s5.py`, `probes/pairs_s5.py`; the same figure rendered twice differs by 0
+pixels). The shared style: `plotly_white`, the surface, the font, and on every axis the
+gridline, no zero line, the axis line and muted ticks; a figure's own settings follow it.
+- **The function:** the forest and the ridge (once their hidden y axes set `showline=False`),
+  the permutation figure, the beeswarm and both count figures are pixel-identical to HEAD's.
+- **The template:** a template's `linecolor` does not draw the axis line (without
+  `showline=True` every figure differs by 2,500–44,000 pixels), and its `gridcolor` does not
+  turn on a category or bar axis's gridlines (the permutation figure about 7,200–7,400 pixels,
+  the count histogram 1,445). `kaleido` is not installed, so
+  `full_figure_for_development` does not run.
+- **Decision (the user: "I don't know. Do not overcomplicate things, and use best practices";
+  the assistant's reading):** the `style_figure(figure, palette)` function.
+- **Decision (the user):** the waterfall, the shares bars and `02`'s two figure kinds take the
+  shared style, with the waterfall's row labels in ink and no x gridlines on the shares bars
+  and on `02`'s box figure (the pairs: `s5_0/pairs_s5.html`).
+
+**S5.1 done (2026-11-14):** one new cell before the forest's: `PALETTE` (a dictionary: the
+categorical colors, the blue ramp, the surface, the inks, the gridline, the axis line) and
+`style_figure(figure, palette)`. `forest_figure`, `ridge_figure`, `permutation_figure` and
+`beeswarm_figure` take `palette` (the last positional argument) and call `style_figure`; the
+forest's and the ridge's common ending is `style_cohort_rows(figure, n_cohorts, n_models,
+metric_name, palette)` in their cell. The six caller cells pass `PALETTE`. The figure cells
+take `style_figure` as a cell parameter, as they take `go` (the assistant's reading of "reads
+no notebook global": the palette, the data, is an argument). Notebook −169 / +149; the
+notebook test passes the palette in its nine calls (its three pinned colors stay).
+`run_S5_1.sh` (log `run_S5_1.log`): the suite 1412, mypy 28, the notebook tests 32, ruff `03`
+15 / `02` 11, the format hunks, `marimo check` clean, Check B on both (`CHECK B S5.1 OK`),
+Check C on both equal to S8's run with nothing skipped. The figures against S5.0's dump
+(`compare_figures_s5.py`, `shots_s5.py`): every trace equal; 9 of `03`'s layouts identical, the
+8 forest and ridge figures gain the y axes' `gridcolor`, `linecolor`, `tickfont` and
+`showline=False`, the 4 permutation figures `yaxis.zeroline`; all 21 screenshots
+pixel-identical; `02`'s 27 figures unchanged. Check C is `check_c_s5_tuning.py`
+(`make_check_c_s5.py`: the palette in its seven calls; the beeswarm's JSON compared as data,
+its keys now in another order). `run_mutant_S5_1.sh` (`muted` `#898781` → `#898782` on a
+copy): the comparison fails on 16 figures.
+
+**Commit (S5.1):**
 ```text
-refactor(notebook): the figures' palette and style defined once (S5.1)
+refactor(notebook): the figures' palette and shared style defined once; the four figure functions take the palette (S5.1)
 ```
 
 ### [x] S6. The EDA's first cell reads the best components once

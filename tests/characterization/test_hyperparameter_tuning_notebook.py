@@ -565,6 +565,7 @@ def test_the_forest_figure_draws_a_row_per_cohort_and_a_trace_per_model(
     # at its score, the bar its interval; one legend entry per model; the
     # rule in every row. The rows of another metric are not drawn.
     forest_figure = notebook_defs["forest_figure"]
+    palette = notebook_defs["PALETTE"]
     scores = pd.DataFrame(
         [
             {"model": model, "cohort": cohort, "metric": metric}
@@ -576,7 +577,7 @@ def test_the_forest_figure_draws_a_row_per_cohort_and_a_trace_per_model(
     scores["score"] = range(len(scores))
     scores["lower"] = scores["score"] - 0.5
     scores["upper"] = scores["score"] + 1.0
-    figure = forest_figure(scores, "rmse", "lower", "upper")
+    figure = forest_figure(scores, "rmse", "lower", "upper", palette)
     cohorts = ["composite", "cohort_x", "cohort_y"]
     assert [annotation.text for annotation in figure.layout.annotations] == cohorts
     assert [trace.name for trace in figure.data if trace.showlegend] == [
@@ -602,12 +603,12 @@ def test_the_forest_figure_draws_a_row_per_cohort_and_a_trace_per_model(
     assert next(traces, None) is None
     assert not figure.layout.shapes
     ruled = forest_figure(
-        scores, "rmse", "lower", "upper", share_x_axis=True, rule_at=0
+        scores, "rmse", "lower", "upper", palette, share_x_axis=True, rule_at=0
     )
     assert len(ruled.layout.shapes) == 3
     assert all(shape.x0 == shape.x1 == 0 for shape in ruled.layout.shapes)
     one_model = forest_figure(
-        scores[scores["model"] == "model_a"], "rmse", "lower", "upper"
+        scores[scores["model"] == "model_a"], "rmse", "lower", "upper", palette
     )
     assert not one_model.layout.showlegend
 
@@ -620,6 +621,7 @@ def test_the_ridge_draws_a_density_per_model_in_a_row_per_cohort(
     # row's highest density 1; no dots or bars; one legend entry per model;
     # the rule in every row. The columns of another metric are not drawn.
     ridge_figure = notebook_defs["ridge_figure"]
+    palette = notebook_defs["PALETTE"]
     models = ["model_a", "model_b"]
     columns = pd.MultiIndex.from_product(
         [["cohort_x", "cohort_y", "composite"], ["rmse", "mae"]],
@@ -630,7 +632,7 @@ def test_the_ridge_draws_a_density_per_model_in_a_row_per_cohort(
         model: pd.DataFrame(rng.normal(4.5, 0.3, (200, len(columns))), columns=columns)
         for model in models
     }
-    figure = ridge_figure(replicate_scores, "rmse")
+    figure = ridge_figure(replicate_scores, "rmse", palette)
     cohorts = ["composite", "cohort_x", "cohort_y"]
     assert [annotation.text for annotation in figure.layout.annotations] == cohorts
     assert len(figure.data) == 6 and all(trace.mode == "lines" for trace in figure.data)
@@ -651,7 +653,9 @@ def test_the_ridge_draws_a_density_per_model_in_a_row_per_cohort(
             np.testing.assert_allclose(curve.y, density / highest)
         assert max(max(curve.y) for curve in curves) == pytest.approx(1.0)
     assert not figure.layout.shapes
-    ruled = ridge_figure(replicate_scores, "rmse", share_x_axis=True, rule_at=0)
+    ruled = ridge_figure(
+        replicate_scores, "rmse", palette, share_x_axis=True, rule_at=0
+    )
     assert len(ruled.layout.shapes) == 3
     assert all(shape.x0 == shape.x1 == 0 for shape in ruled.layout.shapes)
 
@@ -807,6 +811,7 @@ def test_the_beeswarm_figure_draws_a_row_per_column_and_per_level(
     # row per sorted level, kept at its place, in gray; one colorbar for the
     # numeric rows; the dots' jitter seeded.
     beeswarm_figure = notebook_defs["beeswarm_figure"]
+    palette = notebook_defs["PALETTE"]
     X = pd.DataFrame(
         {"x": [1.0, 2.0, 3.0, 4.0], "s": ["b", "a", "b", "a"], "z": [5.0] * 4}
     )
@@ -819,7 +824,7 @@ def test_the_beeswarm_figure_draws_a_row_per_column_and_per_level(
         feature_names=list(X.columns),
         output_names=["cohort_a", "cohort_b"],
     )
-    figure = beeswarm_figure(explanation, X, "cohort_a", 0)
+    figure = beeswarm_figure(explanation, X, "cohort_a", 0, palette)
     labels = ["z", "s = a", "s = b", "x"]
     assert [trace.name for trace in figure.data] == labels
     assert list(figure.layout.yaxis.ticktext) == labels
@@ -830,7 +835,7 @@ def test_the_beeswarm_figure_draws_a_row_per_column_and_per_level(
     jitter = np.random.default_rng(0).uniform(-0.3, 0.3, len(X))
     np.testing.assert_array_equal(figure.data[0].y, 3 + jitter)
     np.testing.assert_array_equal(figure.data[3].x, [0.1] * 4)
-    other_cohort = beeswarm_figure(explanation, X, "cohort_b", 0)
+    other_cohort = beeswarm_figure(explanation, X, "cohort_b", 0, palette)
     assert [trace.name for trace in other_cohort.data] == [
         "x",
         "s = a",
@@ -847,6 +852,7 @@ def test_the_permutation_figure_draws_a_box_per_split_ordered_by_the_last(
     # draws its first category at the bottom), the last split in blue, an
     # earlier one in gray, a dotted rule at 0.
     permutation_figure = notebook_defs["permutation_figure"]
+    palette = notebook_defs["PALETTE"]
     train = Bunch(
         importances=np.array([[0.9, 1.1], [0.0, 0.2], [0.4, 0.6]]),
         importances_mean=np.array([1.0, 0.1, 0.5]),
@@ -856,7 +862,7 @@ def test_the_permutation_figure_draws_a_box_per_split_ordered_by_the_last(
         importances_mean=np.array([0.2, 0.0, 0.6]),
     )
     figure = permutation_figure(
-        {"train": train, "val": val}, ["a", "b", "c"], "composite rmse"
+        {"train": train, "val": val}, ["a", "b", "c"], "composite rmse", palette
     )
     assert [trace.name for trace in figure.data] == ["train", "val"]
     assert [trace.marker.color for trace in figure.data] == ["#898781", "#2a78d6"]
@@ -868,7 +874,9 @@ def test_the_permutation_figure_draws_a_box_per_split_ordered_by_the_last(
         (0, "dot")
     ]
     assert figure.layout.xaxis.title.text == "drop in the composite rmse when shuffled"
-    test_only = permutation_figure({"test": train}, ["a", "b", "c"], "n_x rmse")
+    test_only = permutation_figure(
+        {"test": train}, ["a", "b", "c"], "n_x rmse", palette
+    )
     assert list(test_only.layout.yaxis.categoryarray) == ["b", "c", "a"]
     assert test_only.layout.xaxis.title.text == "drop in the n_x rmse when shuffled"
     assert [trace.marker.color for trace in test_only.data] == ["#2a78d6"]

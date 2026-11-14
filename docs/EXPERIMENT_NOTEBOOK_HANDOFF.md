@@ -1,4 +1,40 @@
-# Handoff: the experiment notebooks, PR 7 merged (#26); the simplification review: S1–S4, S6, S8 done, S7 dropped, S5 next (Fable), then the MLflow plan
+# Handoff: the experiment notebooks, PR 7 merged (#26); the simplification review: S1–S4, S6, S8 done, S7 dropped, S5.0 and S5.1 done, S5.2 next, then the MLflow plan
+
+**Status (2026-11-14: S8 committed as `e9ebf4d`; S5.0 done; S5.1 done and checked, uncommitted; next S5.2):**
+- **S5.0** (the probe; the review plan's S5 has the numbers): the shared style as a
+  `style_figure(figure, palette)` function, not a plotly template (the user left the choice to
+  best practice); the waterfall, the shares bars and `02`'s figures take the shared style (the
+  user's choice).
+- **S5.1:** `PALETTE` and `style_figure` in one new cell; `forest_figure`, `ridge_figure`,
+  `permutation_figure`, `beeswarm_figure` take `palette`; `style_cohort_rows` is the forest's
+  and the ridge's common ending. **Every check passed** (`run_S5_1.sh`, log `run_S5_1.log`):
+  the suite 1412, mypy 28, the notebook tests 32, ruff `03` 15 / `02` 11, the format hunks,
+  `marimo check`, Check B on both, Check C on both equal to S8's run with nothing excepted;
+  every figure's traces equal and all 21 of `03`'s screenshots pixel-identical to HEAD's; the
+  mutation (`run_mutant_S5_1.sh`) caught.
+- **The commit (the user's):**
+
+  ```text
+  refactor(notebook): the figures' palette and shared style defined once; the four figure functions take the palette (S5.1)
+  ```
+  Its files: `notebooks/03_hyperparameter_tuning.py`,
+  `tests/characterization/test_hyperparameter_tuning_notebook.py`,
+  `docs/SIMPLIFICATION_REVIEW_PLAN.md`, this handoff.
+- **The notebooks' md5:** `02_objective_eda.py` `ba6656a2e3eb94de8a1a21a712e05095` (unchanged),
+  `03_hyperparameter_tuning.py` `18cd7adbcb2d2055c751624374e07fd4`.
+- **The test part has still not been run on the user's cache** (E11).
+- **The scratchpad to copy first:** `/private/tmp/claude-501/-Users-galkampel-Desktop-Projects-age-group-prediction/fe433a52-12f5-4642-94a4-b6aa46f6e1ea/scratchpad`:
+  everything the status below lists (the four stale probe scripts are updated), plus
+  `probes/dump_figures_s5.py`, `run_dump_s5.sh`, `restyle_s5.py`, `pairs_s5.py`,
+  `checks/compare_figures_s5.py`, `shots_s5.py`, `check_c_s5_tuning.py`, `run_S5_1.sh`,
+  `run_mutant_S5_1.sh`, `new_cells_s5_1/` (the four cells and `splice_s5_1.py`), `s5_0/` and
+  `s5_1/` (the pairs pages). **S5.2's references:** `check_c_s5_1_tuning.pkl`,
+  `check_c_s5_1_eda.pkl`; the figures' "before" stays S5.0's dump of HEAD `e9ebf4d`
+  (`figures_today_tuning.json`, `figures_today_eda.json`). The screenshots need Google Chrome;
+  a figure comparison allows only the layout keys the stop names.
+- **Next:** S5.2 (the waterfall, the two count figures, the shares bars: `PALETTE`,
+  `style_figure`, one definition of the models' colors; the waterfall and the bars change as
+  S5.0's pairs show), then S5.3 (`02`), then the MLflow plan (§6, step 2).
 
 **Status (2026-11-13, end of session: S6 committed as `81988ea`; S8 done and checked, uncommitted; S7 dropped; next S5 with Fable):**
 - **S8** (`src`, the review plan's S8, ticked with its Done note):

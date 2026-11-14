@@ -1556,12 +1556,81 @@ def _(best_runs_cohort, best_runs_metrics, best_runs_val_scores_df, mo):
 
 
 @app.cell
-def _(gaussian_kde, go, make_subplots, np):
+def _():
+    # The figures' palette, the dataviz skill's reference: the three
+    # categorical colors that stay apart for colorblind readers, the
+    # sequential blue ramp (steps 250, 400, 550, 700, so the lightest still
+    # shows on the surface), then the surface, the inks, the gridline and the
+    # axis line.
+    PALETTE = {
+        "categorical": ["#2a78d6", "#eb6834", "#1baf7a"],
+        "blues": ["#86b6ef", "#3987e5", "#1c5cab", "#0d366b"],
+        "surface": "#fcfcfb",
+        "ink": "#52514e",
+        "muted": "#898781",
+        "grid": "#e1e0d9",
+        "axis": "#c3c2b7",
+    }
+
+    def style_figure(figure, palette):
+        """Set the figures' shared style on `figure`, from `palette`: the
+        surface behind the paper and the plot, the font, and on every axis
+        the gridline, no zero line, the axis line and muted ticks. Call it
+        once the figure has its axes; what the figure sets after it wins."""
+        figure.update_layout(
+            template="plotly_white",
+            paper_bgcolor=palette["surface"],
+            plot_bgcolor=palette["surface"],
+            font={
+                "family": "system-ui, -apple-system, Segoe UI, sans-serif",
+                "color": palette["ink"],
+                "size": 12,
+            },
+        )
+        for update_axes in (figure.update_xaxes, figure.update_yaxes):
+            update_axes(
+                gridcolor=palette["grid"],
+                zeroline=False,
+                linecolor=palette["axis"],
+                tickfont={"color": palette["muted"]},
+            )
+
+    return PALETTE, style_figure
+
+
+@app.cell
+def _(gaussian_kde, go, make_subplots, np, style_figure):
+    def style_cohort_rows(figure, n_cohorts, n_models, metric_name, palette):
+        """The forest's and the ridge's layout, a row per cohort: the shared
+        style, the height, the legend naming the models (none for one model),
+        `metric_name` under the last row, no y axis, and each row's title
+        (its cohort) at the row's top left."""
+        height = 110 * n_cohorts + 130
+        style_figure(figure, palette)
+        figure.update_layout(
+            height=height,
+            showlegend=n_models > 1,
+            legend={
+                "orientation": "h",
+                "x": 0,
+                "xanchor": "left",
+                "y": 1 - 12 / height,
+                "yanchor": "top",
+                "yref": "container",
+            },
+            margin={"l": 30, "r": 20, "t": 80, "b": 50},
+            hovermode="closest",
+        )
+        figure.update_xaxes(title_text=metric_name, row=n_cohorts, col=1)
+        figure.update_yaxes(showgrid=False, showline=False, showticklabels=False)
+        figure.update_annotations(x=0, xanchor="left")
+
     def forest_figure(
         scores,
         metric_name,
         lower_column,
         upper_column,
+        palette,
         share_x_axis=False,
         rule_at=None,
     ):
@@ -1570,20 +1639,9 @@ def _(gaussian_kde, go, make_subplots, np):
         score, the bar its interval from `lower_column` to `upper_column`.
         `scores` is long, a row per model, cohort and metric, with the columns
         `model`, `cohort`, `metric`, `score` and the two bounds; the legend
-        names the models. Each row has its own x scale unless `share_x_axis`;
-        `rule_at` draws a vertical line at that value in every row (0 for a
-        difference)."""
-        # The dataviz skill's reference palette: the three categorical colors
-        # that stay apart for colorblind readers, then the surface, the inks,
-        # the gridline and the axis line.
-        colors = ["#2a78d6", "#eb6834", "#1baf7a"]
-        surface, ink, muted, grid, axis = (
-            "#fcfcfb",
-            "#52514e",
-            "#898781",
-            "#e1e0d9",
-            "#c3c2b7",
-        )
+        names the models, each in one of `palette`'s categorical colors. Each
+        row has its own x scale unless `share_x_axis`; `rule_at` draws a
+        vertical line at that value in every row (0 for a difference)."""
         metric_scores = scores[scores["metric"] == metric_name]
         # The composite first, then the cohorts in their order.
         cohorts = sorted(
@@ -1599,7 +1657,7 @@ def _(gaussian_kde, go, make_subplots, np):
         )
         for row, cohort in enumerate(cohorts, start=1):
             for position, model in enumerate(models):
-                color = colors[position]
+                color = palette["categorical"][position]
                 point = metric_scores[
                     (metric_scores["cohort"] == cohort)
                     & (metric_scores["model"] == model)
@@ -1615,7 +1673,7 @@ def _(gaussian_kde, go, make_subplots, np):
                         marker={
                             "size": 10,
                             "color": color,
-                            "line": {"width": 2, "color": surface},
+                            "line": {"width": 2, "color": palette["surface"]},
                         },
                         error_x={
                             "type": "data",
@@ -1639,59 +1697,22 @@ def _(gaussian_kde, go, make_subplots, np):
             figure.update_yaxes(range=[len(models) - 0.4, -0.6], row=row, col=1)
             if rule_at is not None:
                 figure.add_vline(
-                    x=rule_at, line_width=1, line_color=ink, row=row, col=1
+                    x=rule_at, line_width=1, line_color=palette["ink"], row=row, col=1
                 )
-        height = 110 * len(cohorts) + 130
-        figure.update_layout(
-            height=height,
-            template="plotly_white",
-            paper_bgcolor=surface,
-            plot_bgcolor=surface,
-            font={
-                "family": "system-ui, -apple-system, Segoe UI, sans-serif",
-                "color": ink,
-                "size": 12,
-            },
-            showlegend=len(models) > 1,
-            legend={
-                "orientation": "h",
-                "x": 0,
-                "xanchor": "left",
-                "y": 1 - 12 / height,
-                "yanchor": "top",
-                "yref": "container",
-            },
-            margin={"l": 30, "r": 20, "t": 80, "b": 50},
-            hovermode="closest",
-        )
-        figure.update_xaxes(
-            gridcolor=grid, zeroline=False, linecolor=axis, tickfont={"color": muted}
-        )
-        figure.update_xaxes(title_text=metric_name, row=len(cohorts), col=1)
-        figure.update_yaxes(showgrid=False, zeroline=False, showticklabels=False)
-        # Each row's title (its cohort) at the row's top left.
-        figure.update_annotations(x=0, xanchor="left")
+        style_cohort_rows(figure, len(cohorts), len(models), metric_name, palette)
         return figure
 
-    def ridge_figure(replicate_scores, metric_name, share_x_axis=False, rule_at=None):
+    def ridge_figure(
+        replicate_scores, metric_name, palette, share_x_axis=False, rule_at=None
+    ):
         """A ridge plot of `metric_name`: a row per cohort, the composite
         first, and in each row each model's bootstrap replicates as a density
         (a Gaussian KDE between the replicates' extremes; the row's highest
         density on top). `replicate_scores` is {model: its replicates, a row
         per replicate and a column per cohort and metric}; the legend names
-        the models. Each row has its own x scale unless `share_x_axis`;
-        `rule_at` draws a vertical line at that value in every row (0 for a
-        difference)."""
-        # The forest's palette: the three categorical colors, the surface, the
-        # inks, the gridline and the axis line.
-        colors = ["#2a78d6", "#eb6834", "#1baf7a"]
-        surface, ink, muted, grid, axis = (
-            "#fcfcfb",
-            "#52514e",
-            "#898781",
-            "#e1e0d9",
-            "#c3c2b7",
-        )
+        the models, each in one of `palette`'s categorical colors. Each row
+        has its own x scale unless `share_x_axis`; `rule_at` draws a vertical
+        line at that value in every row (0 for a difference)."""
         models = list(replicate_scores)
         # The composite first, then the cohorts in their order.
         cohorts = sorted(
@@ -1716,6 +1737,7 @@ def _(gaussian_kde, go, make_subplots, np):
                 curves[model] = (x_values, gaussian_kde(replicates)(x_values))
             row_highest = max(density.max() for _, density in curves.values())
             for position, model in enumerate(models):
+                color = palette["categorical"][position]
                 x_values, density = curves[model]
                 figure.add_trace(
                     go.Scatter(
@@ -1723,8 +1745,8 @@ def _(gaussian_kde, go, make_subplots, np):
                         y=density / row_highest,
                         mode="lines",
                         fill="tozeroy",
-                        fillcolor=colors[position] + "1a",
-                        line={"width": 2, "color": colors[position]},
+                        fillcolor=color + "1a",
+                        line={"width": 2, "color": color},
                         name=model,
                         legendgroup=model,
                         showlegend=row == 1,
@@ -1739,38 +1761,9 @@ def _(gaussian_kde, go, make_subplots, np):
             figure.update_yaxes(range=[0, 1.1], row=row, col=1)
             if rule_at is not None:
                 figure.add_vline(
-                    x=rule_at, line_width=1, line_color=ink, row=row, col=1
+                    x=rule_at, line_width=1, line_color=palette["ink"], row=row, col=1
                 )
-        height = 110 * len(cohorts) + 130
-        figure.update_layout(
-            height=height,
-            template="plotly_white",
-            paper_bgcolor=surface,
-            plot_bgcolor=surface,
-            font={
-                "family": "system-ui, -apple-system, Segoe UI, sans-serif",
-                "color": ink,
-                "size": 12,
-            },
-            showlegend=len(models) > 1,
-            legend={
-                "orientation": "h",
-                "x": 0,
-                "xanchor": "left",
-                "y": 1 - 12 / height,
-                "yanchor": "top",
-                "yref": "container",
-            },
-            margin={"l": 30, "r": 20, "t": 80, "b": 50},
-            hovermode="closest",
-        )
-        figure.update_xaxes(
-            gridcolor=grid, zeroline=False, linecolor=axis, tickfont={"color": muted}
-        )
-        figure.update_xaxes(title_text=metric_name, row=len(cohorts), col=1)
-        figure.update_yaxes(showgrid=False, zeroline=False, showticklabels=False)
-        # Each row's title (its cohort) at the row's top left.
-        figure.update_annotations(x=0, xanchor="left")
+        style_cohort_rows(figure, len(cohorts), len(models), metric_name, palette)
         return figure
 
     return forest_figure, ridge_figure
@@ -1796,6 +1789,7 @@ def _(METRICS, SELECTION_METRIC, mo):
 @app.cell
 def _(
     CI_BOUND_NAMES,
+    PALETTE,
     best_replicate_scores,
     best_runs_metric,
     best_runs_plot,
@@ -1810,9 +1804,12 @@ def _(
             best_runs_metric.value,
             CI_BOUND_NAMES["lower"],
             CI_BOUND_NAMES["upper"],
+            PALETTE,
         )
     elif best_runs_plot.value == "ridge":
-        best_runs_figure = ridge_figure(best_replicate_scores, best_runs_metric.value)
+        best_runs_figure = ridge_figure(
+            best_replicate_scores, best_runs_metric.value, PALETTE
+        )
     else:
         raise ValueError(f"unknown plot {best_runs_plot.value!r}")
     mo.vstack(
@@ -1849,6 +1846,7 @@ def _(METRICS, SELECTION_METRIC, mo):
 @app.cell
 def _(
     CI_BOUND_NAMES,
+    PALETTE,
     alpha,
     best_difference_metric,
     best_difference_plot,
@@ -1875,6 +1873,7 @@ def _(
             best_difference_metric.value,
             CI_BOUND_NAMES["lower"],
             CI_BOUND_NAMES["upper"],
+            PALETTE,
             share_x_axis=True,
             rule_at=0,
         )
@@ -1882,6 +1881,7 @@ def _(
         best_difference_figure = ridge_figure(
             {_difference_name: best_difference_replicates},
             best_difference_metric.value,
+            PALETTE,
             share_x_axis=True,
             rule_at=0,
         )
@@ -2004,24 +2004,16 @@ def _(
 
 
 @app.cell
-def _(go, np):
-    def permutation_figure(results, feature_names, score_name):
+def _(go, np, style_figure):
+    def permutation_figure(results, feature_names, score_name, palette):
         """The permutation importance of each split in `results` ({split:
         scikit-learn's result}, in display order): per column a box of the
         drops over the repeated shuffles, a box per split, the mean dashed;
         the columns by the last split's mean drop (the largest on top), the
-        last split in blue, an earlier one in the muted gray; a dotted rule
-        at 0, where shuffling the column changes nothing. `score_name` names
-        the score that drops (the composite's or a cohort's metric)."""
-        # The palette's tokens, as in the beeswarm.
-        surface, ink, muted, grid, axis, blue = (
-            "#fcfcfb",
-            "#52514e",
-            "#898781",
-            "#e1e0d9",
-            "#c3c2b7",
-            "#2a78d6",
-        )
+        last split in `palette`'s blue, an earlier one in its muted gray; a
+        dotted rule at 0, where shuffling the column changes nothing.
+        `score_name` names the score that drops (the composite's or a
+        cohort's metric)."""
         splits = list(results)
         # Ascending: a category axis draws its first category at the bottom.
         order = np.argsort(results[splits[-1]].importances_mean, kind="stable")
@@ -2037,22 +2029,21 @@ def _(go, np):
                     name=split,
                     orientation="h",
                     boxmean=True,
-                    marker={"color": blue if split == splits[-1] else muted},
+                    marker={
+                        "color": (
+                            palette["categorical"][0]
+                            if split == splits[-1]
+                            else palette["muted"]
+                        )
+                    },
                     line={"width": 1.5},
                 )
             )
-        figure.add_vline(x=0, line={"color": ink, "width": 1, "dash": "dot"})
+        figure.add_vline(x=0, line={"color": palette["ink"], "width": 1, "dash": "dot"})
+        style_figure(figure, palette)
         figure.update_layout(
             boxmode="group",
             height=80 + 28 * len(splits) * len(columns),
-            template="plotly_white",
-            paper_bgcolor=surface,
-            plot_bgcolor=surface,
-            font={
-                "family": "system-ui, -apple-system, Segoe UI, sans-serif",
-                "color": ink,
-                "size": 12,
-            },
             legend={
                 "orientation": "h",
                 "x": 0,
@@ -2066,17 +2057,9 @@ def _(go, np):
         figure.update_yaxes(
             categoryorder="array",
             categoryarray=columns,
-            gridcolor=grid,
-            linecolor=axis,
-            tickfont={"color": ink},
+            tickfont={"color": palette["ink"]},
         )
-        figure.update_xaxes(
-            title_text=f"drop in the {score_name} when shuffled",
-            gridcolor=grid,
-            zeroline=False,
-            linecolor=axis,
-            tickfont={"color": muted},
-        )
+        figure.update_xaxes(title_text=f"drop in the {score_name} when shuffled")
         return figure
 
     return (permutation_figure,)
@@ -2180,6 +2163,7 @@ def _(COHORTS, mo):
 
 @app.cell
 def _(
+    PALETTE,
     SELECTION_METRIC,
     best_runs_permutation,
     mo,
@@ -2194,6 +2178,7 @@ def _(
             permutation[_cohort],
             list(train_age_group.X.columns),
             f"{_cohort} {SELECTION_METRIC.name}",
+            PALETTE,
         )
         for model, permutation in best_runs_permutation.items()
     }
@@ -2225,25 +2210,15 @@ def _(COHORTS, mo):
 
 
 @app.cell
-def _(go, np, pd):
-    def beeswarm_figure(explanation, X, cohort, random_state):
+def _(go, np, pd, style_figure):
+    def beeswarm_figure(explanation, X, cohort, random_state, palette):
         """A beeswarm of `cohort`'s SHAP values in `explanation` (rows,
         columns, cohorts), its rows `X`: a row of dots per column, the columns
         by the cohort's mean |SHAP| (the largest on top), each dot a row at its
-        SHAP value, colored by the column's value, low to high over `X`; a
-        category's levels (unordered) each in its own row, in the muted gray:
-        a row holds one level, so its value has no low or high.
-        `random_state` seeds the dots' vertical jitter."""
-        # The palette's tokens, as in the test reading's figures; a column's
-        # value on the sequential blue ramp (steps 250, 400, 550, 700).
-        surface, ink, muted, grid, axis = (
-            "#fcfcfb",
-            "#52514e",
-            "#898781",
-            "#e1e0d9",
-            "#c3c2b7",
-        )
-        blues = ["#86b6ef", "#3987e5", "#1c5cab", "#0d366b"]
+        SHAP value, colored by the column's value, low to high over `X` on
+        `palette`'s blue ramp; a category's levels (unordered) each in its own
+        row, in the muted gray: a row holds one level, so its value has no low
+        or high. `random_state` seeds the dots' vertical jitter."""
         # One jitter, so each row of dots spreads the same way in every figure.
         jitter = np.random.default_rng(random_state).uniform(-0.3, 0.3, len(X))
         values = explanation.values[:, :, explanation.output_names.index(cohort)]
@@ -2278,7 +2253,7 @@ def _(go, np, pd):
                 value_range = (raw.max() - raw.min()) or 1
                 marker = {
                     "color": ((raw - raw.min()) / value_range).to_numpy(),
-                    "colorscale": blues,
+                    "colorscale": palette["blues"],
                     "cmin": 0,
                     "cmax": 1,
                     "showscale": not scale_shown,
@@ -2292,7 +2267,7 @@ def _(go, np, pd):
                 scale_shown = True
                 value_text = "%{customdata:.4g}"
             else:
-                marker = {"color": muted}
+                marker = {"color": palette["muted"]}
                 value_text = "%{customdata}"
             figure.add_trace(
                 go.Scatter(
@@ -2308,34 +2283,21 @@ def _(go, np, pd):
                     ),
                 )
             )
+        style_figure(figure, palette)
         figure.update_layout(
             height=60 + 45 * len(rows),
-            template="plotly_white",
-            paper_bgcolor=surface,
-            plot_bgcolor=surface,
-            font={
-                "family": "system-ui, -apple-system, Segoe UI, sans-serif",
-                "color": ink,
-                "size": 12,
-            },
             margin={"l": 190, "r": 20, "t": 20, "b": 50},
             hovermode="closest",
         )
         figure.update_yaxes(
             tickvals=list(range(len(rows)))[::-1],
             ticktext=[row[0] for row in rows],
-            gridcolor=grid,
-            zeroline=False,
-            linecolor=axis,
-            tickfont={"color": ink},
+            tickfont={"color": palette["ink"]},
         )
         figure.update_xaxes(
             title_text=f"SHAP value (children, {cohort})",
-            gridcolor=grid,
             zeroline=True,
-            zerolinecolor=axis,
-            linecolor=axis,
-            tickfont={"color": muted},
+            zerolinecolor=palette["axis"],
         )
         return figure
 
@@ -2343,10 +2305,10 @@ def _(go, np, pd):
 
 
 @app.cell
-def _(beeswarm_figure, best_runs_shap, mo, seed, shap_cohort, shap_rows):
+def _(PALETTE, beeswarm_figure, best_runs_shap, mo, seed, shap_cohort, shap_rows):
     _cohort = shap_cohort.value
     shap_beeswarm_figures = {
-        model: beeswarm_figure(explanation, shap_rows.X, _cohort, seed)
+        model: beeswarm_figure(explanation, shap_rows.X, _cohort, seed, PALETTE)
         for model, explanation in best_runs_shap.items()
     }
     _views = []
@@ -2543,6 +2505,7 @@ def _(METRICS, SELECTION_METRIC, mo):
 @app.cell
 def _(
     CI_BOUND_NAMES,
+    PALETTE,
     best_runs_val_scores_df,
     forest_figure,
     mo,
@@ -2562,20 +2525,25 @@ def _(
             test_metric.value,
             CI_BOUND_NAMES["lower"],
             CI_BOUND_NAMES["upper"],
+            PALETTE,
         )
         test_difference_figure = forest_figure(
             test_difference_df,
             test_metric.value,
             CI_BOUND_NAMES["lower"],
             CI_BOUND_NAMES["upper"],
+            PALETTE,
             share_x_axis=True,
             rule_at=0,
         )
     elif test_plot.value == "ridge":
-        test_runs_figure = ridge_figure(test_replicate_scores, test_metric.value)
+        test_runs_figure = ridge_figure(
+            test_replicate_scores, test_metric.value, PALETTE
+        )
         test_difference_figure = ridge_figure(
             {_difference_name: test_difference_replicates},
             test_metric.value,
+            PALETTE,
             share_x_axis=True,
             rule_at=0,
         )
@@ -2742,6 +2710,7 @@ def _(COHORTS, mo):
 
 @app.cell
 def _(
+    PALETTE,
     SELECTION_METRIC,
     mo,
     n_repeats,
@@ -2756,6 +2725,7 @@ def _(
             {"test": permutation[_cohort]},
             list(test_age_group.X.columns),
             f"{_cohort} {SELECTION_METRIC.name}",
+            PALETTE,
         )
         for model, permutation in test_permutation.items()
     }
@@ -2788,10 +2758,18 @@ def _(COHORTS, mo):
 
 
 @app.cell
-def _(beeswarm_figure, mo, seed, test_age_group, test_beeswarm_cohort, test_shap):
+def _(
+    PALETTE,
+    beeswarm_figure,
+    mo,
+    seed,
+    test_age_group,
+    test_beeswarm_cohort,
+    test_shap,
+):
     _cohort = test_beeswarm_cohort.value
     test_beeswarm_figures = {
-        model: beeswarm_figure(explanation, test_age_group.X, _cohort, seed)
+        model: beeswarm_figure(explanation, test_age_group.X, _cohort, seed, PALETTE)
         for model, explanation in test_shap.items()
     }
     _views = []
