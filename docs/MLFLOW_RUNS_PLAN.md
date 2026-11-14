@@ -8,8 +8,9 @@ sub-task when it is done and update the status line.
 user's four choices 11–14), committed `8e1ea98`. M1 done (the MLflow cell; the user's choice
 there: no MLflow global), committed `2451c8a`. M2 done (a run record keeps its study), committed `dabc406`. M3 done (the 24 tuning runs
 behind a button; the user's choices 15, the trials as CSV at 6 significant digits, and 16, the
-bare `return`), checked, awaiting the user's commit. Next: M4, an Opus 5.5 session (§7, the second
-prompt); it first re-plans its tables under choice 15.
+bare `return`), committed `7e5bc30`. M4 planned after M3 (the user's choice 17: a dict column
+as JSON text; the two returns to restore), not implemented. Next: M4, an Opus 5.5 session (the
+prompt at the top of the handoff).
 
 ## 1. The question and the verdict
 
@@ -129,6 +130,14 @@ a store in the scratchpad; every read-back asserted):**
     tables follow the same rule, planned there (their dict columns need a look).
 16. **marimo's bare `return`** in a logging cell is kept: ruff on `03` goes 15 → 16 at M3 (a 15th
     PLR1711, like the 14 markdown and display cells); M4 and M6 add one each.
+
+**The user's choice after M3, for M4 (2026-11-14; do not re-ask):**
+
+17. **A dict column in a CSV table is JSON text:** `model1_runs` and `model2_runs`'
+    `feature_transformers` and `hyperparameters` each written with `json.dumps` per cell before
+    `to_csv(index=False, float_format="%.6g")` (the floats inside a dict stay full precision; a
+    dict is not a float column). Checked on M3's Check C pickle: both tables' dicts read back
+    equal through `pd.read_csv` and `json.loads`; no NaN in the text.
 
 **Settled by the probe without a question:** M2's form, as the plan recommended: the record
 keeps its study (it pickles; the logging needs its name, trials and best parameters, and loading
@@ -558,9 +567,17 @@ and fails ("Logged 24 tuning runs, skipped 0"). (The script's printed exits read
      - **Tables:** `mlflow.log_table(frame, f"tables/{name}.json")` for `best_runs_val_scores`,
        `best_difference`, `importance`, `model1_runs`, `model1_scores`, `model2_runs`,
        `model2_scores` (each the `<name>_df` frame; read back equal in M0 only to rtol 1e-5, the
-       dict columns too). **To be re-planned at M4 under choice 15** (CSV at 6 significant
-       digits, as M3's trials; the dict columns of `model1_runs`/`model2_runs` need a look:
-       CSV writes their `repr`).
+       dict columns too). **As settled after M3 (choices 15 and 17):**
+       `mlflow.log_text(frame.to_csv(index=False, float_format="%.6g"), f"tables/{name}.csv")`,
+       the runs tables' two dict columns first made JSON text
+       (`frame.assign(**{c: frame[c].map(json.dumps) for c in ("feature_transformers",
+       "hyperparameters")})`; `json` is the first imports cell's).
+     - **Returns to restore (found after M3):** the paired-difference cell and the importance
+       table's cell end in a bare `return` (marimo's trim), but the logging cell reads their
+       names: `return best_difference_df, best_difference_replicates` and
+       `return (importance_df,)`. ruff on `03`: 16 + 1 (the logging cell's bare `return`) − 2 =
+       15. `make_copy_tuning.py` rewrites the difference cell's return anyway (it still finds
+       the cell by its `build_paired_difference(` line).
      - **Figures (18):** `for path, figure in build_part_figures("val",
        best_runs_val_scores_df, best_replicate_scores, best_difference_df,
        best_difference_replicates, best_runs_permutation, best_runs_shap, shap_rows.X,

@@ -1,7 +1,8 @@
 # Handoff: the experiment notebooks, PR 7 merged (#26); the simplification review done; the MLflow plan written and decided (MLFLOW_RUNS_PLAN.md, M0–M7); M0–M3 done; next M4 with Opus 5.5
 
-**Status (2026-11-14, end of M3, the 24 tuning runs logged behind a button; the user commits it):**
-- **The state:** branch `feat/mlflow-runs`, on `21960d5` (the M3 prompt; M2 is `dabc406`). M3
+**Status (2026-11-14, end of M3, the 24 tuning runs logged behind a button; M4 planned):**
+- **The state:** branch `feat/mlflow-runs`; M3 committed as `7e5bc30` (on `21960d5`, the M3
+  prompt); then the user's commit of this handoff update (choice 17 and the M4 prompt). M3
   changed `notebooks/03_hyperparameter_tuning.py` (four cells after Model 2's tables cell: the
   shared inputs, `log_tuning_run`, the button "Log the tuning runs", the logging cell; the
   imports cell returns `optuna`), `tests/characterization/test_hyperparameter_tuning_notebook.py`
@@ -14,7 +15,15 @@
   for reading, its precision chosen: the trials as `trials.csv` at 6 significant digits
   (`log_table` rounds to 10 decimal places and its reader adds 1-ulp noise; M0's "exact"
   read-back was `assert_frame_equal`'s default tolerance); marimo's bare `return` kept (ruff `03`
-  16). **M4 re-plans its tables under choice 15** (the dict columns of the runs tables).
+  16).
+- **M4 planned after M3** (in the M3 session, read-only; the plan's M4 holds it): its tables as
+  CSV at 6 significant digits (choice 15), the runs tables' dict columns as JSON text (**the
+  user's choice 17**: `json.dumps` per cell; checked on M3's pickle, both tables' dicts read
+  back equal); the paired-difference cell and the importance table's cell get their returns
+  back (`best_difference_df, best_difference_replicates`; `importance_df`), so ruff on `03`
+  goes 16 + 1 − 2 = 15; the rest of the plan's M4 matches the code (the figure functions'
+  signatures, the inspection's `{model: {cohort: {split: result}}}`, `json` returned by the
+  first imports cell). The tests: one more (38 notebook tests, 1418 in the suite).
 - **The checks** (the plan's M3 has the numbers): all passed; Check D new; the mutation caught.
 - **The next change's scripts and references:** the runner `checks/run_M3.sh` (Check C's click
   logs to `$S/mlflow_M3.db`; Check D after it on the same copy and store; the figure dump in its
@@ -27,22 +36,24 @@
 
   ```text
   Read docs/MLFLOW_RUNS_PLAN.md in full (the status; §1's decisions, facts, M0's findings, its
-  correction at M3 and choices 11-16; §2; §3 how a sub-task is done; §4's M4, and M1-M3 as
+  correction at M3 and choices 11-17; §2; §3 how a sub-task is done; §4's M4, and M1-M3 as
   built), then docs/EXPERIMENT_NOTEBOOK_HANDOFF.md: the status at the top and §4 (how to work,
   git and the editor, the checks, the traps, the iCloud notes, the user's style). Then the cells
   M4 names in notebooks/03_hyperparameter_tuning.py (M3's four cells after Model 2's tables
-  cell, the best runs' cells, the inspection cell, the beeswarm cell of section 5).
-  Verify the state first: the branch feat/mlflow-runs, HEAD my commit of M3, `git status` clean;
-  03's md5 fa59251c25ea424474111a3f04c7cc3e, 02's 1f9bbe7601794c7d646a67ce2588d536; no
-  iCloud-offloaded files. If anything differs, stop and show me the diff. Copy the scratchpad the
-  handoff's top status names into yours (repoint.py: each script's S= set to yours), compile the
-  pycache. If that scratchpad is gone, tell me before rewriting anything.
+  cell, the best runs' cells, the paired-difference cell, the inspection cell, the importance
+  table's cell, the beeswarm cell of section 5).
+  Verify the state first: the branch feat/mlflow-runs, HEAD my commit of the handoff's M4 prompt
+  (on 7e5bc30, M3), `git status` clean; 03's md5 fa59251c25ea424474111a3f04c7cc3e, 02's
+  1f9bbe7601794c7d646a67ce2588d536; no iCloud-offloaded files. If anything differs, stop and
+  show me the diff. Copy the scratchpad the handoff's top status names into yours (repoint.py:
+  each script's S= set to yours), compile the pycache. If that scratchpad is gone, tell me
+  before rewriting anything.
   Then do sub-task M4 only: plan it first in plan mode (re-verify its facts and line numbers
-  read-only, list the exact edits; its tables under choice 15: CSV at 6 significant digits, and
-  how the runs tables' dict columns are written), wait for my go, implement it, run the checks of
-  the plan's §3 and M4's validation and mutation (Check D extended to the best runs' run). Every
-  check exports the four MLflow variables to the scratchpad, as checks/run_M3.sh does. Do not
-  start M5.
+  read-only, list the exact edits; the tables as CSV at 6 significant digits with the dict
+  columns as JSON text, choices 15 and 17; the two returns to restore; ruff on 03 at 15), wait
+  for my go, implement it, run the checks of the plan's §3 and M4's validation and mutation
+  (Check D extended to the best runs' run). Every check exports the four MLflow variables to
+  the scratchpad, as checks/run_M3.sh does. Do not start M5.
   If a step needs a choice the plan does not make, stop and ask me with the interactive
   question tool (the options, the evidence, your recommendation first).
   Never write the repo root's mlflow.db or mlartifacts/, nor .mlflow-local/. Don't run the
