@@ -4,7 +4,8 @@
 can implement one from this file and the handoff's §4). One sub-task per approval. Tick a
 sub-task when it is done and update the status line.
 
-**Status (2026-11-14):** written and decided; nothing implemented. Next: M0.
+**Status (2026-11-14):** M0 done (the probe; its findings in §1 and in M1–M6's exact calls; the
+user's four choices 11–14). Next: M1, an Opus 5.5 session (§7, the second prompt).
 
 ## 1. The question and the verdict
 
@@ -54,13 +55,66 @@ Read from the MLflow 3.16 docs and the installed 3.16.0 source:
   canonical store. An unset `MLFLOW_TRACKING_URI` must be refused like the canonical one.
 - `kaleido` is not installed: no PNG.
 
-**Not confirmed without a probe (M0 settles each):**
-- that no logging call warns under `PYTHONWARNINGS=error`;
-- how `study.trials_dataframe()` (timedelta and datetime columns) passes through `log_table`
-  and how the UI shows it;
-- what `from_pandas` records as the source when none is given;
-- the wall time of logging 24 runs;
-- whether a run record can keep the `optuna.Study` without breaking Check C's pickles.
+**Confirmed by M0 (2026-11-14; the probe on Check C's 3-trial copy, `PYTHONWARNINGS=error`,
+a store in the scratchpad; every read-back asserted):**
+- **Two calls warn under pandas 3.0.5, and both are filtered** (the user's choice, below):
+  - `log_table` on any frame with a `str` column: MLflow's own
+    `select_dtypes(include=["object"])` raises `pandas.errors.Pandas4Warning` ("For backward
+    compatibility, 'str' dtypes are included by select_dtypes…", attributed to
+    `mlflow.tracking.client`). Under `-W error` every table fails.
+  - `log_input` of a frame with int columns (X's `n_daycares_500m`, `n_apartments`; Y):
+    `UserWarning` "Hint: Inferred schema contains integer column(s)…" (attributed to
+    `mlflow.types.utils`), raised inside a `try/except Exception` in MLflow, so under `-W error`
+    the schema is silently dropped (`None`), and in the notebook the warning prints.
+  - With both filtered, nothing else warns: `import mlflow`, the store's creation, every call of
+    M3, M4 and M6, `search_runs`, `load_table`, `load_dict`.
+  - **MLflow's computed digest also warns** (`digest_utils`: "all arguments of all will be
+    keyword-only"): a dataset must be given its digest.
+- **`trials_dataframe()` through `log_table`:** its datetimes come back as ISO strings and
+  `duration` as `"P0DT0H0M2.636103S"` (not equal). The converted form (§4 M3) reads back
+  exactly equal. The UI's Artifacts tab shows a `log_table` file as a table ("View as table").
+- **The source with none given:** `CodeDatasetSource` holding the run's `mlflow.user`,
+  `mlflow.source.name` (the running script's path) and `mlflow.source.type` (`LOCAL`); kept.
+- **Wall time:** one tuning run 0.1–0.15 s; the 24 in 1.0 s; the second pass (24 skips)
+  0.1 s; the best runs' run 0.3–0.4 s; the final run 0.3–0.4 s (3-trial journals).
+- **A record keeping its `Study`:** `pickle` and cloudpickle both work (3,008 bytes for a
+  3-trial study, reloaded with its trials). Check C's records still drop it (a `Study` has no
+  `==` for the reference comparison).
+- **Read back, each equal:** params as `str(value)` (63 in the copy's Model 1 run 0); metrics as
+  `float`; tags; the four JSONs after a JSON round trip; the journal's bytes; 12 of the 13
+  tables exactly (the dict columns of `model1_runs` too). `test_building_scores` differs only by
+  its columns' index name (`metric`, from `compute_metrics`): JSON drops it.
+- **Also seen:** a missing folder of the sqlite file is created by MLflow; the artifact folder
+  is created at the first artifact; a new store prints two alembic `INFO` lines to stderr
+  ("Creating initial MLflow database tables…"); `set_experiment` of a missing experiment prints
+  an `INFO` line and creates it without our artifact location (so M1 creates it first); an unset
+  URI resolves to `sqlite:///<cwd>/mlflow.db` and creates nothing until a store call; a run
+  that raises inside `with mlflow.start_run()` ends `FAILED` with its tags; `log_table` into an
+  existing file doubles the table (3 rows → 6); the run's page groups metric charts by the
+  name's prefix (`val/difference/bias (6)`); a figure's HTML loads plotly.js from
+  `cdn.plot.ly` (needs the network; 13–56 KB per file) and renders in the UI's viewer;
+  `load_table` and `load_dict` print a tqdm "Downloading artifacts" bar on stderr unless
+  `MLFLOW_ENABLE_ARTIFACTS_PROGRESS_BAR=false`.
+- **The UI** (`mlflow ui`, 3.16): opens in its "GenAI" mode with an "MLflow Assistant" panel;
+  the runs list under the experiment; the screenshots are named in the handoff's top status.
+
+**The user's choices at M0 (2026-11-14; do not re-ask):**
+
+11. **The trials table:** the converted form: `number, value, seconds, params_*,
+    user_attrs_*, state` (the start and end times dropped; the journal keeps them).
+12. **The two warnings:** two narrow filters (category, message start, module) set once in the
+    MLflow cell; not a cast at every call.
+13. **The datasets' digest:** the SHA-256 of the part's rows (pandas' row hashes), its first
+    36 characters; `config_hash` stays a parameter. A changed split gets its own dataset record.
+14. **The git tags:** `git_commit` (HEAD) and `git_dirty` (`"true"` when a tracked file is
+    modified), read once in the MLflow cell with `git` run in `project_root / "src"` (in Check
+    C's copy a symlink to the repo, where `project_root` itself is not a repository).
+
+**Settled by the probe without a question:** M2's form, as the plan recommended: the record
+keeps its study (it pickles; the logging needs its name, trials and best parameters, and loading
+it again would repeat the tune cell's name). The skip rule and the final run's guard match a
+`FINISHED` run only, so a run that failed mid-logging is logged again (decision 3's "a run that
+exists" is a complete one); the failed run stays in the UI marked failed.
 
 ### Facts of the notebook the steps rest on (HEAD `10570a8`)
 
@@ -129,14 +183,29 @@ no private helpers; the stop's summary, md5 and commit message). Added for this 
    patched `run_button` clicks the logging buttons too, so from M3 on Check C logs to the
    scratch store.
 4. **Check D** (new in M3, `checks/check_d_mlflow.py`): reads the scratch store after Check
-   C's run and asserts the runs against the notebook's own values (the copy's `defs`).
+   C's run and asserts the runs against the notebook's own values (the copy's `defs`). The
+   model is M0's probe (`probes/probe_m0.py` in the scratchpad the handoff names): its
+   read-back block and `compare_table`. Run it with `MLFLOW_ENABLE_ARTIFACTS_PROGRESS_BAR=false`
+   (else a tqdm bar per download). Params compare as `str(value)`, metrics as `float(value)`,
+   the JSONs after `json.loads(json.dumps(...))`, a table with `pd.testing.assert_frame_equal`
+   (exact), `test_building_scores_df` after `.rename_axis(columns=None)`.
 5. **The notebook tests** (`tests/characterization/test_hyperparameter_tuning_notebook.py`)
    gain a test per sub-task as named below. A script run must leave the store with no run.
 6. **Never click "Evaluate on the test part" or "Log the final run" on the user's cache.**
 
 ## 4. The sub-tasks
 
-### [ ] M0. The probe (Fable; read-only for the repo)
+### [x] M0. The probe (Fable; read-only for the repo)
+
+**Done 2026-11-14.** The probe (`probes/probe_m0.py`, run by `probes/run_probe_m0.sh`; log
+`run_probe_m0.log`, the first run's `m0_shots/run_probe_m0_first.log`) ended `PROBE M0 DONE`
+under `-W error` with every read-back asserted; its first run stopped on `log_table`'s
+`Pandas4Warning`, the second ran with the filter, the third with the user's four choices. The
+findings are §1's "Confirmed by M0"; the choices §1's 11–14; M1–M6 below hold the calls as
+run. The repo unchanged: `git status` clean, the notebooks' md5 equal, the root's `mlflow.db`
+(md5, size, mtime) and `mlartifacts/` (411 entries, a stat listing) equal before and after, no
+`.mlflow-local/`. The screenshots: `m0_shots/` (the run list, a tuning run's page, both trials
+forms, a figure in the UI's viewer, the metric charts, the final run's table and figure).
 
 - **Model:** **Fable** (switch to Fable for this session). It makes design choices from a probe; see §2.
 - **Evidence:** the five unconfirmed points of §1; the handoff's §7.8 asks for a first
@@ -170,20 +239,77 @@ no private helpers; the stop's summary, md5 and commit message). Added for this 
 
 - **Model:** Opus 5.5.
 - **Evidence:** D1e; MLflow's default URI is the canonical store.
-- **Steps:**
-  1. `import mlflow` in the imports cell.
-  2. One new cell after the data cell: read `MLFLOW_TRACKING_URI`, `MLFLOW_EXPERIMENT_NAME`,
-     `AGE_GROUP_MLFLOW_ARTIFACT_LOCATION` from the environment. Raise a `ValueError` naming
-     the variable when one is unset, when the URI's file resolves to `project_root /
-     "mlflow.db"`, or when the artifact location resolves to `project_root / "mlartifacts"`.
-     Then `mlflow.set_tracking_uri`, create the experiment with its artifact location if it
-     does not exist, `mlflow.set_experiment`. Print `experiment=… tracking_uri=…`. No run is
-     opened.
+- **Steps** (the calls as M0 ran them):
+  1. The setup's imports cell (the one with `import hashlib`, `import json`): add `import os`,
+     `import subprocess`, `import warnings`, `from pathlib import Path` and `import mlflow`, and
+     return them (the shared-setup test compares the defs, not the code).
+  2. One new cell after the data cell (the one returning `config_hash`). Its body, in order:
+     ```python
+     # The store: a scratch sqlite file and an artifact folder, from the environment (.env);
+     # never the canonical store at the repo root, which an unset URI would open (MLflow's
+     # default is sqlite:///mlflow.db in the working directory) (D1e).
+     tracking_uri = os.environ.get("MLFLOW_TRACKING_URI")
+     experiment_name = os.environ.get("MLFLOW_EXPERIMENT_NAME")
+     artifact_location = os.environ.get("AGE_GROUP_MLFLOW_ARTIFACT_LOCATION")
+     if tracking_uri is None:
+         raise ValueError("MLFLOW_TRACKING_URI is unset: MLflow would use sqlite:///mlflow.db, the canonical store")
+     if not tracking_uri.startswith("sqlite:///"):
+         raise ValueError(f"MLFLOW_TRACKING_URI must be a sqlite:/// URI, got {tracking_uri!r}")
+     # A relative path resolves against the working directory, as SQLAlchemy resolves it.
+     if Path(tracking_uri.removeprefix("sqlite:///")).resolve() == (project_root / "mlflow.db").resolve():
+         raise ValueError(f"MLFLOW_TRACKING_URI {tracking_uri!r} is the canonical store")
+     if experiment_name is None:
+         raise ValueError("MLFLOW_EXPERIMENT_NAME is unset")
+     if artifact_location is None:
+         raise ValueError("AGE_GROUP_MLFLOW_ARTIFACT_LOCATION is unset")
+     if Path(artifact_location).resolve() == (project_root / "mlartifacts").resolve():
+         raise ValueError(f"AGE_GROUP_MLFLOW_ARTIFACT_LOCATION {artifact_location!r} is the canonical one")
+     # pandas 3 warns inside two MLflow calls (M0): log_table's select_dtypes on a str column,
+     # and log_input's schema on an int column. Each filtered by its category, message and
+     # module, so any other warning still shows.
+     warnings.filterwarnings(
+         "ignore", category=pd.errors.Pandas4Warning,
+         message="For backward compatibility, 'str' dtypes are included by select_dtypes",
+         module="mlflow.tracking.client",
+     )
+     warnings.filterwarnings(
+         "ignore", category=UserWarning,
+         message="Hint: Inferred schema contains integer", module="mlflow.types.utils",
+     )
+     mlflow.set_tracking_uri(tracking_uri)
+     # Created here with its artifact location: set_experiment would create it without one.
+     if mlflow.get_experiment_by_name(experiment_name) is None:
+         mlflow.create_experiment(experiment_name, artifact_location=str(Path(artifact_location).resolve()))
+     mlflow.set_experiment(experiment_name)
+     # The code's version, a tag of every run: HEAD, and whether a tracked file differs from
+     # it; git runs in src (in Check C's copy a symlink to the repo).
+     git_tags = {
+         "git_commit": subprocess.run(["git", "rev-parse", "HEAD"], cwd=project_root / "src",
+                                      capture_output=True, text=True, check=True).stdout.strip(),
+         "git_dirty": str(bool(subprocess.run(
+             ["git", "status", "--porcelain", "--untracked-files=no"], cwd=project_root / "src",
+             capture_output=True, text=True, check=True).stdout.strip())).lower(),
+     }
+     print(f"experiment={experiment_name} tracking_uri={mlflow.get_tracking_uri()}")
+     ```
+     It returns `git_tags`. Format it with `ruff format` alone (the lines above are long on
+     purpose, as a spec). No run is opened. A new store prints two alembic `INFO` lines to
+     stderr (seen); MLflow creates the sqlite file's folder.
   3. Return `config_params` from the data cell and `EXPERIMENT_SETTINGS` from the settings
      cell (later cells log them).
   4. `.env.example`: the run command names `notebooks/03_hyperparameter_tuning.py`.
-- **Tests:** the script opens no run (the scratch store has none); the canonical URI, the
-  unset URI and the canonical artifact location are each refused; `pytest.importorskip("mlflow")`.
+- **Every logging cell reads `git_tags`,** so marimo runs it after this cell: the filters and
+  the experiment are set before any MLflow call.
+- **Tests** (`pytest.importorskip("mlflow")`):
+  - the default script run opens no run: `MlflowClient(<its scratch URI>).search_runs` over
+    every experiment is empty;
+  - the refusals, each on **a copy of the notebook in `tmp_path`** (`tmp_path/notebooks/`, with
+    `configs` and `src` symlinked to the repo's), run with `cwd=tmp_path`, so the "canonical"
+    store is `tmp_path/mlflow.db` (under the mutation, a run from the repo root would open the
+    real one). Each run exits non-zero, its stderr names the variable, and
+    `tmp_path/mlflow.db` and `tmp_path/mlartifacts` do not exist afterwards:
+    `MLFLOW_TRACKING_URI` unset; `sqlite:///mlflow.db`; `AGE_GROUP_MLFLOW_ARTIFACT_LOCATION`
+    `mlartifacts`.
 - **Validate:** the runner; Check C equal with nothing excepted; Check B's names gain `mlflow`.
 - **Mutation:** delete the `raise` for the canonical URI; the refusal test fails.
 - **Commit:**
@@ -210,35 +336,122 @@ no private helpers; the stop's summary, md5 and commit message). Added for this 
 ### [ ] M3. "Log the tuning runs"
 
 - **Model:** Opus 5.5 (its calls confirmed by M0).
-- **Steps:**
-  1. A cell with the function `log_tuning_run(record, model, run_settings, study_cache,
-     shared_params, datasets, commit)`; it returns the run's id, or `None` when skipped.
-     - **The key:** `run_key = f"{study_cache}/{record['study'].study_name}"`
-       (`study_cache` is `studies_dir.name`). If `mlflow.search_runs(filter_string=
-       f"tags.run_key = '{run_key}'")` has a row, return `None`.
-     - **The run:** `mlflow.start_run(run_name=<model, families, exposure>)`.
-     - **Tags:** `run_key`, `stage="tuning"`, `model`, the families, `notebook`,
-       `git_commit`.
-     - **Parameters:** the run settings; `shared_params` (`config_hash`, `DATA_SETTINGS`,
-       `EXPERIMENT_SETTINGS`, `n_train`, `n_val`, `n_test`); `study_seed`;
-       `feature_transformer.<component>`; `best.<name>` for each of `study.best_params`.
-     - **Metrics:** `cv/<objective>`; `<dataset>/<cohort>/<metric>` (48); `seconds`,
-       `n_complete`, `n_failed`.
-     - **Table:** `trials.json`, the study's `trials_dataframe()` (M0's form).
-     - **JSON:** `components.json` (each component's `to_dict()`), `best_params.json`,
-       `search_space.json` (the union of the trials' distributions,
-       `optuna.distributions.distribution_to_json`), `config.json` (`config_params`).
-     - **Artifact:** the journal file, under `study/`.
-     - **Datasets:** `log_input` of the training and the validation part
-       (`mlflow.data.from_pandas`, `digest=config_hash[:36]`, contexts `training`,
-       `validation`).
-  2. The button `log_tuning_runs` and its cell: `mo.stop(not log_tuning_runs.value)`; one
-     loop over `MODEL1_RUNS` and `MODEL2_RUNS`; a line "logged n, skipped m".
+- **Steps** (the calls as M0 ran them, `probes/probe_m0.py`'s `log_tuning_run`; four new cells
+  after Model 2's tables cell, in this order):
+  1. **The runs' shared inputs** (no button; cheap): reads `DATA_SETTINGS`,
+     `EXPERIMENT_SETTINGS`, `config_hash`, `hashlib`, `mlflow`, `pd`, the three parts.
+     ```python
+     # What every run logs as parameters: the data's version and settings, the experiment's
+     # settings (the selection metric among them) and the parts' sizes.
+     shared_params = {
+         "config_hash": config_hash, **DATA_SETTINGS, **EXPERIMENT_SETTINGS,
+         "n_train": len(train_age_group.X), "n_val": len(val_age_group.X), "n_test": len(test_age_group.X),
+     }
+
+     def build_dataset(part, name):
+         """`part` as an MLflow dataset named `name`: its X and Y side by side, the digest the
+         SHA-256 of its rows (pandas' row hashes), its first 36 characters (MLflow's limit)."""
+         frame = part.X.join(part.Y)
+         digest = hashlib.sha256(pd.util.hash_pandas_object(frame).to_numpy()).hexdigest()[:36]
+         return mlflow.data.from_pandas(frame, name=name, digest=digest)
+
+     tuning_datasets = {
+         "training": build_dataset(train_age_group, "train"),
+         "validation": build_dataset(val_age_group, "val"),
+     }
+     ```
+     It returns `build_dataset`, `shared_params`, `tuning_datasets` (22 parameters; M6 builds
+     its two datasets with `build_dataset`). `from_pandas` with a digest warns nothing; without
+     one MLflow's digest raises under `-W error` (M0). No `source`: MLflow records the running
+     script (`CodeDatasetSource`). `targets` stays unset (it takes one column; Y has three).
+  2. **The function** (reads `mlflow`, `optuna`):
+     ```python
+     def log_tuning_run(record, model, run_settings, study_seed, studies_dir, objective_name,
+                        shared_params, config_params, datasets, git_tags):
+         """One study's run in the active experiment; its id, or None when a FINISHED run
+         has its key (a FAILED one is logged again)."""
+         study = record["study"]
+         run_key = f"{studies_dir.name}/{study.study_name}"
+         if mlflow.search_runs(
+             filter_string=f"tags.run_key = '{run_key}' and attributes.status = 'FINISHED'",
+             output_format="list",
+         ):
+             return None
+         if model == "independent_cohorts":
+             family = run_settings["family"]
+         elif model == "total_times_probability":
+             family = f"{run_settings['total_family']}+{run_settings['probability_family']}"
+         else:
+             raise ValueError(f"unknown model {model!r}")
+         # The trials: a row per trial, its seconds a number (a timedelta would come back as
+         # text); the start and end times are in the journal.
+         trials = study.trials_dataframe(
+             attrs=("number", "value", "duration", "params", "user_attrs", "state")
+         )
+         trials["duration"] = trials["duration"].dt.total_seconds()
+         trials = trials.rename(columns={"duration": "seconds"})
+         # The search space the trials drew: each parameter's distribution, as Optuna's JSON.
+         search_space = {}
+         for trial in study.trials:
+             for name, distribution in trial.distributions.items():
+                 search_space[name] = optuna.distributions.distribution_to_json(distribution)
+         with mlflow.start_run(run_name=f"{model} {family} exposure={run_settings['use_exposure']}") as run:
+             mlflow.set_tags({"run_key": run_key, "stage": "tuning", "model": model, "family": family,
+                              "notebook": "notebooks/03_hyperparameter_tuning.py", **git_tags})
+             mlflow.log_params({
+                 **run_settings, **shared_params, "study_seed": study_seed,
+                 **{f"feature_transformer.{name}": value for name, value in record["feature_transformers"].items()},
+                 **{f"best.{name}": value for name, value in study.best_params.items()},
+             })
+             mlflow.log_metrics({
+                 f"cv/{objective_name}": record["cv_best"],
+                 **{f"{dataset}/{cohort}/{metric}": score
+                    for (dataset, cohort, metric), score in record["scores"]["score"].items()},
+                 "seconds": record["seconds"], "n_complete": record["n_complete"], "n_failed": record["n_failed"],
+             })
+             mlflow.log_table(trials, "trials.json")
+             mlflow.log_dict({c.name: c.to_dict() for c in record["components"]}, "components.json")
+             mlflow.log_dict(study.best_params, "best_params.json")
+             mlflow.log_dict(search_space, "search_space.json")
+             mlflow.log_dict(config_params, "config.json")
+             mlflow.log_artifact(str(studies_dir / f"{study.study_name}.log"), artifact_path="study")
+             for context, dataset in datasets.items():
+                 mlflow.log_input(dataset, context=context)
+         return run.info.run_id
+     ```
+     (M0 asserted the union has one distribution per name; a parameter no trial drew is
+     absent.) The run key is 260 characters in the copy (a tag holds 8,000); the run has 52
+     metrics and, in the copy's Model 1 run 0, 63 parameters (fewer with the shared
+     hyperparameters).
+  3. **The button** `log_tuning_runs = mo.ui.run_button(label="Log the tuning runs")`, with a
+     line saying it logs the 24 runs to the experiment the MLflow cell names and skips a
+     logged one.
+  4. **The logging cell:** `mo.stop(not log_tuning_runs.value, mo.md("Click the button to
+     log the tuning runs to MLflow."))`; then
+     ```python
+     _logged = _skipped = 0
+     for _model, _settings_list, _runs in (
+         ("independent_cohorts", MODEL1_RUN_SETTINGS, MODEL1_RUNS),
+         ("total_times_probability", MODEL2_RUN_SETTINGS, MODEL2_RUNS),
+     ):
+         for _i, (_run_settings, _record) in enumerate(zip(_settings_list, _runs, strict=True)):
+             _run_id = log_tuning_run(_record, _model, _run_settings, seed + _i, tuner.storage_dir,
+                                      tuner.objective_metric.name, shared_params, config_params,
+                                      tuning_datasets, git_tags)
+             _logged += _run_id is not None
+             _skipped += _run_id is None
+     mo.md(f"Logged {_logged} tuning runs, skipped {_skipped} (already logged).")
+     ```
+     M0's times: 24 runs in 1.0 s, 24 skips in 0.1 s (3-trial journals).
 - **Tests:** the logging cell holds `mo.stop(not `; a script run leaves no run.
-- **Validate:** Check C equal with nothing excepted. Check D: 24 runs; each run's tags,
-  parameters and metrics equal the record's values; `load_table` equal to the study's frame;
-  the five artifacts present; a second run of the copy on the same store leaves 24 runs and
-  every table's row count unchanged.
+- **Validate:** Check C equal with nothing excepted. Check D: 24 runs; each run's tags (with
+  `git_commit`, `git_dirty`), parameters (`str`) and metrics (`float`) equal the record's
+  values; `load_table("trials.json", run_ids=[id])` exactly equal to the converted trials of
+  `record["study"]`; the four JSONs equal; the journal's bytes equal the copy's file; two
+  dataset inputs (contexts `training`, `validation`), their digests `build_dataset`'s, their
+  schema not empty (the filter works: under `-W error` without it the schema is silently
+  `None`); a second run of the copy on the same store leaves 24 runs and every trials table 3
+  rows.
 - **Mutation:** drop the skip; the second run gives 48 runs and Check D fails.
 - **Commit:**
   ```text
@@ -248,23 +461,73 @@ no private helpers; the stop's summary, md5 and commit message). Added for this 
 ### [ ] M4. "Log the best runs"
 
 - **Model:** Opus 5.5 (its calls confirmed by M0).
-- **Steps:** the button `log_best_runs` and one cell (inline; nothing repeats it yet).
-  `mo.stop` unless clicked; it needs the inspection's results. Skipped when
-  `run_key = f"{study_cache}/best_runs"` exists.
-  - **Tags:** `run_key`, `stage="best_runs"`, `best.<model>` the best run's study name,
-    `notebook`, `git_commit`.
-  - **Parameters:** `shared_params`; the selection metric.
-  - **Metrics, the composite only:** `val/<model>/<metric>/<statistic>` for `score`, `mean`,
-    `median`, `sd` and the two bounds (72), and `val/difference/<metric>/<statistic>` (36).
-    The cohorts' rows are in the tables: 400 metrics would bury the run's page.
-  - **Tables:** `best_runs_val_scores_df`, `best_difference_df`, `importance_df`,
-    `model1_runs_df`, `model1_scores_df`, `model2_runs_df`, `model2_scores_df`.
-  - **Figures (18, HTML):** the forest and the ridge on the selection metric for the runs
-    and for the difference (4); per model the permutation figure for the composite and each
-    cohort (8) and the beeswarm for each cohort (6). Built by calling the four figure
-    functions; the menus are not read.
-  - **JSON:** each best run's `components.json`.
-  - **Datasets:** as M3.
+- **Steps** (the calls as M0 ran them; three new cells after the beeswarm cell of section 5):
+  1. **The figures' function** (M6 calls it again: decision 5). It reads no global; the four
+     figure functions are its arguments:
+     ```python
+     def build_part_figures(part, scores_df, replicate_scores, difference_df, difference_replicates,
+                            permutation, explanations, X, metric_name, bound_names, seed, palette,
+                            forest_figure, ridge_figure, permutation_figure, beeswarm_figure):
+         """The 18 figures of one part (`part`: "val" or "test") by artifact path: the forest
+         and the ridge of `metric_name` for the two runs and for their difference; per model
+         the permutation figure of the composite and each cohort and the beeswarm of each
+         cohort. `permutation` is {model: {cohort (the composite first): {split: result}}}."""
+         difference_name = difference_df["model"].iloc[0]
+         figures = {
+             f"figures/{part}_forest_runs_{metric_name}.html": forest_figure(
+                 scores_df, metric_name, bound_names["lower"], bound_names["upper"], palette),
+             f"figures/{part}_ridge_runs_{metric_name}.html": ridge_figure(
+                 replicate_scores, metric_name, palette),
+             f"figures/{part}_forest_difference_{metric_name}.html": forest_figure(
+                 difference_df, metric_name, bound_names["lower"], bound_names["upper"], palette,
+                 share_x_axis=True, rule_at=0),
+             f"figures/{part}_ridge_difference_{metric_name}.html": ridge_figure(
+                 {difference_name: difference_replicates}, metric_name, palette,
+                 share_x_axis=True, rule_at=0),
+         }
+         for model, by_cohort in permutation.items():
+             for cohort, by_split in by_cohort.items():
+                 figures[f"figures/{part}_permutation_{model}_{cohort}.html"] = permutation_figure(
+                     by_split, list(X.columns), f"{cohort} {metric_name}", palette)
+             for cohort in explanations[model].output_names:
+                 figures[f"figures/{part}_beeswarm_{model}_{cohort}.html"] = beeswarm_figure(
+                     explanations[model], X, cohort, seed, palette)
+         return figures
+     ```
+  2. **The button** `log_best_runs = mo.ui.run_button(label="Log the best runs")`.
+  3. **The logging cell.** `mo.stop(not log_best_runs.value, …)`; it reads the inspection's
+     `best_runs_permutation`, `best_runs_shap` (so it runs only after that click). Then:
+     - **Skip:** `_key = f"{tuner.storage_dir.name}/best_runs"`; when
+       `mlflow.search_runs(filter_string=f"tags.run_key = '{_key}' and attributes.status =
+       'FINISHED'", output_format="list")` is not empty, `mo.stop(True, mo.md("The best runs'
+       run is logged: skipped."))`.
+     - `with mlflow.start_run(run_name="best runs"):`
+     - **Tags:** `{"run_key": _key, "stage": "best_runs", **{f"best.{model}":
+       run["study"].study_name for model, run in best_runs.items()}, "notebook":
+       "notebooks/03_hyperparameter_tuning.py", **git_tags}`.
+     - **Parameters:** `shared_params` (the selection metric is in it, from
+       `EXPERIMENT_SETTINGS`).
+     - **Metrics, the composite only (108):** with `_statistics = ["score", "mean", "median",
+       "sd", CI_BOUND_NAMES["lower"], CI_BOUND_NAMES["upper"]]`, for each composite row of
+       `best_runs_val_scores_df` `f"val/{row['model']}/{row['metric']}/{statistic}"` (72), and
+       of `best_difference_df` `f"val/difference/{row['metric']}/{statistic}"` (36). The UI
+       groups each model and metric's six statistics in one chart section. The cohorts' rows
+       are in the tables.
+     - **Tables:** `mlflow.log_table(frame, f"tables/{name}.json")` for `best_runs_val_scores`,
+       `best_difference`, `importance`, `model1_runs`, `model1_scores`, `model2_runs`,
+       `model2_scores` (each the `<name>_df` frame; all read back exactly equal in M0, the dict
+       columns too).
+     - **Figures (18):** `for path, figure in build_part_figures("val",
+       best_runs_val_scores_df, best_replicate_scores, best_difference_df,
+       best_difference_replicates, best_runs_permutation, best_runs_shap, shap_rows.X,
+       SELECTION_METRIC.name, CI_BOUND_NAMES, seed, PALETTE, forest_figure, ridge_figure,
+       permutation_figure, beeswarm_figure).items(): mlflow.log_figure(figure, path)`
+       (`log_figure` needs the active run: inside the `with`). Each file 13–56 KB, plotly.js
+       from the CDN.
+     - **JSON:** `mlflow.log_dict({c.name: c.to_dict() for c in run["components"]},
+       f"components/{model}.json")` for each best run.
+     - **Datasets:** `tuning_datasets`, as M3.
+  M0 logged it in 0.3–0.4 s.
 - **Tests:** the cell holds `mo.stop(not `; a script run leaves no run.
 - **Validate:** Check C equal; Check D: 25 runs; the tables equal the notebook's frames; the
   18 figure files present; the composite metrics equal the frames' rows; the second run skips.
@@ -293,20 +556,46 @@ no private helpers; the stop's summary, md5 and commit message). Added for this 
 ### [ ] M6. "Log the final run"
 
 - **Model:** Opus 5.5 (its calls confirmed by M0).
-- **Steps:** the button `log_final_run` and one cell. `mo.stop` unless clicked; it needs the
-  test evaluation's results. **The guard:** if `search_runs(filter_string="tags.final =
-  'true'")` has a row, `mo.stop` with a message naming that run; nothing is logged.
-  - **Tags:** `run_key`, `stage="final"`, `final="true"`, `best.<model>`, `notebook`,
-    `git_commit`.
-  - **Parameters:** `shared_params`; the selection metric; `n_train_val`.
-  - **Metrics, the composite only:** `test/<model>/<metric>/<statistic>` and
-    `test/difference/<metric>/<statistic>`. No other run holds a `test/` metric.
-  - **Tables:** `test_scores_df`, `test_difference_df`, `val_against_test_df`,
-    `test_importance_df`, `test_buildings_df`, `test_building_scores_df`.
-  - **Figures:** as M4 on the test part (18); per model the two count figures for the
-    composite (4); the shares bars for all neighborhoods.
-  - **JSON:** each test model's `components.json`.
-  - **Datasets:** train + validation as `training`, the test part as `testing`.
+- **Steps** (the calls as M0 ran them; two new cells after the shares bars' cell):
+  1. **The button** `log_final_run = mo.ui.run_button(label="Log the final run")`, with a
+     line saying it logs the test evaluation once per experiment.
+  2. **The logging cell.** `mo.stop(not log_final_run.value, …)`; it reads the test
+     evaluation's and the test explanation's names (so it runs only after that click).
+     - **The guard:**
+       ```python
+       _finals = mlflow.search_runs(
+           filter_string="tags.final = 'true' and attributes.status = 'FINISHED'",
+           output_format="list",
+       )
+       if _finals:
+           mo.stop(True, mo.md(f"A final run exists: {_finals[0].info.run_name} "
+                               f"({_finals[0].info.run_id}); nothing logged."))
+       ```
+       (an `if`, not `mo.stop(bool(_finals), …)`: the message would index an empty list).
+     - `with mlflow.start_run(run_name="final"):`
+     - **Tags:** `{"run_key": f"{tuner.storage_dir.name}/final", "stage": "final", "final":
+       "true", **{f"best.{model}": run["study"].study_name for model, run in
+       best_runs.items()}, "notebook": "notebooks/03_hyperparameter_tuning.py", **git_tags}`.
+     - **Parameters:** `{**shared_params, "n_train_val": len(train_val_age_group.X)}`.
+     - **Metrics, the composite only (108):** as M4 with the prefix `test/`, from
+       `test_scores_df` and `test_difference_df`. No other run holds a `test/` metric.
+     - **Tables:** `tables/<name>.json` for `test_scores`, `test_difference`,
+       `val_against_test`, `test_importance`, `test_buildings`, `test_building_scores`.
+     - **Figures (23):** `build_part_figures("test", test_scores_df, test_replicate_scores,
+       test_difference_df, test_difference_replicates, {model: {cohort: {"test": result} for
+       cohort, result in by_cohort.items()} for model, by_cohort in test_permutation.items()},
+       test_shap, test_age_group.X, SELECTION_METRIC.name, CI_BOUND_NAMES, seed, PALETTE,
+       forest_figure, ridge_figure, permutation_figure, beeswarm_figure)` (18); per model M5's
+       `counts_histogram_figure` and `counts_scatter_figure` for the composite, as
+       `figures/test_counts_histogram_<model>_composite.html` and
+       `figures/test_counts_scatter_<model>_composite.html` (4); M5's
+       `selection_shares_bars_figure` for all the test buildings, as
+       `figures/test_selection_shares_bars_all.html` (1).
+     - **JSON:** `components/<model>.json` for each best run's components (the test models
+       are refit from them).
+     - **Datasets:** `{"training": build_dataset(train_val_age_group, "train_val"),
+       "testing": build_dataset(test_age_group, "test")}`, each `log_input` with its context.
+  M0 logged it in 0.3–0.4 s; a second click showed the refusal and left one final run.
 - **Tests:** the cell holds `mo.stop(not `; a script run leaves no run.
 - **Validate:** Check C equal; Check D: 26 runs, one `final=true`; no `test/` metric in the
   other 25; the tables equal; a second run of the copy leaves 26 and shows the refusal.
@@ -321,7 +610,12 @@ no private helpers; the stop's summary, md5 and commit message). Added for this 
 - **Model:** Opus 5.5.
 - **Steps:** `docs/MLFLOW_RUNS.md` (how to run the notebook and the UI on the scratch store;
   what each of the three runs holds; the skip rule and the final run's guard; that
-  `MLFLOW_EXPERIMENTS_GUIDE.md` and `tracking/` are the old stack's); `docs/README.md`,
+  `MLFLOW_EXPERIMENTS_GUIDE.md` and `tracking/` are the old stack's; M0's notes on the UI:
+  `mlflow ui --backend-store-uri <the .env URI> --artifacts-destination <a scratch folder>` run
+  from the repo root would default its artifact destination to the canonical `./mlartifacts`,
+  so the guide names one; the UI opens in its "GenAI" mode with an assistant panel; a
+  figure loads plotly.js from the CDN, so it needs the network; the two warning filters and
+  why); `docs/README.md`,
   `MODULE_REFERENCE.md` and the root `README.md` link it; a dated note on E9, E10, D1e–D5 in
   `EXPERIMENT_NOTEBOOK_PLAN.md`; this plan's status "complete"; the handoff.
 - **Validate:** the guide's commands run as written on a scratch store; the links resolve;
@@ -359,11 +653,12 @@ no private helpers; the stop's summary, md5 and commit message). Added for this 
 | the feature transformers' description | tuning run: their names as parameters, their declaration in `components.json` | |
 | the bootstrap replicates | **left out** | no reader: the ridge figure shows them, and the seed recomputes them |
 | the model's label, the family, the stage, the git commit, the notebook | every run, tags | |
-| the dataset (its hash, its rows) | every run, `log_input` | digest the hash's first 36 characters |
+| the dataset (its hash, its rows) | every run, `log_input` | the digest the rows' SHA-256, its first 36 characters (choice 13); `config_hash` a parameter |
 
 ## 6. Questions still open
 
-- M0's five points (§1), each settled by the probe.
+- None from M0: its five points are settled (§1, "Confirmed by M0"), its choices made (§1,
+  11–14).
 - A read-back table (decision 6) can be added after M6 if the UI alone proves not enough.
 - The old `tracking/` package's deletion stays the roadmap's step.
 

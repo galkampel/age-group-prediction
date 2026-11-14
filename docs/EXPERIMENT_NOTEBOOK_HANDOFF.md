@@ -1,4 +1,40 @@
-# Handoff: the experiment notebooks, PR 7 merged (#26); the simplification review done; the MLflow plan written and decided (MLFLOW_RUNS_PLAN.md, M0–M7); next M0, the probe, with Fable
+# Handoff: the experiment notebooks, PR 7 merged (#26); the simplification review done; the MLflow plan written and decided (MLFLOW_RUNS_PLAN.md, M0–M7); M0 (the probe) done; next M1 with Opus 5.5
+
+**Status (2026-11-14, end of M0, the probe; the user commits it):**
+- **The state:** branch `feat/mlflow-runs`, HEAD the user's commit of M0, on `37c3889` (the
+  plan); `git status` clean after it. M0 changed only
+  [MLFLOW_RUNS_PLAN.md](MLFLOW_RUNS_PLAN.md) (§1's findings and choices, §3's Check D notes,
+  M0 ticked, M1–M6's exact calls, §5, §6) and this handoff (the title, this status); no
+  notebook, `src`, test or check. The repo's `mlflow.db` and `mlartifacts/` were listed before
+  and after (equal); no `.mlflow-local/` was made.
+- **The notebooks' md5 (unchanged):** `01_eda.py` `4bc1ba3a52dc2ad55d0097a707bd1ccc`,
+  `02_objective_eda.py` `1f9bbe7601794c7d646a67ce2588d536`, `03_hyperparameter_tuning.py`
+  `1117fc7f89b031bb3d11d33c83e700ef`.
+- **What M0 found** (the plan's §1, "Confirmed by M0"): pandas 3 makes two MLflow calls warn
+  (`log_table` on a `str` column: a `Pandas4Warning` that fails every table under `-W error`;
+  `log_input` on an int column: a `UserWarning` MLflow swallows, so the schema is silently
+  dropped under `-W error`), and MLflow's own dataset digest warns too; the raw trials frame
+  reads back as text; everything else read back equal; 24 runs log in 1 s.
+- **The user's four choices** (the plan's §1, 11–14; do not re-ask): the converted trials
+  table; two narrow warning filters in the MLflow cell; the datasets' digest the rows'
+  SHA-256; the tags `git_commit` and `git_dirty` from `git` in `project_root / "src"`.
+- **Next: M1, an Opus 5.5 session** (the plan's §7, the second prompt with `M1`). M1–M6 hold
+  the calls as run; an Opus session that meets a choice they do not make stops and asks for
+  a Fable session.
+- **The test part has still not been run on the user's cache** (E11).
+- **The scratchpad to copy first:** `/private/tmp/claude-501/-Users-galkampel-Desktop-Projects-age-group-prediction/41d4cdb4-9818-43cb-bab7-d9e33511d815/scratchpad`:
+  the previous one copied whole, every script's `S=` set to it (`repoint.py`: 95 files),
+  `pycache/` compiled. New in it: `probes/probe_m0.py` (the probe; Check D's model: its
+  read-back block and `compare_table`), `probes/run_probe_m0.sh` (the runner: the copy, the
+  store `m0/store/mlflow_m0.db`, the artifacts `m0/mlartifacts`), `probes/probe_m0_first.py`
+  (the version before the choices), `probes/cdp_shot.py` (screenshots of the MLflow UI through
+  Chrome's DevTools protocol: headless `--screenshot` captures the UI's figure viewer before
+  it renders), `listing_m0.sh` with `listing_before_m0.txt` / `listing_after_m0.txt`,
+  `run_probe_m0.log`, and `m0_shots/` (the UI's screenshots and the first run's log). The
+  references and the runner for M1 are unchanged: `check_c_s5_3_*`, `run_S5_3.sh`.
+- **To look at the UI on M0's store:** from `$S/m0`, `mlflow ui --backend-store-uri
+  sqlite:///$S/m0/store/mlflow_m0.db --artifacts-destination $S/m0/ui_artifacts --host
+  127.0.0.1 --port 5055` (never from the repo root).
 
 **Status (2026-11-14, end of the planning session: the MLflow plan written and decided; nothing implemented):**
 - **The state:** branch `feat/mlflow-runs`, HEAD the user's commit of this update, on `1a7a66a`;
@@ -2282,6 +2318,10 @@ constructor, data in the call; fitting and evaluating as separate steps; no priv
   fANOVA importances; fewer trials once the space is narrower.
 
 ## 6. Next, and the prompt
+
+**Status (2026-11-14, M0 done):** M0 (the probe) is ticked in
+[MLFLOW_RUNS_PLAN.md](MLFLOW_RUNS_PLAN.md), its findings and the user's four choices in its §1,
+M1–M6 hold the calls as run. **Next: M1 with Opus 5.5** (the plan's §7, the second prompt).
 
 **Status (2026-11-14, the MLflow plan written and decided):**
 - Step 2 below is **planned**: [MLFLOW_RUNS_PLAN.md](MLFLOW_RUNS_PLAN.md), sub-tasks M0–M7,
