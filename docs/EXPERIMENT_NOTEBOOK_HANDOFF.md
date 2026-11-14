@@ -1,4 +1,35 @@
-# Handoff: the experiment notebooks, PR 7 merged (#26); the simplification review done (S1–S6, S8; S7 dropped); next the MLflow plan (§7's brief, §6's prompt)
+# Handoff: the experiment notebooks, PR 7 merged (#26); the simplification review done; the MLflow plan written and decided (MLFLOW_RUNS_PLAN.md, M0–M7); next M0, the probe, with Fable
+
+**Status (2026-11-14, end of the planning session: the MLflow plan written and decided; nothing implemented):**
+- **The state:** branch `feat/mlflow-runs`, HEAD the user's commit of this update, on `1a7a66a`;
+  `git status` clean. This session wrote [MLFLOW_RUNS_PLAN.md](MLFLOW_RUNS_PLAN.md) and changed
+  this handoff (the title, this status, §6's status); no code, notebook, test or check, and no
+  probe was run.
+- **The notebooks' md5 (unchanged):** `01_eda.py` `4bc1ba3a52dc2ad55d0097a707bd1ccc`,
+  `02_objective_eda.py` `1f9bbe7601794c7d646a67ce2588d536`, `03_hyperparameter_tuning.py`
+  `1117fc7f89b031bb3d11d33c83e700ef`.
+- **The plan:** 26 runs in one experiment (24 tuning runs with the trials as a table, one best
+  runs' run, one final run), written by three buttons in `03`, from notebook cells only. The
+  user's ten decisions are in the plan's §1 (do not re-ask): a run that exists is skipped; the
+  model is its declaration as JSON, no pickle; no `src` module; no read-back cell; the EDA logs
+  nothing; the final run refused when one exists; the old `tracking/` untouched; a fixed set of
+  figures, no waterfalls.
+- **Next: M0, the probe, a Fable session** (the plan's §7, the first prompt). Then M1–M7, one
+  Opus 5.5 session each (the plan's §7, the second prompt). An Opus session that meets a choice
+  the plan does not make stops and asks for a Fable session.
+- **Found while planning (the plan's §1 has the list):** MLflow's default tracking URI is
+  `sqlite:///mlflow.db`, the canonical store when run from the repo root, so an unset URI is
+  refused too; `log_table` appends to an existing file; a dataset's digest holds at most 36
+  characters; a run record keeps no study or study name (M2); `pyproject.toml` has no MLflow
+  warning filter (§7.6's "6 deselected warnings" is not there); `.env.example` names the
+  deleted `notebooks/02_experiments.py` (M1 fixes it).
+- **The test part has still not been run on the user's cache** (E11).
+- **The scratchpad to copy first:** `/private/tmp/claude-501/-Users-galkampel-Desktop-Projects-age-group-prediction/b0674d2b-cc80-4b81-888b-d8d9c03849c5/scratchpad`:
+  the previous one copied whole, every script's `S=` set to it (`repoint.py`: 95 files),
+  `pycache/` compiled. The references and the runner are as the status below names them
+  (`check_c_s5_3_*`, `run_S5_3.sh`).
+- **A question during the work** goes through the interactive question tool, with the options
+  and the recommendation.
 
 **Status (2026-11-14, end of session: S5.3 committed as `10570a8`; the simplification review is complete; the next session plans the MLflow part):**
 - **The state:** branch `feat/mlflow-runs`, HEAD the user's commit of this update, on `10570a8`
@@ -2251,6 +2282,11 @@ constructor, data in the call; fitting and evaluating as separate steps; no priv
   fANOVA importances; fewer trials once the space is narrower.
 
 ## 6. Next, and the prompt
+
+**Status (2026-11-14, the MLflow plan written and decided):**
+- Step 2 below is **planned**: [MLFLOW_RUNS_PLAN.md](MLFLOW_RUNS_PLAN.md), sub-tasks M0–M7,
+  none implemented. **Next: M0 (the probe) with Fable,** then M1–M7 with Opus 5.5; both prompts
+  are in the plan's §7. The planning prompt below is spent.
 
 **Status (2026-11-14, the simplification review complete; the MLflow plan next):**
 - Step 1 below is **done**: [SIMPLIFICATION_REVIEW_PLAN.md](SIMPLIFICATION_REVIEW_PLAN.md), S1–S6
