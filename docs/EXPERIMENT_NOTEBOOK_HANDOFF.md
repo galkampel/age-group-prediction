@@ -1,7 +1,8 @@
 # Handoff: the experiment notebooks, PR 7 merged (#26); the simplification review done; the MLflow plan written and decided (MLFLOW_RUNS_PLAN.md, M0–M7); M0–M2 done; next M3 with Opus 5.5
 
 **Status (2026-11-14, end of M2, a run record keeps its study; the user commits it):**
-- **The state:** branch `feat/mlflow-runs`, HEAD the user's commit of M2, on `2451c8a` (M1).
+- **The state:** branch `feat/mlflow-runs`; M2 committed as `dabc406` (on `2451c8a`, M1); then
+  the user's commit of this handoff update (the M3 prompt below).
   M2 changed `notebooks/03_hyperparameter_tuning.py` (each tune cell's record gains
   `"study": _study`; its comment), [MLFLOW_RUNS_PLAN.md](MLFLOW_RUNS_PLAN.md) (M2 ticked, the
   status) and this handoff.
@@ -14,8 +15,40 @@
   `record()` drops it); Check B `checks/check_b_m1_tuning.py`; the references
   `check_c_m2_tuning.pkl`, `check_c_m2_eda.pkl` with `check_c_m2_eda_figures.json` and
   `check_c_m2_eda_metric_figures.json`, `figures_m2_tuning.json`, `figures_m2_eda.json`.
-- **Next: M3, an Opus 5.5 session** (the plan's §7, the second prompt with `M3`): the first
-  logging; Check D is new there.
+- **Next: M3, an Opus 5.5 session:** the first logging; Check D is new there. M2 is committed
+  as `dabc406`; this prompt was added after it (the user commits this handoff update). The
+  prompt (the plan's §7 second prompt, with what M1 and M2 taught):
+
+  ```text
+  Read docs/MLFLOW_RUNS_PLAN.md in full (the status; §1's decisions, facts, M0's findings and
+  choices 11-14; §2; §3 how a sub-task is done; §4's M3, and M1 and M2 as built), then
+  docs/EXPERIMENT_NOTEBOOK_HANDOFF.md: the status at the top and §4 (how to work, git and the
+  editor, the checks, the traps, the iCloud notes, the user's style). Then the cells M3 names
+  in notebooks/03_hyperparameter_tuning.py (the MLflow cell after the data cell, the two tune
+  cells and their records with "study", Model 2's tables cell).
+  Verify the state first: the branch feat/mlflow-runs, HEAD my commit of the handoff's M3
+  prompt (on dabc406, M2), `git status` clean; 03's md5 74b39c08ded5cafbbbb68016d7f87649, 02's
+  1f9bbe7601794c7d646a67ce2588d536; no iCloud-offloaded files. If anything differs, stop and
+  show me the diff. Copy the scratchpad the handoff's top status names into yours (repoint.py:
+  each script's S= set to yours), compile the pycache. If that scratchpad is gone, tell me
+  before rewriting anything.
+  Then do sub-task M3 only, exactly as the plan describes: plan it first in plan mode
+  (re-verify its facts and line numbers read-only, list the exact edits), wait for my go,
+  implement it, run the checks of the plan's §3 and M3's validation and mutation. Check D
+  (checks/check_d_mlflow.py) is new: model it on probes/probe_m0.py's read-back block. The
+  notebook sets no MLflow global (M1's choice), so every check exports the four MLflow
+  variables to the scratchpad, as checks/run_M2.sh does. Do not start M4.
+  If a step needs a choice the plan does not make, stop and ask me with the interactive
+  question tool (the options, the evidence, your recommendation first).
+  Never write the repo root's mlflow.db or mlartifacts/, nor .mlflow-local/. Don't run the
+  test evaluation or "Log the final run" on my cache (E11). My marimo session may be open:
+  tell me before editing the notebook and remind me to reload it after; edit the notebook
+  with the Edit tool. Keep it simple; no private helpers; a notebook function reads no
+  notebook global. Stop with a file-by-file summary, the checks, the notebooks' md5 and the
+  commit message in a copyable code block; tick M3 and update the status lines in the plan and
+  at the top of the handoff. I commit myself: never commit, no Co-Authored-By line, no
+  "Generated with Claude Code" in PR text, never git checkout/stash/reset/mv.
+  ```
 - **The test part has still not been run on the user's cache** (E11).
 - **The scratchpad to copy first:** `/private/tmp/claude-501/-Users-galkampel-Desktop-Projects-age-group-prediction/41d4cdb4-9818-43cb-bab7-d9e33511d815/scratchpad`.
 
