@@ -5,7 +5,9 @@ can implement one from this file and the handoff's §4). One sub-task per approv
 sub-task when it is done and update the status line.
 
 **Status (2026-11-14):** M0 done (the probe; its findings in §1 and in M1–M6's exact calls; the
-user's four choices 11–14). Next: M1, an Opus 5.5 session (§7, the second prompt).
+user's four choices 11–14), committed `8e1ea98`. M1 done (the MLflow cell; the user's choice
+there: no MLflow global), checked, awaiting the user's commit. Next: M2, an Opus 5.5 session
+(§7, the second prompt).
 
 ## 1. The question and the verdict
 
@@ -235,83 +237,63 @@ forms, a figure in the UI's viewer, the metric charts, the final run's table and
   docs(notebook): the MLflow probe's findings; the runs plan's calls confirmed (M0)
   ```
 
-### [ ] M1. The MLflow cell
+### [x] M1. The MLflow cell
+
+**Done 2026-11-14** (`03`'s md5 `659e410dc1b64a68501f4f3e331875a3`). `checks/run_M1.sh` (log
+`run_M1.log`): the non-slow suite 1416 passed (S5.3's 1412 + 4), mypy clean, the notebook tests
+36 (32 + 4), ruff `03` 15 / `02` 11 as at HEAD (none new), the format hunks the user's two, `marimo
+check` clean, Check B on both (M1's assertions), Check C on both equal to S5.3 with nothing
+excepted, both notebooks' 21 + 27 figures identical, the scratch store 0 runs, the repo's
+`mlflow.db` and `mlartifacts/` unchanged. The mutation (`run_mutant_M1.sh`): the copy as is 3
+passed; without the canonical URI's `raise`, the `sqlite:///mlflow.db` case fails.
 
 - **Model:** Opus 5.5.
 - **Evidence:** D1e; MLflow's default URI is the canonical store.
-- **Steps** (the calls as M0 ran them):
-  1. The setup's imports cell (the one with `import hashlib`, `import json`): add `import os`,
-     `import subprocess`, `import warnings`, `from pathlib import Path` and `import mlflow`, and
-     return them (the shared-setup test compares the defs, not the code).
-  2. One new cell after the data cell (the one returning `config_hash`). Its body, in order:
-     ```python
-     # The store: a scratch sqlite file and an artifact folder, from the environment (.env);
-     # never the canonical store at the repo root, which an unset URI would open (MLflow's
-     # default is sqlite:///mlflow.db in the working directory) (D1e).
-     tracking_uri = os.environ.get("MLFLOW_TRACKING_URI")
-     experiment_name = os.environ.get("MLFLOW_EXPERIMENT_NAME")
-     artifact_location = os.environ.get("AGE_GROUP_MLFLOW_ARTIFACT_LOCATION")
-     if tracking_uri is None:
-         raise ValueError("MLFLOW_TRACKING_URI is unset: MLflow would use sqlite:///mlflow.db, the canonical store")
-     if not tracking_uri.startswith("sqlite:///"):
-         raise ValueError(f"MLFLOW_TRACKING_URI must be a sqlite:/// URI, got {tracking_uri!r}")
-     # A relative path resolves against the working directory, as SQLAlchemy resolves it.
-     if Path(tracking_uri.removeprefix("sqlite:///")).resolve() == (project_root / "mlflow.db").resolve():
-         raise ValueError(f"MLFLOW_TRACKING_URI {tracking_uri!r} is the canonical store")
-     if experiment_name is None:
-         raise ValueError("MLFLOW_EXPERIMENT_NAME is unset")
-     if artifact_location is None:
-         raise ValueError("AGE_GROUP_MLFLOW_ARTIFACT_LOCATION is unset")
-     if Path(artifact_location).resolve() == (project_root / "mlartifacts").resolve():
-         raise ValueError(f"AGE_GROUP_MLFLOW_ARTIFACT_LOCATION {artifact_location!r} is the canonical one")
-     # pandas 3 warns inside two MLflow calls (M0): log_table's select_dtypes on a str column,
-     # and log_input's schema on an int column. Each filtered by its category, message and
-     # module, so any other warning still shows.
-     warnings.filterwarnings(
-         "ignore", category=pd.errors.Pandas4Warning,
-         message="For backward compatibility, 'str' dtypes are included by select_dtypes",
-         module="mlflow.tracking.client",
-     )
-     warnings.filterwarnings(
-         "ignore", category=UserWarning,
-         message="Hint: Inferred schema contains integer", module="mlflow.types.utils",
-     )
-     mlflow.set_tracking_uri(tracking_uri)
-     # Created here with its artifact location: set_experiment would create it without one.
-     if mlflow.get_experiment_by_name(experiment_name) is None:
-         mlflow.create_experiment(experiment_name, artifact_location=str(Path(artifact_location).resolve()))
-     mlflow.set_experiment(experiment_name)
-     # The code's version, a tag of every run: HEAD, and whether a tracked file differs from
-     # it; git runs in src (in Check C's copy a symlink to the repo).
-     git_tags = {
-         "git_commit": subprocess.run(["git", "rev-parse", "HEAD"], cwd=project_root / "src",
-                                      capture_output=True, text=True, check=True).stdout.strip(),
-         "git_dirty": str(bool(subprocess.run(
-             ["git", "status", "--porcelain", "--untracked-files=no"], cwd=project_root / "src",
-             capture_output=True, text=True, check=True).stdout.strip())).lower(),
-     }
-     print(f"experiment={experiment_name} tracking_uri={mlflow.get_tracking_uri()}")
-     ```
-     It returns `git_tags`. Format it with `ruff format` alone (the lines above are long on
-     purpose, as a spec). No run is opened. A new store prints two alembic `INFO` lines to
-     stderr (seen); MLflow creates the sqlite file's folder.
-  3. Return `config_params` from the data cell and `EXPERIMENT_SETTINGS` from the settings
-     cell (later cells log them).
-  4. `.env.example`: the run command names `notebooks/03_hyperparameter_tuning.py`.
-- **Every logging cell reads `git_tags`,** so marimo runs it after this cell: the filters and
-  the experiment are set before any MLflow call.
-- **Tests** (`pytest.importorskip("mlflow")`):
-  - the default script run opens no run: `MlflowClient(<its scratch URI>).search_runs` over
-    every experiment is empty;
-  - the refusals, each on **a copy of the notebook in `tmp_path`** (`tmp_path/notebooks/`, with
-    `configs` and `src` symlinked to the repo's), run with `cwd=tmp_path`, so the "canonical"
-    store is `tmp_path/mlflow.db` (under the mutation, a run from the repo root would open the
-    real one). Each run exits non-zero, its stderr names the variable, and
-    `tmp_path/mlflow.db` and `tmp_path/mlartifacts` do not exist afterwards:
-    `MLFLOW_TRACKING_URI` unset; `sqlite:///mlflow.db`; `AGE_GROUP_MLFLOW_ARTIFACT_LOCATION`
-    `mlartifacts`.
-- **Validate:** the runner; Check C equal with nothing excepted; Check B's names gain `mlflow`.
-- **Mutation:** delete the `raise` for the canonical URI; the refusal test fails.
+- **The user's choice at M1 (2026-11-14; do not re-ask): no MLflow global.** The notebook test
+  fixture `notebook_defs` runs the notebook inside the pytest process, and the old `tracking/`
+  tests (not marked slow either) run later in the same session; `mlflow.set_tracking_uri`
+  writes a module global and `os.environ["MLFLOW_TRACKING_URI"]`, `set_experiment` a global
+  active experiment. So the cell calls neither: MLflow 3.16 reads `MLFLOW_TRACKING_URI` and,
+  with no active experiment, `MLFLOW_EXPERIMENT_NAME` at every call
+  (`fluent._get_experiment_id` → `_get_experiment_id_from_env`). Confirmed before the edit by
+  `probes/probe_m1_env.py` under `-W error`: the run in the named experiment, its artifacts
+  under the artifact location, the table equal, the schema logged, the URI and the
+  environment unchanged. **M3, M4 and M6 call no setter either** (their skip and guard
+  queries, `start_run`, `load_table` use the active experiment the variable names).
+- **Steps (done):**
+  1. **The MLflow cell**, after the data cell (`def _(pd, project_root)`): its own imports
+     (`os`, `subprocess`, `warnings`, `Path`, `mlflow`; not the setup's imports cell, `02`'s
+     twin); the six refusals (each a `ValueError` naming the variable: the URI unset, not
+     `sqlite:///`, or its file `project_root / "mlflow.db"`; the experiment unset; the
+     artifact location unset or `project_root / "mlartifacts"`); the two warning filters (§1,
+     12); `create_experiment(name, artifact_location=str(Path(location).resolve()))` when
+     missing; `git_tags` (`git_commit`, `git_dirty`, `git` in `project_root / "src"`); the line
+     `experiment=… tracking_uri=…`. It returns `git_tags, mlflow`: the logging cells read
+     both, so marimo runs them after it (the filters and the experiment set first).
+  2. The data cell returns `config_params`; the settings cell `EXPERIMENT_SETTINGS`.
+  3. `.env.example`: the run command names `notebooks/03_hyperparameter_tuning.py`.
+- **Tests (done):** `_mlflow_environment(scratch)` (the four variables of a scratch store);
+  `_run(notebook, scratch, cwd, environment)` (a `None` removes a variable);
+  `_project_copy(tmp_path, source)` (a copy with `configs` **and `src`** linked; the
+  seed-override test's copy had no `src`, where the cell's `git` would raise);
+  `notebook_store` and `notebook_defs` (the variables set for the in-process run only, in
+  `pytest.MonkeyPatch.context()`); `test_a_script_run_opens_no_mlflow_run` (the experiment with
+  its artifact location, no run, the git tags, no URI leaked into the environment or into
+  `mlflow.get_tracking_uri()`); `test_the_mlflow_cell_refuses_the_canonical_store` (×3:
+  `MLFLOW_TRACKING_URI` unset, `sqlite:///mlflow.db`, `AGE_GROUP_MLFLOW_ARTIFACT_LOCATION=
+  mlartifacts`; each on `_project_copy` run from the copy's root, so a missing refusal opens
+  the copy's store, never the repo's; exit ≠ 0, `ValueError` and the variable in stderr, no
+  `mlflow.db` or `mlartifacts` in the copy).
+- **Validate:** `checks/run_M1.sh` (the four variables exported to `$S/mlflow_M1.db` and
+  `$S/mlartifacts_M1`; Check B `check_b_m1_tuning.py`: `mlflow`, `git_tags`, `config_params`,
+  `EXPERIMENT_SETTINGS`, the experiment with its artifact location, no run, no active
+  experiment); Check C on both equal to S5.3 with nothing excepted; both notebooks' figures
+  identical; the repo's store listed before and after.
+- **Mutation:** `checks/run_mutant_M1.sh`: on a full copy, the canonical URI's `raise`
+  replaced by `pass`; the `sqlite:///mlflow.db` refusal case fails.
+- **The scripts every later check needs:** the four MLflow variables exported (the notebook
+  refuses to run without them), as `run_M1.sh` does; `run_dump_m1.sh` is the figure dump
+  without its inline URI.
 - **Commit:**
   ```text
   feat(notebook): the MLflow cell sets the experiment and refuses the canonical store (M1)

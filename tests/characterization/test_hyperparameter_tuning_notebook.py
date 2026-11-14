@@ -39,29 +39,62 @@ NOTEBOOK_PATH = PROJECT_ROOT / "notebooks" / "03_hyperparameter_tuning.py"
 OBJECTIVE_EDA_PATH = PROJECT_ROOT / "notebooks" / "02_objective_eda.py"
 
 
-def _run(notebook: Path, scratch: Path) -> subprocess.CompletedProcess[str]:
-    """Run ``notebook`` as a script against a scratch MLflow store under ``scratch``.
+def _mlflow_environment(scratch: Path) -> dict[str, str]:
+    """The MLflow variables of a scratch store under ``scratch``, away from the canonical one."""
+    return {
+        "MLFLOW_DISABLE_AGENT_HINT": "1",
+        "MLFLOW_TRACKING_URI": f"sqlite:///{scratch / 'mlflow.db'}",
+        "MLFLOW_EXPERIMENT_NAME": "test-hyperparameter-tuning-notebook",
+        "AGE_GROUP_MLFLOW_ARTIFACT_LOCATION": str(scratch / "artifacts"),
+    }
+
+
+def _run(
+    notebook: Path,
+    scratch: Path,
+    cwd: Path = PROJECT_ROOT,
+    environment: dict[str, str | None] | None = None,
+) -> subprocess.CompletedProcess[str]:
+    """Run ``notebook`` as a script from ``cwd`` against a scratch MLflow store under ``scratch``.
 
     The editable install does not resolve for a plain ``python <script>``
     invocation here (pytest works through ``pyproject.toml``'s ``pythonpath``),
     so ``src`` is passed explicitly. The MLflow variables point away from the
-    repository's canonical store for the cells that will use them.
+    repository's canonical store; ``environment`` overrides them (a ``None``
+    value removes one).
     """
     env = dict(os.environ)
     env["PYTHONPATH"] = str(PROJECT_ROOT / "src")
-    env["MLFLOW_DISABLE_AGENT_HINT"] = "1"
-    env["MLFLOW_TRACKING_URI"] = f"sqlite:///{scratch / 'mlflow.db'}"
-    env["MLFLOW_EXPERIMENT_NAME"] = "test-hyperparameter-tuning-notebook"
-    env["AGE_GROUP_MLFLOW_ARTIFACT_LOCATION"] = str(scratch / "artifacts")
+    env.update(_mlflow_environment(scratch))
+    for name, value in (environment or {}).items():
+        if value is None:
+            env.pop(name, None)
+        else:
+            env[name] = value
     return subprocess.run(
         [sys.executable, str(notebook)],
-        cwd=PROJECT_ROOT,
+        cwd=cwd,
         env=env,
         capture_output=True,
         text=True,
         timeout=180,
         check=False,
     )
+
+
+def _project_copy(tmp_path: Path, source: str) -> Path:
+    """``source`` as the notebook of a project copy under ``tmp_path``; its path.
+
+    The notebook finds the config and the code relative to its own directory,
+    so the copy's ``configs`` and ``src`` link to the repository's.
+    """
+    project_copy = tmp_path / "project"
+    (project_copy / "notebooks").mkdir(parents=True)
+    for name in ("configs", "src"):
+        (project_copy / name).symlink_to(PROJECT_ROOT / name, target_is_directory=True)
+    notebook_copy = project_copy / "notebooks" / NOTEBOOK_PATH.name
+    notebook_copy.write_text(source, encoding="utf-8")
+    return notebook_copy
 
 
 def _printed(stdout: str, prefix: str) -> dict[str, str]:
@@ -174,17 +207,8 @@ def test_a_seed_override_not_reaching_the_simulator_is_caught(tmp_path: Path) ->
     # the hash alone cannot show.
     source = NOTEBOOK_PATH.read_text(encoding="utf-8")
     assert source.count("simulation_seed = None") == 1
-    # A copy beside a configs/ link, because the notebook finds the config
-    # relative to its own directory.
-    project_copy = tmp_path / "project"
-    (project_copy / "notebooks").mkdir(parents=True)
-    (project_copy / "configs").symlink_to(
-        PROJECT_ROOT / "configs", target_is_directory=True
-    )
-    notebook_copy = project_copy / "notebooks" / NOTEBOOK_PATH.name
-    notebook_copy.write_text(
-        source.replace("simulation_seed = None", "simulation_seed = 7"),
-        encoding="utf-8",
+    notebook_copy = _project_copy(
+        tmp_path, source.replace("simulation_seed = None", "simulation_seed = 7")
     )
     result = _run(notebook_copy, tmp_path / "store")
     assert result.returncode == 0, result.stderr
@@ -209,16 +233,79 @@ def test_a_tuning_cell_outside_a_run_button_is_caught() -> None:
 
 
 @pytest.fixture(scope="module")
-def notebook_defs() -> dict:
-    """The names a script run defines, in this process; the buttons stay unclicked, so nothing is fitted."""
+def notebook_store(tmp_path_factory: pytest.TempPathFactory) -> Path:
+    """The scratch MLflow store of the in-process run below."""
+    return tmp_path_factory.mktemp("notebook_store")
+
+
+@pytest.fixture(scope="module")
+def notebook_defs(notebook_store: Path) -> dict:
+    """The names a script run defines, in this process; the buttons stay unclicked, so nothing is fitted.
+
+    The MLflow variables point at a scratch store for the run only; the MLflow
+    cell sets no global, so nothing reaches the tests that run after.
+    """
     spec = importlib.util.spec_from_file_location(
         "hyperparameter_tuning_notebook", NOTEBOOK_PATH
     )
     assert spec is not None and spec.loader is not None
     notebook = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(notebook)
-    _, defs = notebook.app.run()
+    with pytest.MonkeyPatch.context() as patch:
+        for name, value in _mlflow_environment(notebook_store).items():
+            patch.setenv(name, value)
+        _, defs = notebook.app.run()
     return dict(defs)
+
+
+def test_a_script_run_opens_no_mlflow_run(
+    notebook_defs: dict, notebook_store: Path
+) -> None:
+    # M1: the MLflow cell creates the experiment with its artifact location and
+    # reads the git tags; it opens no run, and sets no MLflow global (the
+    # tracking URI and the active experiment are read from the environment at
+    # every call), so the old tracking tests that run after see none.
+    mlflow = pytest.importorskip("mlflow")
+    environment = _mlflow_environment(notebook_store)
+    client = mlflow.MlflowClient(environment["MLFLOW_TRACKING_URI"])
+    experiment = client.get_experiment_by_name(environment["MLFLOW_EXPERIMENT_NAME"])
+    assert experiment is not None
+    assert experiment.artifact_location == str((notebook_store / "artifacts").resolve())
+    experiment_ids = [item.experiment_id for item in client.search_experiments()]
+    assert client.search_runs(experiment_ids) == []
+    assert set(notebook_defs["git_tags"]) == {"git_commit", "git_dirty"}
+    assert re.fullmatch(r"[0-9a-f]{40}", notebook_defs["git_tags"]["git_commit"])
+    assert notebook_defs["git_tags"]["git_dirty"] in {"true", "false"}
+    assert os.environ.get("MLFLOW_TRACKING_URI") != environment["MLFLOW_TRACKING_URI"]
+    assert mlflow.get_tracking_uri() != environment["MLFLOW_TRACKING_URI"]
+
+
+@pytest.mark.parametrize(
+    ("name", "value"),
+    [
+        ("MLFLOW_TRACKING_URI", None),
+        ("MLFLOW_TRACKING_URI", "sqlite:///mlflow.db"),
+        ("AGE_GROUP_MLFLOW_ARTIFACT_LOCATION", "mlartifacts"),
+    ],
+)
+def test_the_mlflow_cell_refuses_the_canonical_store(
+    tmp_path: Path, name: str, value: str | None
+) -> None:
+    # D1e: the repo root's mlflow.db and mlartifacts/ are the old stack's final
+    # evidence, and MLflow's default URI (unset) is sqlite:///mlflow.db in the
+    # working directory. Each run is a copy run from the copy's root, so its
+    # "canonical" store is the copy's: a missing refusal opens that one, never
+    # the repository's.
+    notebook_copy = _project_copy(tmp_path, NOTEBOOK_PATH.read_text(encoding="utf-8"))
+    project_copy = notebook_copy.parents[1]
+    result = _run(
+        notebook_copy, tmp_path / "store", cwd=project_copy, environment={name: value}
+    )
+    error = result.stderr[-2000:]
+    assert result.returncode != 0, error
+    assert "ValueError" in error and name in error, error
+    assert not (project_copy / "mlflow.db").exists()
+    assert not (project_copy / "mlartifacts").exists()
 
 
 SHARING = [(False, False), (True, False), (True, True)]

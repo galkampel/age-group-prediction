@@ -1,4 +1,30 @@
-# Handoff: the experiment notebooks, PR 7 merged (#26); the simplification review done; the MLflow plan written and decided (MLFLOW_RUNS_PLAN.md, M0–M7); M0 (the probe) done; next M1 with Opus 5.5
+# Handoff: the experiment notebooks, PR 7 merged (#26); the simplification review done; the MLflow plan written and decided (MLFLOW_RUNS_PLAN.md, M0–M7); M0 (the probe) and M1 (the MLflow cell) done; next M2 with Opus 5.5
+
+**Status (2026-11-14, end of M1, the MLflow cell; the user commits it):**
+- **The state:** branch `feat/mlflow-runs`, HEAD the user's commit of M1, on `8e1ea98` (M0).
+  M1 changed `notebooks/03_hyperparameter_tuning.py`, `tests/characterization/test_hyperparameter_tuning_notebook.py`,
+  `.env.example`, [MLFLOW_RUNS_PLAN.md](MLFLOW_RUNS_PLAN.md) (M1 ticked, its text as built, the
+  status) and this handoff.
+- **The notebooks' md5:** `03_hyperparameter_tuning.py` `659e410dc1b64a68501f4f3e331875a3`
+  (new); `02_objective_eda.py` `1f9bbe7601794c7d646a67ce2588d536`, `01_eda.py`
+  `4bc1ba3a52dc2ad55d0097a707bd1ccc` (unchanged).
+- **What M1 added:** the MLflow cell after the data cell (the six refusals, the two warning
+  filters, the experiment created with its artifact location, `git_tags`; it returns
+  `git_tags, mlflow`); the data cell returns `config_params`, the settings cell
+  `EXPERIMENT_SETTINGS`. **The user's choice at M1: no MLflow global** (no `set_tracking_uri`,
+  no `set_experiment`): MLflow reads the two variables at every call. The plan's M1 has the
+  reason (the in-process test fixture; the old `tracking/` tests in the same session).
+- **Every check now needs the four MLflow variables** (the notebook refuses to run without
+  them): `checks/run_M1.sh` exports them to `$S/mlflow_M1.db` and `$S/mlartifacts_M1`;
+  `probes/run_dump_m1.sh` is the figure dump without its inline URI; `checks/check_b_m1_tuning.py`
+  is Check B with M1's assertions. **The next change's references:** `check_c_m1_tuning.pkl`,
+  `check_c_m1_eda.pkl` with `check_c_m1_eda_figures.json` and `check_c_m1_eda_metric_figures.json`;
+  `figures_m1_tuning.json`, `figures_m1_eda.json` (all equal to S5.3's).
+- **The checks** (the plan's M1 has the numbers): all passed; the mutation caught.
+- **Next: M2, an Opus 5.5 session** (the plan's §7, the second prompt with `M2`).
+- **The test part has still not been run on the user's cache** (E11).
+- **The scratchpad to copy first:** `/private/tmp/claude-501/-Users-galkampel-Desktop-Projects-age-group-prediction/41d4cdb4-9818-43cb-bab7-d9e33511d815/scratchpad`
+  (as M0's status below describes it, plus M1's scripts, logs and references).
 
 **Status (2026-11-14, end of M0, the probe; the user commits it):**
 - **The state:** branch `feat/mlflow-runs`, HEAD the user's commit of M0, on `37c3889` (the

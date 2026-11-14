@@ -216,7 +216,92 @@ def _(DATA_SETTINGS, X, config, df, groups, hashlib, json, mo, pd):
             mo.md(f"```text\n{X.head().to_string(index=False)}\n```"),
         ]
     )
-    return (config_hash,)
+    return config_hash, config_params
+
+
+@app.cell
+def _(pd, project_root):
+    import os
+    import subprocess
+    import warnings
+    from pathlib import Path
+
+    import mlflow
+
+    # The store: a scratch sqlite file and an artifact folder, from the environment (.env);
+    # never the canonical store at the repo root, which an unset URI would open (MLflow's
+    # default is sqlite:///mlflow.db in the working directory) (D1e).
+    tracking_uri = os.environ.get("MLFLOW_TRACKING_URI")
+    experiment_name = os.environ.get("MLFLOW_EXPERIMENT_NAME")
+    artifact_location = os.environ.get("AGE_GROUP_MLFLOW_ARTIFACT_LOCATION")
+    if tracking_uri is None:
+        raise ValueError(
+            "MLFLOW_TRACKING_URI is unset: MLflow would use sqlite:///mlflow.db, the canonical store"
+        )
+    if not tracking_uri.startswith("sqlite:///"):
+        raise ValueError(
+            f"MLFLOW_TRACKING_URI must be a sqlite:/// URI, got {tracking_uri!r}"
+        )
+    # A relative path resolves against the working directory, as SQLAlchemy resolves it.
+    if (
+        Path(tracking_uri.removeprefix("sqlite:///")).resolve()
+        == (project_root / "mlflow.db").resolve()
+    ):
+        raise ValueError(f"MLFLOW_TRACKING_URI {tracking_uri!r} is the canonical store")
+    if experiment_name is None:
+        raise ValueError("MLFLOW_EXPERIMENT_NAME is unset")
+    if artifact_location is None:
+        raise ValueError("AGE_GROUP_MLFLOW_ARTIFACT_LOCATION is unset")
+    if Path(artifact_location).resolve() == (project_root / "mlartifacts").resolve():
+        raise ValueError(
+            f"AGE_GROUP_MLFLOW_ARTIFACT_LOCATION {artifact_location!r} is the canonical one"
+        )
+    # pandas 3 warns inside two MLflow calls (M0): log_table's select_dtypes on a str
+    # column, and log_input's schema on an int column. Each filtered by its category,
+    # message and module, so any other warning still shows.
+    warnings.filterwarnings(
+        "ignore",
+        category=pd.errors.Pandas4Warning,
+        message="For backward compatibility, 'str' dtypes are included by select_dtypes",
+        module="mlflow.tracking.client",
+    )
+    warnings.filterwarnings(
+        "ignore",
+        category=UserWarning,
+        message="Hint: Inferred schema contains integer",
+        module="mlflow.types.utils",
+    )
+    # MLflow reads the two variables checked above at every call, so no global is set
+    # (no set_tracking_uri, no set_experiment). The experiment is created here, with its
+    # artifact location: MLflow would create it on the first run without one.
+    if mlflow.get_experiment_by_name(experiment_name) is None:
+        mlflow.create_experiment(
+            experiment_name, artifact_location=str(Path(artifact_location).resolve())
+        )
+    # The code's version, a tag of every run: HEAD, and whether a tracked file differs
+    # from it; git runs in src (in Check C's copy a link to the repo).
+    git_tags = {
+        "git_commit": subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            cwd=project_root / "src",
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout.strip(),
+        "git_dirty": str(
+            bool(
+                subprocess.run(
+                    ["git", "status", "--porcelain", "--untracked-files=no"],
+                    cwd=project_root / "src",
+                    capture_output=True,
+                    text=True,
+                    check=True,
+                ).stdout.strip()
+            )
+        ).lower(),
+    }
+    print(f"experiment={experiment_name} tracking_uri={tracking_uri}")
+    return git_tags, mlflow
 
 
 @app.cell(hide_code=True)
@@ -280,6 +365,7 @@ def _(mo, pd):
     )
     mo.md(f"```text\n{pd.DataFrame([EXPERIMENT_SETTINGS]).to_string(index=False)}\n```")
     return (
+        EXPERIMENT_SETTINGS,
         alpha,
         n_repeats,
         n_resamples,
