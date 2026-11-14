@@ -6,8 +6,8 @@ sub-task when it is done and update the status line.
 
 **Status (2026-11-14):** M0 done (the probe; its findings in §1 and in M1–M6's exact calls; the
 user's four choices 11–14), committed `8e1ea98`. M1 done (the MLflow cell; the user's choice
-there: no MLflow global), checked, awaiting the user's commit. Next: M2, an Opus 5.5 session
-(§7, the second prompt).
+there: no MLflow global), committed `2451c8a`. M2 done (a run record keeps its study), checked,
+awaiting the user's commit. Next: M3, an Opus 5.5 session (§7, the second prompt).
 
 ## 1. The question and the verdict
 
@@ -299,7 +299,20 @@ passed; without the canonical URI's `raise`, the `sqlite:///mlflow.db` case fail
   feat(notebook): the MLflow cell sets the experiment and refuses the canonical store (M1)
   ```
 
-### [ ] M2. A run record keeps its study
+### [x] M2. A run record keeps its study
+
+**Done 2026-11-14** (`03`'s md5 `74b39c08ded5cafbbbb68016d7f87649`). Both tune cells' records
+gain `"study": _study` after `"components"`, and their comment says the logging reads the
+study's name, trials and best parameters. `checks/run_M2.sh` (log `run_M2.log`): the non-slow
+suite 1416, mypy clean, the notebook tests 36, ruff `03` 15 / `02` 11 (none new), the two format
+hunks, Check B on both, Check C on both equal to M1's run with nothing excepted (the records
+compared without `study`), the 21 + 27 figures identical, the scratch store 0 runs, the repo's
+store unchanged. Check C (`checks/check_c_m2_tuning.py`) asserts each record's study against the
+study it recomputes in memory: its name (the check's own `study_file`, not the notebook's
+`build_study_name`), its best value equal to `cv_best`, 3 trials, each trial's params; its
+`record()` drops `study` before pickling. **The mutation as run** (the line below could not be
+written: Model 1's cell has no Model 2 study): Model 1's records each keep the first run's study
+(`run_mutant_M2.sh`); Check C fails at run 1 (seed 43, the study named `…seed=42`).
 
 - **Model:** Opus 5.5 (its form confirmed by M0).
 - **Evidence:** the logging needs the study's name (the run's key), its trials and its best

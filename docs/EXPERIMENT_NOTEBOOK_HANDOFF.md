@@ -1,4 +1,23 @@
-# Handoff: the experiment notebooks, PR 7 merged (#26); the simplification review done; the MLflow plan written and decided (MLFLOW_RUNS_PLAN.md, M0–M7); M0 (the probe) and M1 (the MLflow cell) done; next M2 with Opus 5.5
+# Handoff: the experiment notebooks, PR 7 merged (#26); the simplification review done; the MLflow plan written and decided (MLFLOW_RUNS_PLAN.md, M0–M7); M0–M2 done; next M3 with Opus 5.5
+
+**Status (2026-11-14, end of M2, a run record keeps its study; the user commits it):**
+- **The state:** branch `feat/mlflow-runs`, HEAD the user's commit of M2, on `2451c8a` (M1).
+  M2 changed `notebooks/03_hyperparameter_tuning.py` (each tune cell's record gains
+  `"study": _study`; its comment), [MLFLOW_RUNS_PLAN.md](MLFLOW_RUNS_PLAN.md) (M2 ticked, the
+  status) and this handoff.
+- **The notebooks' md5:** `03_hyperparameter_tuning.py` `74b39c08ded5cafbbbb68016d7f87649`
+  (new); `02_objective_eda.py` `1f9bbe7601794c7d646a67ce2588d536`, `01_eda.py`
+  `4bc1ba3a52dc2ad55d0097a707bd1ccc` (unchanged).
+- **The checks:** all passed (the plan's M2 has the numbers); the mutation caught.
+- **The next change's scripts and references:** the runner `checks/run_M2.sh` (the four MLflow
+  variables exported); Check C `checks/check_c_m2_tuning.py` (its `KEYS1`/`KEYS2` hold `study`;
+  `record()` drops it); Check B `checks/check_b_m1_tuning.py`; the references
+  `check_c_m2_tuning.pkl`, `check_c_m2_eda.pkl` with `check_c_m2_eda_figures.json` and
+  `check_c_m2_eda_metric_figures.json`, `figures_m2_tuning.json`, `figures_m2_eda.json`.
+- **Next: M3, an Opus 5.5 session** (the plan's §7, the second prompt with `M3`): the first
+  logging; Check D is new there.
+- **The test part has still not been run on the user's cache** (E11).
+- **The scratchpad to copy first:** `/private/tmp/claude-501/-Users-galkampel-Desktop-Projects-age-group-prediction/41d4cdb4-9818-43cb-bab7-d9e33511d815/scratchpad`.
 
 **Status (2026-11-14, end of M1, the MLflow cell; the user commits it):**
 - **The state:** branch `feat/mlflow-runs`, HEAD the user's commit of M1, on `8e1ea98` (M0).

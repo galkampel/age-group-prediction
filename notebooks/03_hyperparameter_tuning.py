@@ -1156,8 +1156,9 @@ def _(
             _scores_by_dataset[_dataset_name] = _dataset_scores.to_frame("score")
         # The run's settings and its best model: the fitted model, its
         # components and their transformers' names (found by identity among
-        # the family's candidates); its value, trial counts and seconds. The
-        # trials are not kept: the objective EDA studies them.
+        # the family's candidates); its study, whose name, trials and best
+        # parameters the MLflow logging reads; its value, trial counts and
+        # seconds.
         _states = [trial.state.name for trial in _study.trials]
         MODEL1_RUNS.append(
             {
@@ -1170,6 +1171,7 @@ def _(
                 },
                 "model": _model,
                 "components": _best_components,
+                "study": _study,
                 "cv_best": _study.best_value,
                 "n_complete": _states.count("COMPLETE"),
                 "n_failed": _states.count("FAIL"),
@@ -1431,8 +1433,9 @@ def _(
             _scores_by_dataset[_dataset_name] = _dataset_scores.to_frame("score")
         # The run's settings and its best model: the fitted model, its
         # components and their transformers' names (found by identity among
-        # each family's candidates); its value, trial counts and seconds. The
-        # trials are not kept: the objective EDA studies them.
+        # each family's candidates); its study, whose name, trials and best
+        # parameters the MLflow logging reads; its value, trial counts and
+        # seconds.
         _states = [trial.state.name for trial in _study.trials]
         MODEL2_RUNS.append(
             {
@@ -1448,6 +1451,7 @@ def _(
                 },
                 "model": _model,
                 "components": _best_components,
+                "study": _study,
                 "cv_best": _study.best_value,
                 "n_complete": _states.count("COMPLETE"),
                 "n_failed": _states.count("FAIL"),
