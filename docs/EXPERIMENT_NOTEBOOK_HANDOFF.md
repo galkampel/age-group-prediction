@@ -1,6 +1,39 @@
-# Handoff: the experiment notebooks, PR 7 merged (#26); the simplification review: S1–S4, S6, S8 done, S7 dropped, S5.0–S5.2 done, S5.3 next, then the MLflow plan
+# Handoff: the experiment notebooks, PR 7 merged (#26); the simplification review done (S1–S6, S8; S7 dropped); next the MLflow plan
 
-**Status (2026-11-14: S5.1 committed as `80f6733`; S5.2 done and checked, uncommitted; next S5.3):**
+**Status (2026-11-14: S5.2 committed as `8c318c7`; S5.3 done and checked, uncommitted; the simplification review is complete; next the MLflow plan):**
+- **S5.3** (the review plan's S5, ticked, has the details): `02` has its own `PALETTE` and
+  `style_figure` cell; its two figure cells use them. **Every check passed** (`run_S5_3.sh`,
+  log `run_S5_3.log`): the suite 1412, mypy 28, the notebook tests 32, ruff `03` 15 / `02` 11,
+  the format hunks, `marimo check`, Check B on both, Check C on both with every frame equal to
+  S5.2's run; `02`'s 27 figures' traces equal and their look as the user approved in S5.0;
+  `03`'s 21 figures unchanged; the mutation (`run_mutant_S5_3.sh`) caught.
+- **The commit (the user's):**
+
+  ```text
+  refactor(notebook): the objective EDA's figures use the palette and the shared style (S5.3)
+  ```
+  Its files: `notebooks/02_objective_eda.py`, `docs/SIMPLIFICATION_REVIEW_PLAN.md`, this
+  handoff.
+- **The notebooks' md5:** `02_objective_eda.py` `1f9bbe7601794c7d646a67ce2588d536`,
+  `03_hyperparameter_tuning.py` `1117fc7f89b031bb3d11d33c83e700ef` (unchanged).
+- **The test part has still not been run on the user's cache** (E11).
+- **The figures since S5:** each notebook has one palette cell (`PALETTE`, a dictionary of the
+  tokens; `03` also `MODEL_COLORS`) and `style_figure(figure, palette)`; a figure calls it once
+  it has its axes, then sets what is its own. A new figure does the same; a notebook function
+  takes the palette as an argument.
+- **The scratchpad to copy first:** `/private/tmp/claude-501/-Users-galkampel-Desktop-Projects-age-group-prediction/fe433a52-12f5-4642-94a4-b6aa46f6e1ea/scratchpad`:
+  `checks/`, `probes/`, `viewer/`, `new_cells_*`, `s5_0/`–`s5_3/` (the pairs pages), the logs,
+  every pickle and JSON (each script's `S=` set to it; compile `pycache/` first). **The next
+  change's references:** `check_c_s5_3_tuning.pkl`, `check_c_s5_3_eda.pkl` with
+  `check_c_s5_3_eda_figures.json` and `check_c_s5_3_eda_metric_figures.json`, and
+  `figures_s5_3_tuning.json` / `figures_s5_3_eda.json` (every figure's JSON,
+  `probes/run_dump_s5.sh <tag>`, compared with `checks/compare_figures_s5.py` and
+  screenshotted with `checks/shots_s5.py`). The runner to copy is `run_S5_3.sh`, with its EDA
+  figure step set back to the exact `compare_figures.py` (S5.3 allowed the style's keys once);
+  the tuning's Check C is `check_c_s5_tuning.py`.
+- **Next:** the MLflow plan (§6, step 2), in plan mode.
+
+**Status (2026-11-14: S5.1 committed as `80f6733`; S5.2 done and checked, then committed as `8c318c7`):**
 - **S5.2** (the review plan's S5 has the details): `PALETTE["raises"]`, `PALETTE["lowers"]` and
   `MODEL_COLORS` in the palette cell; the waterfall, the two count figures and the shares bars
   read them and call `style_figure`. **Every check passed** (`run_S5_2.sh`, log
