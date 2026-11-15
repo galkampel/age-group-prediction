@@ -37,6 +37,11 @@ decided by the user (do not re-ask): G1 and G2 into M7's guide, G3 two tests. **
 change. Next: M7** (Opus 5.5), which builds G3's tests first; the prompt is at the top of the
 handoff.
 
+**Complete (2026-11-15).** M7 done (G3's two tests, the guide
+[MLFLOW_RUNS.md](MLFLOW_RUNS.md), the links, the old plan's notes, §5's two rows), all checks
+passed in one run; not committed yet. Next: the user's PR `feat/mlflow-runs` into `main`. E11's
+final run on the real studies stays the user's to start.
+
 ## 1. The question and the verdict
 
 The question (the handoff's §7): how do the tuning notebook's results become MLflow runs,
@@ -824,7 +829,43 @@ it is checked in one run.
   feat(notebook): the final run logged to MLflow once, refused when one exists (M6)
   ```
 
-### [ ] M7. Docs and close
+### [x] M7. Docs and close
+
+**Done 2026-11-15** (no notebook or `src` file changed; the notebooks' md5 as M6's). One
+change, checked once by `checks/run_M7.sh` (log `run_M7.log`):
+- **G3's tests** in `tests/characterization/test_hyperparameter_tuning_notebook.py`, each on a
+  `tmp_path` store with the experiment created first and the four variables set in
+  `pytest.MonkeyPatch.context()`:
+  - `test_a_tuning_run_is_logged_once_then_skipped`: a 2-trial in-memory study and a small
+    record (a stand-in journal file, a `Bunch` component); the second call returns `None`, one
+    FINISHED run; its name, tags, parameters, metric names, six artifacts, `best_params.json`,
+    `trials.csv`'s 2 rows;
+  - `test_an_evaluation_run_logs_the_composite_and_each_best_runs_files`: two 1-trial studies,
+    a cohort row that must not become a metric; the 18 metrics with their values, the
+    `best.<model>` tags, the CSV table's text, `best_params/` and `components/` per model;
+  - each asserts no active run and the tracking URI not the scratch one after its calls. **The
+    user's choice (do not re-ask):** a run leaves MLflow's thread-local `_last_active_run_id`
+    set (a probe: nothing else; nothing in `src` or `tests` reads it); accepted.
+- **The guide** [MLFLOW_RUNS.md](MLFLOW_RUNS.md) (§1–§9, with G1, G2, the review's §7.5 list,
+  M0's UI notes); the links from `docs/README.md` (a guide row, two plan rows, the status),
+  `MODULE_REFERENCE.md` and the root `README.md`; the dated notes on E9, E10, D1e–D5 in
+  `EXPERIMENT_NOTEBOOK_PLAN.md`, D1–D5 ticked (the user's choice); §5's two rows below.
+- **The checks:** ruff and the format on the test file clean; the test file 36 passed (34 + 2);
+  the non-slow suite 1423 passed (1421 + 2), 1 skipped, 19 deselected, 1 xfailed; mypy clean
+  (28 files).
+- **The guide's commands as written** (`.env` replaced by a scratch env file naming a copy of
+  M6's store, `mlflow_M7_guide.db`, its artifact paths pointed at this scratchpad's copy):
+  the script run printed the experiment line and left 26 runs; `mlflow ui` answered
+  `/health`, listed 26 runs and served a CSV artifact, then stopped; §8's block found one
+  tuning run per `best.<model>`; §9's recipe rebuilt the best tuning run, both models of the
+  best runs' run and of the final run, each refit and **exactly** equal to its logged
+  composite scores; the repo's files unchanged by the commands.
+- **The mutation** (on `mut_m7/`, a copy with `src` and `configs` linked): the copy as is, both
+  new tests pass; with the skip's `return None` made `pass`, the tuning test fails at the
+  second call (it returns a run id).
+- The repo's `mlflow.db` and `mlartifacts/` unchanged, no `.mlflow-local/`; the checks' own
+  store never created.
+
 
 **Built first, from the second review ([MLFLOW_RUNS_REVIEW.md](MLFLOW_RUNS_REVIEW.md) §7,
 decided 2026-11-15); the notebook is not edited:**
@@ -904,11 +945,12 @@ decided 2026-11-15); the notebook is not edited:**
 | the forest and the ridge, the permutation figures, the beeswarms | best runs' run (validation), final run (test) | a fixed set |
 | the two count figures, the shares bars | final run | the composite; all neighborhoods |
 | the waterfalls | **left out** | each is one building (decision 10) |
-| the fitted model | **left out** | decision 4; rebuilt with `from_params` from the run's `best_params` (all three run kinds since M6) and `prediction_floor`; `components.json` is the readable declaration |
+| the fitted model | **left out** | decision 4; rebuilt with `from_params` from the run's `best_params` (all three run kinds since M6), `prediction_floor` and `seed`; `family` and `use_exposure` from a tuning run's parameters, from `components/<model>.json` in the two evaluation runs (G1); `components.json` is the readable declaration; [MLFLOW_RUNS.md](MLFLOW_RUNS.md) §9 |
 | the study's journal file | tuning run, artifact | |
 | the feature transformers' description | tuning run: their names as parameters, their declaration in `components.json` | |
 | the bootstrap replicates | **left out** | no reader: the ridge figure shows them, and the seed recomputes them |
-| the model's label, the family, the stage, the git commit, the notebook | every run, tags | |
+| the model's label, the family | tuning run, tags `model`, `family` | an evaluation run has `best.<model>` (the best run's study name) instead (REVIEW §7.4) |
+| the stage, the git commit and `git_dirty`, the notebook | every run, tags | `code_tags` since M6 |
 | the dataset (its hash, its rows) | every run, `log_input` | the digest the rows' SHA-256, its first 36 characters (choice 13); `config_hash` a parameter |
 
 ## 6. Questions still open

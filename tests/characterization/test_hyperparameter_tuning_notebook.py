@@ -409,6 +409,239 @@ def test_the_final_run_is_logged_only_behind_its_button(
         assert name not in notebook_defs, name
 
 
+def test_a_tuning_run_is_logged_once_then_skipped(
+    notebook_defs: dict, tmp_path: Path
+) -> None:
+    # The second review's G3: log_tuning_run called on a scratch store with a
+    # 2-trial study and a small record. The first call logs the run; the
+    # second finds a FINISHED run with its key and logs nothing (M3's skip).
+    # The experiment is created first: MLflow would create it at its default
+    # artifact location, from the repository's root the canonical one.
+    mlflow = pytest.importorskip("mlflow")
+    environment = _mlflow_environment(tmp_path)
+    client = mlflow.MlflowClient(environment["MLFLOW_TRACKING_URI"])
+    experiment_id = client.create_experiment(
+        environment["MLFLOW_EXPERIMENT_NAME"],
+        artifact_location=str((tmp_path / "artifacts").resolve()),
+    )
+    study = optuna.create_study(study_name="a_study", sampler=RandomSampler(seed=0))
+    study.optimize(
+        lambda trial: trial.suggest_float("total__alpha", 1e-4, 1.0, log=True),
+        n_trials=2,
+    )
+    studies_dir = tmp_path / "studies"
+    studies_dir.mkdir()
+    (studies_dir / "a_study.log").write_text("the study's journal\n", encoding="utf-8")
+    scores = pd.DataFrame(
+        {"score": [1.5, 2.5]},
+        index=pd.MultiIndex.from_tuples(
+            [("train", "composite", "rmse"), ("val", "composite", "rmse")],
+            names=["dataset", "cohort", "metric"],
+        ),
+    )
+    record = {
+        "study": study,
+        "study_seed": 7,
+        "cv_best": study.best_value,
+        "scores": scores,
+        "seconds": 1.0,
+        "n_complete": 2,
+        "n_failed": 0,
+        "components": [Bunch(name="total", to_dict=lambda: {"family": "poisson_glm"})],
+    }
+    code_tags = {
+        "notebook": "notebooks/03_hyperparameter_tuning.py",
+        "git_commit": "0" * 40,
+        "git_dirty": "false",
+    }
+    arguments = (
+        record,
+        "independent_cohorts",
+        {"family": "poisson_glm", "use_exposure": True},
+        studies_dir,
+        "rmse",
+        {"seed": 42},
+        {"simulation.n_neighborhoods": 150},
+        {},
+        code_tags,
+    )
+    with pytest.MonkeyPatch.context() as patch:
+        for name, value in environment.items():
+            patch.setenv(name, value)
+        run_id = notebook_defs["log_tuning_run"](*arguments)
+        assert run_id is not None
+        assert notebook_defs["log_tuning_run"](*arguments) is None
+    runs = client.search_runs([experiment_id])
+    assert [run.info.run_id for run in runs] == [run_id]
+    run = runs[0]
+    assert run.info.status == "FINISHED"
+    assert run.info.run_name == "independent_cohorts poisson_glm exposure=True"
+    assert {
+        name: value
+        for name, value in run.data.tags.items()
+        if not name.startswith("mlflow.")
+    } == {
+        "run_key": "studies/a_study",
+        "stage": "tuning",
+        "model": "independent_cohorts",
+        "family": "poisson_glm",
+        **code_tags,
+    }
+    assert run.data.params == {
+        "family": "poisson_glm",
+        "use_exposure": "True",
+        "seed": "42",
+        "study_seed": "7",
+        "best.total__alpha": str(study.best_params["total__alpha"]),
+    }
+    assert set(run.data.metrics) == {
+        "cv/rmse",
+        "train/composite/rmse",
+        "val/composite/rmse",
+        "seconds",
+        "n_complete",
+        "n_failed",
+    }
+    artifacts = Path(run.info.artifact_uri)
+    assert sorted(
+        str(path.relative_to(artifacts))
+        for path in artifacts.rglob("*")
+        if path.is_file()
+    ) == [
+        "best_params.json",
+        "components.json",
+        "config.json",
+        "search_space.json",
+        "study/a_study.log",
+        "trials.csv",
+    ]
+    assert json.loads((artifacts / "best_params.json").read_text()) == study.best_params
+    assert len(pd.read_csv(artifacts / "trials.csv")) == 2
+    # M1's concern: no run is left open and the store is not left as MLflow's
+    # tracking URI for the tests that run after.
+    assert mlflow.active_run() is None
+    assert mlflow.get_tracking_uri() != environment["MLFLOW_TRACKING_URI"]
+
+
+def test_an_evaluation_run_logs_the_composite_and_each_best_runs_files(
+    notebook_defs: dict, tmp_path: Path
+) -> None:
+    # The second review's G3: log_evaluation_run called on a scratch store
+    # with two best runs and small frames. The composite rows (each model's
+    # and the paired difference's) become metrics, a cohort's row does not;
+    # each best run's study names a tag and gives its best_params file.
+    mlflow = pytest.importorskip("mlflow")
+    environment = _mlflow_environment(tmp_path)
+    client = mlflow.MlflowClient(environment["MLFLOW_TRACKING_URI"])
+    experiment_id = client.create_experiment(
+        environment["MLFLOW_EXPERIMENT_NAME"],
+        artifact_location=str((tmp_path / "artifacts").resolve()),
+    )
+    best_runs = {}
+    for model in ("independent_cohorts", "total_times_probability"):
+        study = optuna.create_study(
+            study_name=f"{model}_study", sampler=RandomSampler(seed=0)
+        )
+        study.optimize(
+            lambda trial: trial.suggest_float("total__alpha", 1e-4, 1.0, log=True),
+            n_trials=1,
+        )
+        best_runs[model] = {
+            "study": study,
+            "components": [
+                Bunch(name="total", to_dict=lambda: {"family": "poisson_glm"})
+            ],
+        }
+    bound_names = notebook_defs["CI_BOUND_NAMES"]
+    statistics = [
+        "score",
+        "mean",
+        "median",
+        "sd",
+        bound_names["lower"],
+        bound_names["upper"],
+    ]
+    scores_df = pd.DataFrame(
+        [
+            {
+                "model": model,
+                "cohort": cohort,
+                "metric": "rmse",
+                **{statistic: value + i for i, statistic in enumerate(statistics)},
+            }
+            for model, cohort, value in (
+                ("independent_cohorts", "composite", 4.0),
+                ("total_times_probability", "composite", 4.5),
+                ("independent_cohorts", "n_elementary", 3.0),
+            )
+        ]
+    )
+    difference_df = pd.DataFrame(
+        [
+            {
+                "model": "independent_cohorts - total_times_probability",
+                "cohort": "composite",
+                "metric": "rmse",
+                **{statistic: -0.5 + i for i, statistic in enumerate(statistics)},
+            }
+        ]
+    )
+    with pytest.MonkeyPatch.context() as patch:
+        for name, value in environment.items():
+            patch.setenv(name, value)
+        n_metrics = notebook_defs["log_evaluation_run"](
+            "best runs",
+            {"run_key": "studies/best_runs", "stage": "best_runs"},
+            {"seed": 42},
+            "val",
+            scores_df,
+            difference_df,
+            bound_names,
+            {"scores": scores_df},
+            {},
+            best_runs,
+            {},
+        )
+    assert n_metrics == 18
+    (run,) = client.search_runs([experiment_id])
+    assert run.info.status == "FINISHED"
+    assert run.info.run_name == "best runs"
+    assert run.data.metrics == {
+        f"val/{name}/rmse/{statistic}": value + i
+        for name, value in (
+            ("independent_cohorts", 4.0),
+            ("total_times_probability", 4.5),
+            ("difference", -0.5),
+        )
+        for i, statistic in enumerate(statistics)
+    }
+    assert {
+        name: value
+        for name, value in run.data.tags.items()
+        if not name.startswith("mlflow.")
+    } == {
+        "run_key": "studies/best_runs",
+        "stage": "best_runs",
+        "best.independent_cohorts": "independent_cohorts_study",
+        "best.total_times_probability": "total_times_probability_study",
+    }
+    assert run.data.params == {"seed": "42"}
+    artifacts = Path(run.info.artifact_uri)
+    assert (artifacts / "tables" / "scores.csv").read_text() == scores_df.to_csv(
+        index=False, float_format="%.6g"
+    )
+    for model, record in best_runs.items():
+        assert (
+            json.loads((artifacts / "best_params" / f"{model}.json").read_text())
+            == record["study"].best_params
+        )
+        assert json.loads((artifacts / "components" / f"{model}.json").read_text()) == {
+            "total": {"family": "poisson_glm"}
+        }
+    assert mlflow.active_run() is None
+    assert mlflow.get_tracking_uri() != environment["MLFLOW_TRACKING_URI"]
+
+
 SHARING = [(False, False), (True, False), (True, True)]
 
 

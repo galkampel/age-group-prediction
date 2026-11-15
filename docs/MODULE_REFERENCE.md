@@ -197,7 +197,9 @@ Requires `uv sync --group tracking`. Guide:
 docstring describes the run layout in detail. The final path is described in
 [FINAL_EVALUATION.md](FINAL_EVALUATION.md). `AgeGroupPyfuncModel` and
 `prediction_to_frame` are imported from
-`age_group_prediction.tracking.pyfunc_model`, not the package root.
+`age_group_prediction.tracking.pyfunc_model`, not the package root. The tuning
+notebook's MLflow runs do not use this package: they are logged from its own cells
+([MLFLOW_RUNS.md](MLFLOW_RUNS.md)).
 
 | Module | Responsibility | Main public API | Depends on |
 |---|---|---|---|
@@ -216,6 +218,6 @@ docstring describes the run layout in detail. The final path is described in
 |---|---|---|
 | `notebooks/01_eda.py` | EDA client | [README](../README.md#run-the-modeling-notebook) (opened the same way as the modeling notebook) |
 | `notebooks/02_objective_eda.py` | The objective EDA: data, split, feature variants (described), the tuner's candidate objectives compared (rebuilt stack only) | [README](../README.md#run-the-modeling-notebook); [cache plan](NOTEBOOK_CACHE_EVALUATION_PLAN.md) |
-| `notebooks/03_hyperparameter_tuning.py` | The tuning notebook: the same setup, tuned runs, comparison, final run (rebuilt stack only) | [README](../README.md#run-the-modeling-notebook); [notebook plan](EXPERIMENT_NOTEBOOK_PLAN.md) |
+| `notebooks/03_hyperparameter_tuning.py` | The tuning notebook: the same setup, tuned runs, comparison, final run, each logged to MLflow behind a button (rebuilt stack only) | [README](../README.md#run-the-modeling-notebook); [notebook plan](EXPERIMENT_NOTEBOOK_PLAN.md); [MLflow runs](MLFLOW_RUNS.md) |
 | `configs/simulation.yml`, `configs/modeling.toml` | Simulator and modeling/experiment settings | Guide §1 and intro |
 | `tests/unit`, `tests/validation`, `tests/characterization` | Focused contracts; recovery and real-model checks; simulator and notebook behavior | README "Run The Tests" |

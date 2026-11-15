@@ -1,4 +1,33 @@
-# Handoff: the experiment notebooks, PR 7 merged (#26); the simplification review done; the MLflow plan written and decided (MLFLOW_RUNS_PLAN.md, M0–M7); M0–M6 done (with the review's findings); the second review done (three findings, no notebook change); next M7 with Opus 5.5, G3's tests first
+# Handoff: the experiment notebooks, PR 7 merged (#26); the simplification review done; the MLflow runs plan complete (MLFLOW_RUNS_PLAN.md, M0–M7; the guide MLFLOW_RUNS.md); next the user's PR feat/mlflow-runs into main
+
+**Status (2026-11-15, end of M7; the user commits it and opens the PR):**
+- **The state:** branch `feat/mlflow-runs`, on `3e929e9` (the second review). M7 changed:
+  - `tests/characterization/test_hyperparameter_tuning_notebook.py`: G3's two tests,
+    `log_tuning_run` and `log_evaluation_run` called on a `tmp_path` store;
+  - [MLFLOW_RUNS.md](MLFLOW_RUNS.md) (new): the guide;
+  - links: `docs/README.md`, [MODULE_REFERENCE.md](MODULE_REFERENCE.md), the root `README.md`;
+  - [EXPERIMENT_NOTEBOOK_PLAN.md](EXPERIMENT_NOTEBOOK_PLAN.md): its status, the dated notes on
+    E9, E10, D1e–D5, D1–D5 ticked;
+  - [MLFLOW_RUNS_PLAN.md](MLFLOW_RUNS_PLAN.md) (complete; M7 as built; §5's two rows),
+    [MLFLOW_RUNS_REVIEW.md](MLFLOW_RUNS_REVIEW.md) (its status), this handoff.
+- **The notebooks' md5 (unchanged):** `03_hyperparameter_tuning.py`
+  `7c7ab7ad53773ad757f64e55590896ec`; `02_objective_eda.py`
+  `a98d4dc4578cb884ca31b9d4dde3d992`; `01_eda.py` `4bc1ba3a52dc2ad55d0097a707bd1ccc`.
+- **The checks** (the plan's M7 has the details), all passed in one run: the test file 36, the
+  non-slow suite 1423, mypy clean, ruff and the format clean; the guide's commands on a copy of
+  M6's store (the rebuild recipe exact for all three run kinds); the mutation caught by the new
+  tuning test. No Check B, C or D (no notebook changed).
+- **The user's choices in M7 (do not re-ask):** a run's leftover `_last_active_run_id` (MLflow's
+  thread-local) accepted, the tests assert no active run and no URI left set; D1–D5 ticked.
+- **In the scratchpad below** (the previous one copied and repointed, the pycache compiled):
+  `checks/run_M7.sh` and `run_M7.log`; `guide.env`, `guide_blocks/` (the guide's two python
+  blocks and their logs); `mlflow_M7_guide.db` (M6's store, its artifact paths pointed at this
+  scratchpad's `mlartifacts_M6`); `mut_m7/`.
+- **Next:** the user's PR `feat/mlflow-runs` into `main`. Then, when the user decides: the real
+  run on the user's cache (the tuning and best runs' logging on the user's store; E11's test
+  evaluation and final run, which no session runs), and the roadmap's §5 (the old stack's
+  deletion, `tracking/` with it).
+- **The scratchpad:** `/private/tmp/claude-501/-Users-galkampel-Desktop-Projects-age-group-prediction/80e130dc-d36d-49a1-9d11-3f70ba7e51f9/scratchpad`.
 
 **Status (2026-11-15, after the second review; the user commits it):**
 - **The state:** branch `feat/mlflow-runs`, on `42a1d1b` (the handoff after M6). The review

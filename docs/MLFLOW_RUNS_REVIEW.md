@@ -21,6 +21,9 @@ M4's cell keeps `json`, which its runs tables' dict columns need. F5 (c) is in M
 **A second review, of the whole flow after M6 (2026-11-15): §7.** Three findings, decided:
 G1 and G2 go into M7's guide, G3 is two tests; no notebook change.
 
+**Built in M7 (2026-11-15):** G3's two tests (M3's mutation now caught by the tuning test),
+G1 and G2 and §7.5's list in [MLFLOW_RUNS.md](MLFLOW_RUNS.md); the plan's §5 rows corrected.
+
 ## 1. The verdict
 
 M1–M5 log every item that [MLFLOW_RUNS_PLAN.md](MLFLOW_RUNS_PLAN.md) §5 places in the tuning

@@ -29,7 +29,10 @@ implementation details conflict, the model specification controls behavior.
   - the `inspection` package is complete (PRs #14 and C; the
     [user guide](MODEL_INSPECTION.md); decisions in the
     [bootstrap plan](MODEL_INSPECTION_PLAN.md) and the
-    [importance plan](FEATURE_IMPORTANCE_PLAN.md)).
+    [importance plan](FEATURE_IMPORTANCE_PLAN.md));
+  - the tuning notebook's MLflow runs are complete: 24 tuning runs, the best
+    runs' run and a guarded final run, each behind a button (the
+    [user guide](MLFLOW_RUNS.md); decisions in the [plan](MLFLOW_RUNS_PLAN.md)).
 
 ## Simulator
 
@@ -42,9 +45,10 @@ implementation details conflict, the model specification controls behavior.
 | Document | Authority |
 |---|---|
 | [Modeling guide](MODELING_GUIDE.md) | User guide to the simulator-to-model pipeline, public APIs, configuration, evidence, and invariants |
-| [MLflow experiments guide](MLFLOW_EXPERIMENTS_GUIDE.md) | User guide to scratch tracking, run layout, metrics, search, final-run semantics, and model loading |
+| [MLflow experiments guide](MLFLOW_EXPERIMENTS_GUIDE.md) | The old stack's `tracking` package (not used by the tuning notebook): scratch tracking, run layout, metrics, search, final-run semantics, and model loading |
 | [Hyperparameter tuning](HYPERPARAMETER_TUNING.md) | User guide to the `hyperparameter_tuning` package: the params records, components and search spaces per family, the two composites built from a trial's draws (the sharing flags), `CrossValidationTuner` (parallel folds, one named tune method per model), aggregation, the refit from `best_params` and the run record, reproducibility, hazards; a worked example on both rebuilt models run as written |
 | [Model inspection](MODEL_INSPECTION.md) | User guide to the `inspection` package: the bootstrap interval of a metric (rows or whole neighborhoods), permutation importance per raw column (held-out and training rows, per component), SHAP values of the rate or the count (exact or permutation, codes for string columns, the plots), hazards; the worked example on both rebuilt models run as written |
+| [MLflow runs](MLFLOW_RUNS.md) | The tuning notebook's MLflow runs: the three buttons and their 24 + 1 + 1 runs, the scratch store and its refusals, the UI, what each run kind holds and its metric names, the skip and the final run's guard, comparing the tuning runs, rebuilding a model from a run (run and exact) |
 
 ## Model And Component References
 
@@ -74,8 +78,10 @@ implementation details conflict, the model specification controls behavior.
 | [Multi-cohort models plan](MULTI_COHORT_MODELS_PLAN.md) | Decisions, steps and evidence for `IndependentCohortModels` (Model A's cohorts in one object; PR #10) and the rebuilt Model B in `modeling` (PR #11), with the smoke run comparing them |
 | [Total times probability model plan](TOTAL_TIMES_PROBABILITY_MODEL_PLAN.md) | Model B rebuilt again on library estimators (PR #13): `CountModel` with NB2 as `NegativeBinomialRegressor`, `CohortProbabilityModel` on any classifier with calibration inside, `TotalTimesProbabilityModel`; decisions P1–P15, measured evidence, the sub-task records and the smoke run |
 | [Direct cohort generalization plan](DIRECT_COHORT_GENERALIZATION_PLAN.md) | Any regressor in `DirectCohortModel` (the exposure as a weighted rate, with the derivation), the `feature_transformer` inside each model in place of `ModelPipeline`, and the tuning evaluator on the raw table |
-| [Experiment notebook plan](EXPERIMENT_NOTEBOOK_PLAN.md) | The MLflow experiment notebook and the work before it, as four PRs: the tuning study (A), the three-way split and the cohort count metric (B), feature importance (C), the notebook with the data and MLflow (D); decisions E1–E12, sub-tasks with done-when lists. PRs A–C done; in D the tuning was re-planned and done (the notebook tuning plan), the MLflow runs, the comparison and E11's final evaluation are open |
+| [Experiment notebook plan](EXPERIMENT_NOTEBOOK_PLAN.md) | The MLflow experiment notebook and the work before it, as four PRs: the tuning study (A), the three-way split and the cohort count metric (B), feature importance (C), the notebook with the data and MLflow (D); decisions E1–E12, sub-tasks with done-when lists. PRs A–C done; in D the tuning was re-planned and done (the notebook tuning plan), then the MLflow runs, the comparison (in the MLflow UI) and the guarded final run were built by the MLflow runs plan (2026-11-15); E11's final run on the real studies is the user's to start |
 | [Experiment notebook handoff](EXPERIMENT_NOTEBOOK_HANDOFF.md) | Where the notebook stands after the tuning rebuild (2026-10-29): what exists, the state and checks with the 24 regression baselines and the 400-trial results, the decisions D1–D26 in brief with the dataclass-vs-TypedDict table, how to work, open items, and the prompt for the next items (MLflow runs, the comparison table, E11's final evaluation) |
+| [MLflow runs plan](MLFLOW_RUNS_PLAN.md) | Complete (2026-11-15): how the tuning notebook's results become 26 MLflow runs from three buttons; decisions 1–17, the probe's findings (M0), the sub-tasks M1–M7 as built with their checks, where each logged item goes |
+| [MLflow runs reviews](MLFLOW_RUNS_REVIEW.md) | The two reviews of the MLflow logging (before M6: F1–F10; before M7: G1–G3) with the user's decisions |
 | [Notebook tuning plan](NOTEBOOK_TUNING_PLAN.md) | The tuning re-implemented in the experiment notebook with plain Optuna, then moved into the new `hyperparameter_tuning` package: decisions D1–D26 with their measured evidence, the sub-tasks T1–T5, the checks and the 24 regression baselines |
 | [Notebook metrics, loop and EDA plan](NOTEBOOK_METRICS_LOOP_EDA_PLAN.md) | The experiment notebook's three PRs: the six metrics in `scoring` (PR #18), the runs in loops scored on every metric with Model 2 by coordinate descent (PR #20), and the objective EDA with each run's best model and its bootstrap intervals (PR 3); decisions M1–M14, the sub-task records |
 | [Notebook cache and evaluation plan](NOTEBOOK_CACHE_EVALUATION_PLAN.md) | After PR 3: the tuning budget and the study cache (PR 4), the bootstrap replicates and RMSE as the comparison metric (PR 5), the notebook split in two (PR 6), SHAP per cohort and the test evaluation (PR 7); decisions D31–D39, sub-tasks with their checks and commits |
