@@ -24,8 +24,11 @@ findings. The user accepted every recommendation:
 
 **They change M6 below:** M6 builds them first, then the final run, one check run. The M6 steps
 here are as first planned: read them with the review's §2–§3. **M6 done** (the review's
-findings and the final run, one change, one check run), the user commits it. Next: M7, an Opus
-5.5 session (the prompt at the top of the handoff).
+findings and the final run, one change, one check run), committed `486891a`. **Next** (the
+user's request): first a second Fable 5.2 review of the whole flow, read-only, recorded as
+[MLFLOW_RUNS_REVIEW.md](MLFLOW_RUNS_REVIEW.md) §7 with the user's decisions. Then one Opus 5.5
+session that builds the accepted findings and M7, with one check run. Both prompts are at the
+top of the handoff.
 
 ## 1. The question and the verdict
 

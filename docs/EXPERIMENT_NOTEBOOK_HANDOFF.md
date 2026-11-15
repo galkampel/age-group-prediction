@@ -1,4 +1,4 @@
-# Handoff: the experiment notebooks, PR 7 merged (#26); the simplification review done; the MLflow plan written and decided (MLFLOW_RUNS_PLAN.md, M0–M7); M0–M6 done (with the review's findings); next M7 with Opus 5.5
+# Handoff: the experiment notebooks, PR 7 merged (#26); the simplification review done; the MLflow plan written and decided (MLFLOW_RUNS_PLAN.md, M0–M7); M0–M6 done (with the review's findings); next a second Fable 5.2 review of the whole flow, then M7 with Opus 5.5
 
 **Status (2026-11-15, end of M6: the review's findings and the final run; the user commits it):**
 - **The state:** branch `feat/mlflow-runs`, on `3e08860` (the review). M6 changed:
@@ -31,34 +31,101 @@
   - the store `mlflow_M6.db` with `mlartifacts_M6`: a 3-trial copy's 26 runs, for the guide's
     commands. The mutant's extra final run is in `mlflow_mut_M6.db`, its artifacts in
     `mlartifacts_M6`.
-- **Next: M7, an Opus 5.5 session.** The prompt:
+- **Next: two sessions, in this order** (the user's request, 2026-11-15): a second Fable 5.2
+  review of the whole flow, now that all three run kinds exist, before the final documentation;
+  then one Opus 5.5 session that builds the accepted findings (if any) and M7, with one check
+  run. M6 is committed as `486891a`. Commit this handoff update first: session 1's prompt
+  assumes HEAD is that commit.
+  1. **Session 1, Fable 5.2** (switch the model to Fable 5.2 before pasting):
+     - It plans in plan mode.
+     - It reviews read-only: on the code and on M6's scratch store (26 runs).
+     - It puts each finding to the user, and records the decisions in
+       `docs/MLFLOW_RUNS_REVIEW.md` §7.
+     - It edits no notebook, test or `src` file.
 
-  ```text
-  Read docs/MLFLOW_RUNS_PLAN.md in full (the status; §1's decisions and choices 1-17; §3; §4's
-  M7, and M1-M6 as built), docs/MLFLOW_RUNS_REVIEW.md, then docs/EXPERIMENT_NOTEBOOK_HANDOFF.md:
-  the status at the top and §4 (how to work, git and the editor, the checks, the traps, the
-  iCloud notes, the user's style).
-  Verify the state first: the branch feat/mlflow-runs, HEAD my commit of M6 (on 3e08860),
-  `git status` clean; 03's md5 7c7ab7ad53773ad757f64e55590896ec, 02's
-  a98d4dc4578cb884ca31b9d4dde3d992; no iCloud-offloaded files. If anything differs, stop and
-  show me the diff. Copy the scratchpad the handoff's top status names into yours (repoint.py:
-  each script's S= set to yours), compile the pycache. If that scratchpad is gone, tell me
-  before rewriting anything.
-  Then do sub-task M7 only: plan it first in plan mode (the guide docs/MLFLOW_RUNS.md: how to
-  run the notebook and the MLflow UI on a scratch store, what each of the three run kinds holds,
-  the skip rule and the final run's guard, the store's refusals, the rebuild recipe, M0's UI
-  notes; the links; the dated note in EXPERIMENT_NOTEBOOK_PLAN.md; the plan's status
-  "complete"), wait for my go, write it, run the guide's commands as written on a scratch store
-  (the M6 store in the scratchpad is a 3-trial copy's 26 runs), and the full runner once. Run
-  every check once: cheap checks first. Do not start anything after M7; draft the PR text at
-  the stop (no "Generated with Claude Code").
-  Never write the repo root's mlflow.db or mlartifacts/, nor .mlflow-local/. Don't run the
-  test evaluation or "Log the final run" on my cache (E11). Keep it simple; informative names.
-  Stop with a file-by-file summary, the checks, the notebooks' md5 and the commit message in a
-  copyable code block; tick M7 and update the status lines in the plan and at the top of the
-  handoff. I commit myself: never commit, no Co-Authored-By line, no "Generated with Claude
-  Code" in PR text, never git checkout/stash/reset/mv.
-  ```
+     ```text
+     Read docs/MLFLOW_RUNS_PLAN.md in full (§1's decisions and the user's choices 1-17, §4 M0-M6
+     as built and M7 as designed, §5 the inventory), docs/MLFLOW_RUNS_REVIEW.md (the first review
+     before M6, its ten findings and the user's decisions, all built in M6), then
+     docs/EXPERIMENT_NOTEBOOK_HANDOFF.md: the status at the top and §4 (how to work, the checks,
+     the traps, the iCloud notes, the user's style).
+     Verify the state first: the branch feat/mlflow-runs, HEAD my commit of the handoff after M6
+     (on 486891a, M6),
+     `git status` clean; 03's md5 7c7ab7ad53773ad757f64e55590896ec, 02's
+     a98d4dc4578cb884ca31b9d4dde3d992; no iCloud-offloaded files. If anything differs, stop and
+     show me the diff. Copy the scratchpad the handoff's top status names into yours
+     (repoint.py: each script's S= set to yours), compile the pycache. If that scratchpad is
+     gone, tell me before rewriting anything.
+     Then do a second review of the whole MLflow flow, read-only, before the final docs (M7):
+     plan it first in plan mode, wait for my go. Scope: every MLflow cell of
+     notebooks/03_hyperparameter_tuning.py (the MLflow cell, the shared inputs, log_tuning_run
+     and its button and cell, build_dataset_figures, log_evaluation_run, the best runs' and the
+     final run's buttons and cells, the M5 figure functions they call), the MLflow tests in
+     tests/characterization/test_hyperparameter_tuning_notebook.py, and M6's scratch store
+     (mlflow_M6.db with mlartifacts_M6 in the scratchpad: a 3-trial copy's 24 tuning runs, the
+     best runs' run and the final run), read with MlflowClient only. You may open `mlflow ui` on
+     that store, run from the scratchpad with --artifacts-destination in it, and screenshot it.
+     Judge it against MLflow's best practices (what is a parameter, a metric, a tag, an artifact,
+     a dataset input; run names and keys; what a reader of the UI needs to compare runs and
+     rebuild a model) and against simplicity: what can be removed or made simpler now that the
+     three run kinds exist, what is repeated, what nothing reads; then completeness against §5,
+     and what M7's guide must say. Keep it short: a real finding beats a long list; say plainly
+     when the code is simple enough. Do not reopen my decisions (1-17, the first review's)
+     without concrete evidence, marked as such.
+     Write the findings as §7 of docs/MLFLOW_RUNS_REVIEW.md (each: location, evidence, the
+     change, the effort, the decision it touches, your recommendation), then ask me about each
+     with the interactive question tool (the options, the evidence, your recommendation first),
+     and record my decisions there, in the plan's M7 heading (what M7's session builds first)
+     and in the handoff's top status. Edit no notebook, no test and no src file; run no
+     notebook on my cache. Never write the repo root's mlflow.db or mlartifacts/, nor
+     .mlflow-local/. Stop with a summary and the commit message in a copyable code block. I
+     commit myself: never commit, no Co-Authored-By line, never git
+     checkout/stash/reset/mv.
+     ```
+  2. **Session 2, Opus 5.5** (switch the model back to Opus 5.5 after you commit session 1's
+     review):
+     - It builds the accepted findings of the second review, if any, then M7 (the guide, the
+       links, the plan's close).
+     - One check run covers both.
+     - It drafts the PR text at the stop.
+
+     ```text
+     Read docs/MLFLOW_RUNS_PLAN.md in full (the status; §1's decisions and choices 1-17; §3;
+     §4's M7 with its heading, and M1-M6 as built; §5), docs/MLFLOW_RUNS_REVIEW.md (both
+     reviews and my decisions), then docs/EXPERIMENT_NOTEBOOK_HANDOFF.md: the status at the
+     top and §4 (how to work, git and the editor, the checks, the traps, the iCloud notes, the
+     user's style).
+     Verify the state first: the branch feat/mlflow-runs, HEAD my commit of the second review,
+     `git status` clean; the notebooks' md5 as the handoff's top status; no iCloud-offloaded
+     files. If anything differs, stop and show me the diff. Copy the scratchpad the handoff's
+     top status names into yours (repoint.py: each script's S= set to yours), compile the
+     pycache. If that scratchpad is gone, tell me before rewriting anything.
+     Then do, as one change: the second review's accepted findings (if any), then M7 (the guide
+     docs/MLFLOW_RUNS.md: how to run the notebook and the MLflow UI on a scratch store, what
+     each of the three run kinds holds, the skip rule and the final run's guard, the store's
+     refusals, the rebuild recipe, M0's UI notes; the links from docs/README.md,
+     MODULE_REFERENCE.md and the root README.md; the dated note in EXPERIMENT_NOTEBOOK_PLAN.md;
+     the plan's status "complete"). Plan it first in plan mode (re-verify the facts and line
+     numbers read-only, list the exact edits), wait for my go, implement it. Keep it simple,
+     informative names, best practices, no private helpers; a notebook function reads no
+     notebook global. Run every check once: the cheap static checks and the touched tests
+     first, then the runner (checks/run_M6.sh as the model, its Check D extended to the
+     accepted findings), the guide's commands as written on a scratch store, and a mutation
+     that reruns only what it needs. Every check exports the four MLflow variables to the
+     scratchpad. If a step needs a choice the plan and the reviews do not make, stop and ask
+     me with the interactive question tool (the options, the evidence, your recommendation
+     first).
+     Never write the repo root's mlflow.db or mlartifacts/, nor .mlflow-local/. Don't run the
+     test evaluation or "Log the final run" on my cache (E11). My marimo session may be open:
+     tell me before editing the notebook and remind me to reload it after; edit the notebook
+     with the Edit tool. Stop with a file-by-file summary, the checks, the notebooks' md5, the
+     commit message and the PR description (feat/mlflow-runs into main) in copyable code
+     blocks; tick M7 and update the status lines in the plan and at the top of the handoff. I
+     commit and open the PR myself: never commit, no Co-Authored-By line, no "Generated with
+     Claude Code" in PR text, never git checkout/stash/reset/mv.
+     ```
+
+     If session 1 accepts no code change, session 2 is M7 alone, as written.
 - **The test part has still not been run on the user's cache** (E11).
 - **The scratchpad to copy first:** `/private/tmp/claude-501/-Users-galkampel-Desktop-Projects-age-group-prediction/ca74efc7-1e4b-4d55-ab40-01c82355adba/scratchpad`.
 
