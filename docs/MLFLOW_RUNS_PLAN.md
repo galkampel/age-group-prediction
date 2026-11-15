@@ -8,9 +8,10 @@ sub-task when it is done and update the status line.
 user's four choices 11–14), committed `8e1ea98`. M1 done (the MLflow cell; the user's choice
 there: no MLflow global), committed `2451c8a`. M2 done (a run record keeps its study), committed `dabc406`. M3 done (the 24 tuning runs
 behind a button; the user's choices 15, the trials as CSV at 6 significant digits, and 16, the
-bare `return`), committed `7e5bc30`. M4 planned after M3 (the user's choice 17: a dict column
-as JSON text; the two returns to restore), not implemented. Next: M4, an Opus 5.5 session (the
-prompt at the top of the handoff).
+bare `return`), committed `7e5bc30`. M4 done (the best runs' run behind a button: 108 metrics,
+7 CSV tables with the runs tables' dicts as JSON text, choice 17; 18 figures; the two returns
+restored, ruff `03` 15), the user commits it. Next: M5, an Opus 5.5 session (the prompt at the
+top of the handoff).
 
 ## 1. The question and the verdict
 
@@ -398,10 +399,11 @@ and fails ("Logged 24 tuning runs, skipped 0"). (The script's printed exits read
          "n_train": len(train_age_group.X), "n_val": len(val_age_group.X), "n_test": len(test_age_group.X),
      }
 
-     def build_dataset(part, name):
-         """`part` as an MLflow dataset named `name`: its X and Y side by side, the digest the
-         SHA-256 of its rows (pandas' row hashes), its first 36 characters (MLflow's limit)."""
-         frame = part.X.join(part.Y)
+     def build_dataset(dataset, name):
+         """`dataset` (an AgeGroupDataset) as an MLflow dataset named `name`: its X and Y side by
+         side, the digest the SHA-256 of its rows (pandas' row hashes), its first 36 characters
+         (MLflow's limit)."""
+         frame = dataset.X.join(dataset.Y)
          digest = hashlib.sha256(pd.util.hash_pandas_object(frame).to_numpy()).hexdigest()[:36]
          return mlflow.data.from_pandas(frame, name=name, digest=digest)
 
@@ -509,39 +511,72 @@ and fails ("Logged 24 tuning runs, skipped 0"). (The script's printed exits read
   feat(notebook): the 24 tuning runs logged to MLflow behind a button (M3)
   ```
 
-### [ ] M4. "Log the best runs"
+### [x] M4. "Log the best runs"
+
+**Done 2026-11-15** (`03`'s md5 `051cfb32b338c8e94b3bac3581b652ce`). The three cells after
+section 5's beeswarm cell, as below with the tables as settled (CSV at 6 significant digits,
+the runs tables' `feature_transformers` and `hyperparameters` `json.dumps`ed per cell); the two
+returns restored. After the user's review of names: the function `build_dataset_figures`
+(its `dataset`, `"val"` or `"test"`, and `permutation_results`), the logging cell's `column`,
+`component`, `_table`, `_record`, `_composite_scores`, `_composite_difference`; M3's
+`build_dataset(dataset, name)` and its `component`. The logging cell builds the 108 metrics, the 7 tables and the 18 figures
+before `start_run` (a failure there leaves no FAILED run); its skip is `mo.stop(bool(…), "The
+best runs' run is logged: skipped.")`; it ends "Logged the best runs' run: 108 metrics, 7
+tables, 18 figures." The button's line says to click it after "Inspect the best runs". The test
+`test_the_best_runs_are_logged_only_behind_their_button` (one cell holds `_figures =
+build_dataset_figures(` and the `mo.stop`; the button unclicked; no inspection name in a script
+run). `checks/run_M4.sh` (log `run_M4.log`; the first run's `run_M4_first.log` stopped at
+`make_copy_tuning.py`, whose `best_replicate_scores,` count the logging cell raised: it now
+asserts the best runs' cell's return; and a format hunk in the test, fixed): the non-slow suite
+1418 (+1), mypy clean, the notebook tests 38, ruff `03` 15 / `02` 11, the two format hunks,
+`marimo check` clean, Check B on both (`check_b_m4_tuning.py`: `build_dataset_figures`' 16
+parameters, the button unclicked, no run), Check C on both equal to M3's run with nothing
+excepted (its click logs 25 runs), the 21 + 27 figures identical to M3's, the scratch store 25
+runs, the repo's store unchanged. **Check D** (`checks/check_d_mlflow.py`, extended): before
+the second run 25 FINISHED runs (24 `tuning`, 1 `best_runs`); the second run shows both skips
+and leaves the same 25 ids; M3's 24 as before; the best runs' run: the key, the name, the
+artifact URI, the tags (each `best.<model>` the check's own study name of the record minimizing
+the validation composite rmse), the 22 parameters, the 108 metrics from the frames' composite
+rows, the 7 CSV texts exactly and their values to 1e-5 (the dicts equal through `json.loads`),
+each of the 18 figures' HTML equal to the check's own figure (the four figure functions called
+directly; plotly's div uuid masked), the 2 components, exactly 27 artifacts, the two inputs.
+**The mutation** (`run_mutant_M4.sh`, log `run_mutant_M4.log`): `"best_runs_val_scores":
+best_difference_df`; Check C on the mutant passes (it logs 25), Check D fails on
+`best_runs_val_scores`'s text.
 
 - **Model:** Opus 5.5 (its calls confirmed by M0).
 - **Steps** (the calls as M0 ran them; three new cells after the beeswarm cell of section 5):
   1. **The figures' function** (M6 calls it again: decision 5). It reads no global; the four
      figure functions are its arguments:
      ```python
-     def build_part_figures(part, scores_df, replicate_scores, difference_df, difference_replicates,
-                            permutation, explanations, X, metric_name, bound_names, seed, palette,
-                            forest_figure, ridge_figure, permutation_figure, beeswarm_figure):
-         """The 18 figures of one part (`part`: "val" or "test") by artifact path: the forest
+     def build_dataset_figures(dataset, scores_df, replicate_scores, difference_df,
+                               difference_replicates, permutation_results, explanations, X,
+                               metric_name, bound_names, seed, palette, forest_figure,
+                               ridge_figure, permutation_figure, beeswarm_figure):
+         """The 18 figures of one dataset (`dataset`: "val" or "test") by artifact path: the forest
          and the ridge of `metric_name` for the two runs and for their difference; per model
          the permutation figure of the composite and each cohort and the beeswarm of each
-         cohort. `permutation` is {model: {cohort (the composite first): {split: result}}}."""
+         cohort. `permutation_results` is {model: {cohort (the composite first): {split:
+         result}}}."""
          difference_name = difference_df["model"].iloc[0]
          figures = {
-             f"figures/{part}_forest_runs_{metric_name}.html": forest_figure(
+             f"figures/{dataset}_forest_runs_{metric_name}.html": forest_figure(
                  scores_df, metric_name, bound_names["lower"], bound_names["upper"], palette),
-             f"figures/{part}_ridge_runs_{metric_name}.html": ridge_figure(
+             f"figures/{dataset}_ridge_runs_{metric_name}.html": ridge_figure(
                  replicate_scores, metric_name, palette),
-             f"figures/{part}_forest_difference_{metric_name}.html": forest_figure(
+             f"figures/{dataset}_forest_difference_{metric_name}.html": forest_figure(
                  difference_df, metric_name, bound_names["lower"], bound_names["upper"], palette,
                  share_x_axis=True, rule_at=0),
-             f"figures/{part}_ridge_difference_{metric_name}.html": ridge_figure(
+             f"figures/{dataset}_ridge_difference_{metric_name}.html": ridge_figure(
                  {difference_name: difference_replicates}, metric_name, palette,
                  share_x_axis=True, rule_at=0),
          }
-         for model, by_cohort in permutation.items():
+         for model, by_cohort in permutation_results.items():
              for cohort, by_split in by_cohort.items():
-                 figures[f"figures/{part}_permutation_{model}_{cohort}.html"] = permutation_figure(
+                 figures[f"figures/{dataset}_permutation_{model}_{cohort}.html"] = permutation_figure(
                      by_split, list(X.columns), f"{cohort} {metric_name}", palette)
              for cohort in explanations[model].output_names:
-                 figures[f"figures/{part}_beeswarm_{model}_{cohort}.html"] = beeswarm_figure(
+                 figures[f"figures/{dataset}_beeswarm_{model}_{cohort}.html"] = beeswarm_figure(
                      explanations[model], X, cohort, seed, palette)
          return figures
      ```
@@ -578,7 +613,7 @@ and fails ("Logged 24 tuning runs, skipped 0"). (The script's printed exits read
        `return (importance_df,)`. ruff on `03`: 16 + 1 (the logging cell's bare `return`) − 2 =
        15. `make_copy_tuning.py` rewrites the difference cell's return anyway (it still finds
        the cell by its `build_paired_difference(` line).
-     - **Figures (18):** `for path, figure in build_part_figures("val",
+     - **Figures (18):** `for path, figure in build_dataset_figures("val",
        best_runs_val_scores_df, best_replicate_scores, best_difference_df,
        best_difference_replicates, best_runs_permutation, best_runs_shap, shap_rows.X,
        SELECTION_METRIC.name, CI_BOUND_NAMES, seed, PALETTE, forest_figure, ridge_figure,
@@ -640,10 +675,11 @@ and fails ("Logged 24 tuning runs, skipped 0"). (The script's printed exits read
      - **Parameters:** `{**shared_params, "n_train_val": len(train_val_age_group.X)}`.
      - **Metrics, the composite only (108):** as M4 with the prefix `test/`, from
        `test_scores_df` and `test_difference_df`. No other run holds a `test/` metric.
-     - **Tables:** `tables/<name>.json` for `test_scores`, `test_difference`,
-       `val_against_test`, `test_importance`, `test_buildings`, `test_building_scores` (the
-       format as M4 settles it under choice 15).
-     - **Figures (23):** `build_part_figures("test", test_scores_df, test_replicate_scores,
+     - **Tables:** `tables/<name>.csv` for `test_scores`, `test_difference`,
+       `val_against_test`, `test_importance`, `test_buildings`, `test_building_scores`, as M4
+       logs them (`mlflow.log_text(frame.to_csv(index=False, float_format="%.6g"), …)`; a dict
+       column, if any, as JSON text: choice 17).
+     - **Figures (23):** `build_dataset_figures("test", test_scores_df, test_replicate_scores,
        test_difference_df, test_difference_replicates, {model: {cohort: {"test": result} for
        cohort, result in by_cohort.items()} for model, by_cohort in test_permutation.items()},
        test_shap, test_age_group.X, SELECTION_METRIC.name, CI_BOUND_NAMES, seed, PALETTE,

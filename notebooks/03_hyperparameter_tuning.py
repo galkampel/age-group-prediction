@@ -1544,11 +1544,11 @@ def _(
         "n_test": len(test_age_group.X),
     }
 
-    def build_dataset(part, name):
-        """`part` as an MLflow dataset named `name`: its X and Y side by side, the
-        digest the SHA-256 of its rows (pandas' row hashes), its first 36
-        characters (MLflow's limit)."""
-        frame = part.X.join(part.Y)
+    def build_dataset(dataset, name):
+        """`dataset` (an AgeGroupDataset) as an MLflow dataset named `name`: its X
+        and Y side by side, the digest the SHA-256 of its rows (pandas' row hashes),
+        its first 36 characters (MLflow's limit)."""
+        frame = dataset.X.join(dataset.Y)
         digest = hashlib.sha256(
             pd.util.hash_pandas_object(frame).to_numpy()
         ).hexdigest()[:36]
@@ -1654,7 +1654,11 @@ def _(mlflow, optuna):
                 trials.to_csv(index=False, float_format="%.6g"), "trials.csv"
             )
             mlflow.log_dict(
-                {c.name: c.to_dict() for c in record["components"]}, "components.json"
+                {
+                    component.name: component.to_dict()
+                    for component in record["components"]
+                },
+                "components.json",
             )
             mlflow.log_dict(study.best_params, "best_params.json")
             mlflow.log_dict(search_space, "search_space.json")
@@ -2210,7 +2214,7 @@ def _(
             mo.ui.table(best_difference_df.round(4)),
         ]
     )
-    return
+    return best_difference_df, best_difference_replicates
 
 
 @app.cell
@@ -2453,7 +2457,7 @@ def _(
             *_views,
         ]
     )
-    return
+    return (importance_df,)
 
 
 @app.cell
@@ -2633,6 +2637,244 @@ def _(PALETTE, beeswarm_figure, best_runs_shap, mo, seed, shap_cohort, shap_rows
         ]
     )
     return (shap_beeswarm_figures,)
+
+
+@app.cell
+def _():
+    def build_dataset_figures(
+        dataset,
+        scores_df,
+        replicate_scores,
+        difference_df,
+        difference_replicates,
+        permutation_results,
+        explanations,
+        X,
+        metric_name,
+        bound_names,
+        seed,
+        palette,
+        forest_figure,
+        ridge_figure,
+        permutation_figure,
+        beeswarm_figure,
+    ):
+        """The 18 figures of one dataset (`dataset`: "val" or "test") by artifact
+        path: the forest and the ridge of `metric_name` for the two runs and for
+        their difference; per model the permutation figure of the composite and each
+        cohort and the beeswarm of each cohort. `permutation_results` is {model:
+        {cohort (the composite first): {split: result}}}."""
+        difference_name = difference_df["model"].iloc[0]
+        figures = {
+            f"figures/{dataset}_forest_runs_{metric_name}.html": forest_figure(
+                scores_df,
+                metric_name,
+                bound_names["lower"],
+                bound_names["upper"],
+                palette,
+            ),
+            f"figures/{dataset}_ridge_runs_{metric_name}.html": ridge_figure(
+                replicate_scores, metric_name, palette
+            ),
+            f"figures/{dataset}_forest_difference_{metric_name}.html": forest_figure(
+                difference_df,
+                metric_name,
+                bound_names["lower"],
+                bound_names["upper"],
+                palette,
+                share_x_axis=True,
+                rule_at=0,
+            ),
+            f"figures/{dataset}_ridge_difference_{metric_name}.html": ridge_figure(
+                {difference_name: difference_replicates},
+                metric_name,
+                palette,
+                share_x_axis=True,
+                rule_at=0,
+            ),
+        }
+        for model, by_cohort in permutation_results.items():
+            for cohort, by_split in by_cohort.items():
+                figures[f"figures/{dataset}_permutation_{model}_{cohort}.html"] = (
+                    permutation_figure(
+                        by_split, list(X.columns), f"{cohort} {metric_name}", palette
+                    )
+                )
+            for cohort in explanations[model].output_names:
+                figures[f"figures/{dataset}_beeswarm_{model}_{cohort}.html"] = (
+                    beeswarm_figure(explanations[model], X, cohort, seed, palette)
+                )
+        return figures
+
+    return (build_dataset_figures,)
+
+
+@app.cell
+def _(mo):
+    log_best_runs = mo.ui.run_button(label="Log the best runs")
+    mo.md(
+        f"{log_best_runs} the two best runs' comparison as one run (their "
+        "bootstrap, the paired difference, the inspection; the 24 runs' tables) to "
+        'the experiment the MLflow cell names, after "Inspect the best runs"; a run '
+        "logged before is skipped."
+    )
+    return (log_best_runs,)
+
+
+@app.cell
+def _(
+    CI_BOUND_NAMES,
+    PALETTE,
+    SELECTION_METRIC,
+    beeswarm_figure,
+    best_difference_df,
+    best_difference_replicates,
+    best_replicate_scores,
+    best_runs,
+    best_runs_permutation,
+    best_runs_shap,
+    best_runs_val_scores_df,
+    build_dataset_figures,
+    forest_figure,
+    git_tags,
+    importance_df,
+    json,
+    log_best_runs,
+    mlflow,
+    mo,
+    model1_runs_df,
+    model1_scores_df,
+    model2_runs_df,
+    model2_scores_df,
+    permutation_figure,
+    ridge_figure,
+    seed,
+    shap_rows,
+    shared_params,
+    tuner,
+    tuning_datasets,
+):
+    mo.stop(
+        not log_best_runs.value,
+        mo.md("Click the button to log the best runs to MLflow."),
+    )
+    # One such run per experiment: a FINISHED run with the key is kept (a FAILED
+    # one is logged again).
+    _run_key = f"{tuner.storage_dir.name}/best_runs"
+    mo.stop(
+        bool(
+            mlflow.search_runs(
+                filter_string=f"tags.run_key = '{_run_key}' and attributes.status = 'FINISHED'",
+                output_format="list",
+            )
+        ),
+        mo.md("The best runs' run is logged: skipped."),
+    )
+    # The composite's score and bootstrap statistics as metrics, per model and for
+    # the paired difference; every cohort's rows are in the tables.
+    _statistics = [
+        "score",
+        "mean",
+        "median",
+        "sd",
+        CI_BOUND_NAMES["lower"],
+        CI_BOUND_NAMES["upper"],
+    ]
+    _composite_scores = best_runs_val_scores_df[
+        best_runs_val_scores_df["cohort"] == "composite"
+    ]
+    _composite_difference = best_difference_df[
+        best_difference_df["cohort"] == "composite"
+    ]
+    _metrics = {
+        **{
+            f"val/{row['model']}/{row['metric']}/{statistic}": row[statistic]
+            for row in _composite_scores.to_dict("records")
+            for statistic in _statistics
+        },
+        **{
+            f"val/difference/{row['metric']}/{statistic}": row[statistic]
+            for row in _composite_difference.to_dict("records")
+            for statistic in _statistics
+        },
+    }
+    # The tables at 6 significant digits, as CSV (the UI shows it as a table); a
+    # runs table's two dict columns as JSON text (a CSV cell is text).
+    _dict_columns = ("feature_transformers", "hyperparameters")
+    _tables = {
+        "best_runs_val_scores": best_runs_val_scores_df,
+        "best_difference": best_difference_df,
+        "importance": importance_df,
+        "model1_runs": model1_runs_df.assign(
+            **{
+                column: model1_runs_df[column].map(json.dumps)
+                for column in _dict_columns
+            }
+        ),
+        "model1_scores": model1_scores_df,
+        "model2_runs": model2_runs_df.assign(
+            **{
+                column: model2_runs_df[column].map(json.dumps)
+                for column in _dict_columns
+            }
+        ),
+        "model2_scores": model2_scores_df,
+    }
+    _figures = build_dataset_figures(
+        "val",
+        best_runs_val_scores_df,
+        best_replicate_scores,
+        best_difference_df,
+        best_difference_replicates,
+        best_runs_permutation,
+        best_runs_shap,
+        shap_rows.X,
+        SELECTION_METRIC.name,
+        CI_BOUND_NAMES,
+        seed,
+        PALETTE,
+        forest_figure,
+        ridge_figure,
+        permutation_figure,
+        beeswarm_figure,
+    )
+    with mlflow.start_run(run_name="best runs"):
+        mlflow.set_tags(
+            {
+                "run_key": _run_key,
+                "stage": "best_runs",
+                **{
+                    f"best.{model}": record["study"].study_name
+                    for model, record in best_runs.items()
+                },
+                "notebook": "notebooks/03_hyperparameter_tuning.py",
+                **git_tags,
+            }
+        )
+        mlflow.log_params(shared_params)
+        mlflow.log_metrics(_metrics)
+        for _name, _table in _tables.items():
+            mlflow.log_text(
+                _table.to_csv(index=False, float_format="%.6g"), f"tables/{_name}.csv"
+            )
+        # log_figure has no run_id: it needs the active run.
+        for _path, _figure in _figures.items():
+            mlflow.log_figure(_figure, _path)
+        for _model, _record in best_runs.items():
+            mlflow.log_dict(
+                {
+                    component.name: component.to_dict()
+                    for component in _record["components"]
+                },
+                f"components/{_model}.json",
+            )
+        for _context, _dataset in tuning_datasets.items():
+            mlflow.log_input(_dataset, context=_context)
+    mo.md(
+        f"Logged the best runs' run: {len(_metrics)} metrics, {len(_tables)} tables, "
+        f"{len(_figures)} figures."
+    )
+    return
 
 
 @app.cell(hide_code=True)

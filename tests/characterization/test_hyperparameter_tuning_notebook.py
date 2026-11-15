@@ -340,6 +340,26 @@ def test_the_tuning_runs_are_logged_only_behind_their_button(
     assert all(len(dataset.digest) == 36 for dataset in datasets.values())
 
 
+def test_the_best_runs_are_logged_only_behind_their_button(
+    notebook_defs: dict,
+) -> None:
+    # M4: the best runs' run is logged on the button's click only, after the
+    # inspection's click (it reads its results); a script run defines the
+    # figures' function and opens no run (test_a_script_run_opens_no_mlflow_run).
+    source = NOTEBOOK_PATH.read_text(encoding="utf-8")
+    cells = [
+        cell
+        for cell in source.split("@app.cell")
+        if "_figures = build_dataset_figures(" in cell
+    ]
+    assert len(cells) == 1
+    assert re.search(r"mo\.stop\(\s*not log_best_runs\.value", cells[0])
+    assert notebook_defs["log_best_runs"].value is False
+    assert callable(notebook_defs["build_dataset_figures"])
+    assert "best_runs_permutation" not in notebook_defs
+    assert "importance_df" not in notebook_defs
+
+
 SHARING = [(False, False), (True, False), (True, True)]
 
 
