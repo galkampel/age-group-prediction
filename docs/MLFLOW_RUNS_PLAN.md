@@ -12,8 +12,19 @@ bare `return`), committed `7e5bc30`. M4 done (the best runs' run behind a button
 7 CSV tables with the runs tables' dicts as JSON text, choice 17; 18 figures; the two returns
 restored, ruff `03` 15), committed `fba91f9`. M5 done (the count figures and the shares bars
 each a function in its own cell, the user's choice; the older loop names made informative in
-the same change, the user's choice, so the checks ran once), the user commits it. Next: M6, an
-Opus 5.5 session (the prompt at the top of the handoff).
+the same change, the user's choice, so the checks ran once), committed `94a47c3`. **Then a
+review before M6** (Fable 5.2, read-only): [MLFLOW_RUNS_REVIEW.md](MLFLOW_RUNS_REVIEW.md), ten
+findings. The user accepted every recommendation:
+- F1: the store guard on an existing experiment;
+- F2: the best runs' key;
+- F3: M6's restored return;
+- F4 + F6: `log_evaluation_run` and `code_tags`;
+- F5: `best_params` per best run and `prediction_floor`;
+- F7 (b), F8, F9 and F10 (a), (c).
+
+**They change M6 below:** M6 builds them first, then the final run, one check run. The M6 steps
+here are as first planned: read them with the review's §2–§3. Next: M6 planned with the review,
+an Opus 5.5 session.
 
 ## 1. The question and the verdict
 
@@ -681,6 +692,26 @@ Check C on both equal to M4's run with nothing excepted, Check D unchanged (25 r
   ```
 
 ### [ ] M6. "Log the final run"
+
+**Read with [MLFLOW_RUNS_REVIEW.md](MLFLOW_RUNS_REVIEW.md) (decided 2026-11-15).** M6 first
+builds the accepted findings, then the steps below:
+- F1: the store guard on an existing experiment, with one refusal test;
+- F2: the best runs' key gains the objective and the selection metric;
+- F4 + F6: `log_evaluation_run` in its own cell, called by M4's cell and by M6's, and
+  `code_tags` in the MLflow cell;
+- F5 (a), (b): `best_params/<model>.json` per best run, `prediction_floor` in
+  `shared_params`;
+- F7 (b): the record's `study_seed`;
+- F8: the search space as JSON objects;
+- F9: no `feature_transformer.*` parameters.
+
+The steps below also change:
+- F3: restore `return (val_against_test_df,)`, and drop "a dict column, if any";
+- F10 (a): the guard in M4's `mo.stop(bool(…), …)` form, with no run id in its message;
+- F10 (c): the count files named `…_total.html`.
+
+The metrics, tables, figures, components and datasets go through `log_evaluation_run`. All of
+it is checked in one run.
 
 - **Model:** Opus 5.5 (its calls confirmed by M0).
 - **Steps** (the calls as M0 ran them; two new cells after the shares bars' cell):

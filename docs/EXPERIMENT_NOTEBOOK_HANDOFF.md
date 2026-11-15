@@ -1,4 +1,23 @@
-# Handoff: the experiment notebooks, PR 7 merged (#26); the simplification review done; the MLflow plan written and decided (MLFLOW_RUNS_PLAN.md, M0–M7); M0–M5 done; next M6 with Opus 5.5
+# Handoff: the experiment notebooks, PR 7 merged (#26); the simplification review done; the MLflow plan written and decided (MLFLOW_RUNS_PLAN.md, M0–M7); M0–M5 done; the review before M6 decided; next M6 with Opus 5.5
+
+**Status (2026-11-15, after M5 (`94a47c3`): the MLflow logging reviewed before M6; the user commits it):**
+- **The review:** Fable 5.2, read-only, on HEAD `94a47c3` and M5's scratch store. It is
+  [MLFLOW_RUNS_REVIEW.md](MLFLOW_RUNS_REVIEW.md): ten findings, every recommendation accepted
+  by the user. They are:
+  - three bugs: F1 the store guard on an existing experiment, F2 the best runs' stale key, F3
+    M6's missing return;
+  - one function for the two evaluation runs (F4) and `code_tags` (F6);
+  - the rebuild gap (F5: `best_params` per best run, `prediction_floor`, the guide's recipe);
+  - minor: F7 (b), F8, F9, F10 (a) and (c).
+
+  They change M6: the plan's M6 heading lists them. Nothing executable changed in this step: no
+  check run; the notebooks' md5 unchanged (`03` `8d9713dbcd875948a732cbdf124afc55`, `02`
+  `a98d4dc4578cb884ca31b9d4dde3d992`); the repo's store unchanged.
+- **Next: M6 with the review, an Opus 5.5 session.** The M5 status's prompt below holds, with
+  two changes:
+  - HEAD is the user's commit of this review (on `94a47c3`);
+  - the prompt also reads `docs/MLFLOW_RUNS_REVIEW.md` and builds its accepted findings first,
+    in the same change and the same single check run.
 
 **Status (2026-11-15, end of M5, the count figures and the shares bars as functions; the user commits it):**
 - **The state:** branch `feat/mlflow-runs`, on `fba91f9` (M4). M5 changed
