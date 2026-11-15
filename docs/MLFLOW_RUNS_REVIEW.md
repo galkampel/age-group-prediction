@@ -24,6 +24,10 @@ G1 and G2 go into M7's guide, G3 is two tests; no notebook change.
 **Built in M7 (2026-11-15):** G3's two tests (M3's mutation now caught by the tuning test),
 G1 and G2 and §7.5's list in [MLFLOW_RUNS.md](MLFLOW_RUNS.md); the plan's §5 rows corrected.
 
+**A third review, a cold read of the guide and the two tests (2026-11-15): §8.** Five findings
+on the guide (H1–H5), two on the tests (T1, T2), all accepted (§8.6); decisions 4 and 1
+explained and kept. Not built yet.
+
 ## 1. The verdict
 
 M1–M5 log every item that [MLFLOW_RUNS_PLAN.md](MLFLOW_RUNS_PLAN.md) §5 places in the tuning
@@ -344,3 +348,246 @@ in the logging's logic:
 - first G3's two tests, with a mutation (M3's: the skip's `return None` made `pass`, on a
   copy) that the new tuning test must now catch;
 - then the guide with G1, G2 and §7.5's list, and §5's two corrected rows.
+
+## 8. The third review: a cold read of the guide and the two tests, before the PR (2026-11-15)
+
+**For:** the user, who decides each finding; then the session that builds the accepted ones (the
+guide and the test file only). Done by Fable 5.2, read-only, on HEAD `3ac23b1` (on `d59fa47`,
+M7) and on a copy of M6's store (`mlflow_M7_guide.db`, 26 runs; the UI on the copy). Line
+numbers are in [MLFLOW_RUNS.md](MLFLOW_RUNS.md) unless a file is named. The checks ran once
+(`review3/run_review3.sh` and its log in the scratchpad; the screenshots in `review3/shots/`).
+
+**Status (2026-11-15): decided** (§8.6; do not re-ask). Not built yet: the guide and the test
+file change in the next session.
+
+### 8.1 The verdict
+
+**The guide is correct against the code and the store; a reader new to MLflow gets lost in two
+places.** What each button logs (§1, §4), the skip and the guard (§6), the comparison (§7) and
+the rebuild (§9) are clear enough and true: every count and name was read back from the store,
+and the guide's commands ran as written (§8.2). The two places:
+- §3 does not get the reader from the UI's first page to a run (H1);
+- §8's and §9's code stops with an unreadable error on a store without a best runs' run or a
+  final run, which is the user's own store until E11 (H2).
+
+The two tests are readable and assert what matters, with two holes shown by mutations (T1,
+T2). Decisions 4 and 1 are both right for this project now; nothing found argues against
+either (§8.5).
+
+### 8.2 What was checked
+
+- **The guide's commands as written,** with `guide.env`: the script run (exit 0, the
+  `experiment=` line, 26 runs before and after); `mlflow ui` (§3's command, from the
+  scratchpad); §8's block (one tuning run per `best.<model>`); §9's recipe (the best tuning
+  run, both models of the best runs' run and of the final run, each exact).
+- **Every count and name of §1 and §4–§7 on the store** (`review3/check_guide.py`): 24 + 1 + 1
+  runs; the 23 shared parameters and the 5 tags in all 26; a tuning run's 7 tags, 52 metrics,
+  6 artifacts, `trials.csv`'s columns, 2 inputs; the best runs' run's 108 `val/` metrics,
+  7 tables, 18 figures; the final run's 108 `test/` metrics, 6 tables, 23 figures,
+  `n_train_val`, its inputs `train_val` and `test`; the three run keys' forms; §7's claim (each
+  model's best tuning run by `val/composite/rmse` is the run its `best.<model>` tag names). All
+  as the guide says.
+- **The UI, followed as a new reader** (MLflow 3.16, headless Chrome): the first page, the
+  experiment, the runs list, §7's filter, sort and columns menu, a run of each kind, a table,
+  a figure. §7's three steps work as written.
+- **The repository unchanged** by the commands: its files, its `mlflow.db` and `mlartifacts/`
+  compared before and after; no `.mlflow-local/`; the notebooks' md5 as before.
+
+### 8.3 The guide's findings
+
+#### H1. §3 stops one click before the runs
+- **Location:** lines 88–94 ("open … and select the experiment"; "the runs are under the
+  experiment's runs list").
+- **Evidence:** in the UI's default "GenAI" mode, selecting the experiment opens an "Overview"
+  page of traces ("Traces 0", "No data available"), and the sidebar has no "Runs" entry
+  (`shots/2_experiment.png`). A run's page there is filed under "Evaluation runs"
+  (`shots/4_tuning_run.png`), the guide's own name for two of its run kinds. One click on
+  **Model training** (the toggle at the top left) gives the sidebar "Runs, Models, Traces" and
+  opens the runs list (`shots/9_model_training_mode.png`); Chrome kept the choice on the next
+  page load. The guide also never says what a run's page holds: its tabs are Overview (the
+  tags, the parameters, the metrics as a table), Model metrics (the charts) and Artifacts (the
+  files).
+- **The change:** §3's list becomes the path: click "Model training", open the experiment
+  (its runs list), click a run; one line per tab; per run kind, the file to open first
+  (`trials.csv`; `tables/best_runs_val_scores.csv` and `figures/val_forest_runs_<metric>.html`;
+  `tables/test_scores.csv`). About 8 lines replace 2.
+- **Effort:** small; the guide only.
+- **Recommendation:** accept. It is the one place the cold read could not go on without
+  guessing.
+
+#### H2. §8's and §9's code needs all three run kinds, and fails without saying so
+- **Location:** lines 211–216 (§8) and 276–281, 371–373 (§9): `(run,) = client.search_runs(…)`.
+- **Evidence:** on a copy of the store with the final run deleted, §9's recipe stops at
+  `first_run` with `ValueError: not enough values to unpack (expected 1, got 0)`; with the
+  best runs' run deleted too, §8's block stops the same way (`review3/run_review3.log`, step
+  3). After the PR the user's store holds tuning runs and a best runs' run and no final run
+  until E11: the recipe as written cannot run on it.
+- **The change, two options:**
+  - (a) `first_run` returns `None` when no run matches, and §9's script rebuilds the run
+    kinds it finds and prints which it skipped (about 8 lines changed); §8's block gets one
+    sentence ("needs a logged best runs' run"). The recipe is run once more on both stores.
+  - (b) a sentence before each block naming the runs it needs. No code.
+- **Effort:** (a) small, with one run of the two blocks; (b) none.
+- **Recommendation:** (a). The recipe is the proof of decision 4; it should run on the store
+  the user will have.
+
+#### H3. MLflow's words are used before they are explained
+- **Location:** §1 and §2 (lines 14–59): experiment, run, tag, parameter, metric, artifact,
+  dataset input, tracking URI, "the store".
+- **Evidence:** the cold read. §1's table has a "`stage` tag" column, §2 a "tracking URI" and
+  an "artifact location"; none is defined, and §4 depends on telling a parameter from a tag
+  from a metric.
+- **The change:** a short list at the top of §1, one line each: the store (a sqlite file for
+  the runs' values, a folder for their files), an experiment (a named group of runs), a run
+  (one logged result), a parameter (a setting, text), a metric (a number, sortable and
+  charted), a tag (a label to filter by), an artifact (a file), a dataset input (the data's
+  name and hash). About 9 lines.
+- **Effort:** small; the guide only.
+- **Recommendation:** accept.
+
+#### H4. Three small corrections
+- **Line 36:** "the notebook reads the store from four variables": its cell reads three
+  (lines 237–239 of the notebook); `MLFLOW_DISABLE_AGENT_HINT` is read by MLflow itself.
+- **Line 18:** the column heading "Button (click after)" is hard to parse: two columns, "Button"
+  and "Needs first".
+- **Lines 57–65:** "the cell sets no MLflow global" and the two warning filters are notes for
+  whoever edits the cell, not for the notebook's reader; the plan's §1 holds both. One sentence
+  ("the cell also silences two pandas 3 warnings inside MLflow; any other warning still
+  shows") replaces 9 lines.
+- **Effort:** small.
+- **Recommendation:** accept all three. Nothing else is longer than it needs to be: §9's
+  script is long, but it is the recipe, and it runs.
+
+#### H5. The journal is logged, and the guide does not say how to read it
+- **Location:** line 131 ("`study/<study name>.log` is the study's Optuna journal").
+- **Evidence:** decision 1 rests on it (§8.5): the journal is what gives a study's charts. Run
+  for real (`review3/journal.py`): the file, loaded with `optuna.load_study`, gave the 3
+  trials, `best_value` equal to the run's `cv/rmse`, `best_params` equal to
+  `best_params.json`, each trial's start time, and four of Optuna's own figures (the
+  optimization history, the parallel coordinates, the parameter importances, the slices). A
+  new reader would not know the four lines.
+- **The change:** a short block under §4 or §7: download the file (or copy it from the
+  artifact folder: Optuna's file backend takes a lock beside the file it opens), then
+  `JournalStorage(JournalFileBackend(path))`, `load_study(study_name=<the file's stem>)`,
+  `optuna.visualization.plot_optimization_history(study)`. About 10 lines; run once.
+- **Effort:** small.
+- **Recommendation:** accept. It is the answer to "where are the trial charts".
+
+### 8.4 The two tests
+
+**Readable, and each assertion is one the code can break.** The setup is written twice (the
+experiment, the study, the stand-in component), about 15 lines each: left as is, each test
+reads top to bottom without a helper. Two holes:
+
+#### T1. The tuning test asserts the metrics' names, not their values
+- **Location:** `tests/characterization/test_hyperparameter_tuning_notebook.py`, lines 497–504
+  (`assert set(run.data.metrics) == {…}`); the evaluation test asserts the values (609–617).
+- **Evidence:** a mutation on a copy (`review3/mut_values`): `cv/<objective>` logged from
+  `record["seconds"]`, and the train and validation scores swapped. Both new tests pass.
+- **The change:** the same assertion with the values: `run.data.metrics == {"cv/rmse":
+  study.best_value, "train/composite/rmse": 1.5, "val/composite/rmse": 2.5, "seconds": 1.0,
+  "n_complete": 2.0, "n_failed": 0.0}`. No line added.
+- **Effort:** small; the test file and the mutation once.
+- **Recommendation:** accept.
+
+#### T2. No test logs a dataset input or a figure
+- **Location:** the same file, lines 465, 601 and 603: both tests pass `{}` for the dataset
+  inputs, and the evaluation test `{}` for the figures.
+- **Evidence:** a mutation (`review3/mut_inputs`): both `mlflow.log_input` calls and
+  `mlflow.log_figure` made `pass`. Both new tests pass. Only Check D, a script in
+  `/private/tmp`, reads them back.
+- **The change:** one small dataset (`mlflow.data.from_pandas` of a two-row float frame, a
+  given 36-character digest) passed to both calls, and one empty plotly figure to the
+  evaluation call; assert the run's inputs (name and context) and the figure's file. About 12
+  lines. A float frame avoids the integer-schema warning the MLflow cell filters (pytest
+  resets the filters per test).
+- **Effort:** small.
+- **Recommendation:** accept; smaller than T1 (a deleted line, not a wrong value).
+
+### 8.5 The two decisions, against common practice
+
+Neither is reopened: no check gave evidence against either.
+
+#### Decision 4: no logged model. Right for now.
+- **What logging a model is.** `log_model` writes a folder into the run: the fitted model's
+  file, an `MLmodel` file naming how to load it, the input and output columns (the
+  signature), and the Python packages it needs. With it:
+  - any code loads the model by an address (`mlflow.pyfunc.load_model("models:/…")`) and
+    calls `predict`, without the notebook;
+  - the **Model Registry** gives the model a name, numbered versions and aliases
+    ("champion"), so a consumer asks for "the current one";
+  - `mlflow models serve` puts it behind an HTTP endpoint.
+- **What the rebuild gives instead.** The run holds `best_params`, the components'
+  declaration, `prediction_floor`, `seed` and `git_commit`; `from_params` and a refit give the
+  same model. §9's recipe reproduced the logged scores exactly, for all three run kinds, in
+  three sessions (6 s for five models here).
+- **For the 24 tuning runs, this is the common practice too.** MLflow's own Optuna tutorial
+  logs no model per trial or per candidate; it refits the best parameters once and logs that
+  one model. Twenty-three of the 24 are never used again.
+- **For a final model, common practice would log it,** and this project does not. What is
+  missing: an address to load it from, a registry version, serving. Who needs them: code
+  outside the notebook that predicts. There is none today (the data is simulated; the final
+  run's test evaluation is the end of the flow).
+- **Why not log it anyway:**
+  - the fitted models do not pickle (a feature transformer holds a lambda; only
+    `cloudpickle` works, the handoff's trap), and a cloudpickle file loads only with the same
+    code and library versions, so it would not remove the need for the code at `git_commit`.
+    MLflow 3.16 itself no longer defaults to pickle for scikit-learn models
+    (`mlflow/sklearn/__init__.py`: `serialization_format=SERIALIZATION_FORMAT_SKOPS`);
+  - the old stack did it without pickle
+    (`src/age_group_prediction/tracking/pyfunc_model.py`): a "model from code" whose
+    `load_context` reads a JSON state bundle and calls `from_state_bundle`. That needed a
+    state bundle on every model class; the new `modeling/` package has none (no `state_bundle`,
+    `pickle` or `save` in it). A logged final model here is that feature, not a logging line.
+- **When to revisit:** when something outside the notebook must predict (a service, a batch
+  job, another repository). Then: a pyfunc model from code for the final model only, plus the
+  registry. The UI shows the empty places it would fill ("Logged models —", "Registered models
+  None" on a run's page).
+
+#### Decision 1: no nested runs. Right for now.
+- **What nested runs are.** MLflow's Optuna tutorial opens one parent run per study and, inside
+  the objective, one child run per trial (`mlflow.start_run(nested=True)`) holding the trial's
+  parameters and its score. The UI folds the children under the parent, and its chart view
+  compares them without code (a parallel-coordinates chart of parameters against the score, a
+  scatter, sorting by any parameter).
+- **What this project has instead.** One run per study, with:
+  - `trials.csv`, which the UI shows as a sortable table (`shots/5_tuning_artifacts.png`);
+  - the journal, which gives the same charts from Optuna itself (H5: run for real).
+- **The cost of child runs here:**
+  - **the count:** 24 studies × 100 trials (`n_trials = 100`, the notebook's line 339) = 2,400
+    more runs beside 26. The tutorial's case is one study;
+  - **the skip rule:** "a FINISHED run with this key exists" becomes "the parent and all its
+    children exist and are complete"; a failure halfway leaves a parent with some children;
+  - **§7's comparison** (filter `stage = 'tuning'`, sort by the validation metric) would need
+    the children filtered out or given no such metric;
+  - **no live view to gain:** the trials run inside `src`'s tuner and are logged afterwards,
+    behind a button, so child runs would be written from the finished study, like the table.
+  - the time to write 2,400 runs was not measured (one run with its files took 0.1–0.15 s at
+    M0).
+- **What is lost:** the trial charts inside the MLflow UI. They are one `load_study` away.
+- **When to revisit:** if the trials should be watched in the MLflow UI while a study runs
+  (logging moves into the objective), or if the experiment shrinks to a few studies.
+
+### 8.6 The user's decisions (2026-11-15; do not re-ask)
+
+Every recommendation accepted:
+- **H1:** §3 gets the path (the "Model training" click, the runs list, a run's tabs, the file
+  to open first per run kind).
+- **H2 (a):** `first_run` returns `None` when no run matches; §9's script rebuilds the run
+  kinds it finds and prints which it skipped; §8's block gets its sentence.
+- **H3:** the list of MLflow's terms at the top of §1.
+- **H4:** all three (the three variables, the two column headings, §2's notes cut to one
+  sentence).
+- **H5:** the block that reads a study's journal with Optuna.
+- **T1:** the tuning test asserts the metrics' values.
+- **T2:** one dataset input in each test and one figure in the evaluation test, asserted.
+- **Decisions 4 and 1:** kept, as explained in §8.5.
+
+**Where they go:** one session, one change, checked once. No notebook, no `src` file:
+- first T1 and T2 in the test file, with the two mutations of §8.4 (`review3/run_review3.sh`,
+  step 6, is the model): each must now fail a new test;
+- then the guide (H1–H5);
+- **the checks, once:** ruff and the format on the test file, the test file, the non-slow
+  suite, mypy; the guide's commands and python blocks as written on the scratch store (§9's
+  recipe also on a copy without its final run: it must finish and say what it skipped; H5's
+  block); the two mutations. No Check B, C or D (no notebook changed).

@@ -1,4 +1,80 @@
-# Handoff: the experiment notebooks, PR 7 merged (#26); the simplification review done; the MLflow runs plan complete (MLFLOW_RUNS_PLAN.md, M0–M7; the guide MLFLOW_RUNS.md); next the user's PR feat/mlflow-runs into main
+# Handoff: the experiment notebooks, PR 7 merged (#26); the simplification review done; the MLflow runs plan complete (MLFLOW_RUNS_PLAN.md, M0–M7; the guide MLFLOW_RUNS.md); the cold read done (MLFLOW_RUNS_REVIEW.md §8, seven findings accepted); next its findings built (the guide, the two tests), then the user's PR feat/mlflow-runs into main
+
+**Status (2026-11-15, after the cold read; the user commits it):**
+- **The state:** branch `feat/mlflow-runs`, on `3ac23b1` (the handoff after M7, on `d59fa47`).
+  The cold read changed two docs only: [MLFLOW_RUNS_REVIEW.md](MLFLOW_RUNS_REVIEW.md) (§8, its
+  status) and this handoff.
+- **The notebooks' md5 (unchanged):** `03_hyperparameter_tuning.py`
+  `7c7ab7ad53773ad757f64e55590896ec`; `02_objective_eda.py`
+  `a98d4dc4578cb884ca31b9d4dde3d992`; `01_eda.py` `4bc1ba3a52dc2ad55d0097a707bd1ccc`.
+- **The cold read** (Fable 5.2, read-only, on a copy of M6's store): the guide is correct
+  against the code and the store (every count and name read back; its commands and both
+  python blocks run as written), and a reader new to MLflow gets lost in two places. Seven
+  findings, **all accepted by the user (do not re-ask;** the review's §8.6):
+  - H1: §3 does not say to click "Model training" (the UI's default "GenAI" mode shows an
+    empty traces page and no runs list), nor what a run's page holds;
+  - H2: §8's and §9's blocks stop with an unpack `ValueError` on a store without a best runs'
+    run or a final run (the user's store until E11): `first_run` returns `None`, the recipe
+    rebuilds what it finds;
+  - H3: a list of MLflow's terms at the top of §1;
+  - H4: three small corrections (three variables, not four; the "Button (click after)"
+    heading; §2's notes on the MLflow global and the warning filters cut to one sentence);
+  - H5: a block that reads a study's journal with Optuna (its trial charts);
+  - T1: the tuning test asserts the metrics' values (a mutation with wrong values passes
+    today);
+  - T2: a dataset input in each test and a figure in the evaluation test (a mutation
+    without `log_input` and `log_figure` passes today).
+- **Decisions 4 and 1 kept** (the review's §8.5, written for a reader new to MLflow): no
+  logged model (revisit when code outside the notebook must predict: a pyfunc model from
+  code for the final model, then the registry); no nested runs (2,400 child runs for 24
+  studies; `trials.csv` and the journal give the table and the charts).
+- **The checks,** each once (`review3/run_review3.sh`, `run_review3.log`): the script run, §8's
+  and §9's blocks (exact), the same blocks on a store without the final run and without the
+  best runs' run (both fail: H2), `check_guide.py` (the guide's counts), `journal.py` (H5),
+  the two mutations (`mut_values`, `mut_inputs`: both new tests pass on each); the UI's
+  screenshots in `review3/shots/`. The repo's files, its `mlflow.db` and `mlartifacts/`
+  unchanged; no `.mlflow-local/`.
+- **Next: one session builds the seven findings** (the guide and the test file only; one
+  change, checked once), then the user's PR. Paste:
+
+  ```text
+  Read docs/MLFLOW_RUNS_REVIEW.md §8 (the findings H1-H5, T1, T2 and my decisions in §8.6),
+  docs/MLFLOW_RUNS.md, and docs/EXPERIMENT_NOTEBOOK_HANDOFF.md: the status at the top and §4
+  (how to work, the checks, the traps, the iCloud notes, my style).
+  Verify the state first: the branch feat/mlflow-runs, HEAD my commit of the cold read (on
+  3ac23b1), `git status` clean; the notebooks' md5 as the handoff's top status; no
+  iCloud-offloaded files (the handoff's §4 check: 0). If anything differs, stop and show me the
+  diff. Copy the scratchpad the handoff's top status names into yours (repoint.py: OLD and NEW
+  set, each script's S= yours; the guide store mlflow_M7_guide.db and guide.env pointed at
+  your copy of mlartifacts_M6), compile the pycache. If that scratchpad is gone, tell me before
+  rewriting anything.
+  Plan first in plan mode and wait for my go. Then build the seven accepted findings, one
+  change, checked once:
+  1. T1 and T2 in tests/characterization/test_hyperparameter_tuning_notebook.py (the two tests
+     test_a_tuning_run_is_logged_once_then_skipped and
+     test_an_evaluation_run_logs_the_composite_and_each_best_runs_files only).
+  2. The guide docs/MLFLOW_RUNS.md: H1 (§3's path through the UI), H2 (first_run returns None,
+     the recipe rebuilds the run kinds it finds; §8's sentence), H3 (MLflow's terms), H4 (the
+     three corrections), H5 (the journal block). Keep it short: the guide must not grow more
+     than the findings ask.
+  The checks, once (review3/run_review3.sh in the scratchpad is the model): ruff and the format
+  on the test file, the test file, the non-slow suite, mypy; the guide's commands and every
+  python block as written on the scratch store with guide.env; §9's recipe also on a copy of
+  the store without its final run (it must finish and say what it skipped); the two mutations
+  of the review's §8.4, each of which must now fail a new test.
+  Edit no notebook and no src file; run no notebook on my cache. Never write the repo root's
+  mlflow.db or mlartifacts/, nor .mlflow-local/. Tick the findings as built in the review's §8
+  and update the handoff's top status. Stop with a file-by-file summary, the checks, the
+  notebooks' md5 (unchanged) and the commit message in a copyable code block. I commit myself:
+  never commit, no Co-Authored-By line, no "Generated with Claude Code", never
+  git checkout/stash/reset/mv.
+  ```
+- **Then:** the user's PR `feat/mlflow-runs` into `main`. Then, when the user decides: the real
+  run on the user's cache (the tuning and best runs' logging on the user's store; E11's test
+  evaluation and final run, which no session runs), and the roadmap's §5 (the old stack's
+  deletion, `tracking/` with it).
+- **The scratchpad:** `/private/tmp/claude-501/-Users-galkampel-Desktop-Projects-age-group-prediction/c73241c0-b5f9-4b8e-9ec4-2806ad0534cb/scratchpad` (the previous one copied and repointed, the pycache compiled;
+  `review3/` is this session's).
 
 **Status (2026-11-15, end of M7; the user commits it and opens the PR):**
 - **The state:** branch `feat/mlflow-runs`, on `3e929e9` (the second review). M7 changed:
