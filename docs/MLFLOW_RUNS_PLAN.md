@@ -39,7 +39,9 @@ handoff.
 
 **Complete (2026-11-15).** M7 done (G3's two tests, the guide
 [MLFLOW_RUNS.md](MLFLOW_RUNS.md), the links, the old plan's notes, §5's two rows), all checks
-passed in one run; not committed yet. Next: the user's PR `feat/mlflow-runs` into `main`. E11's
+passed in one run; committed `d59fa47`. Next: a cold read of the guide and the two tests by
+Fable 5.2, read-only (MLFLOW_RUNS_REVIEW.md §8; the prompt at the top of the handoff), then
+the user's PR `feat/mlflow-runs` into `main`. E11's
 final run on the real studies stays the user's to start.
 
 ## 1. The question and the verdict

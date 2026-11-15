@@ -23,7 +23,57 @@
   `checks/run_M7.sh` and `run_M7.log`; `guide.env`, `guide_blocks/` (the guide's two python
   blocks and their logs); `mlflow_M7_guide.db` (M6's store, its artifact paths pointed at this
   scratchpad's `mlartifacts_M6`); `mut_m7/`.
-- **Next:** the user's PR `feat/mlflow-runs` into `main`. Then, when the user decides: the real
+- **Next, before the PR (the user's request, 2026-11-15): a cold read by Fable 5.2,**
+  read-only: is the guide clear to a reader new to MLflow, are the two new tests readable,
+  and decision 4 (no logged model) explained against common practice. Its findings go to
+  [MLFLOW_RUNS_REVIEW.md](MLFLOW_RUNS_REVIEW.md) §8. Switch the model to Fable 5.2 after
+  committing M7, then paste:
+
+  ```text
+  Read docs/MLFLOW_RUNS.md first and cold, as its reader would: someone who runs the tuning
+  notebook and is new to MLflow. Note where you get lost, what a term assumes, what a step leaves
+  out. Then read docs/MLFLOW_RUNS_PLAN.md (the status, §1's decisions 1-17, M7 as built, §5),
+  docs/MLFLOW_RUNS_REVIEW.md (both reviews and my decisions), and
+  docs/EXPERIMENT_NOTEBOOK_HANDOFF.md: the status at the top and §4 (how to work, the checks, the
+  traps, the iCloud notes, my style).
+  Verify the state first: the branch feat/mlflow-runs, HEAD my commit of this prompt (on
+  d59fa47, M7),
+  `git status` clean; the notebooks' md5 as the handoff's top status; no iCloud-offloaded files
+  (the handoff's §4 check: 0). If anything differs, stop and show me the diff. Copy the scratchpad
+  the handoff's top status names into yours (repoint.py: each script's S= set to yours), compile
+  the pycache. If that scratchpad is gone, tell me before rewriting anything.
+  Then a read-only review, planned first in plan mode; wait for my go. Three questions:
+  1. The guide: can a reader new to MLflow understand the whole flow from it (what each button
+     logs, where to look in the UI, how the runs are compared, how a model is rebuilt)? Is
+     anything wrong against the notebook's code, missing, or longer than it needs to be? You may
+     run its commands on the scratchpad's mlflow_M7_guide.db with guide.env (as
+     checks/run_M7.sh does) and open mlflow ui on it, run from the scratchpad; screenshots welcome.
+  2. The two new tests in tests/characterization/test_hyperparameter_tuning_notebook.py
+     (test_a_tuning_run_is_logged_once_then_skipped,
+     test_an_evaluation_run_logs_the_composite_and_each_best_runs_files): readable, asserting
+     what matters, nothing redundant?
+  3. Two decisions, explained to me (new to MLflow) against common practice, each with whether
+     it is right for this project now. Do not reopen either without concrete evidence, marked
+     as such.
+     - Decision 4, no logged model: what logging a model (log_model, the Model Registry,
+       serving) would give and what the rebuild from best_params gives, for tuning runs and
+       for a final model; the old stack's no-pickle pyfunc
+       (src/age_group_prediction/tracking/pyfunc_model.py).
+     - Decision 1, no nested runs: a study's trials as trials.csv in its run, against a child
+       run per trial under the study's run (MLflow's own Optuna examples do that): what each
+       gives in the UI (comparing trials, charts), the cost (24 x n_trials runs, the skip
+       rule), and what the logged journal already allows.
+  Keep it short: a real finding beats a long list; say plainly what is clear enough. Write the
+  findings as §8 of docs/MLFLOW_RUNS_REVIEW.md (each: location, evidence, the change, the effort,
+  your recommendation), ask me about each with the interactive question tool (the options, the
+  evidence, your recommendation first), and record my decisions there and in the handoff's top
+  status. Edit no notebook, no test, no src file and no other doc; run no notebook on my cache.
+  Never write the repo root's mlflow.db or mlartifacts/, nor .mlflow-local/. Stop with a
+  summary, the notebooks' md5 (unchanged) and the commit message in a copyable code block. I
+  commit myself: never commit, no Co-Authored-By line, no "Generated with Claude Code", never
+  git checkout/stash/reset/mv.
+  ```
+- **Then:** the user's PR `feat/mlflow-runs` into `main`. Then, when the user decides: the real
   run on the user's cache (the tuning and best runs' logging on the user's store; E11's test
   evaluation and final run, which no session runs), and the roadmap's §5 (the old stack's
   deletion, `tracking/` with it).
