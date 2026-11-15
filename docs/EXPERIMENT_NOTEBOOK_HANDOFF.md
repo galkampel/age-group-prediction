@@ -1,7 +1,8 @@
-# Handoff: the experiment notebooks, PR 7 merged (#26); the simplification review done; the MLflow runs plan complete (MLFLOW_RUNS_PLAN.md, M0–M7; the guide MLFLOW_RUNS.md); the cold read done (MLFLOW_RUNS_REVIEW.md §8) and its seven findings built (the guide, the two tests); next the user's PR feat/mlflow-runs into main
+# Handoff: the experiment notebooks, PR 7 merged (#26); the simplification review done; the MLflow runs plan complete (MLFLOW_RUNS_PLAN.md, M0–M7; the guide MLFLOW_RUNS.md); the cold read done (MLFLOW_RUNS_REVIEW.md §8) and its seven findings built (the guide, the two tests); the PR feat/mlflow-runs into main to open, not merged; next a guided manual run on a check store (the test part and the final run included), before the merge
 
 **Status (2026-11-15, the cold read's findings built; the user commits it and opens the PR):**
-- **The state:** branch `feat/mlflow-runs`, on `e906eed` (the cold read). This change:
+- **The state:** branch `feat/mlflow-runs`; the build committed as `29d28d4` (on `e906eed`,
+  the cold read), then this handoff's plan below. The build changed:
   - `tests/characterization/test_hyperparameter_tuning_notebook.py`: T1 (the tuning test
     asserts the metrics' values) and T2 (a dataset input in each of the two logging tests, a
     figure in the evaluation test; `plotly.graph_objects` imported);
@@ -19,10 +20,64 @@
   run"); the two mutations of §8.4 each fail a new test, and a `log_figure`-only mutant fails
   the evaluation test. The repo's files, `mlflow.db` and `mlartifacts/` unchanged; no
   `.mlflow-local/`.
-- **Next:** the user's PR `feat/mlflow-runs` into `main`. Then, when the user decides: the real
-  run on the user's cache (the tuning and best runs' logging on the user's store; E11's test
-  evaluation and final run, which no session runs), and the roadmap's §5 (the old stack's
-  deletion, `tracking/` with it).
+- **The user's plan (2026-11-15; do not re-ask):**
+  1. commit this change and open the PR `feat/mlflow-runs` into `main`, **not merged yet**;
+  2. **a guided manual run before the merge** (the next session, below): the user clicks every
+     button of the tuning notebook on the user's cache, logging to a **check store** (a
+     throwaway store and experiment, not `.mlflow-local/`, not the root's `mlflow.db` or
+     `mlartifacts/`), and checks that each run kind holds what the guide says;
+  3. **the test part is included:** "Evaluate on the test part" and "Log the final run" are
+     clicked in the check. The user decided that this click is **E11's one look**:
+     - no model, setting or selection changes after it; a problem found may change only the
+       logging or the evaluation code (on this branch, before the merge);
+     - the test evaluation is seeded (the refit, the bootstrap, the permutation, SHAP; §9's
+       recipe rebuilt a final run's test scores exactly), so the real final run must
+       reproduce the check's test scores: the check records them;
+  4. then the merge; the check store deleted, `.env` back on `.mlflow-local/`; from a clean
+     `main` (`git_dirty` `false`; a squash merge changes the commit, so runs logged on the
+     branch would name a commit not on `main`), the real logging of all three run kinds; the
+     final run's test scores compared with the check's;
+  5. then the roadmap's §5 (the old stack's deletion, `tracking/` with it).
+- **Next: the guided manual run** (Opus 5.5; the user clicks, the session guides and checks
+  the store read-only). Paste:
+
+  ```text
+  Read docs/EXPERIMENT_NOTEBOOK_HANDOFF.md: the status at the top (my plan, items 1-4) and §4
+  (how to work, the traps, the iCloud notes, my style); docs/MLFLOW_RUNS.md (the guide); the
+  root README's "Run The Modeling Notebook"; .env.example.
+  Verify the state first: the branch feat/mlflow-runs, HEAD my commit of this handoff (on
+  29d28d4, the cold read's findings built), `git status` clean; the notebooks' md5 as the handoff's top status; no
+  iCloud-offloaded files (the handoff's §4 check: 0). If anything differs, stop and show me the
+  diff. Copy the scratchpad the handoff's top status names into yours (repoint.py: OLD and NEW
+  set), compile the pycache. If that scratchpad is gone, tell me before rewriting anything.
+  Plan first in plan mode and wait for my go. Then guide me through a complete manual run of
+  the tuning notebook, logging to a check store, before I merge the PR. I click and I run the
+  commands on my machine; you never run the notebook on my cache and never click for me. One
+  step at a time: what to do, how long it takes, what I should see; wait for what I report and
+  check it before the next step.
+  1. The check store: the .env values (a store and an experiment of its own: not the root's
+     mlflow.db or mlartifacts/, not .mlflow-local/; outside iCloud if that is simpler), then
+     the guide's §2 script run.
+  2. The tuning runs and the best runs: the clicks (first say whether my cache holds the
+     studies, so a click loads rather than tunes), then each button again (skipped).
+  3. The test part, E11's one look (my decision in the handoff): "Evaluate on the test part",
+     "Log the final run", then that button again (refused). Record the final run's
+     test/<model>/<metric>/score values.
+  4. After each logging step, with my go, check the check store read-only from the scratchpad
+     (review3/check_guide.py is the model): every run kind's tags, parameters, metrics,
+     artifacts and inputs, the counts and the run keys against the guide's §1 and §4-§6. And
+     walk me through the UI as the guide's §3 and §7 say, the journal's charts included.
+  5. The guide's §8 and §9, run by me on the check store: §9 must rebuild all three run kinds
+     exactly and skip nothing.
+  If something is wrong, stop and show me the evidence with a recommendation; fix nothing
+  without my go (a fix goes on this branch, before the merge; never a model, setting or
+  selection change after the test part). Never write the repo root's mlflow.db or
+  mlartifacts/, nor .mlflow-local/. Edit no notebook and no src file. Record what was checked,
+  the store's counts and the final run's test scores in the handoff's top status, with the
+  steps after the merge (my plan, item 4). Stop with a summary, the notebooks' md5 (unchanged)
+  and the commit message in a copyable code block. I commit myself: never commit, no
+  Co-Authored-By line, no "Generated with Claude Code", never git checkout/stash/reset/mv.
+  ```
 - **The scratchpad:** `/private/tmp/claude-501/-Users-galkampel-Desktop-Projects-age-group-prediction/58edf1e9-66ab-4510-90cf-1ff156847685/scratchpad`
   (the previous one copied and repointed, `mlflow_M7_guide.db` pointed at its own
   `mlartifacts_M6`, the pycache compiled; `review4/` is this session's).
