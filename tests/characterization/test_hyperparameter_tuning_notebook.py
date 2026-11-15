@@ -593,11 +593,14 @@ def test_the_two_notebooks_share_one_setup(
         "cv_groups",
     ):
         assert tuning[name] == eda[name], name
-    for part in ("train_age_group", "val_age_group", "test_age_group"):
+    for dataset_name in ("train_age_group", "val_age_group", "test_age_group"):
         for field, tuning_values, eda_values in zip(
-            tuning[part]._fields, tuning[part], eda[part], strict=True
+            tuning[dataset_name]._fields,
+            tuning[dataset_name],
+            eda[dataset_name],
+            strict=True,
         ):
-            assert tuning_values.equals(eda_values), (part, field)
+            assert tuning_values.equals(eda_values), (dataset_name, field)
     assert repr(tuning["cv"]) == repr(eda["cv"])
     for name in ("COUNT_FEATURE_TRANSFORMERS", "PROBABILITY_FEATURE_TRANSFORMERS"):
         assert {
@@ -1019,3 +1022,41 @@ def test_the_permutation_figure_draws_a_box_per_split_ordered_by_the_last(
     assert list(test_only.layout.yaxis.categoryarray) == ["b", "c", "a"]
     assert test_only.layout.xaxis.title.text == "drop in the n_x rmse when shuffled"
     assert [trace.marker.color for trace in test_only.data] == ["#2a78d6"]
+
+
+def test_the_count_figures_and_the_shares_bars_are_built_by_functions(
+    notebook_defs: dict,
+) -> None:
+    # M5: the test reading's figures are functions, so the final run logs them
+    # at a fixed state; a script run defines them without the test click.
+    palette, model_colors = notebook_defs["PALETTE"], notebook_defs["MODEL_COLORS"]
+    buildings = pd.DataFrame(
+        {
+            "building_id": ["b0", "b1", "b2"],
+            "neighborhood_id": ["n0", "n0", "n1"],
+            "total_true": [3, 5, 8],
+            "total_predicted": [2.5, 5.5, 7.0],
+        }
+    )
+    histogram = notebook_defs["counts_histogram_figure"](
+        buildings, "total", "#123456", palette
+    )
+    assert [trace.name for trace in histogram.data] == ["true", "predicted"]
+    assert list(histogram.data[0].x) == [3, 5, 8]
+    assert list(histogram.data[1].x) == [2.5, 5.5, 7.0]
+    assert histogram.data[1].marker.color == "#123456"
+    scatter = notebook_defs["counts_scatter_figure"](buildings, "total", palette)
+    # The markers: x the true counts, y the predictions (the first trace is the
+    # dotted line of equality).
+    assert list(scatter.data[1].x) == [3, 5, 8]
+    assert list(scatter.data[1].y) == [2.5, 5.5, 7.0]
+    assert scatter.layout.xaxis.title.text == "true total"
+    true_counts = pd.DataFrame({"a": [1, 3], "b": [2, 2]})
+    predicted_counts = {model: true_counts * 1.0 for model in model_colors}
+    bars = notebook_defs["selection_shares_bars_figure"](
+        true_counts, predicted_counts, model_colors, palette
+    )
+    assert [trace.name for trace in bars.data] == ["true", *model_colors]
+    assert list(bars.data[0].x) == ["a", "b"] and list(bars.data[0].y) == [0.5, 0.5]
+    assert bars.data[0].error_y.array is not None
+    assert all(trace.error_y.array is None for trace in bars.data[1:])

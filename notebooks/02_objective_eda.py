@@ -201,7 +201,10 @@ def _(DATA_SETTINGS, X, config, df, groups, hashlib, json, mo, pd):
         json.dumps(config_params, sort_keys=True).encode()
     ).hexdigest()
 
-    print("data_settings " + " ".join(f"{k}={v}" for k, v in DATA_SETTINGS.items()))
+    print(
+        "data_settings "
+        + " ".join(f"{name}={value}" for name, value in DATA_SETTINGS.items())
+    )
     print(
         f"data rows={len(df)} neighborhoods={groups.nunique()} "
         f"config_hash={config_hash}"
@@ -261,7 +264,7 @@ def _(mo, pd):
     }
     print(
         "experiment_settings "
-        + " ".join(f"{k}={v}" for k, v in EXPERIMENT_SETTINGS.items())
+        + " ".join(f"{name}={value}" for name, value in EXPERIMENT_SETTINGS.items())
     )
     mo.md(f"```text\n{pd.DataFrame([EXPERIMENT_SETTINGS]).to_string(index=False)}\n```")
     return (

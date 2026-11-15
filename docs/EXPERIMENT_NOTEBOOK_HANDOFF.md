@@ -1,4 +1,71 @@
-# Handoff: the experiment notebooks, PR 7 merged (#26); the simplification review done; the MLflow plan written and decided (MLFLOW_RUNS_PLAN.md, M0–M7); M0–M4 done; next M5 with Opus 5.5
+# Handoff: the experiment notebooks, PR 7 merged (#26); the simplification review done; the MLflow plan written and decided (MLFLOW_RUNS_PLAN.md, M0–M7); M0–M5 done; next M6 with Opus 5.5
+
+**Status (2026-11-15, end of M5, the count figures and the shares bars as functions; the user commits it):**
+- **The state:** branch `feat/mlflow-runs`, on `fba91f9` (M4). M5 changed
+  `notebooks/03_hyperparameter_tuning.py`:
+  - a cell before the count figures' cell, with `counts_histogram_figure` and
+    `counts_scatter_figure`;
+  - a cell before the shares cell, with `selection_shares_bars_figure`;
+  - both display cells now call them;
+  - the loop names `k, v` → `name, value`, and `part` → `field` / `dataset`.
+
+  It also changed `notebooks/02_objective_eda.py` (the same `name, value` in the shared setup),
+  `tests/characterization/test_hyperparameter_tuning_notebook.py` (one test; the setup test's
+  `dataset_name`), [MLFLOW_RUNS_PLAN.md](MLFLOW_RUNS_PLAN.md) (M5 ticked and as built; M6's
+  calls with the new signatures; the status) and this handoff.
+- **The user's two choices at M5** (the plan's M5; do not re-ask):
+  - each figure function gets its own cell;
+  - the older names are renamed in the same change, so the checks run once. The user asks for
+    efficiency: never run the same checks twice.
+- **The notebooks' md5:** `03_hyperparameter_tuning.py` `8d9713dbcd875948a732cbdf124afc55`,
+  `02_objective_eda.py` `a98d4dc4578cb884ca31b9d4dde3d992` (both new); `01_eda.py`
+  `4bc1ba3a52dc2ad55d0097a707bd1ccc` (unchanged).
+- **The checks** (the plan's M5 has the numbers): all passed in one run; the 21 + 27 figures
+  identical to M4's; the mutation (the dump only) caught.
+- **The next change's scripts and references** (in the scratchpad below):
+  - the runner `checks/run_M5.sh`;
+  - Check B `checks/check_b_m5_tuning.py`; Check C `checks/check_c_m2_tuning.py`; Check D
+    `checks/check_d_mlflow.py` (M6 extends it to the final run: 26 runs, one `final=true`);
+  - the mutation `checks/run_mutant_M5.sh`;
+  - the references `check_c_m5_tuning.pkl`, `check_c_m5_eda.pkl` (with its two figures' JSON),
+    `figures_m5_tuning.json`, `figures_m5_eda.json`.
+- **Next: M6, an Opus 5.5 session.** The prompt:
+
+  ```text
+  Read docs/MLFLOW_RUNS_PLAN.md in full (the status; §1's decisions, facts, M0's findings, its
+  correction at M3 and choices 11-17; §2; §3 how a sub-task is done; §4's M6, and M1-M5 as
+  built), then docs/EXPERIMENT_NOTEBOOK_HANDOFF.md: the status at the top and §4 (how to work,
+  git and the editor, the checks, the traps, the iCloud notes, the user's style). Then the cells
+  M6 names in notebooks/03_hyperparameter_tuning.py (the test evaluation's cells, the test
+  explanation, the test tables, M5's figure functions and the shares cell, M4's best runs'
+  logging cell as the model).
+  Verify the state first: the branch feat/mlflow-runs, HEAD my commit of M5 (on fba91f9),
+  `git status` clean; 03's md5 8d9713dbcd875948a732cbdf124afc55, 02's
+  a98d4dc4578cb884ca31b9d4dde3d992; no iCloud-offloaded files. If anything differs, stop and
+  show me the diff. Copy the scratchpad the handoff's top status names into yours (repoint.py:
+  each script's S= set to yours), compile the pycache. If that scratchpad is gone, tell me
+  before rewriting anything.
+  Then do sub-task M6 only: plan it first in plan mode (re-verify its facts and line numbers
+  read-only, list the exact edits; the tables as CSV at 6 significant digits, a dict column as
+  JSON text, choices 15 and 17; informative names), wait for my go, implement it, run the
+  checks of the plan's §3 and M6's validation and mutation (Check D extended to the final
+  run). Run every check once: cheap static checks first, then one full run; a mutation reruns
+  only what it needs. Every check exports the four MLflow variables to the scratchpad, as
+  checks/run_M5.sh does. Do not start M7.
+  If a step needs a choice the plan does not make, stop and ask me with the interactive
+  question tool (the options, the evidence, your recommendation first).
+  Never write the repo root's mlflow.db or mlartifacts/, nor .mlflow-local/. Don't run the
+  test evaluation or "Log the final run" on my cache (E11): only on Check C's copy. My marimo
+  session may be open: tell me before editing the notebook and remind me to reload it after;
+  edit the notebook with the Edit tool. Keep it simple; no private helpers; a notebook function
+  reads no notebook global. Stop with a file-by-file summary, the checks, the notebooks' md5
+  and the commit message in a copyable code block; tick M6 and update the status lines in the
+  plan and at the top of the handoff. I commit myself: never commit, no Co-Authored-By line, no
+  "Generated with Claude Code" in PR text, never git checkout/stash/reset/mv.
+  ```
+- **The test part has still not been run on the user's cache** (E11).
+- **The scratchpad to copy first:** `/private/tmp/claude-501/-Users-galkampel-Desktop-Projects-age-group-prediction/ca74efc7-1e4b-4d55-ab40-01c82355adba/scratchpad`
+  (M4's and M5's scripts, logs and references).
 
 **Status (2026-11-15, end of M4, the best runs' run logged behind a button; the user commits it):**
 - **The state:** branch `feat/mlflow-runs`, on `b7e9d62` (the user's commit of the M4 prompt, on

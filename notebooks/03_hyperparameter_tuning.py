@@ -200,7 +200,10 @@ def _(DATA_SETTINGS, X, config, df, groups, hashlib, json, mo, pd):
         json.dumps(config_params, sort_keys=True).encode()
     ).hexdigest()
 
-    print("data_settings " + " ".join(f"{k}={v}" for k, v in DATA_SETTINGS.items()))
+    print(
+        "data_settings "
+        + " ".join(f"{name}={value}" for name, value in DATA_SETTINGS.items())
+    )
     print(
         f"data rows={len(df)} neighborhoods={groups.nunique()} "
         f"config_hash={config_hash}"
@@ -361,7 +364,7 @@ def _(mo, pd):
     }
     print(
         "experiment_settings "
-        + " ".join(f"{k}={v}" for k, v in EXPERIMENT_SETTINGS.items())
+        + " ".join(f"{name}={value}" for name, value in EXPERIMENT_SETTINGS.items())
     )
     mo.md(f"```text\n{pd.DataFrame([EXPERIMENT_SETTINGS]).to_string(index=False)}\n```")
     return (
@@ -2263,7 +2266,7 @@ def _(
     _background = _rng.choice(
         len(train_age_group.X), size=n_shap_background, replace=False
     )
-    shap_rows = AgeGroupDataset(*(part.iloc[_rows] for part in val_age_group))
+    shap_rows = AgeGroupDataset(*(field.iloc[_rows] for field in val_age_group))
     shap_background = train_age_group.X.iloc[_background]
     return shap_background, shap_rows
 
@@ -2299,9 +2302,12 @@ def _(
                 split: PermutationImportance(
                     metric, n_repeats, random_state=seed
                 ).compute_importances(
-                    _run["model"], part.X, part.Y, exposure=part.exposure
+                    _run["model"], dataset.X, dataset.Y, exposure=dataset.exposure
                 )
-                for split, part in (("train", train_age_group), ("val", val_age_group))
+                for split, dataset in (
+                    ("train", train_age_group),
+                    ("val", val_age_group),
+                )
             }
             for cohort, metric in importance_metrics.items()
         }
@@ -3698,87 +3704,33 @@ def _(
 
 
 @app.cell
-def _(
-    MODEL_COLORS,
-    PALETTE,
-    go,
-    mo,
-    style_figure,
-    test_buildings_df,
-    test_figures_cohort,
-    test_reading_model,
-):
-    # The model in its color, the truth in the muted ink; the true total of
-    # children on the sequential blue ramp.
-    _model, _cohort = test_reading_model.value, test_figures_cohort.value
-    _color = MODEL_COLORS[_model]
-    # The chosen cohort's counts per building, or the buildings' totals.
-    _count = "total" if _cohort == "composite" else _cohort
-    _buildings = test_buildings_df[test_buildings_df["model"] == _model].set_index(
-        "building_id"
-    )
-    _true, _predicted = _buildings[f"{_count}_true"], _buildings[f"{_count}_predicted"]
-    # The true counts and the predicted means over the same bins.
-    test_counts_histogram = go.Figure(
-        [
-            go.Histogram(
-                x=_values,
-                name=_name,
-                bingroup="counts",
-                marker={"color": _trace_color},
-                opacity=0.6,
-                hovertemplate=f"{_name} %{{x}}: %{{y}} buildings<extra></extra>",
-            )
-            for _name, _values, _trace_color in (
-                ("true", _true, PALETTE["muted"]),
-                ("predicted", _predicted, _color),
-            )
-        ]
-    )
-    test_counts_histogram.update_layout(barmode="overlay")
-    test_counts_histogram.update_xaxes(title_text=f"{_count} count")
-    test_counts_histogram.update_yaxes(title_text="buildings")
-    # Each building's true count against its prediction, colored by its true
-    # total of children (on the composite, x again): whether the errors grow
-    # with the building's children; on the dotted line they are equal.
-    _top = max(_true.max(), _predicted.max()) * 1.05
-    test_counts_scatter = go.Figure(
-        [
-            go.Scatter(
-                x=[0, _top],
-                y=[0, _top],
-                mode="lines",
-                line={"color": PALETTE["ink"], "width": 1, "dash": "dot"},
-                hoverinfo="skip",
-                showlegend=False,
-            ),
-            go.Scatter(
-                x=_true,
-                y=_predicted,
-                mode="markers",
-                showlegend=False,
-                marker={
-                    "size": 8,
-                    "color": _buildings["total_true"],
-                    "colorscale": PALETTE["blues"],
-                    "colorbar": {"title": {"text": "true total"}, "thickness": 12},
-                    "line": {"width": 1, "color": PALETTE["surface"]},
-                },
-                customdata=_buildings.reset_index()[
-                    ["building_id", "neighborhood_id", "total_true"]
-                ].to_numpy(),
-                hovertemplate=(
-                    "%{customdata[0]} (%{customdata[1]}), %{customdata[2]} children"
-                    "<br>true %{x}, predicted %{y:.2f}<extra></extra>"
-                ),
-            ),
-        ]
-    )
-    test_counts_scatter.update_xaxes(title_text=f"true {_count}", range=[0, _top])
-    test_counts_scatter.update_yaxes(title_text=f"predicted {_count}", range=[0, _top])
-    for _figure in (test_counts_histogram, test_counts_scatter):
-        style_figure(_figure, PALETTE)
-        _figure.update_layout(
+def _(go, style_figure):
+    def counts_histogram_figure(buildings, count_name, model_color, palette):
+        """The true counts of `count_name` ("total" or a cohort) per building, in
+        `palette`'s muted ink, and the predicted means, in `model_color`, over the
+        same bins. `buildings` is one model's rows of the test buildings' table (its
+        `<count_name>_true` and `<count_name>_predicted` columns)."""
+        figure = go.Figure(
+            [
+                go.Histogram(
+                    x=values,
+                    name=name,
+                    bingroup="counts",
+                    marker={"color": trace_color},
+                    opacity=0.6,
+                    hovertemplate=f"{name} %{{x}}: %{{y}} buildings<extra></extra>",
+                )
+                for name, values, trace_color in (
+                    ("true", buildings[f"{count_name}_true"], palette["muted"]),
+                    ("predicted", buildings[f"{count_name}_predicted"], model_color),
+                )
+            ]
+        )
+        figure.update_layout(barmode="overlay")
+        figure.update_xaxes(title_text=f"{count_name} count")
+        figure.update_yaxes(title_text="buildings")
+        style_figure(figure, palette)
+        figure.update_layout(
             height=400,
             legend={
                 "orientation": "h",
@@ -3790,6 +3742,89 @@ def _(
             margin={"l": 50, "r": 20, "t": 50, "b": 50},
             hovermode="closest",
         )
+        return figure
+
+    def counts_scatter_figure(buildings, count_name, palette):
+        """Each building's true count of `count_name` ("total" or a cohort) against
+        its prediction, equal on the dotted line, colored by its true total of
+        children on `palette`'s blue ramp (on the total, x again): whether the
+        errors grow with the building's children. `buildings` is one model's rows
+        of the test buildings' table."""
+        true = buildings[f"{count_name}_true"]
+        predicted = buildings[f"{count_name}_predicted"]
+        top = max(true.max(), predicted.max()) * 1.05
+        figure = go.Figure(
+            [
+                go.Scatter(
+                    x=[0, top],
+                    y=[0, top],
+                    mode="lines",
+                    line={"color": palette["ink"], "width": 1, "dash": "dot"},
+                    hoverinfo="skip",
+                    showlegend=False,
+                ),
+                go.Scatter(
+                    x=true,
+                    y=predicted,
+                    mode="markers",
+                    showlegend=False,
+                    marker={
+                        "size": 8,
+                        "color": buildings["total_true"],
+                        "colorscale": palette["blues"],
+                        "colorbar": {"title": {"text": "true total"}, "thickness": 12},
+                        "line": {"width": 1, "color": palette["surface"]},
+                    },
+                    customdata=buildings[
+                        ["building_id", "neighborhood_id", "total_true"]
+                    ].to_numpy(),
+                    hovertemplate=(
+                        "%{customdata[0]} (%{customdata[1]}), %{customdata[2]} children"
+                        "<br>true %{x}, predicted %{y:.2f}<extra></extra>"
+                    ),
+                ),
+            ]
+        )
+        figure.update_xaxes(title_text=f"true {count_name}", range=[0, top])
+        figure.update_yaxes(title_text=f"predicted {count_name}", range=[0, top])
+        style_figure(figure, palette)
+        figure.update_layout(
+            height=400,
+            legend={
+                "orientation": "h",
+                "x": 0,
+                "xanchor": "left",
+                "y": 1.02,
+                "yanchor": "bottom",
+            },
+            margin={"l": 50, "r": 20, "t": 50, "b": 50},
+            hovermode="closest",
+        )
+        return figure
+
+    return counts_histogram_figure, counts_scatter_figure
+
+
+@app.cell
+def _(
+    MODEL_COLORS,
+    PALETTE,
+    counts_histogram_figure,
+    counts_scatter_figure,
+    mo,
+    test_buildings_df,
+    test_figures_cohort,
+    test_reading_model,
+):
+    # The chosen model's buildings, in its color: the chosen cohort's counts per
+    # building, or the buildings' totals.
+    _model, _cohort = test_reading_model.value, test_figures_cohort.value
+    _count = "total" if _cohort == "composite" else _cohort
+    _buildings = test_buildings_df[test_buildings_df["model"] == _model]
+    test_counts_histogram = counts_histogram_figure(
+        _buildings, _count, MODEL_COLORS[_model], PALETTE
+    )
+    test_counts_scatter = counts_scatter_figure(_buildings, _count, PALETTE)
     _count_text = "the total" if _cohort == "composite" else _cohort
     mo.vstack(
         [
@@ -3815,6 +3850,94 @@ def _(
 
 
 @app.cell
+def _(go, np, style_figure):
+    def selection_shares_bars_figure(
+        true_counts, predicted_counts, model_colors, palette
+    ):
+        """The cohort shares of a selection of buildings as grouped bars: each
+        cohort's children over all the children, the truth in `palette`'s muted
+        ink, each model in its `model_colors` color. A share of n children varies
+        by about sqrt(p (1 - p) / n): the true bars carry that 95% interval, each
+        child counted as independent (children of one building share it, so the
+        noise is larger); the title gives n and each model's predicted total.
+        `true_counts` is the selection's true counts, a column per cohort;
+        `predicted_counts` is {model: its predicted counts, the same rows}."""
+        cohorts = list(true_counts.columns)
+        children = {
+            "true": true_counts.sum(),
+            **{model: counts.sum() for model, counts in predicted_counts.items()},
+        }
+        n_children = children["true"].sum()
+        true_shares = (children["true"] / n_children).to_numpy()
+        true_interval = 1.96 * np.sqrt(true_shares * (1 - true_shares) / n_children)
+        figure = go.Figure(
+            [
+                go.Bar(
+                    x=cohorts,
+                    y=children[series] / children[series].sum(),
+                    name=series,
+                    marker={
+                        "color": bar_color,
+                        "line": {"width": 2, "color": palette["surface"]},
+                    },
+                    error_y=(
+                        {
+                            "type": "data",
+                            "array": true_interval,
+                            "color": palette["ink"],
+                            "thickness": 1.5,
+                            "width": 6,
+                        }
+                        if series == "true"
+                        else None
+                    ),
+                    customdata=children[series].to_numpy(),
+                    hovertemplate=(
+                        f"%{{x}} {series} share %{{y:.3f}}, "
+                        "%{customdata:.1f} children<extra></extra>"
+                    ),
+                )
+                for series, bar_color in (
+                    ("true", palette["muted"]),
+                    *model_colors.items(),
+                )
+            ]
+        )
+        predicted_totals = ", ".join(
+            f"{model} {children[model].sum():.1f}" for model in predicted_counts
+        )
+        style_figure(figure, palette)
+        figure.update_layout(
+            title={
+                "text": (
+                    f"n = {n_children:.0f} true children (predicted: {predicted_totals})"
+                ),
+                "x": 0,
+                "xref": "paper",
+                "xanchor": "left",
+                "font": {"size": 13},
+            },
+            barmode="group",
+            bargap=0.3,
+            height=380,
+            legend={
+                "orientation": "h",
+                "x": 0,
+                "xanchor": "left",
+                "y": 1.02,
+                "yanchor": "bottom",
+            },
+            margin={"l": 50, "r": 20, "t": 80, "b": 50},
+        )
+        # No gridline through a group of bars.
+        figure.update_xaxes(showgrid=False)
+        figure.update_yaxes(title_text="share of the children")
+        return figure
+
+    return (selection_shares_bars_figure,)
+
+
+@app.cell
 def _(
     COHORTS,
     METRICS,
@@ -3822,11 +3945,9 @@ def _(
     PALETTE,
     RANKING_METRIC_NAMES,
     compute_metrics,
-    go,
     mo,
-    np,
     pd,
-    style_figure,
+    selection_shares_bars_figure,
     test_age_group,
     test_neighborhood,
     test_predictions,
@@ -3896,76 +4017,10 @@ def _(
             for model, predictions in _predicted.items()
         }
     ).reset_index()
-    # The shares as grouped bars: the truth in the muted ink, each model in
-    # its color. A share of n children varies by about sqrt(p (1 - p) / n):
-    # the true bars carry that 95% interval, each child counted as
-    # independent (children of one building share it, so the noise is larger).
-    _counts = test_selection_counts_df.set_index("cohort")
-    _n_children = _counts.loc["total", "true"]
-    _true_shares = test_selection_shares_df["true"].to_numpy()
-    _true_interval = 1.96 * np.sqrt(_true_shares * (1 - _true_shares) / _n_children)
-    test_selection_shares_bars = go.Figure(
-        [
-            go.Bar(
-                x=COHORTS,
-                y=test_selection_shares_df[_series],
-                name=_series,
-                marker={
-                    "color": _bar_color,
-                    "line": {"width": 2, "color": PALETTE["surface"]},
-                },
-                error_y=(
-                    {
-                        "type": "data",
-                        "array": _true_interval,
-                        "color": PALETTE["ink"],
-                        "thickness": 1.5,
-                        "width": 6,
-                    }
-                    if _series == "true"
-                    else None
-                ),
-                customdata=_counts.loc[COHORTS, _series].to_numpy(),
-                hovertemplate=(
-                    f"%{{x}} {_series} share %{{y:.3f}}, "
-                    "%{customdata:.1f} children<extra></extra>"
-                ),
-            )
-            for _series, _bar_color in (
-                ("true", PALETTE["muted"]),
-                *MODEL_COLORS.items(),
-            )
-        ]
+    # The shares as grouped bars, the truth with its 95% interval.
+    test_selection_shares_bars = selection_shares_bars_figure(
+        _true, _predicted, MODEL_COLORS, PALETTE
     )
-    _predicted_totals = ", ".join(
-        f"{model} {_counts.loc['total', model]:.1f}" for model in _predicted
-    )
-    style_figure(test_selection_shares_bars, PALETTE)
-    test_selection_shares_bars.update_layout(
-        title={
-            "text": (
-                f"n = {_n_children:.0f} true children (predicted: {_predicted_totals})"
-            ),
-            "x": 0,
-            "xref": "paper",
-            "xanchor": "left",
-            "font": {"size": 13},
-        },
-        barmode="group",
-        bargap=0.3,
-        height=380,
-        legend={
-            "orientation": "h",
-            "x": 0,
-            "xanchor": "left",
-            "y": 1.02,
-            "yanchor": "bottom",
-        },
-        margin={"l": 50, "r": 20, "t": 80, "b": 50},
-    )
-    # No gridline through a group of bars.
-    test_selection_shares_bars.update_xaxes(showgrid=False)
-    test_selection_shares_bars.update_yaxes(title_text="share of the children")
     mo.vstack(
         [
             mo.md(

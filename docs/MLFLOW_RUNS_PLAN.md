@@ -10,8 +10,10 @@ there: no MLflow global), committed `2451c8a`. M2 done (a run record keeps its s
 behind a button; the user's choices 15, the trials as CSV at 6 significant digits, and 16, the
 bare `return`), committed `7e5bc30`. M4 done (the best runs' run behind a button: 108 metrics,
 7 CSV tables with the runs tables' dicts as JSON text, choice 17; 18 figures; the two returns
-restored, ruff `03` 15), the user commits it. Next: M5, an Opus 5.5 session (the prompt at the
-top of the handoff).
+restored, ruff `03` 15), committed `fba91f9`. M5 done (the count figures and the shares bars
+each a function in its own cell, the user's choice; the older loop names made informative in
+the same change, the user's choice, so the checks ran once), the user commits it. Next: M6, an
+Opus 5.5 session (the prompt at the top of the handoff).
 
 ## 1. The question and the verdict
 
@@ -633,7 +635,36 @@ best_difference_df`; Check C on the mutant passes (it logs 25), Check D fails on
   feat(notebook): the best runs' comparison logged to MLflow as one run (M4)
   ```
 
-### [ ] M5. The count figures and the shares bars as functions
+### [x] M5. The count figures and the shares bars as functions
+
+**Done 2026-11-15** (`03`'s md5 `8d9713dbcd875948a732cbdf124afc55`, `02`'s
+`a98d4dc4578cb884ca31b9d4dde3d992`). **The user's two choices (do not re-ask):** each function
+in its own cell, like every other figure function in `03` (so a script run defines it, and M6's
+logging cell does not depend on the menus); the older uninformative names renamed in this
+change, so the checks ran once.
+- Before the count figures' cell, `def _(go, style_figure)`: `counts_histogram_figure(buildings,
+  count_name, model_color, palette)` and `counts_scatter_figure(buildings, count_name,
+  palette)`, `buildings` one model's rows of `test_buildings_df`, `count_name` `"total"` or a
+  cohort. The display cell calls them with the menus' model and cohort.
+- Before the shares cell, `def _(go, np, style_figure)`: `selection_shares_bars_figure(
+  true_counts, predicted_counts, model_colors, palette)`, the raw counts (a column per cohort;
+  {model: counts}), so M6 calls it for all the test buildings without the cell's tables. The
+  shares cell calls it with the selection's counts.
+- Each body is the cell's code moved, its operations in the same order (the JSON identical).
+- The renames: `k, v` → `name, value` (`02` and `03`, the shared setup kept alike);
+  `part` → `field` (the SHAP rows' cell) and `dataset` (the inspection cell); the setup test's
+  `part` → `dataset_name`.
+- The test `test_the_count_figures_and_the_shares_bars_are_built_by_functions` (each
+  function on a small frame: the traces, the scatter's x the truth and y the prediction, the
+  bars' interval on the truth only).
+
+`checks/run_M5.sh` (log `run_M5.log`): the non-slow suite 1419 (+1), mypy clean, the notebook
+tests 39, ruff `03` 15 / `02` 11, the two format hunks in each, `marimo check` clean, Check B on
+both (`check_b_m5_tuning.py`: the three functions' parameters; no figure without the click),
+Check C on both equal to M4's run with nothing excepted, Check D unchanged (25 runs), **the 21 +
+27 figures identical to M4's run**, the scratch store 25 runs, the repo's store unchanged.
+**The mutation** (`run_mutant_M5.sh`, the dump only): the scatter's axes swapped;
+`compare_figures.py` fails on `['test_counts_scatter']`.
 
 - **Model:** Opus 5.5.
 - **Evidence:** the two count figures and the shares bars are built inline from menus; M6
@@ -642,7 +673,7 @@ best_difference_df`; Check C on the mutant passes (it logs 25), Check D fails on
   `counts_scatter_figure`, `selection_shares_bars_figure`), taking its data, the labels and
   the palette; the cell calls it with the menus' values. The exported names stay.
 - **Validate:** Check C equal with nothing excepted; `03`'s 21 figures' JSON identical to
-  `figures_s5_3_tuning.json`.
+  `figures_m4_tuning.json` (as run; first planned against `figures_s5_3_tuning.json`).
 - **Mutation:** swap the scatter's axes in the function; the figure comparison fails.
 - **Commit:**
   ```text
@@ -670,7 +701,7 @@ best_difference_df`; Check C on the mutant passes (it logs 25), Check D fails on
        (an `if`, not `mo.stop(bool(_finals), …)`: the message would index an empty list).
      - `with mlflow.start_run(run_name="final"):`
      - **Tags:** `{"run_key": f"{tuner.storage_dir.name}/final", "stage": "final", "final":
-       "true", **{f"best.{model}": run["study"].study_name for model, run in
+       "true", **{f"best.{model}": record["study"].study_name for model, record in
        best_runs.items()}, "notebook": "notebooks/03_hyperparameter_tuning.py", **git_tags}`.
      - **Parameters:** `{**shared_params, "n_train_val": len(train_val_age_group.X)}`.
      - **Metrics, the composite only (108):** as M4 with the prefix `test/`, from
@@ -684,11 +715,13 @@ best_difference_df`; Check C on the mutant passes (it logs 25), Check D fails on
        cohort, result in by_cohort.items()} for model, by_cohort in test_permutation.items()},
        test_shap, test_age_group.X, SELECTION_METRIC.name, CI_BOUND_NAMES, seed, PALETTE,
        forest_figure, ridge_figure, permutation_figure, beeswarm_figure)` (18); per model M5's
-       `counts_histogram_figure` and `counts_scatter_figure` for the composite, as
-       `figures/test_counts_histogram_<model>_composite.html` and
+       `counts_histogram_figure(test_buildings_df[test_buildings_df["model"] == model],
+       "total", MODEL_COLORS[model], PALETTE)` and `counts_scatter_figure(<the same rows>,
+       "total", PALETTE)`, as `figures/test_counts_histogram_<model>_composite.html` and
        `figures/test_counts_scatter_<model>_composite.html` (4); M5's
-       `selection_shares_bars_figure` for all the test buildings, as
-       `figures/test_selection_shares_bars_all.html` (1).
+       `selection_shares_bars_figure(test_age_group.Y, test_predictions, MODEL_COLORS,
+       PALETTE)` for all the test buildings, as `figures/test_selection_shares_bars_all.html`
+       (1).
      - **JSON:** `components/<model>.json` for each best run's components (the test models
        are refit from them).
      - **Datasets:** `{"training": build_dataset(train_val_age_group, "train_val"),
