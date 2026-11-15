@@ -15,6 +15,9 @@ in `notebooks/03_hyperparameter_tuning.py` unless another file is named.
 
 All go into M6's change, built and checked once (§6). M7 takes F5 (c).
 
+**Implemented in M6 (2026-11-15), all checks passed** (the plan's M6). The one correction:
+M4's cell keeps `json`, which its runs tables' dict columns need. F5 (c) is in M7's steps.
+
 ## 1. The verdict
 
 M1–M5 log every item that [MLFLOW_RUNS_PLAN.md](MLFLOW_RUNS_PLAN.md) §5 places in the tuning

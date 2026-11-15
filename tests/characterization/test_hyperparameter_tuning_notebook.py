@@ -262,9 +262,10 @@ def test_a_script_run_opens_no_mlflow_run(
     notebook_defs: dict, notebook_store: Path
 ) -> None:
     # M1: the MLflow cell creates the experiment with its artifact location and
-    # reads the git tags; it opens no run, and sets no MLflow global (the
-    # tracking URI and the active experiment are read from the environment at
-    # every call), so the old tracking tests that run after see none.
+    # reads the code's tags (the notebook and git); it opens no run, and sets no
+    # MLflow global (the tracking URI and the active experiment are read from the
+    # environment at every call), so the old tracking tests that run after see
+    # none.
     mlflow = pytest.importorskip("mlflow")
     environment = _mlflow_environment(notebook_store)
     client = mlflow.MlflowClient(environment["MLFLOW_TRACKING_URI"])
@@ -273,9 +274,11 @@ def test_a_script_run_opens_no_mlflow_run(
     assert experiment.artifact_location == str((notebook_store / "artifacts").resolve())
     experiment_ids = [item.experiment_id for item in client.search_experiments()]
     assert client.search_runs(experiment_ids) == []
-    assert set(notebook_defs["git_tags"]) == {"git_commit", "git_dirty"}
-    assert re.fullmatch(r"[0-9a-f]{40}", notebook_defs["git_tags"]["git_commit"])
-    assert notebook_defs["git_tags"]["git_dirty"] in {"true", "false"}
+    code_tags = notebook_defs["code_tags"]
+    assert set(code_tags) == {"notebook", "git_commit", "git_dirty"}
+    assert code_tags["notebook"] == "notebooks/03_hyperparameter_tuning.py"
+    assert re.fullmatch(r"[0-9a-f]{40}", code_tags["git_commit"])
+    assert code_tags["git_dirty"] in {"true", "false"}
     assert os.environ.get("MLFLOW_TRACKING_URI") != environment["MLFLOW_TRACKING_URI"]
     assert mlflow.get_tracking_uri() != environment["MLFLOW_TRACKING_URI"]
 
@@ -308,6 +311,30 @@ def test_the_mlflow_cell_refuses_the_canonical_store(
     assert not (project_copy / "mlartifacts").exists()
 
 
+def test_the_mlflow_cell_refuses_an_experiment_with_another_artifact_location(
+    tmp_path: Path,
+) -> None:
+    # The review's F1: an experiment that exists keeps the artifact location it
+    # was created with (MLflow creates a missing one with its default, from the
+    # repository's root the canonical mlartifacts/), and MLflow uses it over the
+    # variable: the cell must refuse it, so no run's artifacts land elsewhere.
+    mlflow = pytest.importorskip("mlflow")
+    environment = _mlflow_environment(tmp_path / "store")
+    client = mlflow.MlflowClient(environment["MLFLOW_TRACKING_URI"])
+    client.create_experiment(
+        environment["MLFLOW_EXPERIMENT_NAME"],
+        artifact_location=str((tmp_path / "elsewhere").resolve()),
+    )
+    notebook_copy = _project_copy(tmp_path, NOTEBOOK_PATH.read_text(encoding="utf-8"))
+    result = _run(notebook_copy, tmp_path / "store", cwd=notebook_copy.parents[1])
+    error = result.stderr[-2000:]
+    assert result.returncode != 0, error
+    assert "ValueError" in error, error
+    assert "AGE_GROUP_MLFLOW_ARTIFACT_LOCATION" in error, error
+    experiment_ids = [item.experiment_id for item in client.search_experiments()]
+    assert client.search_runs(experiment_ids) == []
+
+
 def test_the_tuning_runs_are_logged_only_behind_their_button(
     notebook_defs: dict,
 ) -> None:
@@ -330,8 +357,9 @@ def test_the_tuning_runs_are_logged_only_behind_their_button(
         "n_train": 917,
         "n_val": 306,
         "n_test": 306,
+        "prediction_floor": notebook_defs["PREDICTION_FLOOR"],
     }
-    assert len(notebook_defs["shared_params"]) == 22
+    assert len(notebook_defs["shared_params"]) == 23
     datasets = notebook_defs["tuning_datasets"]
     assert {context: dataset.name for context, dataset in datasets.items()} == {
         "training": "train",
@@ -344,20 +372,41 @@ def test_the_best_runs_are_logged_only_behind_their_button(
     notebook_defs: dict,
 ) -> None:
     # M4: the best runs' run is logged on the button's click only, after the
-    # inspection's click (it reads its results); a script run defines the
-    # figures' function and opens no run (test_a_script_run_opens_no_mlflow_run).
+    # inspection's click (it reads its results), through the evaluation runs'
+    # function; a script run defines the functions and opens no run
+    # (test_a_script_run_opens_no_mlflow_run).
     source = NOTEBOOK_PATH.read_text(encoding="utf-8")
     cells = [
-        cell
-        for cell in source.split("@app.cell")
-        if "_figures = build_dataset_figures(" in cell
+        cell for cell in source.split("@app.cell") if "log_best_runs.value" in cell
     ]
     assert len(cells) == 1
     assert re.search(r"mo\.stop\(\s*not log_best_runs\.value", cells[0])
+    assert "_figures = build_dataset_figures(" in cells[0]
+    assert "_n_metrics = log_evaluation_run(" in cells[0]
     assert notebook_defs["log_best_runs"].value is False
     assert callable(notebook_defs["build_dataset_figures"])
+    assert callable(notebook_defs["log_evaluation_run"])
     assert "best_runs_permutation" not in notebook_defs
     assert "importance_df" not in notebook_defs
+
+
+def test_the_final_run_is_logged_only_behind_its_button(
+    notebook_defs: dict,
+) -> None:
+    # M6: the final run is logged on the button's click only, after the test
+    # evaluation's click (it reads the test part's names), through the same
+    # function as the best runs' run; a script run evaluates nothing on test.
+    source = NOTEBOOK_PATH.read_text(encoding="utf-8")
+    cells = [
+        cell for cell in source.split("@app.cell") if "log_final_run.value" in cell
+    ]
+    assert len(cells) == 1
+    assert re.search(r"mo\.stop\(\s*not log_final_run\.value", cells[0])
+    assert "tags.final = 'true'" in cells[0]
+    assert "_n_metrics = log_evaluation_run(" in cells[0]
+    assert notebook_defs["log_final_run"].value is False
+    for name in ("test_scores_df", "test_predictions", "val_against_test_df"):
+        assert name not in notebook_defs, name
 
 
 SHARING = [(False, False), (True, False), (True, True)]

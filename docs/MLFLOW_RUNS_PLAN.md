@@ -23,8 +23,9 @@ findings. The user accepted every recommendation:
 - F7 (b), F8, F9 and F10 (a), (c).
 
 **They change M6 below:** M6 builds them first, then the final run, one check run. The M6 steps
-here are as first planned: read them with the review's §2–§3. Next: M6 planned with the review,
-an Opus 5.5 session.
+here are as first planned: read them with the review's §2–§3. **M6 done** (the review's
+findings and the final run, one change, one check run), the user commits it. Next: M7, an Opus
+5.5 session (the prompt at the top of the handoff).
 
 ## 1. The question and the verdict
 
@@ -691,7 +692,53 @@ Check C on both equal to M4's run with nothing excepted, Check D unchanged (25 r
   refactor(notebook): the count figures and the shares bars each built by a function (M5)
   ```
 
-### [ ] M6. "Log the final run"
+### [x] M6. "Log the final run"
+
+**Done 2026-11-15** (`03`'s md5 `7c7ab7ad53773ad757f64e55590896ec`; `02` unchanged). The
+review's findings, built as listed below, then the final run.
+- **The final run's cells,** after the shares cell:
+  - the button, "Log the final run";
+  - the logging cell. It stops unless clicked, and is refused when a FINISHED `final=true` run
+    exists ("A final run exists in the experiment: nothing logged."). It builds its 6 tables
+    and 23 figures (the 18 of `build_dataset_figures("test", …)`, two count figures of the
+    total per model, the shares bars of every test building), then calls `log_evaluation_run`.
+- **What the final run holds:** 24 parameters (`n_train_val` among them), 108 `test/` metrics,
+  the datasets `train_val` and `test`; 33 artifacts with `best_params` and `components` ×2.
+- **The one correction to the review's plan:** M4's cell keeps `json`, which its runs tables'
+  dict columns need.
+- **The tests:**
+  - new: `test_the_mlflow_cell_refuses_an_experiment_with_another_artifact_location` (F1)
+    and `test_the_final_run_is_logged_only_behind_its_button`;
+  - adjusted: M1's (`code_tags`), M3's (23 parameters) and M4's (its cell found by
+    `log_best_runs.value`; it calls `log_evaluation_run`).
+
+`checks/run_M6.sh` (log `run_M6.log`), all passed:
+- the non-slow suite 1421 (+2), mypy clean, the notebook tests 41;
+- ruff `03` 15 / `02` 11, the two format hunks, `marimo check` clean;
+- Check B on both (`check_b_m6_tuning.py`: `code_tags`, 23 parameters, the two functions'
+  parameters, the final button unclicked, no run);
+- Check C on both equal to M5's run, with nothing excepted (`check_c_m6_tuning.py`: the
+  records' `study_seed`, asserted and dropped before the comparison). Its click logs the 26
+  runs, the final one on Check C's copy only (E11);
+- the 21 + 27 figures identical to M5's; the scratch store 26 runs; the repo's store
+  unchanged.
+
+**Check D** (`checks/check_d_mlflow.py`, extended):
+- the second run shows the two skips and the final run's refusal, with the same 26 ids;
+- the tuning runs: `code_tags`, no `feature_transformer.*`, 23 shared parameters, the record's
+  `study_seed`, the search space as JSON objects (each reads back as its distribution);
+- the best runs' run: the key with `objective=` and `selection=`, the `best_params` files, 29
+  artifacts;
+- the final run:
+  - its key, its name, its tags (the only `final=true`);
+  - 24 parameters; 108 `test/` metrics, and no `test/` metric in the other 25 runs;
+  - the 6 CSV texts exactly;
+  - the 23 figures' HTML, each equal to the check's own;
+  - 33 artifacts; the two inputs.
+
+**The mutation** (`run_mutant_M6.sh`): the guard disabled, only Check D run, on a copy of the
+main run's store. The mutant logs a second final run (27 runs, 2 final), and Check D fails at
+the refusal's line.
 
 **Read with [MLFLOW_RUNS_REVIEW.md](MLFLOW_RUNS_REVIEW.md) (decided 2026-11-15).** M6 first
 builds the accepted findings, then the steps below:
@@ -777,7 +824,13 @@ it is checked in one run.
   from the repo root would default its artifact destination to the canonical `./mlartifacts`,
   so the guide names one; the UI opens in its "GenAI" mode with an assistant panel; a
   figure loads plotly.js from the CDN, so it needs the network; the two warning filters and
-  why); `docs/README.md`,
+  why; the store's refusals, with M6's (an existing experiment whose artifact location is not
+  the variable's, the review's F1). **The rebuild recipe** (the review's F5 c):
+  `best_params` in each run (`best_params.json` in a tuning run, `best_params/<model>.json` in
+  the other two); `from_params(best_params, name=…, family=…, use_exposure=…,
+  feature_transformer_dict=<the code's candidates at git_commit>)`; then the model with
+  `y_min=prediction_floor` and `random_state=seed`. `components.json` is the readable
+  declaration, not an input.); `docs/README.md`,
   `MODULE_REFERENCE.md` and the root `README.md` link it; a dated note on E9, E10, D1e–D5 in
   `EXPERIMENT_NOTEBOOK_PLAN.md`; this plan's status "complete"; the handoff.
 - **Validate:** the guide's commands run as written on a scratch store; the links resolve;
@@ -792,12 +845,12 @@ it is checked in one run.
 | Item | Where | Note |
 |---|---|---|
 | the run's settings, `use_exposure`, the sharing flags | tuning run, parameters | |
-| `config_hash`, the data settings | every run, parameters | |
+| `config_hash`, the data settings, `prediction_floor` | every run, parameters | `prediction_floor` since M6 (the models' `y_min`) |
 | the config's dotted keys | tuning run, `config.json` | the same in every run; the hash stands for it as a parameter |
 | the split's method and sizes, `n_train` / `n_val` / `n_test` | every run, parameters | |
 | `seed`, the study's seed | parameters | |
 | `n_trials`, `n_startup_trials`, `n_splits`, the objective | every run, parameters | |
-| the search space | tuning run, `search_space.json` | too long for a parameter |
+| the search space | tuning run, `search_space.json` | too long for a parameter; each distribution a JSON object (M6) |
 | the best parameters; the components' `to_dict()` | tuning run, parameters `best.*`, `best_params.json`, `components.json` | |
 | `cv_best`, the point scores, `seconds`, `n_complete`, `n_failed` | tuning run, metrics | |
 | the bootstrap statistics, the paired difference | best runs' run: the composite as metrics, all rows as tables | |
@@ -810,7 +863,7 @@ it is checked in one run.
 | the forest and the ridge, the permutation figures, the beeswarms | best runs' run (validation), final run (test) | a fixed set |
 | the two count figures, the shares bars | final run | the composite; all neighborhoods |
 | the waterfalls | **left out** | each is one building (decision 10) |
-| the fitted model | **left out** | decision 4; rebuilt from `components.json` |
+| the fitted model | **left out** | decision 4; rebuilt with `from_params` from the run's `best_params` (all three run kinds since M6) and `prediction_floor`; `components.json` is the readable declaration |
 | the study's journal file | tuning run, artifact | |
 | the feature transformers' description | tuning run: their names as parameters, their declaration in `components.json` | |
 | the bootstrap replicates | **left out** | no reader: the ridge figure shows them, and the seed recomputes them |

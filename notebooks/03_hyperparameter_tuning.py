@@ -276,14 +276,24 @@ def _(pd, project_root):
     )
     # MLflow reads the two variables checked above at every call, so no global is set
     # (no set_tracking_uri, no set_experiment). The experiment is created here, with its
-    # artifact location: MLflow would create it on the first run without one.
-    if mlflow.get_experiment_by_name(experiment_name) is None:
+    # artifact location: MLflow would create it on the first run without one. An
+    # experiment that exists keeps the location it was created with, which MLflow uses
+    # over the variable: it must be the variable's.
+    _experiment = mlflow.get_experiment_by_name(experiment_name)
+    if _experiment is None:
         mlflow.create_experiment(
             experiment_name, artifact_location=str(Path(artifact_location).resolve())
         )
-    # The code's version, a tag of every run: HEAD, and whether a tracked file differs
-    # from it; git runs in src (in Check C's copy a link to the repo).
-    git_tags = {
+    elif _experiment.artifact_location != str(Path(artifact_location).resolve()):
+        raise ValueError(
+            f"the experiment {experiment_name!r} stores its artifacts in "
+            f"{_experiment.artifact_location!r}, not in "
+            f"AGE_GROUP_MLFLOW_ARTIFACT_LOCATION {artifact_location!r}"
+        )
+    # The code's version, tags of every run: the notebook, HEAD, and whether a tracked
+    # file differs from it; git runs in src (in Check C's copy a link to the repo).
+    code_tags = {
+        "notebook": "notebooks/03_hyperparameter_tuning.py",
         "git_commit": subprocess.run(
             ["git", "rev-parse", "HEAD"],
             cwd=project_root / "src",
@@ -304,7 +314,7 @@ def _(pd, project_root):
         ).lower(),
     }
     print(f"experiment={experiment_name} tracking_uri={tracking_uri}")
-    return git_tags, mlflow
+    return code_tags, mlflow
 
 
 @app.cell(hide_code=True)
@@ -1160,9 +1170,9 @@ def _(
             _scores_by_dataset[_dataset_name] = _dataset_scores.to_frame("score")
         # The run's settings and its best model: the fitted model, its
         # components and their transformers' names (found by identity among
-        # the family's candidates); its study, whose name, trials and best
-        # parameters the MLflow logging reads; its value, trial counts and
-        # seconds.
+        # the family's candidates); its study and the study's seed, whose name,
+        # trials, best parameters and seed the MLflow logging reads; its value,
+        # trial counts and seconds.
         _states = [trial.state.name for trial in _study.trials]
         MODEL1_RUNS.append(
             {
@@ -1176,6 +1186,7 @@ def _(
                 "model": _model,
                 "components": _best_components,
                 "study": _study,
+                "study_seed": _study_seed,
                 "cv_best": _study.best_value,
                 "n_complete": _states.count("COMPLETE"),
                 "n_failed": _states.count("FAIL"),
@@ -1437,9 +1448,9 @@ def _(
             _scores_by_dataset[_dataset_name] = _dataset_scores.to_frame("score")
         # The run's settings and its best model: the fitted model, its
         # components and their transformers' names (found by identity among
-        # each family's candidates); its study, whose name, trials and best
-        # parameters the MLflow logging reads; its value, trial counts and
-        # seconds.
+        # each family's candidates); its study and the study's seed, whose name,
+        # trials, best parameters and seed the MLflow logging reads; its value,
+        # trial counts and seconds.
         _states = [trial.state.name for trial in _study.trials]
         MODEL2_RUNS.append(
             {
@@ -1456,6 +1467,7 @@ def _(
                 "model": _model,
                 "components": _best_components,
                 "study": _study,
+                "study_seed": _study_seed,
                 "cv_best": _study.best_value,
                 "n_complete": _states.count("COMPLETE"),
                 "n_failed": _states.count("FAIL"),
@@ -1528,6 +1540,7 @@ def _(mo, model2_runs_df, model2_scores_df):
 def _(
     DATA_SETTINGS,
     EXPERIMENT_SETTINGS,
+    PREDICTION_FLOOR,
     config_hash,
     hashlib,
     mlflow,
@@ -1537,7 +1550,8 @@ def _(
     val_age_group,
 ):
     # What every run logs as parameters: the data's version and settings, the
-    # experiment's settings (the selection metric among them) and the parts' sizes.
+    # experiment's settings (the selection metric among them), the parts' sizes and
+    # the prediction floor every model is built with (its y_min).
     shared_params = {
         "config_hash": config_hash,
         **DATA_SETTINGS,
@@ -1545,6 +1559,7 @@ def _(
         "n_train": len(train_age_group.X),
         "n_val": len(val_age_group.X),
         "n_test": len(test_age_group.X),
+        "prediction_floor": PREDICTION_FLOOR,
     }
 
     def build_dataset(dataset, name):
@@ -1565,18 +1580,17 @@ def _(
 
 
 @app.cell
-def _(mlflow, optuna):
+def _(json, mlflow, optuna):
     def log_tuning_run(
         record,
         model,
         run_settings,
-        study_seed,
         studies_dir,
         objective_name,
         shared_params,
         config_params,
-        datasets,
-        git_tags,
+        dataset_inputs,
+        code_tags,
     ):
         """One study's run in the active experiment; its id, or None when a FINISHED run
         has its key (a FAILED one is logged again)."""
@@ -1602,12 +1616,13 @@ def _(mlflow, optuna):
         )
         trials["duration"] = trials["duration"].dt.total_seconds()
         trials = trials.rename(columns={"duration": "seconds"})
-        # The search space the trials drew: each parameter's distribution, as Optuna's JSON.
+        # The search space the trials drew: each parameter's distribution, Optuna's JSON
+        # as an object (json_to_distribution(json.dumps(value)) reads it back).
         search_space = {}
         for trial in study.trials:
             for name, distribution in trial.distributions.items():
-                search_space[name] = optuna.distributions.distribution_to_json(
-                    distribution
+                search_space[name] = json.loads(
+                    optuna.distributions.distribution_to_json(distribution)
                 )
         with mlflow.start_run(
             run_name=f"{model} {family} exposure={run_settings['use_exposure']}"
@@ -1618,19 +1633,15 @@ def _(mlflow, optuna):
                     "stage": "tuning",
                     "model": model,
                     "family": family,
-                    "notebook": "notebooks/03_hyperparameter_tuning.py",
-                    **git_tags,
+                    **code_tags,
                 }
             )
+            # The best parameters name each component's feature transformer too.
             mlflow.log_params(
                 {
                     **run_settings,
                     **shared_params,
-                    "study_seed": study_seed,
-                    **{
-                        f"feature_transformer.{name}": value
-                        for name, value in record["feature_transformers"].items()
-                    },
+                    "study_seed": record["study_seed"],
                     **{
                         f"best.{name}": value
                         for name, value in study.best_params.items()
@@ -1669,8 +1680,8 @@ def _(mlflow, optuna):
             mlflow.log_artifact(
                 str(studies_dir / f"{study.study_name}.log"), artifact_path="study"
             )
-            for context, dataset in datasets.items():
-                mlflow.log_input(dataset, context=context)
+            for context, mlflow_dataset in dataset_inputs.items():
+                mlflow.log_input(mlflow_dataset, context=context)
         return run.info.run_id
 
     return (log_tuning_run,)
@@ -1692,12 +1703,11 @@ def _(
     MODEL1_RUN_SETTINGS,
     MODEL2_RUNS,
     MODEL2_RUN_SETTINGS,
+    code_tags,
     config_params,
-    git_tags,
     log_tuning_run,
     log_tuning_runs,
     mo,
-    seed,
     shared_params,
     tuner,
     tuning_datasets,
@@ -1706,26 +1716,23 @@ def _(
         not log_tuning_runs.value,
         mo.md("Click the button to log the tuning runs to MLflow."),
     )
-    # A run per study, the i-th of each model seeded seed + i (as the tune cells).
+    # A run per study (its record keeps the study's seed).
     _logged = _skipped = 0
     for _model, _settings_list, _runs in (
         ("independent_cohorts", MODEL1_RUN_SETTINGS, MODEL1_RUNS),
         ("total_times_probability", MODEL2_RUN_SETTINGS, MODEL2_RUNS),
     ):
-        for _i, (_run_settings, _record) in enumerate(
-            zip(_settings_list, _runs, strict=True)
-        ):
+        for _run_settings, _record in zip(_settings_list, _runs, strict=True):
             _run_id = log_tuning_run(
                 _record,
                 _model,
                 _run_settings,
-                seed + _i,
                 tuner.storage_dir,
                 tuner.objective_metric.name,
                 shared_params,
                 config_params,
                 tuning_datasets,
-                git_tags,
+                code_tags,
             )
             _logged += _run_id is not None
             _skipped += _run_id is None
@@ -2716,6 +2723,91 @@ def _():
 
 
 @app.cell
+def _(mlflow):
+    def log_evaluation_run(
+        run_name,
+        tags,
+        params,
+        dataset,
+        scores_df,
+        difference_df,
+        bound_names,
+        tables,
+        figures,
+        best_runs,
+        dataset_inputs,
+    ):
+        """One run, in the active experiment, of the two best runs evaluated on
+        `dataset` ("val" or "test"); its number of metrics. It logs `tags` and each
+        best run's study name as `best.<model>`; `params`; as metrics, the
+        composite's score and bootstrap statistics per model (`scores_df`) and for
+        their paired difference (`difference_df`), named
+        `<dataset>/<model or difference>/<metric>/<statistic>`, every cohort's rows
+        being in the tables; each of `tables` ({name: frame}) as
+        `tables/<name>.csv` at 6 significant digits (the UI shows it as a table);
+        each of `figures` ({artifact path: figure}); per best run its best
+        parameters (what `from_params` reads) and its components' declaration;
+        each of `dataset_inputs` ({context: MLflow dataset}) as an input."""
+        statistics = [
+            "score",
+            "mean",
+            "median",
+            "sd",
+            bound_names["lower"],
+            bound_names["upper"],
+        ]
+        composite_scores = scores_df[scores_df["cohort"] == "composite"]
+        composite_difference = difference_df[difference_df["cohort"] == "composite"]
+        metrics = {
+            **{
+                f"{dataset}/{row['model']}/{row['metric']}/{statistic}": row[statistic]
+                for row in composite_scores.to_dict("records")
+                for statistic in statistics
+            },
+            **{
+                f"{dataset}/difference/{row['metric']}/{statistic}": row[statistic]
+                for row in composite_difference.to_dict("records")
+                for statistic in statistics
+            },
+        }
+        with mlflow.start_run(run_name=run_name):
+            mlflow.set_tags(
+                {
+                    **tags,
+                    **{
+                        f"best.{model}": record["study"].study_name
+                        for model, record in best_runs.items()
+                    },
+                }
+            )
+            mlflow.log_params(params)
+            mlflow.log_metrics(metrics)
+            for name, table in tables.items():
+                mlflow.log_text(
+                    table.to_csv(index=False, float_format="%.6g"), f"tables/{name}.csv"
+                )
+            # log_figure has no run_id: it needs the active run.
+            for path, figure in figures.items():
+                mlflow.log_figure(figure, path)
+            for model, record in best_runs.items():
+                mlflow.log_dict(
+                    record["study"].best_params, f"best_params/{model}.json"
+                )
+                mlflow.log_dict(
+                    {
+                        component.name: component.to_dict()
+                        for component in record["components"]
+                    },
+                    f"components/{model}.json",
+                )
+            for context, mlflow_dataset in dataset_inputs.items():
+                mlflow.log_input(mlflow_dataset, context=context)
+        return len(metrics)
+
+    return (log_evaluation_run,)
+
+
+@app.cell
 def _(mo):
     log_best_runs = mo.ui.run_button(label="Log the best runs")
     mo.md(
@@ -2741,11 +2833,12 @@ def _(
     best_runs_shap,
     best_runs_val_scores_df,
     build_dataset_figures,
+    code_tags,
     forest_figure,
-    git_tags,
     importance_df,
     json,
     log_best_runs,
+    log_evaluation_run,
     mlflow,
     mo,
     model1_runs_df,
@@ -2764,9 +2857,13 @@ def _(
         not log_best_runs.value,
         mo.md("Click the button to log the best runs to MLflow."),
     )
-    # One such run per experiment: a FINISHED run with the key is kept (a FAILED
-    # one is logged again).
-    _run_key = f"{tuner.storage_dir.name}/best_runs"
+    # One such run per tuning setup, the objective and the selection metric (each
+    # changes the best runs): a FINISHED run with the key is kept (a FAILED one is
+    # logged again).
+    _run_key = (
+        f"{tuner.storage_dir.name}/best_runs__objective={tuner.objective_metric.name}"
+        f"__selection={SELECTION_METRIC.name}"
+    )
     mo.stop(
         bool(
             mlflow.search_runs(
@@ -2776,36 +2873,8 @@ def _(
         ),
         mo.md("The best runs' run is logged: skipped."),
     )
-    # The composite's score and bootstrap statistics as metrics, per model and for
-    # the paired difference; every cohort's rows are in the tables.
-    _statistics = [
-        "score",
-        "mean",
-        "median",
-        "sd",
-        CI_BOUND_NAMES["lower"],
-        CI_BOUND_NAMES["upper"],
-    ]
-    _composite_scores = best_runs_val_scores_df[
-        best_runs_val_scores_df["cohort"] == "composite"
-    ]
-    _composite_difference = best_difference_df[
-        best_difference_df["cohort"] == "composite"
-    ]
-    _metrics = {
-        **{
-            f"val/{row['model']}/{row['metric']}/{statistic}": row[statistic]
-            for row in _composite_scores.to_dict("records")
-            for statistic in _statistics
-        },
-        **{
-            f"val/difference/{row['metric']}/{statistic}": row[statistic]
-            for row in _composite_difference.to_dict("records")
-            for statistic in _statistics
-        },
-    }
-    # The tables at 6 significant digits, as CSV (the UI shows it as a table); a
-    # runs table's two dict columns as JSON text (a CSV cell is text).
+    # The tables (a runs table's two dict columns as JSON text: a CSV cell is
+    # text) and the validation part's 18 figures.
     _dict_columns = ("feature_transformers", "hyperparameters")
     _tables = {
         "best_runs_val_scores": best_runs_val_scores_df,
@@ -2844,40 +2913,21 @@ def _(
         permutation_figure,
         beeswarm_figure,
     )
-    with mlflow.start_run(run_name="best runs"):
-        mlflow.set_tags(
-            {
-                "run_key": _run_key,
-                "stage": "best_runs",
-                **{
-                    f"best.{model}": record["study"].study_name
-                    for model, record in best_runs.items()
-                },
-                "notebook": "notebooks/03_hyperparameter_tuning.py",
-                **git_tags,
-            }
-        )
-        mlflow.log_params(shared_params)
-        mlflow.log_metrics(_metrics)
-        for _name, _table in _tables.items():
-            mlflow.log_text(
-                _table.to_csv(index=False, float_format="%.6g"), f"tables/{_name}.csv"
-            )
-        # log_figure has no run_id: it needs the active run.
-        for _path, _figure in _figures.items():
-            mlflow.log_figure(_figure, _path)
-        for _model, _record in best_runs.items():
-            mlflow.log_dict(
-                {
-                    component.name: component.to_dict()
-                    for component in _record["components"]
-                },
-                f"components/{_model}.json",
-            )
-        for _context, _dataset in tuning_datasets.items():
-            mlflow.log_input(_dataset, context=_context)
+    _n_metrics = log_evaluation_run(
+        "best runs",
+        {"run_key": _run_key, "stage": "best_runs", **code_tags},
+        shared_params,
+        "val",
+        best_runs_val_scores_df,
+        best_difference_df,
+        CI_BOUND_NAMES,
+        _tables,
+        _figures,
+        best_runs,
+        tuning_datasets,
+    )
     mo.md(
-        f"Logged the best runs' run: {len(_metrics)} metrics, {len(_tables)} tables, "
+        f"Logged the best runs' run: {_n_metrics} metrics, {len(_tables)} tables, "
         f"{len(_figures)} figures."
     )
     return
@@ -3146,7 +3196,7 @@ def _(
             mo.ui.table(test_difference_df.round(4)),
         ]
     )
-    return
+    return (val_against_test_df,)
 
 
 @app.cell
@@ -4054,6 +4104,142 @@ def _(
         test_selection_shares_bars,
         test_selection_shares_df,
     )
+
+
+@app.cell
+def _(mo):
+    log_final_run = mo.ui.run_button(label="Log the final run")
+    mo.md(
+        f"{log_final_run} the test evaluation as the final run, once per experiment, "
+        'after "Evaluate on the test part"; a second one is refused.'
+    )
+    return (log_final_run,)
+
+
+@app.cell
+def _(
+    CI_BOUND_NAMES,
+    MODEL_COLORS,
+    PALETTE,
+    SELECTION_METRIC,
+    beeswarm_figure,
+    best_runs,
+    build_dataset,
+    build_dataset_figures,
+    code_tags,
+    counts_histogram_figure,
+    counts_scatter_figure,
+    forest_figure,
+    log_evaluation_run,
+    log_final_run,
+    mlflow,
+    mo,
+    permutation_figure,
+    ridge_figure,
+    seed,
+    selection_shares_bars_figure,
+    shared_params,
+    test_age_group,
+    test_building_scores_df,
+    test_buildings_df,
+    test_difference_df,
+    test_difference_replicates,
+    test_importance_df,
+    test_permutation,
+    test_predictions,
+    test_replicate_scores,
+    test_scores_df,
+    test_shap,
+    train_val_age_group,
+    tuner,
+    val_against_test_df,
+):
+    mo.stop(
+        not log_final_run.value,
+        mo.md("Click the button to log the final run to MLflow."),
+    )
+    # One final run per experiment (E11): a FINISHED run tagged final refuses another.
+    mo.stop(
+        bool(
+            mlflow.search_runs(
+                filter_string="tags.final = 'true' and attributes.status = 'FINISHED'",
+                output_format="list",
+            )
+        ),
+        mo.md("A final run exists in the experiment: nothing logged."),
+    )
+    # The tables at 6 significant digits, as CSV (none has a dict column).
+    _tables = {
+        "test_scores": test_scores_df,
+        "test_difference": test_difference_df,
+        "val_against_test": val_against_test_df,
+        "test_importance": test_importance_df,
+        "test_buildings": test_buildings_df,
+        "test_building_scores": test_building_scores_df,
+    }
+    # The test part's 18 figures (its permutation importance has the test split
+    # only); per model the true and predicted totals per test building; the cohort
+    # shares of every test building.
+    _figures = build_dataset_figures(
+        "test",
+        test_scores_df,
+        test_replicate_scores,
+        test_difference_df,
+        test_difference_replicates,
+        {
+            model: {cohort: {"test": result} for cohort, result in by_cohort.items()}
+            for model, by_cohort in test_permutation.items()
+        },
+        test_shap,
+        test_age_group.X,
+        SELECTION_METRIC.name,
+        CI_BOUND_NAMES,
+        seed,
+        PALETTE,
+        forest_figure,
+        ridge_figure,
+        permutation_figure,
+        beeswarm_figure,
+    )
+    for _model in best_runs:
+        _buildings = test_buildings_df[test_buildings_df["model"] == _model]
+        _figures[f"figures/test_counts_histogram_{_model}_total.html"] = (
+            counts_histogram_figure(_buildings, "total", MODEL_COLORS[_model], PALETTE)
+        )
+        _figures[f"figures/test_counts_scatter_{_model}_total.html"] = (
+            counts_scatter_figure(_buildings, "total", PALETTE)
+        )
+    _figures["figures/test_selection_shares_bars_all.html"] = (
+        selection_shares_bars_figure(
+            test_age_group.Y, test_predictions, MODEL_COLORS, PALETTE
+        )
+    )
+    _n_metrics = log_evaluation_run(
+        "final",
+        {
+            "run_key": f"{tuner.storage_dir.name}/final",
+            "stage": "final",
+            "final": "true",
+            **code_tags,
+        },
+        {**shared_params, "n_train_val": len(train_val_age_group.X)},
+        "test",
+        test_scores_df,
+        test_difference_df,
+        CI_BOUND_NAMES,
+        _tables,
+        _figures,
+        best_runs,
+        {
+            "training": build_dataset(train_val_age_group, "train_val"),
+            "testing": build_dataset(test_age_group, "test"),
+        },
+    )
+    mo.md(
+        f"Logged the final run: {_n_metrics} metrics, {len(_tables)} tables, "
+        f"{len(_figures)} figures."
+    )
+    return
 
 
 if __name__ == "__main__":
