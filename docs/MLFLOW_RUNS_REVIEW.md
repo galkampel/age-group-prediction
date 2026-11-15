@@ -26,7 +26,10 @@ G1 and G2 and §7.5's list in [MLFLOW_RUNS.md](MLFLOW_RUNS.md); the plan's §5 r
 
 **A third review, a cold read of the guide and the two tests (2026-11-15): §8.** Five findings
 on the guide (H1–H5), two on the tests (T1, T2), all accepted (§8.6); decisions 4 and 1
-explained and kept. Not built yet.
+explained and kept.
+
+**Built (2026-11-15), all checks passed:** T1 and T2 in the two tests, H1–H5 in
+[MLFLOW_RUNS.md](MLFLOW_RUNS.md) (§8.6).
 
 ## 1. The verdict
 
@@ -357,8 +360,8 @@ M7) and on a copy of M6's store (`mlflow_M7_guide.db`, 26 runs; the UI on the co
 numbers are in [MLFLOW_RUNS.md](MLFLOW_RUNS.md) unless a file is named. The checks ran once
 (`review3/run_review3.sh` and its log in the scratchpad; the screenshots in `review3/shots/`).
 
-**Status (2026-11-15): decided** (§8.6; do not re-ask). Not built yet: the guide and the test
-file change in the next session.
+**Status (2026-11-15): decided** (§8.6; do not re-ask), and built: the guide and the test file,
+all checks passed (§8.6).
 
 ### 8.1 The verdict
 
@@ -591,3 +594,29 @@ Every recommendation accepted:
   suite, mypy; the guide's commands and python blocks as written on the scratch store (§9's
   recipe also on a copy without its final run: it must finish and say what it skipped; H5's
   block); the two mutations. No Check B, C or D (no notebook changed).
+
+**Built (2026-11-15), each ticked:**
+- [x] **T1:** `run.data.metrics` equals the six values.
+- [x] **T2:** a two-row float dataset (digest `"d" * 36`) in each test, its name, digest and
+  `mlflow.data.context` asserted; an empty plotly figure in the evaluation test, its file
+  asserted.
+- [x] **H1:** §3's numbered path (the "Model training" toggle, the runs list, a run's tabs,
+  the file to open first per run kind).
+- [x] **H2:** `first_run` returns `None`; §9 rebuilds the kinds it finds and prints
+  "skipped: no <kind>"; §8's sentence.
+- [x] **H3:** the eight terms at the top of §1.
+- [x] **H4:** three variables and a fourth MLflow reads; "Button" and "Needs first"; §2's
+  notes one sentence.
+- [x] **H5:** "A study's trials as charts" at the end of §7 (the journal downloaded to a
+  temporary folder, `load_study`, `plot_optimization_history`); §4's journal bullet points to
+  it. Also "its two reviews" → "three" in the guide's header.
+
+**The checks, once** (`review4/run_build.sh`, its log `run_build.log`, in the scratchpad named
+in the handoff's top status): ruff and the format clean; the test file 36 passed; the non-slow
+suite 1423 passed; mypy clean (28 files); the script run (exit 0, `experiment=check-m6`, 26
+runs before and after); `mlflow ui` (health OK, 26 runs through the API, stopped); the three
+python blocks as written (the journal: 3 trials, the best value 4.4543 as the run's `cv/rmse`;
+§8: one tuning run per model; §9: the three kinds, exact); §9 on a copy without the final run
+(exit 0, two kinds exact, "skipped: no final run"); the values mutant fails the tuning test,
+the inputs mutant both tests, and a third, `log_figure` alone made `pass`, the evaluation test
+(its figure assertion). The notebooks' md5, the repo's files and its store unchanged.

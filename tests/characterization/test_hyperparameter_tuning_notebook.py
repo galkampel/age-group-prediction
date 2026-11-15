@@ -22,6 +22,7 @@ from pathlib import Path
 import numpy as np
 import optuna
 import pandas as pd
+import plotly.graph_objects as go
 import pytest
 import shap
 from optuna.samplers import RandomSampler
@@ -415,6 +416,7 @@ def test_a_tuning_run_is_logged_once_then_skipped(
     # The second review's G3: log_tuning_run called on a scratch store with a
     # 2-trial study and a small record. The first call logs the run; the
     # second finds a FINISHED run with its key and logs nothing (M3's skip).
+    # The cold read's T1 and T2: the metrics' values and a dataset input.
     # The experiment is created first: MLflow would create it at its default
     # artifact location, from the repository's root the canonical one.
     mlflow = pytest.importorskip("mlflow")
@@ -454,6 +456,10 @@ def test_a_tuning_run_is_logged_once_then_skipped(
         "git_commit": "0" * 40,
         "git_dirty": "false",
     }
+    # Floats: an integer column makes MLflow's schema inference warn.
+    dataset = mlflow.data.from_pandas(
+        pd.DataFrame({"x": [0.5, 1.5], "y": [2.0, 3.0]}), name="train", digest="d" * 36
+    )
     arguments = (
         record,
         "independent_cohorts",
@@ -462,7 +468,7 @@ def test_a_tuning_run_is_logged_once_then_skipped(
         "rmse",
         {"seed": 42},
         {"simulation.n_neighborhoods": 150},
-        {},
+        {"training": dataset},
         code_tags,
     )
     with pytest.MonkeyPatch.context() as patch:
@@ -494,14 +500,22 @@ def test_a_tuning_run_is_logged_once_then_skipped(
         "study_seed": "7",
         "best.total__alpha": str(study.best_params["total__alpha"]),
     }
-    assert set(run.data.metrics) == {
-        "cv/rmse",
-        "train/composite/rmse",
-        "val/composite/rmse",
-        "seconds",
-        "n_complete",
-        "n_failed",
+    assert run.data.metrics == {
+        "cv/rmse": study.best_value,
+        "train/composite/rmse": 1.5,
+        "val/composite/rmse": 2.5,
+        "seconds": 1.0,
+        "n_complete": 2.0,
+        "n_failed": 0.0,
     }
+    assert [
+        (
+            item.dataset.name,
+            item.dataset.digest,
+            {tag.key: tag.value for tag in item.tags},
+        )
+        for item in run.inputs.dataset_inputs
+    ] == [("train", "d" * 36, {"mlflow.data.context": "training"})]
     artifacts = Path(run.info.artifact_uri)
     assert sorted(
         str(path.relative_to(artifacts))
@@ -529,7 +543,8 @@ def test_an_evaluation_run_logs_the_composite_and_each_best_runs_files(
     # The second review's G3: log_evaluation_run called on a scratch store
     # with two best runs and small frames. The composite rows (each model's
     # and the paired difference's) become metrics, a cohort's row does not;
-    # each best run's study names a tag and gives its best_params file.
+    # each best run's study names a tag and gives its best_params file. The
+    # cold read's T2: a dataset input and a figure.
     mlflow = pytest.importorskip("mlflow")
     environment = _mlflow_environment(tmp_path)
     client = mlflow.MlflowClient(environment["MLFLOW_TRACKING_URI"])
@@ -586,6 +601,10 @@ def test_an_evaluation_run_logs_the_composite_and_each_best_runs_files(
             }
         ]
     )
+    # Floats: an integer column makes MLflow's schema inference warn.
+    dataset = mlflow.data.from_pandas(
+        pd.DataFrame({"x": [0.5, 1.5], "y": [2.0, 3.0]}), name="val", digest="d" * 36
+    )
     with pytest.MonkeyPatch.context() as patch:
         for name, value in environment.items():
             patch.setenv(name, value)
@@ -598,9 +617,9 @@ def test_an_evaluation_run_logs_the_composite_and_each_best_runs_files(
             difference_df,
             bound_names,
             {"scores": scores_df},
-            {},
+            {"figures/a_figure.html": go.Figure()},
             best_runs,
-            {},
+            {"validation": dataset},
         )
     assert n_metrics == 18
     (run,) = client.search_runs([experiment_id])
@@ -626,10 +645,19 @@ def test_an_evaluation_run_logs_the_composite_and_each_best_runs_files(
         "best.total_times_probability": "total_times_probability_study",
     }
     assert run.data.params == {"seed": "42"}
+    assert [
+        (
+            item.dataset.name,
+            item.dataset.digest,
+            {tag.key: tag.value for tag in item.tags},
+        )
+        for item in run.inputs.dataset_inputs
+    ] == [("val", "d" * 36, {"mlflow.data.context": "validation"})]
     artifacts = Path(run.info.artifact_uri)
     assert (artifacts / "tables" / "scores.csv").read_text() == scores_df.to_csv(
         index=False, float_format="%.6g"
     )
+    assert (artifacts / "figures" / "a_figure.html").is_file()
     for model, record in best_runs.items():
         assert (
             json.loads((artifacts / "best_params" / f"{model}.json").read_text())

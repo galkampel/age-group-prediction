@@ -2,7 +2,7 @@
 
 How `notebooks/03_hyperparameter_tuning.py` logs its results to MLflow, how to open them, and
 how to rebuild a model from a run. The decisions behind it are in
-[MLFLOW_RUNS_PLAN.md](MLFLOW_RUNS_PLAN.md) (§1) and its two reviews,
+[MLFLOW_RUNS_PLAN.md](MLFLOW_RUNS_PLAN.md) (§1) and its three reviews,
 [MLFLOW_RUNS_REVIEW.md](MLFLOW_RUNS_REVIEW.md).
 
 The old stack's guide, [MLFLOW_EXPERIMENTS_GUIDE.md](MLFLOW_EXPERIMENTS_GUIDE.md), and its
@@ -11,15 +11,26 @@ cells (decision 5).
 
 ## 1. What is logged, and when
 
+MLflow's terms, as this guide uses them:
+- **the store:** a sqlite file for the runs' values (its address is the *tracking URI*) and a
+  folder for their files (the *artifact location*);
+- **an experiment:** a named group of runs; the notebook logs to one;
+- **a run:** one logged result, here a study or an evaluation;
+- **a parameter:** a setting, kept as text;
+- **a metric:** a number, which the UI sorts by and charts;
+- **a tag:** a label to filter runs by;
+- **an artifact:** a file kept with the run (a table, a figure, JSON);
+- **a dataset input:** the data a run used, by its name and hash (not the data itself).
+
 Three buttons in the notebook each log one kind of run, all in the one experiment that
 `MLFLOW_EXPERIMENT_NAME` names. Nothing is logged without a click, and a script run of the
 notebook logs nothing.
 
-| Run kind | Runs | Button (click after) | `stage` tag | Run name |
-|---|---|---|---|---|
-| a tuning run | 24, one per study | "Log the tuning runs" (both "Tune …" buttons) | `tuning` | `<model> <family> exposure=<True or False>` |
-| the best runs' run | 1 | "Log the best runs" ("Inspect the best runs") | `best_runs` | `best runs` |
-| the final run | 1 | "Log the final run" ("Evaluate on the test part") | `final` | `final` |
+| Run kind | Runs | Button | Needs first | `stage` tag | Run name |
+|---|---|---|---|---|---|
+| a tuning run | 24, one per study | "Log the tuning runs" | both "Tune …" buttons | `tuning` | `<model> <family> exposure=<True or False>` |
+| the best runs' run | 1 | "Log the best runs" | "Inspect the best runs" | `best_runs` | `best runs` |
+| the final run | 1 | "Log the final run" | "Evaluate on the test part" | `final` | `final` |
 
 - **A tuning run** holds one study: its settings, its best parameters, its cross-validation
   and point scores, its trials table and journal, and the components' declaration.
@@ -33,7 +44,8 @@ No fitted model is logged (decision 4): a run holds what rebuilds its models (§
 
 ## 2. The store
 
-The notebook reads the store from four variables, set in `.env` (from `.env.example`):
+The notebook reads the store from three variables, set in `.env` (from `.env.example`) beside
+a fourth that MLflow reads itself:
 
 | Variable | Meaning |
 |---|---|
@@ -54,15 +66,8 @@ a `ValueError` naming the variable, when:
   from the repository root would hold the canonical `./mlartifacts`. Use that location, or
   another experiment name.
 
-A missing experiment is created there, with the variable's location. The cell sets no MLflow
-global (no `set_tracking_uri`, no `set_experiment`): MLflow reads the two `MLFLOW_` variables
-at every call.
-
-It also sets two warning filters, each by its category, message and module, so that any
-other warning still shows. Under pandas 3, two MLflow calls warn on every use:
-- `log_table`'s `select_dtypes` on a string column (`Pandas4Warning`);
-- `log_input`'s schema inference on an integer column (`UserWarning`, "Hint: Inferred schema
-  contains integer…"; under `-W error` MLflow drops the schema silently).
+A missing experiment is created there, with the variable's location. The cell also silences
+two pandas 3 warnings inside MLflow; any other warning still shows.
 
 A script run checks the store without logging. It prints the line
 `experiment=<name> tracking_uri=<uri>`, and the notebook's facts:
@@ -85,15 +90,22 @@ uv run --group tracking mlflow ui --backend-store-uri "$MLFLOW_TRACKING_URI" \
   --artifacts-destination "$AGE_GROUP_MLFLOW_ARTIFACT_LOCATION" --port 5001
 ```
 
-Then open `http://127.0.0.1:5001` and select the experiment.
+Then open `http://127.0.0.1:5001`:
+1. Click **Model training**, the toggle at the top left. MLflow 3.16 opens in its "GenAI"
+   mode, where an experiment shows a traces page and no runs; the choice is kept.
+2. Click the experiment: its runs list.
+3. Click a run. Its page's tabs: **Overview** (the tags, the parameters, the metrics as a
+   table, the datasets), **Model metrics** (the metrics as charts), **Artifacts** (the files:
+   a `.csv` shown as a table, a figure drawn).
+4. The file to open first: a tuning run's `trials.csv`; the best runs' run's
+   `tables/best_runs_val_scores.csv` and `figures/val_forest_runs_<metric>.html`; the final
+   run's `tables/test_scores.csv`.
+
 - **`--artifacts-destination` is given on purpose:** run from the repository root, it
   defaults to `./mlartifacts`, the canonical folder. The runs' own artifacts are read from
   the experiment's location either way.
 - **The port:** 5000 is often taken on macOS (the AirPlay receiver).
-- **The UI's mode:** MLflow 3.16 opens in its "GenAI" mode with an "MLflow Assistant"
-  panel; the runs are under the experiment's runs list.
 - **Figures** are plotly HTML that load plotly.js from `cdn.plot.ly`: they need the network.
-  The UI shows each in its artifact viewer, and a `.csv` file as a table.
 - **The `Default` experiment** is MLflow's own, created with the store. Its artifact
   location is `<working directory>/mlruns/0`; nothing logs to it and no folder is created.
 
@@ -128,7 +140,7 @@ Then open `http://127.0.0.1:5001` and select the experiment.
     (`optuna.distributions.json_to_distribution(json.dumps(value))` reads one back);
   - `config.json` holds the simulator config's dotted keys, the same in every run
     (`config_hash` stands for it as a parameter);
-  - `study/<study name>.log` is the study's Optuna journal;
+  - `study/<study name>.log` is the study's Optuna journal (§7 reads it);
   - `components.json` and `components/<model>.json` hold the components' `to_dict()`.
 - **The best runs' tables:** `best_runs_val_scores`, `best_difference`, `importance`,
   `model1_runs`, `model1_scores`, `model2_runs`, `model2_scores`. A runs table's
@@ -196,10 +208,42 @@ The run names are long and look alike in the runs list's default column width. T
 `family` is a tag in all 24 runs: the column that spans both models. Each model's best run by
 that metric is the run its `best.<model>` tag names in the evaluation runs.
 
+**A study's trials as charts.** Loaded with Optuna, a tuning run's journal gives the study
+back: its trials and Optuna's charts (`plot_optimization_history`, `plot_parallel_coordinate`,
+`plot_param_importances`, `plot_slice` in `optuna.visualization`). The block reads the best
+tuning run's; it copies the file first, since Optuna writes a lock file beside the file it
+opens:
+
+```python
+import tempfile
+
+import mlflow
+import optuna
+
+# MLFLOW_TRACKING_URI and MLFLOW_EXPERIMENT_NAME name the store and the experiment.
+(run,) = mlflow.search_runs(
+    filter_string="tags.stage = 'tuning'",
+    order_by=["metrics.`val/composite/rmse` ASC"],
+    max_results=1,
+    output_format="list",
+)
+study_name = run.data.tags["run_key"].split("/")[1]
+path = mlflow.artifacts.download_artifacts(
+    run_id=run.info.run_id,
+    artifact_path=f"study/{study_name}.log",
+    dst_path=tempfile.mkdtemp(),
+)
+storage = optuna.storages.JournalStorage(optuna.storages.journal.JournalFileBackend(path))
+study = optuna.load_study(study_name=study_name, storage=storage)
+print(study_name, len(study.trials), "trials, best value", study.best_value)
+optuna.visualization.plot_optimization_history(study)  # a notebook cell shows it
+```
+
 ## 8. From an evaluation run to its tuning runs
 
 An evaluation run's `best.<model>` tag is a study name. Behind its own key's folder, it is a
-tuning run's `run_key`:
+tuning run's `run_key`. The block starts from the latest best runs' run, so it needs one
+logged:
 
 ```python
 import os
@@ -247,7 +291,8 @@ out the run's `git_commit` and keep its data settings (`config_hash` must match)
 The recipe below loads the notebook's names from a run with every button unclicked (nothing is
 tuned or logged), rebuilds both models of the latest best runs' run and of the final run and
 the best tuning run by the selection metric, refits each, and asserts its composite scores
-equal the run's metrics. Run on a 3-trial store, it was exact for all three run kinds. Save it
+equal the run's metrics. It rebuilds the run kinds it finds and prints the ones it skips (the
+final run before E11). Run on a 3-trial store, it was exact for all three run kinds. Save it
 as a script and run it from the repository root like the script run in §2, with
 `MLFLOW_ENABLE_ARTIFACTS_PROGRESS_BAR=false` (else each artifact read prints a progress bar):
 
@@ -272,14 +317,14 @@ experiment = client.get_experiment_by_name(os.environ["MLFLOW_EXPERIMENT_NAME"])
 
 def first_run(filter_string, order_by="attributes.start_time DESC"):
     """The first FINISHED run of the experiment matching `filter_string`, by `order_by`
-    (the latest by default)."""
-    (run,) = client.search_runs(
+    (the latest by default); None when there is none."""
+    runs = client.search_runs(
         [experiment.experiment_id],
         f"{filter_string} and attributes.status = 'FINISHED'",
         order_by=[order_by],
         max_results=1,
     )
-    return run
+    return runs[0] if runs else None
 
 
 def read_json(run, path):
@@ -372,18 +417,25 @@ tuning_run = first_run("tags.stage = 'tuning'", f"metrics.`val/composite/{select
 best_runs_run = first_run("tags.stage = 'best_runs'")
 final_run = first_run("tags.final = 'true'")
 for run in (tuning_run, best_runs_run, final_run):
-    assert run.data.params["config_hash"] == names["config_hash"], "another data version"
+    if run is not None:
+        assert run.data.params["config_hash"] == names["config_hash"], "another data version"
 
-model_name = tuning_run.data.tags["model"]
-scores = composite_scores(rebuild_model(tuning_run, model_name), train, val)
-for metric, score in scores.items():
-    assert score == tuning_run.data.metrics[f"val/composite/{metric}"]
-print("tuning run", tuning_run.info.run_name, scores)
+if tuning_run is None:
+    print("skipped: no tuning run")
+else:
+    model_name = tuning_run.data.tags["model"]
+    scores = composite_scores(rebuild_model(tuning_run, model_name), train, val)
+    for metric, score in scores.items():
+        assert score == tuning_run.data.metrics[f"val/composite/{metric}"]
+    print("tuning run", tuning_run.info.run_name, scores)
 
-for run, fit_on, score_on, dataset in (
-    (best_runs_run, train, val, "val"),
-    (final_run, train_val, test, "test"),
+for kind, run, fit_on, score_on, dataset in (
+    ("best runs' run", best_runs_run, train, val, "val"),
+    ("final run", final_run, train_val, test, "test"),
 ):
+    if run is None:
+        print(f"skipped: no {kind}")
+        continue
     for model_name in ("independent_cohorts", "total_times_probability"):
         scores = composite_scores(rebuild_model(run, model_name), fit_on, score_on)
         for metric, score in scores.items():

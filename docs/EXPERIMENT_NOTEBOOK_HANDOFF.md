@@ -1,4 +1,31 @@
-# Handoff: the experiment notebooks, PR 7 merged (#26); the simplification review done; the MLflow runs plan complete (MLFLOW_RUNS_PLAN.md, M0–M7; the guide MLFLOW_RUNS.md); the cold read done (MLFLOW_RUNS_REVIEW.md §8, seven findings accepted); next its findings built (the guide, the two tests), then the user's PR feat/mlflow-runs into main
+# Handoff: the experiment notebooks, PR 7 merged (#26); the simplification review done; the MLflow runs plan complete (MLFLOW_RUNS_PLAN.md, M0–M7; the guide MLFLOW_RUNS.md); the cold read done (MLFLOW_RUNS_REVIEW.md §8) and its seven findings built (the guide, the two tests); next the user's PR feat/mlflow-runs into main
+
+**Status (2026-11-15, the cold read's findings built; the user commits it and opens the PR):**
+- **The state:** branch `feat/mlflow-runs`, on `e906eed` (the cold read). This change:
+  - `tests/characterization/test_hyperparameter_tuning_notebook.py`: T1 (the tuning test
+    asserts the metrics' values) and T2 (a dataset input in each of the two logging tests, a
+    figure in the evaluation test; `plotly.graph_objects` imported);
+  - [MLFLOW_RUNS.md](MLFLOW_RUNS.md): H1 (§3's path through the UI), H2 (`first_run` returns
+    `None`, §9 rebuilds what it finds; §8's sentence), H3 (MLflow's terms, §1), H4 (the three
+    corrections), H5 (a study's journal read with Optuna, end of §7); 392 → 444 lines;
+  - [MLFLOW_RUNS_REVIEW.md](MLFLOW_RUNS_REVIEW.md) (§8 ticked, the checks), this handoff.
+- **The notebooks' md5 (unchanged):** `03_hyperparameter_tuning.py`
+  `7c7ab7ad53773ad757f64e55590896ec`; `02_objective_eda.py`
+  `a98d4dc4578cb884ca31b9d4dde3d992`; `01_eda.py` `4bc1ba3a52dc2ad55d0097a707bd1ccc`.
+- **The checks, once** (`review4/run_build.sh`, `run_build.log`; the review's §8.6 has the
+  details), all passed: ruff and the format; the test file 36; the non-slow suite 1423; mypy;
+  the guide's script run, `mlflow ui` and its three python blocks on the scratch store (§9
+  exact for all three kinds); §9 on a copy without the final run (finishes, "skipped: no final
+  run"); the two mutations of §8.4 each fail a new test, and a `log_figure`-only mutant fails
+  the evaluation test. The repo's files, `mlflow.db` and `mlartifacts/` unchanged; no
+  `.mlflow-local/`.
+- **Next:** the user's PR `feat/mlflow-runs` into `main`. Then, when the user decides: the real
+  run on the user's cache (the tuning and best runs' logging on the user's store; E11's test
+  evaluation and final run, which no session runs), and the roadmap's §5 (the old stack's
+  deletion, `tracking/` with it).
+- **The scratchpad:** `/private/tmp/claude-501/-Users-galkampel-Desktop-Projects-age-group-prediction/58edf1e9-66ab-4510-90cf-1ff156847685/scratchpad`
+  (the previous one copied and repointed, `mlflow_M7_guide.db` pointed at its own
+  `mlartifacts_M6`, the pycache compiled; `review4/` is this session's).
 
 **Status (2026-11-15, after the cold read; the user commits it):**
 - **The state:** branch `feat/mlflow-runs`, on `3ac23b1` (the handoff after M7, on `d59fa47`).
