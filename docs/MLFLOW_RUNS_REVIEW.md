@@ -18,6 +18,9 @@ All go into M6's change, built and checked once (§6). M7 takes F5 (c).
 **Implemented in M6 (2026-11-15), all checks passed** (the plan's M6). The one correction:
 M4's cell keeps `json`, which its runs tables' dict columns need. F5 (c) is in M7's steps.
 
+**A second review, of the whole flow after M6 (2026-11-15): §7.** Three findings, decided:
+G1 and G2 go into M7's guide, G3 is two tests; no notebook change.
+
 ## 1. The verdict
 
 M1–M5 log every item that [MLFLOW_RUNS_PLAN.md](MLFLOW_RUNS_PLAN.md) §5 places in the tuning
@@ -182,3 +185,159 @@ All into M6's change, so the checks run once (the user's rule):
 - then the final run on top of it (F3, F10).
 
 M7 takes F5 (c).
+
+## 7. The second review: the whole flow, before M7 (2026-11-15)
+
+**For:** the user, who decides each finding; then the Opus 5.5 session that builds the accepted
+ones and M7. Done by Fable 5.2, read-only, on HEAD `42a1d1b` (the handoff after M6, `486891a`)
+and on a copy of M6's scratch store (26 runs, read with `MlflowClient`; the UI on the copy).
+Line numbers are in `notebooks/03_hyperparameter_tuning.py`.
+
+**Status (2026-11-15): decided** (§7.6; do not re-ask). No notebook change.
+
+### 7.1 The verdict
+
+**The flow is correct, complete and simple enough: no bug, and nothing to remove.** On the
+store, each run kind holds what §5 places in it, and a model of every run kind was rebuilt from
+the run alone and reproduced the run's logged scores exactly (§7.2). Three findings remain, none
+in the logging's logic:
+- G1: the rebuild recipe M7 plans is one step short for the two evaluation runs (the guide);
+- G2: the 24 run names look alike in the UI's default runs list (the guide, or a rename);
+- G3: no test in the repository calls the two logging functions (one or two tests).
+
+### 7.2 What was checked
+
+- **The store** (`review2/inspect_store.py` in the scratchpad): 24 + 1 + 1 FINISHED runs.
+  - A tuning run: 11 tags, 32–61 parameters (23 shared, the run's settings, `study_seed`,
+    `best.*`), 52 metrics, 6 artifacts, 2 inputs. The 24 names are unique.
+  - The best runs' run: 23 parameters, 108 `val/` metrics, 29 artifacts.
+  - The final run: 24 parameters, 108 `test/` metrics, 33 artifacts, the only `final=true`.
+  - Each `best.<model>` tag, behind the run key's folder, equals exactly one tuning run's
+    `run_key`.
+- **The rebuild, run for real** (`review2/rebuild_from_store.py`): a tuning run of each model,
+  and both models of the best runs' run and of the final run, built with `from_params` from the
+  run's `best_params` file, `prediction_floor` and `seed`, and refit. For each of the six
+  models: `to_dict()` equals the run's `components` file, and the six composite scores equal
+  the run's metrics exactly (`val/composite/<metric>`; `<val or test>/<model>/<metric>/score`).
+  The notebook copy was run unclicked, for the code's candidates and the data only.
+- **The UI** (MLflow 3.16 on the copy; screenshots in the scratchpad's `review2/shots/`): the
+  runs list, a run of each kind, a CSV table, a figure.
+
+### 7.3 The findings
+
+#### G1. An evaluation run names its models' family and exposure only inside a file (the guide's recipe)
+- **Location:** `log_evaluation_run` (lines 2773–2804); the plan's M7 steps ("`components.json`
+  is the readable declaration, not an input").
+- **Evidence:** `from_params` needs `family` and `use_exposure`. A tuning run holds them as
+  parameters. The best runs' run and the final run hold no such parameter (the store: none
+  named `family` or `exposure`): they are in `components/<model>.json` (each component's
+  `family` and `use_exposure`) and inside the study name of the `best.<model>` tag. The rebuild
+  above read them from `components/<model>.json` and was exact.
+- **The change, two options:**
+  - (a) the guide only: for an evaluation run, the recipe reads `family` and `use_exposure`
+    from `components/<model>.json`; M7's sentence and §5's row of the fitted model are corrected. No
+    code.
+  - (b) code: `log_evaluation_run` also logs them as parameters per model (about 8 lines,
+    Check D, the full runner).
+- **Effort:** (a) none beyond M7; (b) small, but a notebook change.
+- **Decision touched:** 4 (the declaration only), and the first review's F5 (c): completed,
+  not reopened.
+- **Recommendation:** (a). The file is already there and already exact.
+
+#### G2. The 24 tuning runs' names look alike in the runs list
+- **Location:** `log_tuning_run`, line 1628: `f"{model} {family} exposure=…"`.
+- **Evidence:** the UI's Run Name column shows about 24 characters at its default width
+  (`review2/shots/1_runs.png`): the 16 runs of Model 2 all read `total_times_probability …`,
+  the 8 of Model 1 `independent_cohorts n…`. What tells them apart is cut.
+- **The change, two options:**
+  - (a) the guide only: the columns to add in the runs list (the tags `model`, `family`; the
+    parameter `use_exposure`; the metric `val/composite/<selection metric>`, sorted), which is
+    how MLflow runs are compared anyway. No code.
+  - (b) a rename, the family first: `f"{family} exposure=… ({model})"`. One line, Check D's
+    expected name, the full runner. It helps half: the longest family
+    (`lgbm_gaussian+logistic`, 22 characters) fills the column, so `exposure=` is still cut.
+- **Effort:** (a) none beyond M7; (b) small, but a notebook change.
+- **Decision touched:** none numbered (the name is M3's as built).
+- **Recommendation:** (a).
+
+#### G3. No test in the repository calls `log_tuning_run` or `log_evaluation_run`
+- **Location:** `tests/characterization/test_hyperparameter_tuning_notebook.py`, lines 338–409.
+- **Evidence:** the three "logged only behind their button" tests read the cells' source text
+  and the unclicked defs. What a run holds, and the skip, are asserted only by Check D, a
+  script in `/private/tmp` (the handoff: "the scratchpad can vanish"). The plan's own
+  mutations show it: M3's (the skip's `return None` made `pass`) and M6's (the guard disabled)
+  were caught by Check D only; neither changes a line the pytest tests read.
+- **The change:** both functions read no global and are in `notebook_defs`, so a test can call
+  them on a `tmp_path` store (the variables set with `monkeypatch`, as `notebook_defs` does):
+  - `log_tuning_run` twice with a 2-trial in-memory study and a small record: the second
+    call returns `None` and the store holds one run; its key, name, tags, parameter and
+    metric names, its six artifacts;
+  - `log_evaluation_run` once with two small frames: the metric names
+    (`<dataset>/<model or difference>/<metric>/<statistic>`), the `best.<model>` tags, the
+    table, `best_params` and `components` files.
+  The best runs' skip and the final run's guard stay Check D's (they are in the cells, behind
+  the clicks).
+- **Effort:** small to medium; tests only, no notebook edit, so no runner: the touched test
+  file and the non-slow suite once.
+- **Decision touched:** the first review's §5 ("the MLflow tests: each asserts something the
+  code can break": still true; this is what they do not reach). Marked as such, with the
+  evidence above.
+- **Recommendation:** accept. If the in-process call leaves any MLflow global set (M1's
+  concern), the session stops and asks.
+
+### 7.4 Considered, no finding
+
+- **Simplicity.** Nothing to remove.
+  - The filter string appears three times (two skips, one guard), each with its own key: a
+    function for it would be longer than the three.
+  - The components' comprehension appears twice, four lines each.
+  - `log_evaluation_run`'s returned count feeds its cell's message only: harmless.
+  - The final run's `run_key` is read by no guard, but it names the tuning setup, and a reader
+    needs it to turn a `best.<model>` tag into a tuning run's exact key.
+  - `family` is a parameter in Model 1's 8 runs and a tag in all 24: the tag is the column
+    that spans both models.
+- **MLflow's practices.** Settings are parameters, outcomes metrics, identity and code version
+  tags, tables and figures artifacts, the parts dataset inputs with a context: as the docs
+  advise. `seconds`, `n_complete`, `n_failed` as metrics are numbers a reader sorts by. A
+  tuning run's `val/<cohort>/<metric>` and an evaluation run's `val/<model>/<metric>/<statistic>`
+  differ in their second part, but the two kinds are never charted together.
+- **No run description** ("No description" in the UI): the `stage` tag and the run's name say
+  what a run is; a description per kind would repeat the guide.
+- **Completeness against §5:** every row found on the store. One wording to correct in M7:
+  "the model's label, the family, the stage … every run, tags": `model` and `family` are the
+  tuning runs' tags; an evaluation run has `best.<model>` instead.
+- **Closed decisions** (1–17, F1–F10): nothing on the store argues against any of them.
+
+### 7.5 What M7's guide must say (beyond its planned steps)
+
+- **The rebuild recipe per run kind** (G1), with where each argument comes from; that it was
+  run and was exact; that the candidates (`COUNT_FEATURE_TRANSFORMERS`,
+  `PROBABILITY_FEATURE_TRANSFORMERS`) are the notebook's at the run's `git_commit`.
+- **Comparing the 24 runs in the UI** (G2): the columns to add and the sort.
+- **From an evaluation run to its tuning runs:** the filter `tags.run_key = '<the run key's
+  folder>/<the best.<model> tag>'`. The tuning run exists only if its button was clicked; the
+  evaluation run does not need it (it holds its own `best_params`).
+- **The metric names of the two kinds,** and that `test/` metrics are in the final run only.
+- **`git_dirty`:** commit before logging, so the run's `git_commit` is the code that ran (the
+  scratch store's runs say `true`).
+- **A deleted run is not seen** by the skips or the guard (`search_runs` reads active runs
+  only): deleting a run in the UI is how one is logged again, the final run included, so
+  deleting the final run is a decision (E11).
+- **The store's `Default` experiment** is MLflow's own, created with the store; its artifact
+  location is `<working directory>/mlruns/0`. Nothing logs to it and no folder is created.
+- **`mlflow.source.name`** is the running script, not the notebook's path: the `notebook` tag
+  is the one to read.
+
+### 7.6 The user's decisions (2026-11-15; do not re-ask)
+
+- **G1: the guide only.** For an evaluation run the recipe reads `family` and `use_exposure`
+  from `components/<model>.json`. No parameter is added.
+- **G2: the guide only.** The guide names the columns to add in the runs list. The run names
+  stay.
+- **G3: both tests.** `log_tuning_run` called twice and `log_evaluation_run` once, on a
+  `tmp_path` store.
+
+**Where they go:** all into M7's session, before the guide. The notebook is not edited:
+- first G3's two tests, with a mutation (M3's: the skip's `return None` made `pass`, on a
+  copy) that the new tuning test must now catch;
+- then the guide with G1, G2 and §7.5's list, and §5's two corrected rows.

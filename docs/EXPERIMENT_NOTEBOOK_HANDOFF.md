@@ -1,4 +1,64 @@
-# Handoff: the experiment notebooks, PR 7 merged (#26); the simplification review done; the MLflow plan written and decided (MLFLOW_RUNS_PLAN.md, M0–M7); M0–M6 done (with the review's findings); next a second Fable 5.2 review of the whole flow, then M7 with Opus 5.5
+# Handoff: the experiment notebooks, PR 7 merged (#26); the simplification review done; the MLflow plan written and decided (MLFLOW_RUNS_PLAN.md, M0–M7); M0–M6 done (with the review's findings); the second review done (three findings, no notebook change); next M7 with Opus 5.5, G3's tests first
+
+**Status (2026-11-15, after the second review; the user commits it):**
+- **The state:** branch `feat/mlflow-runs`, on `42a1d1b` (the handoff after M6). The review
+  changed three docs only: [MLFLOW_RUNS_REVIEW.md](MLFLOW_RUNS_REVIEW.md) (§7),
+  [MLFLOW_RUNS_PLAN.md](MLFLOW_RUNS_PLAN.md) (the status, M7's heading), this handoff.
+- **The notebooks' md5 (unchanged):** `03_hyperparameter_tuning.py`
+  `7c7ab7ad53773ad757f64e55590896ec`; `02_objective_eda.py`
+  `a98d4dc4578cb884ca31b9d4dde3d992`; `01_eda.py` `4bc1ba3a52dc2ad55d0097a707bd1ccc`.
+- **The review** (Fable 5.2, read-only, on M6's store): the flow is correct, complete and
+  simple enough. A model of every run kind was rebuilt from the store alone and reproduced its
+  logged scores exactly. Three findings, decided (do not re-ask):
+  - G1 (the guide): an evaluation run's `family` and `use_exposure` are read from
+    `components/<model>.json`;
+  - G2 (the guide): the columns to add in the UI's runs list; the run names stay;
+  - G3 (two tests): `log_tuning_run` and `log_evaluation_run` called on a `tmp_path` store.
+- **In the scratchpad below** (the previous one copied, its scripts repointed, the pycache
+  compiled), new in `review2/`: `inspect_store.py` and its log; `rebuild_from_store.py` and its
+  log (the recipe, run); `shots/` (six screenshots of the UI).
+- **Next: one Opus 5.5 session, M7** (switch the model to Opus 5.5 after you commit the review).
+  It builds G3's tests first, then the guide. No notebook is edited, so Check B, C and D are not
+  rerun.
+
+  ```text
+  Read docs/MLFLOW_RUNS_PLAN.md in full (the status; §1's decisions and choices 1-17; §3;
+  §4's M7 with its heading, and M1-M6 as built; §5), docs/MLFLOW_RUNS_REVIEW.md (both
+  reviews and my decisions; §7 is the second), then docs/EXPERIMENT_NOTEBOOK_HANDOFF.md: the
+  status at the top and §4 (how to work, git and the editor, the checks, the traps, the iCloud
+  notes, the user's style).
+  Verify the state first: the branch feat/mlflow-runs, HEAD my commit of the second review,
+  `git status` clean; the notebooks' md5 as the handoff's top status; no iCloud-offloaded
+  files (the handoff's §4 check: 0). If anything differs, stop and show me the diff. Copy the
+  scratchpad the handoff's top status names into yours (repoint.py: each script's S= set to
+  yours), compile the pycache. If that scratchpad is gone, tell me before rewriting anything.
+  Then do M7 as its heading in the plan says, as one change: first G3's two tests (the two
+  logging functions called from notebook_defs on a tmp_path store) with their mutation, then
+  the guide docs/MLFLOW_RUNS.md (how to run the notebook and the MLflow UI on a scratch store,
+  what each of the three run kinds holds, the skip rule and the final run's guard, the store's
+  refusals, the rebuild recipe per run kind (G1), comparing the 24 runs in the UI (G2), the
+  second review's §7.5 list, M0's UI notes); the links from docs/README.md,
+  MODULE_REFERENCE.md and the root README.md; the dated note in EXPERIMENT_NOTEBOOK_PLAN.md;
+  §5's two corrected rows; the plan's status "complete". Plan it first in plan mode (re-verify
+  the facts and line numbers read-only, list the exact edits), wait for my go, implement it.
+  Edit no notebook and no src file. Keep it simple, informative names, no private helpers.
+  Run every check once: ruff and the format on the test file, the touched test file, the
+  non-slow suite and mypy; the guide's commands as written on a scratch store (the rebuild
+  recipe on the scratchpad's mlflow_M6.db, with review2/rebuild_from_store.py as the model);
+  the mutation on a copy. Every check exports the four MLflow variables to the scratchpad. If
+  a test call leaves an MLflow global set, or a step needs a choice the plan and the reviews
+  do not make, stop and ask me with the interactive question tool (the options, the evidence,
+  your recommendation first).
+  Never write the repo root's mlflow.db or mlartifacts/, nor .mlflow-local/. Don't run the
+  test evaluation or "Log the final run" on my cache (E11). Stop with a file-by-file summary,
+  the checks, the notebooks' md5 (unchanged), the commit message and the PR description
+  (feat/mlflow-runs into main) in copyable code blocks; tick M7 and update the status lines
+  in the plan and at the top of the handoff. I commit and open the PR myself: never commit,
+  no Co-Authored-By line, no "Generated with Claude Code" in PR text, never git
+  checkout/stash/reset/mv.
+  ```
+- **The test part has still not been run on the user's cache** (E11).
+- **The scratchpad to copy first:** `/private/tmp/claude-501/-Users-galkampel-Desktop-Projects-age-group-prediction/b8845946-63a4-4782-865e-9cde83c05ffe/scratchpad`.
 
 **Status (2026-11-15, end of M6: the review's findings and the final run; the user commits it):**
 - **The state:** branch `feat/mlflow-runs`, on `3e08860` (the review). M6 changed:

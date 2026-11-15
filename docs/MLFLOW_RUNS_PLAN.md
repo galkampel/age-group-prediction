@@ -30,6 +30,13 @@ user's request): first a second Fable 5.2 review of the whole flow, read-only, r
 session that builds the accepted findings and M7, with one check run. Both prompts are at the
 top of the handoff.
 
+**The second review done (2026-11-15):** [MLFLOW_RUNS_REVIEW.md](MLFLOW_RUNS_REVIEW.md) §7.
+Its verdict: the flow is correct, complete and simple enough; a model of every run kind was
+rebuilt from the scratch store alone and reproduced its logged scores exactly. Three findings,
+decided by the user (do not re-ask): G1 and G2 into M7's guide, G3 two tests. **No notebook
+change. Next: M7** (Opus 5.5), which builds G3's tests first; the prompt is at the top of the
+handoff.
+
 ## 1. The question and the verdict
 
 The question (the handoff's §7): how do the tuning notebook's results become MLflow runs,
@@ -818,6 +825,37 @@ it is checked in one run.
   ```
 
 ### [ ] M7. Docs and close
+
+**Built first, from the second review ([MLFLOW_RUNS_REVIEW.md](MLFLOW_RUNS_REVIEW.md) §7,
+decided 2026-11-15); the notebook is not edited:**
+- **G3, two tests** in `tests/characterization/test_hyperparameter_tuning_notebook.py`, each
+  calling a logging function from `notebook_defs` on a `tmp_path` store (the four variables
+  set with `monkeypatch`):
+  - `log_tuning_run` twice with a 2-trial in-memory study and a small record: the second
+    call returns `None` and the store holds one run; its key, name, tags, parameter and
+    metric names, its six artifacts;
+  - `log_evaluation_run` once with two small frames: the metric names, the `best.<model>`
+    tags, the table, `best_params` and `components` files.
+  If a call leaves an MLflow global set (M1's concern: the old `tracking/` tests run after),
+  stop and ask. **Mutation:** M3's (the skip's `return None` made `pass`, on a copy): the new
+  tuning test fails.
+- **G1, in the guide:** for the best runs' run and the final run, the recipe reads `family`
+  and `use_exposure` from `components/<model>.json` (a tuning run has them as parameters). So
+  the steps' sentence below, "`components.json` is the readable declaration, not an input",
+  holds for a tuning run only. The recipe was run on M6's store and was exact (the script
+  `review2/rebuild_from_store.py` in the scratchpad: the model for the guide's code block).
+- **G2, in the guide:** the columns to add in the UI's runs list to compare the 24 runs (the
+  tags `model`, `family`; the parameter `use_exposure`; `val/composite/<selection metric>`,
+  sorted). The run names stay.
+- **The review's §7.5 list** goes into the guide (the link from an evaluation run to its
+  tuning runs, the metric names, `git_dirty`, a deleted run, the `Default` experiment,
+  `mlflow.source.name`).
+- **§5's two rows corrected:** the fitted model's (where `family` and `use_exposure` come
+  from per run kind); the tags' (`model` and `family` are a tuning run's; an evaluation run
+  has `best.<model>`).
+- **The checks, once:** the touched test file and the non-slow suite, mypy, ruff and the
+  format on the test file; the guide's commands as written on a scratch store; G3's mutation.
+  No notebook changed, so Check B, C and D are not rerun (M6's run stands).
 
 - **Model:** Opus 5.5.
 - **Steps:** `docs/MLFLOW_RUNS.md` (how to run the notebook and the UI on the scratch store;
