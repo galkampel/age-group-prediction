@@ -57,7 +57,18 @@
   the next change: `check_c_w1_tuning.pkl`, `mlflow_W1.db` / `mlartifacts_W1`. On the 3-trial
   copy, each model's 5 worst (rmse, composite): independent cohorts B_001396, B_001453,
   B_000240, B_001023, B_000102; total times probability B_001396, B_001443, B_001023,
-  B_001453, B_000945 (the user's store has other models: its own buildings).
+  B_001453, B_000945 (the user's store has other models: its own buildings). Committed
+  `6dd7b32`.
+- **W2 built** (docs only: the guide's §1, §4, §6, §10; the plan's tick) and the scratchpad's
+  `manual/check_store.py` (the final stage: 7 tables, 33 figures, `test_shap_values`, the
+  waterfalls' ranks; the pre-W2 version kept as `check_store_before_w2.py`). The notebooks'
+  md5 unchanged since W1.
+- **The re-check, after the user commits W2:** in the UI delete the final run; reopen the
+  notebook; the four clicks (skipped 8, skipped 16, the best runs skipped, the final logged
+  with 7 tables and 33 figures), a menu change under each evaluation (no logging re-run), the
+  last cell re-run (refused); note the messages before closing; then `check_store.py <copy>
+  age-group-check final` (the final stage only: the other 25 runs name `87ac778`), the scores
+  equal to the table above, the UI walk, the guide's §8 and §9.
 - **Next:** W1, W2 (each stopped for review); then the check store's re-check (§9: the final
   run deleted in the UI, the four clicks again, the skips and the menus recorded,
   `check_store.py … final`, the same scores), the UI walk (the guide's §3, §7) and the guide's

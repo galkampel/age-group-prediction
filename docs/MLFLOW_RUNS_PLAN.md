@@ -7,8 +7,8 @@ sub-task when it is done and update the status line.
 **Status (2026-11-16, §9):** §9 planned (Fable) and approved by the user: the final run also
 logs the test SHAP values as a table and each model's 5 worst test buildings' waterfalls
 (7 tables, 33 figures). Two sub-tasks, W1 (the notebook and the tests) and W2 (the docs and
-the checker), then the check store's re-check of the final run. **W1 built and checked**
-(Opus 5.5; the user commits it); W2 next.
+the checker), then the check store's re-check of the final run. **W1 committed `6dd7b32`;
+W2 built and checked** (Opus 5.5; the user commits it); next the check store's re-check.
 
 **Status (2026-11-16):** §8 planned and approved (logged where the result is produced, no
 logging buttons; replaces decision 2). **§8 complete:** L1 (the names) committed
@@ -1183,7 +1183,8 @@ L2 and L3 may be one stop; L1 is separate so its diff is names only.
 
 ## 9. The SHAP values and waterfalls in the final run (2026-11-16)
 
-**Status:** planned 2026-11-16 (Fable), approved by the user. W1 built and checked; W2 open.
+**Status:** planned 2026-11-16 (Fable), approved by the user. W1 committed `6dd7b32`; W2
+built and checked; the re-check open.
 
 **Why:** the final run holds the mean |SHAP| (`tables/test_importance.csv`) and the
 beeswarms, but not the per-building SHAP values, and no waterfall: the notebook shows one
@@ -1300,7 +1301,15 @@ runs and the best runs' run (7 tables, 18 figures).
      - `test_the_final_run_is_logged_by_the_cell_that_follows_the_test_evaluation` gains:
        `"test_shap_values"` and `waterfall_figure(` in the logging cell; `waterfall_figure(`
        also in the cell that returns `test_waterfall_figures`.
-- [ ] **W2. The docs and the checker.**
+- [x] **W2. The docs and the checker.** Built 2026-11-16 (Opus 5.5): `MLFLOW_RUNS.md` §1,
+  §4 (the table, the tables list with `test_shap_values` and its join, the figures list with
+  the waterfalls' rule and paths), §6 (`mlflow.source.name`: the notebook's path under
+  `marimo edit`, the script's under a check script; read from the check store and the W1
+  store), §10's message; no other count left in the docs. `check_store.py`'s final stage: 7
+  tables, 33 figures, `test_shap_values` (its first four columns, 2 × 3 × `n_test` rows), ranks
+  1–5 of each model's waterfalls. Checked once on a copy of the W1 store (`… check-w1 final`):
+  every expectation met but `git_commit` and `git_dirty` (that store was logged from the
+  uncommitted build, as expected).
   Files: `docs/MLFLOW_RUNS.md`, the scratchpad's `manual/check_store.py`; the handoff and the
   memory are the main session's.
   1. `MLFLOW_RUNS.md`:

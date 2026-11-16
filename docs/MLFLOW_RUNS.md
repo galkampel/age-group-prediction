@@ -41,8 +41,9 @@ study just tuned.
 - **The best runs' run** holds the comparison of each model's best run on the validation
   part: the bootstrap statistics, the paired difference, the permutation importance and
   SHAP figures, and the 24 runs' tables.
-- **The final run** holds the same evaluation on the test part (E11). It is the only run with
-  test metrics.
+- **The final run** holds the same evaluation on the test part (E11), with each test
+  building's SHAP values and the waterfalls of each model's 5 worst test buildings. It is the
+  only run with test metrics.
 
 No fitted model is logged (decision 4): a run holds what rebuilds its models (§9).
 
@@ -134,7 +135,7 @@ Then open `http://127.0.0.1:5001`:
 | more tags | `model`, `family` (`<total>+<probability>` for Model 2) | `best.<model>`: each best run's study name | `best.<model>`; `final=true` |
 | more parameters | the run's settings (`family` or `total_family` and `probability_family`, `use_exposure`, Model 1's sharing flags), `study_seed`, `best.<name>` per best parameter | none | `n_train_val` |
 | metrics | 52 (§5) | 108 (§5) | 108 (§5) |
-| artifacts | `trials.csv`, `best_params.json`, `components.json`, `search_space.json`, `config.json`, `study/<study name>.log` | 7 tables in `tables/`, 18 figures in `figures/`, `best_params/<model>.json`, `components/<model>.json` | 6 tables, 23 figures, `best_params/<model>.json`, `components/<model>.json` |
+| artifacts | `trials.csv`, `best_params.json`, `components.json`, `search_space.json`, `config.json`, `study/<study name>.log` | 7 tables in `tables/`, 18 figures in `figures/`, `best_params/<model>.json`, `components/<model>.json` | 7 tables, 33 figures, `best_params/<model>.json`, `components/<model>.json` |
 | inputs (context: name) | `training`: `train`, `validation`: `val` | the same | `training`: `train_val`, `testing`: `test` |
 
 - **The artifacts:**
@@ -150,14 +151,22 @@ Then open `http://127.0.0.1:5001`:
   `model1_runs`, `model1_scores`, `model2_runs`, `model2_scores`. A runs table's
   `feature_transformers` and `hyperparameters` cells are JSON text.
 - **The final run's tables:** `test_scores`, `test_difference`, `val_against_test`,
-  `test_importance`, `test_buildings`, `test_building_scores`.
+  `test_importance`, `test_buildings`, `test_building_scores`, `test_shap_values`.
+  `test_shap_values` has a row per model, test building and cohort: `model`, `building_id`,
+  `cohort`, `base_value`, then a SHAP value per feature (the base plus the values is the
+  cohort's prediction). The features' own values and the counts are in `test_buildings`,
+  joined on `model` and `building_id`.
 - **The figures:**
   - the forest and the ridge of the selection metric, for the two runs and for their
     difference;
   - per model, the permutation figure of the composite and of each cohort, and the beeswarm
     of each cohort;
-  - the final run adds the two count figures of the total per model and the shares bars of
-    every test building.
+  - the final run adds the two count figures of the total per model, the shares bars of
+    every test building, and per model the waterfalls of the total for its 5 worst test
+    buildings by the selection metric on the composite
+    (`figures/test_waterfall_<model>_total_<rank>_<building_id>.html`, rank 1 the worst). Any
+    other building's or cohort's waterfall is rebuilt from `test_shap_values`: the cohort's
+    row, or the three cohorts' rows summed for the total.
 - **The tables are CSV at 6 significant digits,** for reading in the UI. The exact values are
   in the journal, `best_params` and the `best.*` parameters.
 
@@ -201,8 +210,9 @@ split, the seed and the budget: `data=<hash>__split_method=…__n_startup_trials
   decision.
 - **Commit before logging:** a run's `git_commit` is the code that ran only when `git_dirty`
   is `false`.
-- **`mlflow.source.name`** is the running script (the marimo kernel or a check script), not
-  the notebook: read the `notebook` tag.
+- **`mlflow.source.name`** is the notebook's absolute path under `marimo edit`, and the
+  script's path when a script runs the notebook (a check script): read the `notebook` tag,
+  the repository-relative path in both.
 
 ## 7. Comparing the 24 tuning runs in the UI
 
@@ -496,7 +506,7 @@ says. Run every command from the repository root.
    7 tables, 18 figures."
 
 5. **Click "Evaluate on the test part"** (the one look; a few minutes). Under the
-   notebook's last cell: "Logged the final run: 108 metrics, 6 tables, 23 figures."
+   notebook's last cell: "Logged the final run: 108 metrics, 7 tables, 33 figures."
 
 6. **Check that nothing is logged twice:**
    - click a Tune button again: "Logged 0 tuning runs, skipped 8 (already logged)." (or 16);
