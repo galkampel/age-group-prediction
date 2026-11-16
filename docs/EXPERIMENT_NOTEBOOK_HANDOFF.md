@@ -1,5 +1,31 @@
 # Handoff: the experiment notebooks, PR 7 merged (#26); the simplification review done; the MLflow runs plan complete (MLFLOW_RUNS_PLAN.md, M0–M7; the guide MLFLOW_RUNS.md); the cold read done (MLFLOW_RUNS_REVIEW.md §8) and its seven findings built (the guide, the two tests); the PR feat/mlflow-runs into main open, not merged; the logging buttons replaced by logging where each result is produced (MLFLOW_RUNS_PLAN.md §8, L1–L4, complete); next a guided manual run with four clicks on a check store (the test part and the final run included), before the merge
 
+**Status (2026-11-16, §8 validated by Fable; L5 built, its three findings; the user commits it):**
+- **The validation** (read-only, on `5256bbc`): the build matches §8 and has no defect.
+  - the three commits' diffs against §8; nothing outside the logging changed;
+  - the cell graph: each evaluation logging cell runs only after its click;
+  - Opus's logs (all passed); `manual/check_store.py` on a copy of `mlflow_L2.db` (26 runs,
+    the guide's counts);
+  - three mutations on copies, each failing a rewritten test (a Tune cell that stops
+    logging, a logging cell reading a `.value`, the final guard removed).
+- **L5** ([MLFLOW_RUNS_PLAN.md](MLFLOW_RUNS_PLAN.md) §8): F1 (a display menu re-ran a
+  logging cell: `best_difference_df` now computed with the best runs' bootstrap,
+  `val_against_test_df` with the test evaluation), F2 (the digest in two statements; "runs"
+  in two comments), F3 (the counters as `if`/`else`); and the guide's new §10 (checking the
+  logging, step by step). The notebook and two docs changed; no test changed.
+- **The checks, each once** (`checks/run_L5.sh` to step 4, then `run_L5_rest.sh`; the copy
+  script `make_copy_tuning_l5.py`, its anchors moved with F1): mypy; the test file 36; the
+  non-slow suite 1423; Check B; Check C (equal to L2's run); Check D (skipped 8, skipped 16,
+  the best runs skipped, the final refused); the L5 store equal to M6's; the guide's three
+  blocks (§9 exact). ruff: two more bare `return`s (choice 16), no other finding.
+- **The notebook's md5:** `03_hyperparameter_tuning.py` `f527e65cce15b4303fb0915f13f1b8e9`
+  (the other two unchanged). It replaces the md5 in the status below and in its prompt's
+  state check; HEAD there is the commit of L5.
+- **Not tested by any check:** that marimo's live editor runs each logging cell after its
+  click (the checks run the notebook as a script). The manual run's first click tests it.
+- **Next: the manual run.** Either the guided session (the prompt in the status below), or
+  alone with the guide's §10.
+
 **Status (2026-11-16, §8 complete: L4 built, the docs; the user commits it):**
 - **The state:** branch `feat/mlflow-runs`, on `904c2bd` (L2 + L3). L4 changed docs only:
   [MLFLOW_RUNS.md](MLFLOW_RUNS.md) (§1's opening and table, §6's skips and guard, §8's

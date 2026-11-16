@@ -1,9 +1,9 @@
 # MLflow runs of the tuning notebook
 
 How `notebooks/03_hyperparameter_tuning.py` logs its results to MLflow, how to open them, and
-how to rebuild a model from a run. The decisions behind it are in
-[MLFLOW_RUNS_PLAN.md](MLFLOW_RUNS_PLAN.md) (§1; §8 for the logging without buttons) and its
-three reviews,
+how to rebuild a model from a run. To check the logging yourself, follow §10's steps. The
+decisions behind it are in [MLFLOW_RUNS_PLAN.md](MLFLOW_RUNS_PLAN.md) (§1; §8 for the logging
+without buttons) and its three reviews,
 [MLFLOW_RUNS_REVIEW.md](MLFLOW_RUNS_REVIEW.md).
 
 The old stack's guide, [MLFLOW_EXPERIMENTS_GUIDE.md](MLFLOW_EXPERIMENTS_GUIDE.md), and its
@@ -449,3 +449,76 @@ for kind, run, fit_on, score_on, dataset in (
             assert score == run.data.metrics[f"{dataset}/{model_name}/{metric}/score"]
         print(run.info.run_name, model_name, scores)
 ```
+
+## 10. Checking the logging, step by step
+
+A complete run on a store of its own, to see that every run kind is logged as this guide
+says. Run every command from the repository root.
+
+**Before you start:**
+- **The test part.** Step 5 evaluates the test part, which is meant to be looked at once
+  (E11). Stop after step 4 if this is not that look.
+- **The studies.** A Tune click loads a study stored in `studies/` and tunes one that is not
+  stored. Loading takes minutes; tuning takes far longer.
+- **Commit first** (§6): a run then names the code that produced it (`git_dirty` `false`).
+
+1. **Point `.env` at a check store.** Replace its three MLflow lines (keep the others):
+
+   ```
+   MLFLOW_TRACKING_URI=sqlite:///.mlflow-check/mlflow.db
+   MLFLOW_EXPERIMENT_NAME=age-group-check
+   AGE_GROUP_MLFLOW_ARTIFACT_LOCATION=.mlflow-check/mlartifacts
+   ```
+
+   `.mlflow-check/` is git-ignored (the patterns `mlflow.db` and `mlartifacts/`). Any folder
+   works, except the root's `mlflow.db` and `mlartifacts/` (§2).
+
+2. **Open the notebook:**
+
+   ```bash
+   uv run --env-file .env --group notebook --group tracking \
+     marimo edit notebooks/03_hyperparameter_tuning.py
+   ```
+
+   The setup cells run by themselves; nothing is tuned or logged. In the MLflow cell's
+   output, check the line `experiment=age-group-check tracking_uri=sqlite:///.mlflow-check/mlflow.db`.
+   A `ValueError` there names the variable to fix.
+
+3. **Click the two Tune buttons,** one after the other. Under each Tune cell:
+
+   | Click | You should see |
+   |---|---|
+   | "Tune the independent cohorts model" | "Logged 8 tuning runs, skipped 0 (already logged)." |
+   | "Tune the total times probability model" | "Logged 16 tuning runs, skipped 0 (already logged)." |
+
+4. **Click "Inspect the best runs"** (the bootstrap, the permutation importance and SHAP:
+   a few minutes). Under the section's last cell: "Logged the best runs' run: 108 metrics,
+   7 tables, 18 figures."
+
+5. **Click "Evaluate on the test part"** (the one look; a few minutes). Under the
+   notebook's last cell: "Logged the final run: 108 metrics, 6 tables, 23 figures."
+
+6. **Check that nothing is logged twice:**
+   - click a Tune button again: "Logged 0 tuning runs, skipped 8 (already logged)." (or 16);
+   - re-run the cell under step 4's message (its ▶ button): "The best runs' run is logged:
+     skipped.";
+   - re-run the notebook's last cell: "A final run exists in the experiment: nothing logged."
+
+7. **Open the MLflow UI** (§3: the command, then **Model training**). In the experiment
+   `age-group-check` you should find:
+
+   | Search | Runs | Open first |
+   |---|---|---|
+   | `tags.stage = 'tuning'` | 24 | `trials.csv` (a row per trial) |
+   | `tags.stage = 'best_runs'` | 1 | `tables/best_runs_val_scores.csv`, then a figure |
+   | `tags.stage = 'final'` | 1 | `tables/test_scores.csv` |
+
+   Every run's status is FINISHED. §4 and §5 list what each run holds; §7 compares the 24
+   tuning runs.
+
+8. **Rebuild the models from the runs** (§9's recipe, saved as a script). It must print the
+   tuning run, the best runs' two models and the final run's two models, with no "skipped"
+   line and no `AssertionError`: each rebuilt model's scores equal its run's metrics.
+
+9. **Clean up.** Close the notebook and the UI, delete the store (`rm -rf .mlflow-check`),
+   and put `.env`'s three lines back (`.env.example` has them).

@@ -1151,6 +1151,14 @@ Kept: `run_settings`, `studies_dir`, `shared_params`, `config_params`, `code_tag
   patched" (past checks) and the reviews are history: unchanged. The manual run's prompt: the
   user's choice, the best runs' skip and the final run's refusal shown by re-running only
   their logging cells (no second inspection or test evaluation).
+- [x] **L5. The validation's three findings** (Fable, 2026-11-16; the logged content
+  unchanged, the store equal to M6's):
+  - F1: a display menu re-ran a logging cell (which skipped). `best_difference_df` is now
+    computed with the best runs' bootstrap and `val_against_test_df` with the test
+    evaluation, so each logging cell depends on the buttons only (traced in the cell graph);
+  - F2: the dataset digest in two statements; the Tune cells' comments say "runs";
+  - F3: the logged and skipped counters as a plain `if`/`else`;
+  - the guide's §10: checking the logging, step by step.
 
 L2 and L3 may be one stop; L1 is separate so its diff is names only.
 

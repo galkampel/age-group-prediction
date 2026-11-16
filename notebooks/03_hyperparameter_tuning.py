@@ -1049,9 +1049,8 @@ def _(
         its X and Y side by side, the digest the SHA-256 of its rows (pandas' row
         hashes), its first 36 characters (MLflow's limit)."""
         df = age_group_dataset.X.join(age_group_dataset.Y)
-        digest = hashlib.sha256(pd.util.hash_pandas_object(df).to_numpy()).hexdigest()[
-            :36
-        ]
+        row_hashes = pd.util.hash_pandas_object(df).to_numpy()
+        digest = hashlib.sha256(row_hashes).hexdigest()[:36]
         return mlflow.data.from_pandas(df, name=name, digest=digest)
 
     tuning_dataset_inputs = {
@@ -1272,7 +1271,7 @@ def _(
     )
     # The independent cohorts model's runs, one after another, the i-th seeded
     # seed + i. A failed trial is caught by the study; any other error ends
-    # the loop, and the records made so far are lost (their MLflow runs stay).
+    # the loop, and the runs made so far are lost (their MLflow runs stay).
     MODEL1_RUNS = []
     _logged = _skipped = 0
     for _i, _run_settings in enumerate(MODEL1_RUN_SETTINGS):
@@ -1365,8 +1364,10 @@ def _(
             tuning_dataset_inputs,
             code_tags,
         )
-        _logged += _run_id is not None
-        _skipped += _run_id is None
+        if _run_id is None:
+            _skipped += 1
+        else:
+            _logged += 1
     mo.md(f"Logged {_logged} tuning runs, skipped {_skipped} (already logged).")
     return (MODEL1_RUNS,)
 
@@ -1564,7 +1565,7 @@ def _(
     )
     # The total times probability model's runs, one after another, the i-th
     # seeded seed + i. A failed trial is caught by the study; any other error
-    # ends the loop, and the records made so far are lost (their MLflow runs stay).
+    # ends the loop, and the runs made so far are lost (their MLflow runs stay).
     MODEL2_RUNS = []
     _logged = _skipped = 0
     for _i, _run_settings in enumerate(MODEL2_RUN_SETTINGS):
@@ -1669,8 +1670,10 @@ def _(
             tuning_dataset_inputs,
             code_tags,
         )
-        _logged += _run_id is not None
-        _skipped += _run_id is None
+        if _run_id is None:
+            _skipped += 1
+        else:
+            _logged += 1
     mo.md(f"Logged {_logged} tuning runs, skipped {_skipped} (already logged).")
     return (MODEL2_RUNS,)
 
@@ -1743,6 +1746,7 @@ def _(
     SELECTION_METRIC,
     alpha,
     bootstrap_evaluator,
+    build_paired_difference,
     mo,
     pd,
     summarize_replicates,
@@ -1802,6 +1806,13 @@ def _(
     best_runs_val_scores_df = pd.concat(
         _scores_by_run, names=["model", "family", "use_exposure"]
     ).reset_index()
+    # The two best runs' paired difference per replicate: both were scored on
+    # the same replicate rows (one evaluator), so the difference keeps the
+    # pairing, and its interval is far narrower than either run's. Below 0
+    # the total times probability model scores lower.
+    best_difference_replicates, best_difference_df = build_paired_difference(
+        best_runs_val_scores_df, best_replicate_scores, alpha, CI_BOUND_NAMES
+    )
     mo.md(
         f"**Each model's best run by the {SELECTION_METRIC.name} of the "
         "composite on validation, bootstrapped on validation:** "
@@ -1813,6 +1824,8 @@ def _(
         "interval; a table per model below)"
     )
     return (
+        best_difference_df,
+        best_difference_replicates,
         best_replicate_scores,
         best_runs,
         best_runs_val_scores_df,
@@ -2158,23 +2171,14 @@ def _(METRICS, SELECTION_METRIC, mo):
 def _(
     CI_BOUND_NAMES,
     PALETTE,
-    alpha,
+    best_difference_df,
     best_difference_metric,
     best_difference_plot,
-    best_replicate_scores,
-    best_runs_val_scores_df,
-    build_paired_difference,
+    best_difference_replicates,
     forest_figure,
     mo,
     ridge_figure,
 ):
-    # The two best runs' paired difference per replicate: both were scored on
-    # the same replicate rows (one evaluator), so the difference keeps the
-    # pairing, and its interval is far narrower than either run's. Below 0
-    # the total times probability model scores lower.
-    best_difference_replicates, best_difference_df = build_paired_difference(
-        best_runs_val_scores_df, best_replicate_scores, alpha, CI_BOUND_NAMES
-    )
     _difference_name = best_difference_df["model"].iloc[0]
     # The chosen plot and metric, one x axis for every cohort so the rule at
     # 0 lines up.
@@ -2217,7 +2221,7 @@ def _(
             mo.ui.table(best_difference_df.round(4)),
         ]
     )
-    return best_difference_df, best_difference_replicates
+    return
 
 
 @app.cell
@@ -2964,6 +2968,7 @@ def _(
     PREDICTION_FLOOR,
     alpha,
     best_runs,
+    best_runs_val_scores_df,
     bootstrap_evaluator,
     build_independent_cohorts_model,
     build_paired_difference,
@@ -3051,6 +3056,21 @@ def _(
     test_difference_replicates, test_difference_df = build_paired_difference(
         test_scores_df, test_replicate_scores, alpha, CI_BOUND_NAMES
     )
+    # Each model's composite score per metric on validation (refit on the
+    # training part: the selection evidence, optimistic) and on test (refit on
+    # the training and validation parts: the fair score).
+    val_against_test_df = pd.DataFrame(
+        {
+            _dataset: _scores[_scores["cohort"] == "composite"].set_index(
+                ["model", "metric"]
+            )["score"]
+            for _dataset, _scores in (
+                ("val", best_runs_val_scores_df),
+                ("test", test_scores_df),
+            )
+        }
+    )
+    val_against_test_df = val_against_test_df.reset_index()
     mo.md(
         "**Each model's best run refit on the training and validation parts "
         f"({len(train_val_age_group.X)} rows) and scored once on the test part "
@@ -3068,6 +3088,7 @@ def _(
         test_replicate_scores,
         test_scores_df,
         train_val_age_group,
+        val_against_test_df,
     )
 
 
@@ -3090,10 +3111,8 @@ def _(METRICS, SELECTION_METRIC, mo):
 def _(
     CI_BOUND_NAMES,
     PALETTE,
-    best_runs_val_scores_df,
     forest_figure,
     mo,
-    pd,
     ridge_figure,
     test_difference_df,
     test_difference_replicates,
@@ -3101,6 +3120,7 @@ def _(
     test_plot,
     test_replicate_scores,
     test_scores_df,
+    val_against_test_df,
 ):
     _difference_name = test_difference_df["model"].iloc[0]
     if test_plot.value == "forest":
@@ -3133,21 +3153,6 @@ def _(
         )
     else:
         raise ValueError(f"unknown plot {test_plot.value!r}")
-    # Each model's composite score per metric on validation (refit on the
-    # training part: the selection evidence, optimistic) and on test (refit on
-    # the training and validation parts: the fair score).
-    val_against_test_df = pd.DataFrame(
-        {
-            _dataset: _scores[_scores["cohort"] == "composite"].set_index(
-                ["model", "metric"]
-            )["score"]
-            for _dataset, _scores in (
-                ("val", best_runs_val_scores_df),
-                ("test", test_scores_df),
-            )
-        }
-    )
-    val_against_test_df = val_against_test_df.reset_index()
     mo.vstack(
         [
             mo.md(
@@ -3178,7 +3183,7 @@ def _(
             mo.ui.table(test_difference_df.round(4)),
         ]
     )
-    return (val_against_test_df,)
+    return
 
 
 @app.cell
