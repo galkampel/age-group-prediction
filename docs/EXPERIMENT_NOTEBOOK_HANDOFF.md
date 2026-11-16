@@ -1,5 +1,54 @@
 # Handoff: the experiment notebooks, PR 7 merged (#26); the simplification review done; the MLflow runs plan complete (MLFLOW_RUNS_PLAN.md, M0–M7; the guide MLFLOW_RUNS.md); the cold read done (MLFLOW_RUNS_REVIEW.md §8) and its seven findings built (the guide, the two tests); the PR feat/mlflow-runs into main to open, not merged; next a guided manual run on a check store (the test part and the final run included), before the merge
 
+**Status (2026-11-16, the guided manual run paused; a change planned first):**
+- **The user's decision:** a run is logged by the step that produces it, with no logging
+  button (the common practice). It replaces decision 2 of the MLflow plan. The plan is
+  [MLFLOW_RUNS_PLAN.md](MLFLOW_RUNS_PLAN.md) §8 (L1–L4: the names, the tuning runs logged
+  inside the Tune cells, the two evaluation runs logged without a button, the docs).
+  Logging code only, so it is allowed before E11's look.
+- **The state:** branch `feat/mlflow-runs`, on `2ba477c`; this change is the plan's §8, its
+  status line, the note under decision 2, and this status. The notebooks' md5 unchanged
+  (below).
+- **The manual run so far** (the plan of the status below, steps 0–1 only; nothing clicked,
+  nothing logged):
+  - the state verified; the user's cache holds all 24 studies, complete
+    (`studies/data=dd15b240__…__n_trials=100__n_startup_trials=10/`, 100 trials each; one
+    journal also holds a deleted partial study), so a Tune click loads;
+  - the check store is the user's choice in `.env` (`MLFLOW_EXPERIMENT_NAME=age-group-check`;
+    the store in `~/mlflow-check/`, or `.mlflow-check/` in the repo, git-ignored by the
+    existing patterns); not created yet;
+  - the repo's store before: `mlflow.db` md5 `5af703e5d57843e824fd1f42314c1222`, 411 entries
+    under `mlartifacts/`, no `.mlflow-local/`.
+- **The scratchpads:** this session's
+  `/private/tmp/claude-501/-Users-galkampel-Desktop-Projects-age-group-prediction/d4faa49a-a1dc-4f96-90f6-6fa3f0da65ca/scratchpad`
+  holds the scripts only (`checks/`, `probes/`, `viewer/`, `review3/`, `review4/`,
+  `guide_blocks/`, repointed; the pycache) and `manual/check_store.py` (the check store
+  against the guide, per stage; read-only). The references, the project copies and the
+  stores are still in the previous one (`58edf1e9…`, the status below).
+- **Next: build §8** (Opus 5.5, a sub-task per approval). Paste:
+
+  ```text
+  Read docs/EXPERIMENT_NOTEBOOK_HANDOFF.md: the status at the top and §4 (how to work, the
+  checks, the traps, the iCloud notes, my style); docs/MLFLOW_RUNS_PLAN.md §8 (the plan) and
+  §3 (how a sub-task is done); docs/MLFLOW_RUNS.md.
+  Verify the state first: the branch feat/mlflow-runs, HEAD my commit of this plan (on
+  2ba477c), `git status` clean; the notebooks' md5 as the handoff's status of 2026-11-15; no
+  iCloud-offloaded files (the handoff's §4 check: 0). If anything differs, stop and show me the
+  diff. Copy the scratchpad 58edf1e9… (the full one) into yours, then manual/check_store.py
+  from d4faa49a… (repoint.py: OLD and NEW set), compile the pycache. If a scratchpad is gone,
+  tell me before rewriting anything.
+  Build the plan's §8, one sub-task per approval, starting with L1 (the names; no behaviour
+  change). Before each sub-task, summarize it in the chat and wait for my go. Tell me before
+  editing the notebook. Static checks first, then each check once (§8's Validate). Change no
+  model, setting or selection. Never write the repo root's mlflow.db or mlartifacts/, nor
+  .mlflow-local/, nor my check store. Never click the test part on my cache.
+  Stop after each sub-task with a file-by-file summary, the checks, the notebooks' md5 and
+  the commit message in a copyable code block; tick the sub-task and update the status lines
+  in the plan and at the top of the handoff. After L4, rewrite the guided manual run's prompt
+  for four clicks. I commit myself: never commit, no Co-Authored-By line, no "Generated with
+  Claude Code", never git checkout/stash/reset/mv.
+  ```
+
 **Status (2026-11-15, the cold read's findings built; the user commits it and opens the PR):**
 - **The state:** branch `feat/mlflow-runs`; the build committed as `29d28d4` (on `e906eed`,
   the cold read), then this handoff's plan below. The build changed:
