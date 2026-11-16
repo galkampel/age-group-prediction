@@ -5,8 +5,10 @@ can implement one from this file and the handoff's §4). One sub-task per approv
 sub-task when it is done and update the status line.
 
 **Status (2026-11-16):** §8 planned and approved (logged where the result is produced, no
-logging buttons; replaces decision 2). L1 done (the names; every check passed, the logged
-content equal to M6's), for the user to commit; L2–L4 open, before the guided manual run.
+logging buttons; replaces decision 2). L1 done (the names), committed `fb8e50f`. L2 and L3
+done in one stop (each run logged by the step that produces it; every check passed, the
+logged content equal to M6's), for the user to commit; L4 (the docs) open, before the
+guided manual run.
 
 **Status (2026-11-14):** M0 done (the probe; its findings in §1 and in M1–M6's exact calls; the
 user's four choices 11–14), committed `8e1ea98`. M1 done (the MLflow cell; the user's choice
@@ -1017,8 +1019,9 @@ Code" in PR text, never git checkout/stash/reset/mv.
 
 ## 8. Logged where the result is produced: no logging buttons (2026-11-16)
 
-**Status:** planned 2026-11-16 (Fable), approved by the user. L1 done 2026-11-16 (Opus 5.5);
-L2–L4 open. Built before the guided manual run, which then checks this design.
+**Status:** planned 2026-11-16 (Fable), approved by the user. L1 done 2026-11-16 (Opus 5.5),
+committed `fb8e50f`; L2 and L3 done 2026-11-16 in one stop (the user's choice); L4 open.
+Built before the guided manual run, which then checks this design.
 
 **Why:** with a "Log …" button per run kind, a result can exist without its record, and three
 clicks must be remembered. The user chose the common practice: **a run is logged by the step
@@ -1095,17 +1098,39 @@ Kept: `run_settings`, `studies_dir`, `shared_params`, `config_params`, `code_tag
   206 artifact files; only wall times, the journal's worker ids and datetimes, and the figures'
   div uuids differ); the guide's three python blocks on that store (§9 exact); the repo's
   store unchanged, no `.mlflow-local/`.
-- [ ] **L2. The tuning runs logged inside the Tune cells:** the two cells moved up, the call
+- [x] **L2. The tuning runs logged inside the Tune cells:** the two cells moved up, the call
   and the status line in both Tune cells, the button cell and its logging cell deleted.
   Tests: `test_the_tuning_runs_are_logged_only_behind_their_button` becomes "the tuning runs
   are logged inside the two Tune cells" (each cell calling `tuner.tune_` also calls
   `log_tuning_run(` and has its `mo.stop`; no `log_tuning_runs` name; the `shared_params`
   and dataset asserts stay).
-- [ ] **L3. The two evaluation runs logged without a button:** the two button cells and the
+  **Done 2026-11-16.** The datasets cell and `log_tuning_run`'s cell now sit after section
+  5's helpers (`summarize_replicates`), before `MODEL1_RUN_SETTINGS`. In each loop the dict
+  is named `_tuning_run` (the user's choice), appended, then logged; each Tune cell shows
+  "Logged n tuning runs, skipped m (already logged)." (8 and 16 runs) and gains five sorted
+  parameters. The loops' comments say the runs logged so far stay; the two Tune buttons' text
+  says each run is logged as its study finishes. The test is
+  `test_the_tuning_runs_are_logged_inside_the_two_tune_cells` (also: `log_tuning_run` defined
+  before the first Tune cell). ruff `03` 15 → 14 (the deleted logging cell's bare `return`).
+- [x] **L3. The two evaluation runs logged without a button:** the two button cells and the
   two `mo.stop(not ….value)` lines deleted. Tests: the two "logged only behind their button"
   tests become "logged by the cell that follows the evaluation" (no button; an input that
   exists only after `run_inspection` / `run_test_evaluation`).
   `test_a_script_run_opens_no_mlflow_run` stays the behavioural guard.
+  **Done 2026-11-16, with L2 (one stop).** Each logging cell opens with a comment that it runs
+  once its click has produced what it reads; the skip and the guard unchanged. "Inspect the
+  best runs" and "Evaluate on the test part" say in their text that the run is then logged (a
+  second one skipped or refused). The tests:
+  `test_the_best_runs_are_logged_by_the_cell_that_follows_the_inspection` (reads
+  `importance_df`) and `test_the_final_run_is_logged_by_the_cell_that_follows_the_test_evaluation`
+  (reads `test_scores_df`), each with no `.value` in the cell and the button's name gone.
+  **The checks of L2 + L3, once** (`checks/run_L2.sh`): ruff `03` 14 and the test file 0, the
+  format hunks HEAD's two; `marimo check`; mypy; the test file 36; the non-slow suite 1423;
+  Check B (no logging button; a script run opens no run); Check C against L1's pickle,
+  exact; Check D (26 FINISHED runs after one pass; the second pass shows "skipped 8",
+  "skipped 16", the best runs' skip and the final run's refusal, the same 26 runs read back);
+  `compare_stores.py`: the 26 runs equal M6's by `run_key`; the guide's three python blocks
+  (§9 exact); the repo's store unchanged, no `.mlflow-local/`.
 - [ ] **L4. The docs:** `MLFLOW_RUNS.md` (§1's table: "Button" → "Logged by the click",
   "Needs first" dropped; §6's messages; "three buttons"); the README's line on the three
   buttons; decision 2 of §1 marked replaced; the handoff's top status, the notebook's new

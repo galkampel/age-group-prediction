@@ -1,6 +1,23 @@
 # Handoff: the experiment notebooks, PR 7 merged (#26); the simplification review done; the MLflow runs plan complete (MLFLOW_RUNS_PLAN.md, M0–M7; the guide MLFLOW_RUNS.md); the cold read done (MLFLOW_RUNS_REVIEW.md §8) and its seven findings built (the guide, the two tests); the PR feat/mlflow-runs into main to open, not merged; next a guided manual run on a check store (the test part and the final run included), before the merge
 
-**Status (2026-11-16, §8's L1 built: the names; the user commits it):**
+**Status (2026-11-16, §8's L2 + L3 built: no logging button; the user commits it):**
+- **The state:** branch `feat/mlflow-runs`, on `fb8e50f` (L1). L2 + L3 changed
+  `notebooks/03_hyperparameter_tuning.py` (the two Tune cells log each study's run as it
+  finishes; the two evaluation runs logged by the cells after their clicks; the three logging
+  buttons gone: four clicks instead of seven) and
+  `tests/characterization/test_hyperparameter_tuning_notebook.py` (three tests rewritten);
+  the status lines here and in [MLFLOW_RUNS_PLAN.md](MLFLOW_RUNS_PLAN.md) (§8, L2 and L3
+  ticked with their checks).
+- **The notebooks' md5:** `03_hyperparameter_tuning.py` `9902b43a815de8d9e75623ce9ae56927`
+  (was `a351ef4f…`); `02_objective_eda.py` `a98d4dc4578cb884ca31b9d4dde3d992` and `01_eda.py`
+  `4bc1ba3a52dc2ad55d0097a707bd1ccc` unchanged.
+- **The checks, once, all passed** (`checks/run_L2.sh` in the scratchpad below); the logged
+  content equal to M6's. The repo's `mlflow.db` and `mlartifacts/` unchanged; no
+  `.mlflow-local/`; the user's check store not created.
+- **Next:** L4 (the docs: the guide, the README, decision 2, this status, the guided manual
+  run's prompt with four clicks, the memory), in the same session, after the user's go.
+
+**Status (2026-11-16, §8's L1 built: the names; committed `fb8e50f`):**
 - **The state:** branch `feat/mlflow-runs`, on `257602a` (the §8 plan). L1 changed
   `notebooks/03_hyperparameter_tuning.py` and
   `tests/characterization/test_hyperparameter_tuning_notebook.py` (names only; the logged

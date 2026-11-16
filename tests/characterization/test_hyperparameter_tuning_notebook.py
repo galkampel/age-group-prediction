@@ -336,21 +336,23 @@ def test_the_mlflow_cell_refuses_an_experiment_with_another_artifact_location(
     assert client.search_runs(experiment_ids) == []
 
 
-def test_the_tuning_runs_are_logged_only_behind_their_button(
+def test_the_tuning_runs_are_logged_inside_the_two_tune_cells(
     notebook_defs: dict,
 ) -> None:
-    # M3: the 24 tuning runs are logged on the button's click only; a script
-    # run builds what each run logs (the shared parameters, the two datasets)
-    # and opens no run (test_a_script_run_opens_no_mlflow_run).
+    # §8's L2 (MLFLOW_RUNS_PLAN.md): each Tune cell logs its runs as their
+    # studies finish, behind the Tune button's mo.stop only; no logging button.
+    # A script run builds what each run logs (the shared parameters, the two
+    # datasets) and opens no run (test_a_script_run_opens_no_mlflow_run).
     source = NOTEBOOK_PATH.read_text(encoding="utf-8")
-    cells = [
-        cell
-        for cell in source.split("@app.cell")
-        if "_run_id = log_tuning_run(" in cell
-    ]
-    assert len(cells) == 1
-    assert re.search(r"mo\.stop\(\s*not log_tuning_runs\.value", cells[0])
-    assert notebook_defs["log_tuning_runs"].value is False
+    cells = [cell for cell in source.split("@app.cell") if "tuner.tune_" in cell]
+    assert len(cells) == 2
+    for cell, button in zip(cells, ("run_model1", "run_model2"), strict=True):
+        assert re.search(rf"mo\.stop\(\s*not {button}\.value", cell), button
+        assert "_run_id = log_tuning_run(" in cell, button
+    # The file reads in the order it runs: the function before the Tune cells.
+    assert source.index("def log_tuning_run(") < source.index("tuner.tune_")
+    assert "log_tuning_runs" not in source
+    assert "log_tuning_runs" not in notebook_defs
     assert notebook_defs["shared_params"] == {
         "config_hash": notebook_defs["config_hash"],
         **notebook_defs["DATA_SETTINGS"],
@@ -369,43 +371,44 @@ def test_the_tuning_runs_are_logged_only_behind_their_button(
     assert all(len(dataset.digest) == 36 for dataset in dataset_inputs.values())
 
 
-def test_the_best_runs_are_logged_only_behind_their_button(
+def test_the_best_runs_are_logged_by_the_cell_that_follows_the_inspection(
     notebook_defs: dict,
 ) -> None:
-    # M4: the best runs' run is logged on the button's click only, after the
-    # inspection's click (it reads its results), through the evaluation runs'
-    # function; a script run defines the functions and opens no run
-    # (test_a_script_run_opens_no_mlflow_run).
+    # §8's L3: the best runs' run is logged by the cell that reads the
+    # inspection's results, with no button: it runs once "Inspect the best
+    # runs" has produced them. A script run defines the functions and opens no
+    # run (test_a_script_run_opens_no_mlflow_run).
     source = NOTEBOOK_PATH.read_text(encoding="utf-8")
     cells = [
-        cell for cell in source.split("@app.cell") if "log_best_runs.value" in cell
+        cell for cell in source.split("@app.cell") if '"stage": "best_runs"' in cell
     ]
     assert len(cells) == 1
-    assert re.search(r"mo\.stop\(\s*not log_best_runs\.value", cells[0])
+    assert ".value" not in cells[0]
+    assert "\n    importance_df,\n" in cells[0]
     assert "_figures = build_dataset_figures(" in cells[0]
     assert "_n_metrics = log_evaluation_run(" in cells[0]
-    assert notebook_defs["log_best_runs"].value is False
+    assert "log_best_runs" not in source
     assert callable(notebook_defs["build_dataset_figures"])
     assert callable(notebook_defs["log_evaluation_run"])
     assert "best_runs_permutation" not in notebook_defs
     assert "importance_df" not in notebook_defs
 
 
-def test_the_final_run_is_logged_only_behind_its_button(
+def test_the_final_run_is_logged_by_the_cell_that_follows_the_test_evaluation(
     notebook_defs: dict,
 ) -> None:
-    # M6: the final run is logged on the button's click only, after the test
-    # evaluation's click (it reads the test part's names), through the same
-    # function as the best runs' run; a script run evaluates nothing on test.
+    # §8's L3: the final run is logged by the cell that reads the test
+    # evaluation's results, with no button: it runs once "Evaluate on the test
+    # part" has produced them, and its guard refuses a second final run. A
+    # script run evaluates nothing on test.
     source = NOTEBOOK_PATH.read_text(encoding="utf-8")
-    cells = [
-        cell for cell in source.split("@app.cell") if "log_final_run.value" in cell
-    ]
+    cells = [cell for cell in source.split("@app.cell") if '"stage": "final"' in cell]
     assert len(cells) == 1
-    assert re.search(r"mo\.stop\(\s*not log_final_run\.value", cells[0])
+    assert ".value" not in cells[0]
+    assert "\n    test_scores_df,\n" in cells[0]
     assert "tags.final = 'true'" in cells[0]
     assert "_n_metrics = log_evaluation_run(" in cells[0]
-    assert notebook_defs["log_final_run"].value is False
+    assert "log_final_run" not in source
     for name in ("test_scores_df", "test_predictions", "val_against_test_df"):
         assert name not in notebook_defs, name
 
