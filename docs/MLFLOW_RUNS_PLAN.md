@@ -5,10 +5,10 @@ can implement one from this file and the handoff's §4). One sub-task per approv
 sub-task when it is done and update the status line.
 
 **Status (2026-11-16):** §8 planned and approved (logged where the result is produced, no
-logging buttons; replaces decision 2). L1 done (the names), committed `fb8e50f`. L2 and L3
-done in one stop (each run logged by the step that produces it; every check passed, the
-logged content equal to M6's), for the user to commit; L4 (the docs) open, before the
-guided manual run.
+logging buttons; replaces decision 2). **§8 complete:** L1 (the names) committed
+`fb8e50f`; L2 + L3 (each run logged by the step that produces it; the logged content equal
+to M6's) committed `904c2bd`; L4 (the docs) done, for the user to commit. Next: the guided
+manual run with four clicks (the prompt at the top of the handoff).
 
 **Status (2026-11-14):** M0 done (the probe; its findings in §1 and in M1–M6's exact calls; the
 user's four choices 11–14), committed `8e1ea98`. M1 done (the MLflow cell; the user's choice
@@ -63,6 +63,11 @@ cells only.**
 | a tuning run (`stage=tuning`) | 24, one per study | "Log the tuning runs" | the settings, the best parameters, the CV and point scores, the trials table, the declaration, the journal file |
 | the best runs' run (`stage=best_runs`) | 1 | "Log the best runs" | the two best runs' bootstrap, the paired difference, the inspection, their tables and figures, the 24 runs' tables |
 | the final run (`stage=final`, `final=true`) | 1 | "Log the final run" | the test scores, tables and figures; the only run with test metrics |
+
+**Since 2026-11-16 (§8): no logging buttons.** Each run is logged by the click that produces
+it: the tuning runs by the two "Tune …" buttons as each study finishes, the best runs' run
+after "Inspect the best runs", the final run after "Evaluate on the test part". The runs and
+what they hold are unchanged.
 
 ### The user's decisions (2026-11-14; do not re-ask)
 
@@ -1020,8 +1025,9 @@ Code" in PR text, never git checkout/stash/reset/mv.
 ## 8. Logged where the result is produced: no logging buttons (2026-11-16)
 
 **Status:** planned 2026-11-16 (Fable), approved by the user. L1 done 2026-11-16 (Opus 5.5),
-committed `fb8e50f`; L2 and L3 done 2026-11-16 in one stop (the user's choice); L4 open.
-Built before the guided manual run, which then checks this design.
+committed `fb8e50f`; L2 and L3 done 2026-11-16 in one stop (the user's choice), committed
+`904c2bd`; L4 done 2026-11-16. **Complete.** Built before the guided manual run, which then
+checks this design.
 
 **Why:** with a "Log …" button per run kind, a result can exist without its record, and three
 clicks must be remembered. The user chose the common practice: **a run is logged by the step
@@ -1131,10 +1137,20 @@ Kept: `run_settings`, `studies_dir`, `shared_params`, `config_params`, `code_tag
   "skipped 16", the best runs' skip and the final run's refusal, the same 26 runs read back);
   `compare_stores.py`: the 26 runs equal M6's by `run_key`; the guide's three python blocks
   (§9 exact); the repo's store unchanged, no `.mlflow-local/`.
-- [ ] **L4. The docs:** `MLFLOW_RUNS.md` (§1's table: "Button" → "Logged by the click",
+- [x] **L4. The docs:** `MLFLOW_RUNS.md` (§1's table: "Button" → "Logged by the click",
   "Needs first" dropped; §6's messages; "three buttons"); the README's line on the three
   buttons; decision 2 of §1 marked replaced; the handoff's top status, the notebook's new
   md5 and the manual run's prompt with four clicks; the memory.
+  **Done 2026-11-16.** `MLFLOW_RUNS.md`: §1's opening and table (one "Logged by the click"
+  column; a study loaded from the cache logged like one just tuned), §6's skips and guard
+  (each Tune cell's own count; the guard in the logging cell, not the evaluation), §8's
+  sentence, the link to this §8; no python block changed. The root README (the notebook's
+  line, and step 4 of "Run The Modeling Notebook"), `docs/README.md`'s index line; a note
+  under §1's verdict table (decision 2 was marked at planning); the D2/D3 note of
+  [EXPERIMENT_NOTEBOOK_PLAN.md](EXPERIMENT_NOTEBOOK_PLAN.md). The older plans' "three buttons
+  patched" (past checks) and the reviews are history: unchanged. The manual run's prompt: the
+  user's choice, the best runs' skip and the final run's refusal shown by re-running only
+  their logging cells (no second inspection or test evaluation).
 
 L2 and L3 may be one stop; L1 is separate so its diff is names only.
 

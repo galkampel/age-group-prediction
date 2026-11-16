@@ -796,7 +796,9 @@ notebook fits nothing. Docs in `docs/EXPERIMENTS.md`.
 > - D1e: done in M1 (the MLflow cell: the six refusals, later F1's seventh; no
 >   `set_experiment`);
 > - D2, D3: the tuning by the notebook tuning plan; the logging by M3, a run per study
->   behind "Log the tuning runs", with no `mlflow_runs.py` (E10's note);
+>   behind "Log the tuning runs", with no `mlflow_runs.py` (E10's note); since 2026-11-16
+>   ([MLFLOW_RUNS_PLAN.md](MLFLOW_RUNS_PLAN.md) §8) logged inside the two Tune cells, no
+>   logging button;
 > - D4: no comparison cell (decision 6: the MLflow UI compares the runs, the guide's §7);
 >   the best runs' run (M4) and the final run (M6), refused when a `final=true` run exists,
 >   with no confirmation checkbox;

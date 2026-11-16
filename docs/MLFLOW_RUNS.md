@@ -2,7 +2,8 @@
 
 How `notebooks/03_hyperparameter_tuning.py` logs its results to MLflow, how to open them, and
 how to rebuild a model from a run. The decisions behind it are in
-[MLFLOW_RUNS_PLAN.md](MLFLOW_RUNS_PLAN.md) (§1) and its three reviews,
+[MLFLOW_RUNS_PLAN.md](MLFLOW_RUNS_PLAN.md) (§1; §8 for the logging without buttons) and its
+three reviews,
 [MLFLOW_RUNS_REVIEW.md](MLFLOW_RUNS_REVIEW.md).
 
 The old stack's guide, [MLFLOW_EXPERIMENTS_GUIDE.md](MLFLOW_EXPERIMENTS_GUIDE.md), and its
@@ -22,15 +23,18 @@ MLflow's terms, as this guide uses them:
 - **an artifact:** a file kept with the run (a table, a figure, JSON);
 - **a dataset input:** the data a run used, by its name and hash (not the data itself).
 
-Three buttons in the notebook each log one kind of run, all in the one experiment that
-`MLFLOW_EXPERIMENT_NAME` names. Nothing is logged without a click, and a script run of the
-notebook logs nothing.
+Each run is logged by the click that produces its result, all in the one experiment that
+`MLFLOW_EXPERIMENT_NAME` names: four clicks, no logging button. Nothing is logged without a
+click, and a script run of the notebook logs nothing.
 
-| Run kind | Runs | Button | Needs first | `stage` tag | Run name |
-|---|---|---|---|---|---|
-| a tuning run | 24, one per study | "Log the tuning runs" | both "Tune …" buttons | `tuning` | `<model> <family> exposure=<True or False>` |
-| the best runs' run | 1 | "Log the best runs" | "Inspect the best runs" | `best_runs` | `best runs` |
-| the final run | 1 | "Log the final run" | "Evaluate on the test part" | `final` | `final` |
+| Run kind | Runs | Logged by the click | `stage` tag | Run name |
+|---|---|---|---|---|
+| a tuning run | 24, one per study | "Tune the independent cohorts model" (8) and "Tune the total times probability model" (16), each run as its study finishes | `tuning` | `<model> <family> exposure=<True or False>` |
+| the best runs' run | 1 | "Inspect the best runs", once the inspection is done | `best_runs` | `best runs` |
+| the final run | 1 | "Evaluate on the test part", once the test evaluation is done | `final` | `final` |
+
+A study loaded from the cache (a Tune click that finds its study stored) is logged like a
+study just tuned.
 
 - **A tuning run** holds one study: its settings, its best parameters, its cross-validation
   and point scores, its trials table and journal, and the components' declaration.
@@ -182,12 +186,15 @@ split, the seed and the budget: `data=<hash>__split_method=…__n_startup_trials
 | the final run | `<folder>/final` |
 
 - **The two skips:** a click logs a run only when no FINISHED run in the experiment has its
-  key. The tuning button reports "Logged n tuning runs, skipped m (already logged)."; the best
-  runs' button "The best runs' run is logged: skipped.". A run that failed mid-logging is
-  marked FAILED in the UI and logged again on the next click.
-- **The final run's guard:** "Log the final run" is refused when any FINISHED run tagged
-  `final=true` exists in the experiment, whatever its key ("A final run exists in the
-  experiment: nothing logged."). The test part stands for production and is evaluated once
+  key. Each Tune cell reports its own runs, "Logged n tuning runs, skipped m (already
+  logged)." (8 for the independent cohorts model, 16 for the total times probability model);
+  after "Inspect the best runs", "The best runs' run is logged: skipped.". A run that failed
+  mid-logging is marked FAILED in the UI and logged again on the next click.
+- **The final run's guard:** after "Evaluate on the test part", the final run is refused when
+  any FINISHED run tagged `final=true` exists in the experiment, whatever its key ("A final
+  run exists in the experiment: nothing logged."). The guard sits in the logging cell, not in
+  the evaluation: the evaluation is seeded, and a reopened notebook can show the test results
+  again without a second final run. The test part stands for production and is evaluated once
   (E11).
 - **A deleted run is not seen** by the skips or the guard (`search_runs` reads active runs
   only). Deleting a run in the UI is how it is logged again; deleting the final run is that
@@ -267,8 +274,8 @@ for model in ("independent_cohorts", "total_times_probability"):
     print(model, [run.info.run_name for run in tuning_runs])
 ```
 
-The tuning run exists only if "Log the tuning runs" was clicked. The evaluation run does not
-need it: it holds its own `best_params` and components.
+The tuning run exists only if its model's "Tune …" button was clicked. The evaluation run
+does not need it: it holds its own `best_params` and components.
 
 ## 9. Rebuilding a model from a run
 
