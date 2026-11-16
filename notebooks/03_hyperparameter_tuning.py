@@ -3579,6 +3579,79 @@ def _(
 
 
 @app.cell
+def _(go, np, pd, style_figure):
+    def waterfall_figure(
+        explanation, age_group_dataset, predictions, building_id, cohort, palette
+    ):
+        """The waterfall of the building `building_id` for `cohort`, or for the
+        total when `cohort` is "composite" (the cohorts' values and bases
+        summed): from the building's base (the mean prediction over the
+        background, at its number of apartments) a step per column to its
+        prediction, the largest |SHAP| on top; red raises the prediction, blue
+        lowers it. `explanation` explains the rows of `age_group_dataset`, and
+        `predictions` holds one model's predicted counts of those rows."""
+        cohorts = explanation.output_names if cohort == "composite" else [cohort]
+        count_name = "the total" if cohort == "composite" else cohort
+        # The building's row, found by its id.
+        position = age_group_dataset.ids.tolist().index(building_id)
+        outputs = [explanation.output_names.index(name) for name in cohorts]
+        values = explanation.values[position][:, outputs].sum(axis=1)
+        base = explanation.base_values[position, outputs].sum()
+        prediction = predictions.iloc[position][cohorts].sum()
+        true = age_group_dataset.Y.iloc[position][cohorts].sum()
+        order = np.argsort(-np.abs(values), kind="stable")
+        labels = []
+        for j in order:
+            raw = age_group_dataset.X.iloc[position, j]
+            labels.append(
+                f"{explanation.feature_names[j]} = "
+                + (f"{raw:.3g}" if pd.api.types.is_number(raw) else str(raw))
+            )
+        figure = go.Figure(
+            go.Waterfall(
+                orientation="h",
+                base=base,
+                measure=["relative"] * len(order),
+                y=labels,
+                x=values[order],
+                text=[f"{value:+.2f}" for value in values[order]],
+                textposition="outside",
+                increasing={"marker": {"color": palette["raises"]}},
+                decreasing={"marker": {"color": palette["lowers"]}},
+                connector={"line": {"color": palette["axis"], "width": 1}},
+                hovertemplate="%{y}: %{x:+.3f}<extra></extra>",
+            )
+        )
+        for x, text, place in (
+            (base, f"mean prediction {base:.2f}", "bottom left"),
+            (prediction, f"predicted {prediction:.2f}", "top right"),
+        ):
+            figure.add_vline(
+                x=x,
+                line={"color": palette["ink"], "dash": "dot", "width": 1},
+                annotation_text=text,
+                annotation_position=place,
+            )
+        style_figure(figure, palette)
+        figure.update_layout(
+            height=60 + 34 * (len(order) + 2),
+            margin={"l": 200, "r": 40, "t": 60, "b": 50},
+            title={
+                "text": (
+                    f"{building_id} ({age_group_dataset.groups.iloc[position]}), "
+                    f"{count_name}: true {true}, predicted {prediction:.2f}"
+                ),
+                "x": 0,
+            },
+        )
+        figure.update_yaxes(autorange="reversed", tickfont={"color": palette["ink"]})
+        figure.update_xaxes(title_text=f"children ({count_name})")
+        return figure
+
+    return (waterfall_figure,)
+
+
+@app.cell
 def _(COHORTS, mo):
     # The waterfalls' own menus: the best or the worst buildings, and the
     # cohort they are ranked on and explained for (the composite: the total).
@@ -3634,13 +3707,8 @@ def _(
 
 @app.cell
 def _(
-    COHORTS,
     PALETTE,
-    go,
     mo,
-    np,
-    pd,
-    style_figure,
     test_age_group,
     test_predictions,
     test_reading_k,
@@ -3649,73 +3717,24 @@ def _(
     test_waterfall_buildings,
     test_waterfall_cohort,
     test_waterfall_end,
+    waterfall_figure,
 ):
     _end, _cohort = test_waterfall_end.value, test_waterfall_cohort.value
     _metric, _k = test_reading_metric.value, test_reading_k.value
     # The composite: the total, so the cohorts' values and bases summed.
-    _cohorts = COHORTS if _cohort == "composite" else [_cohort]
     _count = "the total" if _cohort == "composite" else _cohort
-    test_waterfall_figures = {}
-    for _model, _explanation in test_shap.items():
-        # The building chosen in the model's dropdown, its row found by its id.
-        _building_id = test_waterfall_buildings.value[_model]
-        _position = test_age_group.ids.tolist().index(_building_id)
-        _outputs = [_explanation.output_names.index(cohort) for cohort in _cohorts]
-        _values = _explanation.values[_position][:, _outputs].sum(axis=1)
-        _base = _explanation.base_values[_position, _outputs].sum()
-        _prediction = test_predictions[_model].iloc[_position][_cohorts].sum()
-        _true = test_age_group.Y.iloc[_position][_cohorts].sum()
-        # From the building's base (the mean prediction over the background
-        # at its number of apartments), a step per column to its prediction,
-        # the largest |SHAP| on top.
-        _order = np.argsort(-np.abs(_values), kind="stable")
-        _labels = []
-        for _j in _order:
-            _raw = test_age_group.X.iloc[_position, _j]
-            _labels.append(
-                f"{_explanation.feature_names[_j]} = "
-                + (f"{_raw:.3g}" if pd.api.types.is_number(_raw) else str(_raw))
-            )
-        _figure = go.Figure(
-            go.Waterfall(
-                orientation="h",
-                base=_base,
-                measure=["relative"] * len(_order),
-                y=_labels,
-                x=_values[_order],
-                text=[f"{value:+.2f}" for value in _values[_order]],
-                textposition="outside",
-                increasing={"marker": {"color": PALETTE["raises"]}},
-                decreasing={"marker": {"color": PALETTE["lowers"]}},
-                connector={"line": {"color": PALETTE["axis"], "width": 1}},
-                hovertemplate="%{y}: %{x:+.3f}<extra></extra>",
-            )
+    # Each model's waterfall of the building chosen in its dropdown.
+    test_waterfall_figures = {
+        model: waterfall_figure(
+            explanation,
+            test_age_group,
+            test_predictions[model],
+            test_waterfall_buildings.value[model],
+            _cohort,
+            PALETTE,
         )
-        for _x, _text, _place in (
-            (_base, f"mean prediction {_base:.2f}", "bottom left"),
-            (_prediction, f"predicted {_prediction:.2f}", "top right"),
-        ):
-            _figure.add_vline(
-                x=_x,
-                line={"color": PALETTE["ink"], "dash": "dot", "width": 1},
-                annotation_text=_text,
-                annotation_position=_place,
-            )
-        style_figure(_figure, PALETTE)
-        _figure.update_layout(
-            height=60 + 34 * (len(_order) + 2),
-            margin={"l": 200, "r": 40, "t": 60, "b": 50},
-            title={
-                "text": (
-                    f"{_building_id} ({test_age_group.groups.iloc[_position]}), "
-                    f"{_count}: true {_true}, predicted {_prediction:.2f}"
-                ),
-                "x": 0,
-            },
-        )
-        _figure.update_yaxes(autorange="reversed", tickfont={"color": PALETTE["ink"]})
-        _figure.update_xaxes(title_text=f"children ({_count})")
-        test_waterfall_figures[_model] = _figure
+        for model, explanation in test_shap.items()
+    }
     _views = []
     for _model, _figure in test_waterfall_figures.items():
         _views += [
@@ -4110,6 +4129,7 @@ def _(
     log_evaluation_run,
     mlflow,
     mo,
+    pd,
     permutation_figure,
     ridge_figure,
     seed,
@@ -4129,6 +4149,7 @@ def _(
     train_val_age_group,
     tuner,
     val_against_test_df,
+    waterfall_figure,
 ):
     # Runs once "Evaluate on the test part" has produced what it reads. One
     # final run per experiment (E11): a FINISHED run tagged final refuses another.
@@ -4141,7 +4162,10 @@ def _(
         ),
         mo.md("A final run exists in the experiment: nothing logged."),
     )
-    # The tables at 6 significant digits, as CSV (none has a dict column).
+    # The tables at 6 significant digits, as CSV (none has a dict column). The
+    # SHAP values a row per model, building and cohort: its base, then a column
+    # per feature (the base plus the values is the cohort's prediction; the
+    # features' values are in test_buildings, by model and building_id).
     _tables = {
         "test_scores": test_scores_df,
         "test_difference": test_difference_df,
@@ -4149,10 +4173,36 @@ def _(
         "test_importance": test_importance_df,
         "test_buildings": test_buildings_df,
         "test_building_scores": test_building_scores_df,
+        "test_shap_values": pd.concat(
+            [
+                pd.DataFrame(
+                    {
+                        "model": model,
+                        "building_id": test_age_group.ids.to_numpy(),
+                        "cohort": cohort,
+                        "base_value": explanation.base_values[:, output],
+                        **dict(
+                            zip(
+                                explanation.feature_names,
+                                explanation.values[:, :, output].T,
+                                strict=True,
+                            )
+                        ),
+                    }
+                )
+                for model, explanation in test_shap.items()
+                for output, cohort in enumerate(explanation.output_names)
+            ],
+            ignore_index=True,
+        ),
     }
     # The test part's 18 figures (its permutation importance has the test split
-    # only); per model the true and predicted totals per test building; the cohort
-    # shares of every test building.
+    # only); per model the true and predicted totals per test building and the
+    # waterfalls of the total for its 5 worst test buildings by the selection
+    # metric on the composite (the reading tables' defaults, fixed here: a menu
+    # changes nothing logged; rank 1 the worst); the cohort shares of every test
+    # building.
+    _n_worst_buildings = 5
     _figures = build_dataset_figures(
         "test",
         test_scores_df,
@@ -4182,6 +4232,28 @@ def _(
         _figures[f"figures/test_counts_scatter_{_model}_total.html"] = (
             counts_scatter_figure(_buildings, "total", PALETTE)
         )
+        # Ranked as the waterfalls' menus rank (a tie keeps the earlier building).
+        _worst_building_ids = (
+            test_building_scores_df[
+                (test_building_scores_df["model"] == _model)
+                & (test_building_scores_df["cohort"] == "composite")
+            ]
+            .set_index("building_id")[[SELECTION_METRIC.name]]
+            .sort_values(SELECTION_METRIC.name, ascending=False, kind="stable")
+            .nlargest(_n_worst_buildings, SELECTION_METRIC.name)
+            .index
+        )
+        for _rank, _building_id in enumerate(_worst_building_ids, start=1):
+            _figures[
+                f"figures/test_waterfall_{_model}_total_{_rank}_{_building_id}.html"
+            ] = waterfall_figure(
+                test_shap[_model],
+                test_age_group,
+                test_predictions[_model],
+                _building_id,
+                "composite",
+                PALETTE,
+            )
     _figures["figures/test_selection_shares_bars_all.html"] = (
         selection_shares_bars_figure(
             test_age_group.Y, test_predictions, MODEL_COLORS, PALETTE

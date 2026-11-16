@@ -4,6 +4,12 @@
 can implement one from this file and the handoff's §4). One sub-task per approval. Tick a
 sub-task when it is done and update the status line.
 
+**Status (2026-11-16, §9):** §9 planned (Fable) and approved by the user: the final run also
+logs the test SHAP values as a table and each model's 5 worst test buildings' waterfalls
+(7 tables, 33 figures). Two sub-tasks, W1 (the notebook and the tests) and W2 (the docs and
+the checker), then the check store's re-check of the final run. **W1 built and checked**
+(Opus 5.5; the user commits it); W2 next.
+
 **Status (2026-11-16):** §8 planned and approved (logged where the result is produced, no
 logging buttons; replaces decision 2). **§8 complete:** L1 (the names) committed
 `fb8e50f`; L2 + L3 (each run logged by the step that produces it; the logged content equal
@@ -85,6 +91,8 @@ what they hold are unchanged.
 8. **The final run:** its own button, refused when a `final=true` run exists in the experiment.
 9. **The old `tracking/` package and its guide are left untouched.**
 10. **Figures:** a fixed set built by the logging cell, independent of the menus. No waterfalls.
+    **Amended 2026-11-16 (§9):** the final run logs 10 waterfalls chosen by a fixed rule, and
+    the SHAP values every other one is rebuilt from.
 
 ### What was checked, and what was not
 
@@ -1172,3 +1180,211 @@ L2 and L3 may be one stop; L1 is separate so its diff is names only.
 4. The guide's §8 and §9 blocks on that store: §9 exact for all three run kinds.
 5. A script run opens no run; the repo's `mlflow.db` and `mlartifacts/` unchanged; no
    `.mlflow-local/`.
+
+## 9. The SHAP values and waterfalls in the final run (2026-11-16)
+
+**Status:** planned 2026-11-16 (Fable), approved by the user. W1 built and checked; W2 open.
+
+**Why:** the final run holds the mean |SHAP| (`tables/test_importance.csv`) and the
+beeswarms, but not the per-building SHAP values, and no waterfall: the notebook shows one
+building chosen in a dropdown, and decision 10 logged none. The user chose **option A: the
+values as a table, plus a small fixed set of waterfalls.** Rejected: the table alone (nothing
+to look at in the UI), and every waterfall (2 models × 306 buildings × 4 targets = 2,448
+files). Logging code only: no model, setting, selection or evaluation change.
+
+### The decisions
+
+1. **The table: `tables/test_shap_values.csv`, a row per model, building and cohort.**
+   Columns: `model`, `building_id`, `cohort`, `base_value`, then one column per feature, named
+   as X's columns (9). 2 × 306 × 3 = 1,836 rows, about 200 KB.
+   - It is the `shap.Explanation` flattened and nothing else: `base_value` and the SHAP
+     values, in SHAP's own terms. A row's `base_value` plus its nine values is the cohort's
+     predicted count.
+   - The features' raw values, the true and the predicted counts are in
+     `tables/test_buildings.csv` (logged already), joined on `model` and `building_id`. They
+     are not repeated here: one source of truth.
+   - No `composite` row: the total's waterfall is the three cohort rows summed, as the
+     notebook sums them.
+   - Wide (a column per feature), not long: a row is one waterfall, and the UI shows it as a
+     table. It goes through `log_evaluation_run`'s `tables` like the other six (CSV, 6
+     significant digits): `log_evaluation_run` is unchanged.
+2. **The waterfalls: each model's 5 worst test buildings by the selection metric on the
+   composite, explained for the total: 10 figures.**
+   - The rule is the reading tables' default (worst, composite, the selection metric, k = 5),
+     so the logged figures are the buildings the notebook's first table shows. Each model
+     ranks its own buildings, from `test_building_scores_df`.
+   - One figure per building (the total), not one per cohort (30): a cohort's waterfall is
+     rebuilt from the table.
+   - The worst, not the best: a waterfall is read to understand an error.
+   - The paths: `figures/test_waterfall_<model>_total_<rank>_<building_id>.html`, rank 1 the
+     worst (the UI lists them worst first).
+   - k is a local of the logging cell (`_n_worst_buildings = 5`), not a menu and not a
+     parameter of the run. The menu `test_reading_k` keeps its own default: a changed menu
+     default must not change what is logged.
+3. **`waterfall_figure`, a function in its own cell,** used by the display cell and by the
+   logging cell (two callers, so a function; as M5's count figures). It is the display
+   cell's loop body moved, unchanged:
+
+   ```python
+   def waterfall_figure(explanation, age_group_dataset, predictions, building_id, cohort, palette):
+   ```
+
+   `age_group_dataset` holds the rows `explanation` explains (`X`, `Y`, `ids`, `groups`);
+   `predictions` is one model's; `cohort` is a cohort or `"composite"` (the total: the
+   values and bases of `explanation.output_names` summed). The display cell keeps its menus,
+   its text and one call per model.
+4. **Not `mlflow.shap`** (checked on MLflow 3.16.0):
+   - `mlflow.shap.log_explanation(predict_function, features)` computes its own explanation
+     with `shap.KernelExplainer` (approximate; its background a k-means summary of
+     `features`; no exposure) and logs `.npy` files and a matplotlib bar plot. The
+     notebook's values are exact, per cohort, against a background drawn from the rows the
+     models were fitted on, each row with its exposure. It cannot take an explanation that
+     exists.
+   - `mlflow.shap.log_explainer` pickles an explainer as a model: decision 4 (no pickle), and
+     `ShapExplainer` builds one explainer per row.
+   - `mlflow.log_table` writes JSON for the evaluation UI; the run's tables are CSV text.
+5. **The best runs' run is unchanged** (no validation SHAP table): its explanation covers 100
+   sampled rows of models fitted for selection, and the run has no per-building table to
+   join the values to. The reported explanation is the final run's.
+
+### The new counts
+
+| | Before | After |
+|---|---|---|
+| the final run's tables | 6 | 7 (`test_shap_values` added) |
+| the final run's figures | 23 | 33 (10 waterfalls added) |
+| the message | "Logged the final run: 108 metrics, 6 tables, 23 figures." | "Logged the final run: 108 metrics, 7 tables, 33 figures." |
+
+Unchanged: the 108 metrics, the tags, the parameters, the inputs, the JSON files, the tuning
+runs and the best runs' run (7 tables, 18 figures).
+
+### The sub-tasks (each: build, check once, stop for the user's review, commit message)
+
+- [x] **W1. The notebook and the tests.** Built 2026-11-16 (Opus 5.5). The checks, once
+  (`checks/run_W1.sh` in the handoff's scratchpad): ruff and the format hunks as HEAD's,
+  `marimo check` clean, mypy clean; Check B (`waterfall_figure`'s 6 parameters; no waterfall
+  without the click); Check C (every block OK, the displayed waterfalls checked independently,
+  "Logged the final run: 108 metrics, 7 tables, 33 figures."; the frames equal to L5's run);
+  Check D (skipped 8, skipped 16, the best runs skipped, the final refused; `test_shap_values`
+  1,836 × 13, its text exact, base + values = the prediction, max gap 8.5e-14; the 10
+  waterfalls' paths and HTML; 44 artifacts); the store equal to L5's but the final run's 11 new
+  files; the guide's three blocks (§9 exact); the mutation (the composite as the first cohort)
+  fails the new test. **One test refined:** the final cell's guard `".value" not in` matched
+  the SHAP arrays' `.values`; it is now `re.search(r"\.value\b", …) is None` (a `.value` read
+  is still caught). The test file then 37 passed; the non-slow suite 1423 passed besides that
+  test (not rerun after the one-line test change).
+  Files: `notebooks/03_hyperparameter_tuning.py`,
+  `tests/characterization/test_hyperparameter_tuning_notebook.py`.
+  1. A new cell before the waterfalls' menus cell: `waterfall_figure` (decision 3; the cell's
+     parameters `go, np, pd, style_figure`, as the count figures' cell reads `go` and
+     `style_figure`).
+  2. The display cell: its loop body becomes the call; the parameters it no longer uses
+     leave its list (`go`, `np`, `pd`, `style_figure`, and `COHORTS` if only the sum read
+     it). The view is unchanged.
+  3. The final run's logging cell (parameters added, sorted: `pd`, `waterfall_figure`):
+     - `_tables["test_shap_values"]`: per model and cohort position of `test_shap`, a df of
+       `values[:, :, position]` under `feature_names`, with `model`, `building_id`
+       (`test_age_group.ids`), `cohort` and `base_value` in front; concatenated in the
+       models' and `output_names`' order.
+     - the 10 figures: per model, `nlargest(_n_worst_buildings)` of the selection metric over
+       its composite rows of `test_building_scores_df` (in the buildings' order, so a tie
+       keeps the earlier building, as the menus rank), each `waterfall_figure(...,
+       "composite", PALETTE)`.
+     - the cell's comments on the tables and the figures say the two additions. No `.value`.
+  4. The tests:
+     - new, `test_the_waterfall_figure_steps_from_the_base_to_the_prediction`: a small
+       `shap.Explanation` (as the beeswarm's test) with two outputs; for one cohort and for
+       `"composite"`: the trace's `base`, its `x` in descending |SHAP| (the composite's the
+       outputs summed), its labels `<column> = <value>`, the two rules at the base and at the
+       prediction, the title's true and predicted counts.
+     - `test_the_final_run_is_logged_by_the_cell_that_follows_the_test_evaluation` gains:
+       `"test_shap_values"` and `waterfall_figure(` in the logging cell; `waterfall_figure(`
+       also in the cell that returns `test_waterfall_figures`.
+- [ ] **W2. The docs and the checker.**
+  Files: `docs/MLFLOW_RUNS.md`, the scratchpad's `manual/check_store.py`; the handoff and the
+  memory are the main session's.
+  1. `MLFLOW_RUNS.md`:
+     - §1: the final run's line names the per-building SHAP values and the waterfalls;
+     - §4's table ("7 tables, 33 figures"), the final run's tables list (`test_shap_values`,
+       with its columns and the join to `test_buildings`), the figures list (the 10
+       waterfalls and their rule), and one sentence: any other waterfall is the table's row
+       (or three rows summed) with `test_buildings`' values;
+     - §10's step 5 message; §3's "open first" unchanged (`tables/test_scores.csv`);
+     - §6's last bullet corrected: under `marimo edit`, `mlflow.source.name` is the
+       notebook's absolute path (seen in all 26 runs of the check store); under a script
+       it is that script. The `notebook` tag is the path relative to the repository, the
+       same in both.
+  2. `check_store.py`: the final stage expects 7 tables and 33 figures; `test_shap_values`
+     among the tables; 5 `test_waterfall_<model>_total_` figures per model; the JSON files
+     unchanged.
+  3. The root README names no count: unchanged.
+
+W1 and W2 may be one stop if the user prefers; W2 has no code.
+
+### Validate W1 (static checks first, each check once; §3's rules apply)
+
+The scripts: copy `checks/run_L5.sh`, `make_copy_tuning_l5.py` and `check_d_l2.py` from the
+scratchpad the handoff's top status names; a scratch store, never the repo's.
+
+1. `ruff check` on the notebook and the test file (none new), `ruff format --diff` (HEAD's
+   hunks only: the new cells formatted alone and spliced in), `marimo check`, mypy.
+2. The test file (36 → 37), then the non-slow suite (1423 → 1424).
+3. Check B: `waterfall_figure` defined by a script run; a script run opens no run.
+4. Check C on the 3-trial copy against L5's pickle, exact: the display's
+   `test_waterfall_figures` are in it, so the moved code draws the same figures.
+5. Check D on that run's store, with three additions for the final run:
+   - `tables/test_shap_values.csv`: its text equal to the check's own table built from the
+     copy's `test_shap`; 1,836 rows; per row, `base_value` plus the nine values equal to
+     `<cohort>_predicted` of `tables/test_buildings.csv` (to the CSV's 6 digits);
+   - the 10 waterfall paths equal to each model's 5 worst by the selection metric on the
+     composite, computed by the check from `test_building_scores_df`; each file's HTML equal
+     to `waterfall_figure` called directly (the div's uuid masked);
+   - 7 tables, 33 figures, the message; the other 25 runs equal to L5's by `run_key`
+     (`compare_stores.py`), the final run equal but for the 11 new files.
+   The second pass: skipped 8, skipped 16, the best runs skipped, the final refused.
+6. One mutation on a copy, caught by the new test: `waterfall_figure` explaining the first
+   cohort when `cohort` is `"composite"`.
+7. The repo's `mlflow.db` and `mlartifacts/` unchanged; no `.mlflow-local/`; `.mlflow-check/`
+   untouched.
+
+### Validate W2
+
+The guide's counts and names against Check D's store (§4's lists equal to the final run's
+files); `check_store.py ... final` on a copy of that store's database: 0 failures. No code
+check is repeated.
+
+### The check store's re-check (the user's clicks, after W1 and W2 are committed)
+
+Only the final run is logged again. E11's look has happened on this store; the evaluation is
+seeded, so the scores repeat.
+
+1. Commit first, and commit nothing until step 6 is done: the new final run's `git_commit`
+   must be HEAD with `git_dirty` `false`.
+2. In the MLflow UI, delete the final run (§6: a deleted run is not seen by the guard).
+3. Reopen the notebook (the guide's §10, step 2; `.env` still names the check store).
+4. Click the clicks; expect:
+
+   | Click | Expect |
+   |---|---|
+   | "Tune the independent cohorts model" | "Logged 0 tuning runs, skipped 8 (already logged)."; nothing tuned (the cache holds the studies) |
+   | "Tune the total times probability model" | "Logged 0 tuning runs, skipped 16 (already logged)." |
+   | "Inspect the best runs" | "The best runs' run is logged: skipped." |
+   | the paired difference's Plot or Metric menu changed | the best runs' logging cell does not run again (its message stays; no new run) |
+   | "Evaluate on the test part" | "Logged the final run: 108 metrics, 7 tables, 33 figures." |
+   | a waterfall menu or building changed | the final run's logging cell does not run again |
+   | the notebook's last cell re-run (▶) | "A final run exists in the experiment: nothing logged." |
+
+   The two skip messages and the menu rows are what the first manual run could not record.
+5. `check_store.py <a copy of the database> age-group-check final`: 0 failures (one FINISHED
+   final run, 7 tables, 33 figures). Run it with the `final` stage only: the other 25 runs
+   carry the earlier commit, which the stages `tuning` and `best_runs` would report against
+   HEAD.
+6. The same scores: the new final run's 108 metrics and its six earlier tables' text equal
+   to the deleted run's (in `manual/store_all.db`, the first manual run's copy).
+7. In the UI: `tables/test_shap_values.csv` opens as a table; a waterfall draws.
+
+### Open
+
+- The check store's 25 other runs keep their earlier `git_commit`. That is correct (they
+  were logged by that code), and step 5 allows for it; nothing to decide unless the user
+  wants the whole store logged again from one commit.

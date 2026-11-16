@@ -404,13 +404,28 @@ def test_the_final_run_is_logged_by_the_cell_that_follows_the_test_evaluation(
     source = NOTEBOOK_PATH.read_text(encoding="utf-8")
     cells = [cell for cell in source.split("@app.cell") if '"stage": "final"' in cell]
     assert len(cells) == 1
-    assert ".value" not in cells[0]
+    # No menu's or button's `.value` (§9: the SHAP arrays' `.values` are read).
+    assert re.search(r"\.value\b", cells[0]) is None
     assert "\n    test_scores_df,\n" in cells[0]
     assert "tags.final = 'true'" in cells[0]
     assert "_n_metrics = log_evaluation_run(" in cells[0]
     assert "log_final_run" not in source
     for name in ("test_scores_df", "test_predictions", "val_against_test_df"):
         assert name not in notebook_defs, name
+    # §9's W1: the final run also logs the test SHAP values and, at a fixed
+    # rule, the waterfalls the display draws with the same function.
+    assert '"test_shap_values": pd.concat(' in cells[0]
+    assert "_n_worst_buildings = 5" in cells[0]
+    assert "] = waterfall_figure(" in cells[0]
+    displays = [
+        cell
+        for cell in source.split("@app.cell")
+        if "    test_waterfall_figures = {" in cell
+    ]
+    assert len(displays) == 1
+    assert "waterfall_figure(" in displays[0]
+    assert "go.Waterfall(" not in displays[0]
+    assert callable(notebook_defs["waterfall_figure"])
 
 
 def test_a_tuning_run_is_logged_once_then_skipped(
@@ -1297,6 +1312,56 @@ def test_the_beeswarm_figure_draws_a_row_per_column_and_per_level(
         "s = b",
         "z",
     ]
+
+
+def test_the_waterfall_figure_steps_from_the_base_to_the_prediction(
+    notebook_defs: dict,
+) -> None:
+    # §9's W1 (the display's waterfall as a function, also logged by the final
+    # run): the building found by its id; from its base a step per column, the
+    # largest |SHAP| on top, to its prediction; the composite the cohorts'
+    # values and bases summed (the total).
+    waterfall_figure = notebook_defs["waterfall_figure"]
+    palette = notebook_defs["PALETTE"]
+    dataset = notebook_defs["AgeGroupDataset"](
+        X=pd.DataFrame({"x": [1.0, 2.5], "s": ["a", "b"]}),
+        Y=pd.DataFrame({"cohort_a": [2, 4], "cohort_b": [1, 3]}),
+        exposure=pd.Series([10.0, 20.0]),
+        groups=pd.Series(["n0", "n1"]),
+        ids=pd.Series(["b0", "b1"]),
+    )
+    values = np.zeros((2, 2, 2))
+    values[1, :, 0] = [0.5, -1.5]
+    values[1, :, 1] = [1.0, 0.25]
+    explanation = shap.Explanation(
+        values=values,
+        base_values=np.array([[1.0, 2.0], [3.0, 1.5]]),
+        feature_names=["x", "s"],
+        output_names=["cohort_a", "cohort_b"],
+    )
+    predictions = pd.DataFrame({"cohort_a": [1.0, 2.0], "cohort_b": [2.0, 2.75]})
+    for cohort, labels, steps, base, prediction, title in (
+        ("cohort_a", ["s = b", "x = 2.5"], [-1.5, 0.5], 3.0, 2.0, "cohort_a: true 4"),
+        (
+            "composite",
+            ["x = 2.5", "s = b"],
+            [1.5, -1.25],
+            4.5,
+            4.75,
+            "the total: true 7",
+        ),
+    ):
+        figure = waterfall_figure(
+            explanation, dataset, predictions, "b1", cohort, palette
+        )
+        (trace,) = figure.data
+        assert trace.type == "waterfall" and trace.base == base
+        assert list(trace.y) == labels
+        np.testing.assert_array_equal(trace.x, steps)
+        assert [shape.x0 for shape in figure.layout.shapes] == [base, prediction]
+        assert (
+            figure.layout.title.text == f"b1 (n1), {title}, predicted {prediction:.2f}"
+        )
 
 
 def test_the_permutation_figure_draws_a_box_per_split_ordered_by_the_last(

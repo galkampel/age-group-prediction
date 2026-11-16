@@ -1,4 +1,69 @@
-# Handoff: the experiment notebooks, PR 7 merged (#26); the simplification review done; the MLflow runs plan complete (MLFLOW_RUNS_PLAN.md, M0–M7; the guide MLFLOW_RUNS.md); the cold read done (MLFLOW_RUNS_REVIEW.md §8) and its seven findings built (the guide, the two tests); the PR feat/mlflow-runs into main open, not merged; the logging buttons replaced by logging where each result is produced (MLFLOW_RUNS_PLAN.md §8, L1–L4, complete); next a guided manual run with four clicks on a check store (the test part and the final run included), before the merge
+# Handoff: the experiment notebooks, PR 7 merged (#26); the simplification review done; the MLflow runs plan complete (MLFLOW_RUNS_PLAN.md, M0–M7; the guide MLFLOW_RUNS.md); the cold read done (MLFLOW_RUNS_REVIEW.md §8) and its seven findings built (the guide, the two tests); the PR feat/mlflow-runs into main open, not merged; the logging buttons replaced by logging where each result is produced (MLFLOW_RUNS_PLAN.md §8, L1–L4, complete); the guided manual run logged and checked on a check store (the test part included: E11's look done); next the final run's SHAP values and waterfalls (MLFLOW_RUNS_PLAN.md §9, W1–W2), the check store's re-check, then the merge
+
+**Status (2026-11-16, the guided manual run: the four clicks logged and checked; §9 planned; the user commits it):**
+- **The state:** branch `feat/mlflow-runs`, HEAD `87ac778` (L5). This change: this status and
+  [MLFLOW_RUNS_PLAN.md](MLFLOW_RUNS_PLAN.md) §9 (planned by Fable; its status line and a note
+  under decision 10). The notebooks' md5 unchanged: `03_hyperparameter_tuning.py`
+  `f527e65cce15b4303fb0915f13f1b8e9`, `02_objective_eda.py` `a98d4dc4578cb884ca31b9d4dde3d992`,
+  `01_eda.py` `4bc1ba3a52dc2ad55d0097a707bd1ccc`.
+- **The check store:** `.env` names `.mlflow-check/` in the repo (absolute paths, git-ignored),
+  experiment `age-group-check`. A store left from the paused run (the experiment, no run) was
+  deleted by the user; the notebook created it again at 15:06.
+- **The four clicks** (the user, `marimo edit`, on the user's cache: every study loaded, nothing
+  tuned), read back from the store: the 8 tuning runs at 15:14:08–12 and the 16 at
+  15:14:53–15:15:06, each as its study finished (**marimo's live editor runs the logging after a
+  click**: the one thing no check covered); the best runs' run at 15:19:20; the final run at
+  15:24:17. 26 runs, all FINISHED, 26 distinct `run_key`s, none failed or deleted.
+- **Not recorded** (the user closed the notebook before reading the messages): the skip
+  messages, the guard's refusal, and that a display menu does not re-run a logging cell. No
+  second run was logged; §9's re-check records them.
+- **marimo saved the notebook** at 15:24:18 (its own format: `__generated_with` 0.24.0, nine
+  trimmed returns, `build_dataset_figures` as `@app.function`, an empty cell; no logic change).
+  The runs ran HEAD's code (`git_dirty` read at the open); the user restored the file from HEAD
+  (md5 `f527e65c…`).
+- **`manual/check_store.py`** on a copy of the store (`manual/store_all.db` in
+  `/private/tmp/claude-501/-Users-galkampel-Desktop-Projects-age-group-prediction/1e116e6f-752d-40d8-bedc-ad034d51e94c/scratchpad`),
+  stages `tuning best_runs final`: **0 failures.** Every run: `git_commit` `87ac778…`,
+  `git_dirty` `false`, the 23 shared parameters. Tuning: 24 (8 + 16), one study folder, 52
+  metrics, `n_complete` 100, the 6 artifacts, `train`/`val`. Best runs' run: 108 `val/…`
+  metrics, 7 tables, 18 figures (8 permutation, 6 beeswarm, 4 forest/ridge), the 4 JSON;
+  `best.independent_cohorts` `…family=lgbm_gaussian__use_exposure=True__share_hyperparams=True__share_feature_transformer=False__objective=rmse__seed=44`,
+  `best.total_times_probability` `total_times_probability_joint__total_family=lgbm_poisson__probability_family=logistic__use_exposure=True__objective=rmse__seed=42`
+  (each its model's best by `val/composite/rmse`). Final run: `final=true`, `n_train_val`, 108
+  `test/…` metrics, 6 tables, 23 figures, `train_val`/`test`.
+- **The final run's test scores (E11), the composite** (the real final run must reproduce them):
+
+  | metric | independent_cohorts | total_times_probability | difference |
+  |---|---|---|---|
+  | rmse | 4.22628782473959 | 4.197264187294447 | -0.02902363744514247 |
+  | mae | 3.1317791958497594 | 3.10181778349625 | -0.029961412353509242 |
+  | poisson_deviance | 2.033815021873322 | 2.0022649729563184 | -0.031550048917003526 |
+  | log_loss | 1.0831892007468973 | 1.0789887411675123 | -0.004200459579384974 |
+  | wmape | 0.3885624140816433 | 0.38484507707116605 | -0.003717337010477273 |
+  | bias | -0.3656160565769752 | -0.4552643090753547 | -0.08964825249837949 |
+- **The user's decision (do not re-ask): option A,** the final run also logs the test SHAP
+  values as a table and a small fixed set of waterfalls (not every waterfall: 2,448 files;
+  not the table alone). Fable planned it: [MLFLOW_RUNS_PLAN.md](MLFLOW_RUNS_PLAN.md) §9
+  (`tables/test_shap_values.csv`, each model's 5 worst test buildings' waterfalls of the total;
+  7 tables, 33 figures; W1 the notebook and the tests, W2 the docs and the checker). Opus 5.5
+  builds it in this session. A logging change, allowed after E11 (the user's plan of
+  2026-11-15, item 3).
+- **W1 built and checked** (the plan's §9 has the checks): `waterfall_figure` in its own cell,
+  the display one call per model; the final run's logging cell adds `test_shap_values` and the
+  10 waterfalls (`_n_worst_buildings = 5`, no menu read); the test file one new test (37) and
+  the final cell's guard as a whole-word `\.value\b` (the SHAP `.values` matched the old
+  substring). The notebook's md5 after W1: `03_hyperparameter_tuning.py`
+  `5a3877b70faa044d41f7c6301a091cf6` (the other two unchanged). The scratchpad's references for
+  the next change: `check_c_w1_tuning.pkl`, `mlflow_W1.db` / `mlartifacts_W1`. On the 3-trial
+  copy, each model's 5 worst (rmse, composite): independent cohorts B_001396, B_001453,
+  B_000240, B_001023, B_000102; total times probability B_001396, B_001443, B_001023,
+  B_001453, B_000945 (the user's store has other models: its own buildings).
+- **Next:** W1, W2 (each stopped for review); then the check store's re-check (§9: the final
+  run deleted in the UI, the four clicks again, the skips and the menus recorded,
+  `check_store.py … final`, the same scores), the UI walk (the guide's §3, §7) and the guide's
+  §8 and §9 by the user; then the merge and the user's plan, item 4 (the check store deleted,
+  `.env` back on `.mlflow-local/`; from a clean `main`, the real logging of all three run
+  kinds; the final run's test scores compared with the table above).
 
 **Status (2026-11-16, §8 validated by Fable; L5 built, its three findings; the user commits it):**
 - **The validation** (read-only, on `5256bbc`): the build matches §8 and has no defect.
