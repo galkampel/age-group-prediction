@@ -1,5 +1,25 @@
 # Handoff: the experiment notebooks, PR 7 merged (#26); the simplification review done; the MLflow runs plan complete (MLFLOW_RUNS_PLAN.md, M0–M7; the guide MLFLOW_RUNS.md); the cold read done (MLFLOW_RUNS_REVIEW.md §8) and its seven findings built (the guide, the two tests); the PR feat/mlflow-runs into main to open, not merged; next a guided manual run on a check store (the test part and the final run included), before the merge
 
+**Status (2026-11-16, §8's L1 built: the names; the user commits it):**
+- **The state:** branch `feat/mlflow-runs`, on `257602a` (the §8 plan). L1 changed
+  `notebooks/03_hyperparameter_tuning.py` and
+  `tests/characterization/test_hyperparameter_tuning_notebook.py` (names only; the logged
+  content identical), and the status lines here and in [MLFLOW_RUNS_PLAN.md](MLFLOW_RUNS_PLAN.md)
+  (§8, L1 ticked with its checks).
+- **The notebooks' md5:** `03_hyperparameter_tuning.py` `a351ef4f8d32c20158fa9af677c05f88`
+  (was `7c7ab7ad…`); `02_objective_eda.py` `a98d4dc4578cb884ca31b9d4dde3d992` and `01_eda.py`
+  `4bc1ba3a52dc2ad55d0097a707bd1ccc` unchanged.
+- **The checks, once, all passed** (the plan's §8, L1). The repo's `mlflow.db` and
+  `mlartifacts/` unchanged; no `.mlflow-local/`; the user's check store not created.
+- **The scratchpad:**
+  `/private/tmp/claude-501/-Users-galkampel-Desktop-Projects-age-group-prediction/769136fe-c768-42a9-83d4-4713a0d90200/scratchpad`:
+  `58edf1e9…` copied in full, `manual/` from `d4faa49a…`, repointed (119 files), the pycache
+  compiled. New: `checks/run_L1.sh`, `check_b_l1_tuning.py`, `check_d_l1.py`,
+  `compare_stores.py` (a store against a reference store by `run_key`); L1's store
+  `mlflow_L1.db` / `mlartifacts_L1` and pickle `check_c_l1_tuning.pkl` (the references for L2).
+- **Next:** L2 (the tuning runs logged inside the Tune cells), in the same session, after the
+  user's go; then L3 and L4.
+
 **Status (2026-11-16, the guided manual run paused; a change planned first):**
 - **The user's decision:** a run is logged by the step that produces it, with no logging
   button (the common practice). It replaces decision 2 of the MLflow plan. The plan is

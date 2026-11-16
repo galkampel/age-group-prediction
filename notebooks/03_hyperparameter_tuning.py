@@ -1562,31 +1562,31 @@ def _(
         "prediction_floor": PREDICTION_FLOOR,
     }
 
-    def build_dataset(dataset, name):
-        """`dataset` (an AgeGroupDataset) as an MLflow dataset named `name`: its X
-        and Y side by side, the digest the SHA-256 of its rows (pandas' row hashes),
-        its first 36 characters (MLflow's limit)."""
-        frame = dataset.X.join(dataset.Y)
-        digest = hashlib.sha256(
-            pd.util.hash_pandas_object(frame).to_numpy()
-        ).hexdigest()[:36]
-        return mlflow.data.from_pandas(frame, name=name, digest=digest)
+    def build_mlflow_dataset(age_group_dataset, name):
+        """`age_group_dataset` (an AgeGroupDataset) as an MLflow dataset named `name`:
+        its X and Y side by side, the digest the SHA-256 of its rows (pandas' row
+        hashes), its first 36 characters (MLflow's limit)."""
+        df = age_group_dataset.X.join(age_group_dataset.Y)
+        digest = hashlib.sha256(pd.util.hash_pandas_object(df).to_numpy()).hexdigest()[
+            :36
+        ]
+        return mlflow.data.from_pandas(df, name=name, digest=digest)
 
-    tuning_datasets = {
-        "training": build_dataset(train_age_group, "train"),
-        "validation": build_dataset(val_age_group, "val"),
+    tuning_dataset_inputs = {
+        "training": build_mlflow_dataset(train_age_group, "train"),
+        "validation": build_mlflow_dataset(val_age_group, "val"),
     }
-    return build_dataset, shared_params, tuning_datasets
+    return build_mlflow_dataset, shared_params, tuning_dataset_inputs
 
 
 @app.cell
 def _(json, mlflow, optuna):
     def log_tuning_run(
-        record,
-        model,
+        tuning_run,
+        model_name,
         run_settings,
         studies_dir,
-        objective_name,
+        objective_metric_name,
         shared_params,
         config_params,
         dataset_inputs,
@@ -1594,21 +1594,21 @@ def _(json, mlflow, optuna):
     ):
         """One study's run in the active experiment; its id, or None when a FINISHED run
         has its key (a FAILED one is logged again)."""
-        study = record["study"]
+        study = tuning_run["study"]
         run_key = f"{studies_dir.name}/{study.study_name}"
         if mlflow.search_runs(
             filter_string=f"tags.run_key = '{run_key}' and attributes.status = 'FINISHED'",
             output_format="list",
         ):
             return None
-        if model == "independent_cohorts":
+        if model_name == "independent_cohorts":
             family = run_settings["family"]
-        elif model == "total_times_probability":
+        elif model_name == "total_times_probability":
             family = (
                 f"{run_settings['total_family']}+{run_settings['probability_family']}"
             )
         else:
-            raise ValueError(f"unknown model {model!r}")
+            raise ValueError(f"unknown model {model_name!r}")
         # The trials: a row per trial, its seconds a number (a timedelta would come back as
         # text); the start and end times are in the journal.
         trials = study.trials_dataframe(
@@ -1625,13 +1625,13 @@ def _(json, mlflow, optuna):
                     optuna.distributions.distribution_to_json(distribution)
                 )
         with mlflow.start_run(
-            run_name=f"{model} {family} exposure={run_settings['use_exposure']}"
-        ) as run:
+            run_name=f"{model_name} {family} exposure={run_settings['use_exposure']}"
+        ) as mlflow_run:
             mlflow.set_tags(
                 {
                     "run_key": run_key,
                     "stage": "tuning",
-                    "model": model,
+                    "model": model_name,
                     "family": family,
                     **code_tags,
                 }
@@ -1641,7 +1641,7 @@ def _(json, mlflow, optuna):
                 {
                     **run_settings,
                     **shared_params,
-                    "study_seed": record["study_seed"],
+                    "study_seed": tuning_run["study_seed"],
                     **{
                         f"best.{name}": value
                         for name, value in study.best_params.items()
@@ -1650,16 +1650,16 @@ def _(json, mlflow, optuna):
             )
             mlflow.log_metrics(
                 {
-                    f"cv/{objective_name}": record["cv_best"],
+                    f"cv/{objective_metric_name}": tuning_run["cv_best"],
                     **{
-                        f"{dataset}/{cohort}/{metric}": score
-                        for (dataset, cohort, metric), score in record["scores"][
-                            "score"
-                        ].items()
+                        f"{dataset_name}/{cohort}/{metric}": score
+                        for (dataset_name, cohort, metric), score in tuning_run[
+                            "scores"
+                        ]["score"].items()
                     },
-                    "seconds": record["seconds"],
-                    "n_complete": record["n_complete"],
-                    "n_failed": record["n_failed"],
+                    "seconds": tuning_run["seconds"],
+                    "n_complete": tuning_run["n_complete"],
+                    "n_failed": tuning_run["n_failed"],
                 }
             )
             # The trials at 6 significant digits, as CSV (the UI shows it as a table);
@@ -1670,7 +1670,7 @@ def _(json, mlflow, optuna):
             mlflow.log_dict(
                 {
                     component.name: component.to_dict()
-                    for component in record["components"]
+                    for component in tuning_run["components"]
                 },
                 "components.json",
             )
@@ -1682,7 +1682,7 @@ def _(json, mlflow, optuna):
             )
             for context, mlflow_dataset in dataset_inputs.items():
                 mlflow.log_input(mlflow_dataset, context=context)
-        return run.info.run_id
+        return mlflow_run.info.run_id
 
     return (log_tuning_run,)
 
@@ -1710,7 +1710,7 @@ def _(
     mo,
     shared_params,
     tuner,
-    tuning_datasets,
+    tuning_dataset_inputs,
 ):
     mo.stop(
         not log_tuning_runs.value,
@@ -1731,7 +1731,7 @@ def _(
                 tuner.objective_metric.name,
                 shared_params,
                 config_params,
-                tuning_datasets,
+                tuning_dataset_inputs,
                 code_tags,
             )
             _logged += _run_id is not None
@@ -1856,7 +1856,7 @@ def _(best_runs_cohort, best_runs_metrics, best_runs_val_scores_df, mo):
         .itertuples(index=False)
     ):
         _views.append(mo.md(f"**{_model}:** `{_family}`, exposure {_use_exposure}"))
-        # A fresh index: the frame's row positions would show as a column.
+        # A fresh index: the df's row positions would show as a column.
         _rows = _chosen[_chosen["model"] == _model].reset_index(drop=True)
         _views.append(mo.ui.table(_rows.round(4)))
     mo.vstack(
@@ -2655,7 +2655,7 @@ def _(PALETTE, beeswarm_figure, best_runs_shap, mo, seed, shap_cohort, shap_rows
 @app.cell
 def _():
     def build_dataset_figures(
-        dataset,
+        dataset_name,
         scores_df,
         replicate_scores,
         difference_df,
@@ -2672,24 +2672,24 @@ def _():
         permutation_figure,
         beeswarm_figure,
     ):
-        """The 18 figures of one dataset (`dataset`: "val" or "test") by artifact
+        """The 18 figures of one dataset (`dataset_name`: "val" or "test") by artifact
         path: the forest and the ridge of `metric_name` for the two runs and for
         their difference; per model the permutation figure of the composite and each
         cohort and the beeswarm of each cohort. `permutation_results` is {model:
         {cohort (the composite first): {split: result}}}."""
         difference_name = difference_df["model"].iloc[0]
         figures = {
-            f"figures/{dataset}_forest_runs_{metric_name}.html": forest_figure(
+            f"figures/{dataset_name}_forest_runs_{metric_name}.html": forest_figure(
                 scores_df,
                 metric_name,
                 bound_names["lower"],
                 bound_names["upper"],
                 palette,
             ),
-            f"figures/{dataset}_ridge_runs_{metric_name}.html": ridge_figure(
+            f"figures/{dataset_name}_ridge_runs_{metric_name}.html": ridge_figure(
                 replicate_scores, metric_name, palette
             ),
-            f"figures/{dataset}_forest_difference_{metric_name}.html": forest_figure(
+            f"figures/{dataset_name}_forest_difference_{metric_name}.html": forest_figure(
                 difference_df,
                 metric_name,
                 bound_names["lower"],
@@ -2698,7 +2698,7 @@ def _():
                 share_x_axis=True,
                 rule_at=0,
             ),
-            f"figures/{dataset}_ridge_difference_{metric_name}.html": ridge_figure(
+            f"figures/{dataset_name}_ridge_difference_{metric_name}.html": ridge_figure(
                 {difference_name: difference_replicates},
                 metric_name,
                 palette,
@@ -2708,13 +2708,13 @@ def _():
         }
         for model, by_cohort in permutation_results.items():
             for cohort, by_split in by_cohort.items():
-                figures[f"figures/{dataset}_permutation_{model}_{cohort}.html"] = (
+                figures[f"figures/{dataset_name}_permutation_{model}_{cohort}.html"] = (
                     permutation_figure(
                         by_split, list(X.columns), f"{cohort} {metric_name}", palette
                     )
                 )
             for cohort in explanations[model].output_names:
-                figures[f"figures/{dataset}_beeswarm_{model}_{cohort}.html"] = (
+                figures[f"figures/{dataset_name}_beeswarm_{model}_{cohort}.html"] = (
                     beeswarm_figure(explanations[model], X, cohort, seed, palette)
                 )
         return figures
@@ -2728,7 +2728,7 @@ def _(mlflow):
         run_name,
         tags,
         params,
-        dataset,
+        dataset_name,
         scores_df,
         difference_df,
         bound_names,
@@ -2738,12 +2738,12 @@ def _(mlflow):
         dataset_inputs,
     ):
         """One run, in the active experiment, of the two best runs evaluated on
-        `dataset` ("val" or "test"); its number of metrics. It logs `tags` and each
+        `dataset_name` ("val" or "test"); its number of metrics. It logs `tags` and each
         best run's study name as `best.<model>`; `params`; as metrics, the
         composite's score and bootstrap statistics per model (`scores_df`) and for
         their paired difference (`difference_df`), named
-        `<dataset>/<model or difference>/<metric>/<statistic>`, every cohort's rows
-        being in the tables; each of `tables` ({name: frame}) as
+        `<dataset_name>/<model or difference>/<metric>/<statistic>`, every cohort's rows
+        being in the tables; each of `tables` ({name: df}) as
         `tables/<name>.csv` at 6 significant digits (the UI shows it as a table);
         each of `figures` ({artifact path: figure}); per best run its best
         parameters (what `from_params` reads) and its components' declaration;
@@ -2760,12 +2760,14 @@ def _(mlflow):
         composite_difference = difference_df[difference_df["cohort"] == "composite"]
         metrics = {
             **{
-                f"{dataset}/{row['model']}/{row['metric']}/{statistic}": row[statistic]
+                f"{dataset_name}/{row['model']}/{row['metric']}/{statistic}": row[
+                    statistic
+                ]
                 for row in composite_scores.to_dict("records")
                 for statistic in statistics
             },
             **{
-                f"{dataset}/difference/{row['metric']}/{statistic}": row[statistic]
+                f"{dataset_name}/difference/{row['metric']}/{statistic}": row[statistic]
                 for row in composite_difference.to_dict("records")
                 for statistic in statistics
             },
@@ -2775,30 +2777,30 @@ def _(mlflow):
                 {
                     **tags,
                     **{
-                        f"best.{model}": record["study"].study_name
-                        for model, record in best_runs.items()
+                        f"best.{model_name}": best_run["study"].study_name
+                        for model_name, best_run in best_runs.items()
                     },
                 }
             )
             mlflow.log_params(params)
             mlflow.log_metrics(metrics)
-            for name, table in tables.items():
+            for name, df in tables.items():
                 mlflow.log_text(
-                    table.to_csv(index=False, float_format="%.6g"), f"tables/{name}.csv"
+                    df.to_csv(index=False, float_format="%.6g"), f"tables/{name}.csv"
                 )
             # log_figure has no run_id: it needs the active run.
             for path, figure in figures.items():
                 mlflow.log_figure(figure, path)
-            for model, record in best_runs.items():
+            for model_name, best_run in best_runs.items():
                 mlflow.log_dict(
-                    record["study"].best_params, f"best_params/{model}.json"
+                    best_run["study"].best_params, f"best_params/{model_name}.json"
                 )
                 mlflow.log_dict(
                     {
                         component.name: component.to_dict()
-                        for component in record["components"]
+                        for component in best_run["components"]
                     },
-                    f"components/{model}.json",
+                    f"components/{model_name}.json",
                 )
             for context, mlflow_dataset in dataset_inputs.items():
                 mlflow.log_input(mlflow_dataset, context=context)
@@ -2851,7 +2853,7 @@ def _(
     shap_rows,
     shared_params,
     tuner,
-    tuning_datasets,
+    tuning_dataset_inputs,
 ):
     mo.stop(
         not log_best_runs.value,
@@ -2924,7 +2926,7 @@ def _(
         _tables,
         _figures,
         best_runs,
-        tuning_datasets,
+        tuning_dataset_inputs,
     )
     mo.md(
         f"Logged the best runs' run: {_n_metrics} metrics, {len(_tables)} tables, "
@@ -4124,8 +4126,8 @@ def _(
     SELECTION_METRIC,
     beeswarm_figure,
     best_runs,
-    build_dataset,
     build_dataset_figures,
+    build_mlflow_dataset,
     code_tags,
     counts_histogram_figure,
     counts_scatter_figure,
@@ -4231,8 +4233,8 @@ def _(
         _figures,
         best_runs,
         {
-            "training": build_dataset(train_val_age_group, "train_val"),
-            "testing": build_dataset(test_age_group, "test"),
+            "training": build_mlflow_dataset(train_val_age_group, "train_val"),
+            "testing": build_mlflow_dataset(test_age_group, "test"),
         },
     )
     mo.md(

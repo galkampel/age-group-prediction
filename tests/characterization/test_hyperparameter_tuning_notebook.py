@@ -361,12 +361,12 @@ def test_the_tuning_runs_are_logged_only_behind_their_button(
         "prediction_floor": notebook_defs["PREDICTION_FLOOR"],
     }
     assert len(notebook_defs["shared_params"]) == 23
-    datasets = notebook_defs["tuning_datasets"]
-    assert {context: dataset.name for context, dataset in datasets.items()} == {
+    dataset_inputs = notebook_defs["tuning_dataset_inputs"]
+    assert {context: dataset.name for context, dataset in dataset_inputs.items()} == {
         "training": "train",
         "validation": "val",
     }
-    assert all(len(dataset.digest) == 36 for dataset in datasets.values())
+    assert all(len(dataset.digest) == 36 for dataset in dataset_inputs.values())
 
 
 def test_the_best_runs_are_logged_only_behind_their_button(
@@ -414,7 +414,7 @@ def test_a_tuning_run_is_logged_once_then_skipped(
     notebook_defs: dict, tmp_path: Path
 ) -> None:
     # The second review's G3: log_tuning_run called on a scratch store with a
-    # 2-trial study and a small record. The first call logs the run; the
+    # 2-trial study and a small tuning run. The first call logs the run; the
     # second finds a FINISHED run with its key and logs nothing (M3's skip).
     # The cold read's T1 and T2: the metrics' values and a dataset input.
     # The experiment is created first: MLflow would create it at its default
@@ -441,7 +441,7 @@ def test_a_tuning_run_is_logged_once_then_skipped(
             names=["dataset", "cohort", "metric"],
         ),
     )
-    record = {
+    tuning_run = {
         "study": study,
         "study_seed": 7,
         "cv_best": study.best_value,
@@ -461,7 +461,7 @@ def test_a_tuning_run_is_logged_once_then_skipped(
         pd.DataFrame({"x": [0.5, 1.5], "y": [2.0, 3.0]}), name="train", digest="d" * 36
     )
     arguments = (
-        record,
+        tuning_run,
         "independent_cohorts",
         {"family": "poisson_glm", "use_exposure": True},
         studies_dir,
@@ -658,14 +658,14 @@ def test_an_evaluation_run_logs_the_composite_and_each_best_runs_files(
         index=False, float_format="%.6g"
     )
     assert (artifacts / "figures" / "a_figure.html").is_file()
-    for model, record in best_runs.items():
+    for model_name, best_run in best_runs.items():
         assert (
-            json.loads((artifacts / "best_params" / f"{model}.json").read_text())
-            == record["study"].best_params
+            json.loads((artifacts / "best_params" / f"{model_name}.json").read_text())
+            == best_run["study"].best_params
         )
-        assert json.loads((artifacts / "components" / f"{model}.json").read_text()) == {
-            "total": {"family": "poisson_glm"}
-        }
+        assert json.loads(
+            (artifacts / "components" / f"{model_name}.json").read_text()
+        ) == {"total": {"family": "poisson_glm"}}
     assert mlflow.active_run() is None
     assert mlflow.get_tracking_uri() != environment["MLFLOW_TRACKING_URI"]
 

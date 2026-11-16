@@ -5,7 +5,8 @@ can implement one from this file and the handoff's §4). One sub-task per approv
 sub-task when it is done and update the status line.
 
 **Status (2026-11-16):** §8 planned and approved (logged where the result is produced, no
-logging buttons; replaces decision 2): L1–L4 open, before the guided manual run.
+logging buttons; replaces decision 2). L1 done (the names; every check passed, the logged
+content equal to M6's), for the user to commit; L2–L4 open, before the guided manual run.
 
 **Status (2026-11-14):** M0 done (the probe; its findings in §1 and in M1–M6's exact calls; the
 user's four choices 11–14), committed `8e1ea98`. M1 done (the MLflow cell; the user's choice
@@ -1016,8 +1017,8 @@ Code" in PR text, never git checkout/stash/reset/mv.
 
 ## 8. Logged where the result is produced: no logging buttons (2026-11-16)
 
-**Status:** planned 2026-11-16 (Fable), approved by the user. L1–L4 open. Built before the
-guided manual run, which then checks this design.
+**Status:** planned 2026-11-16 (Fable), approved by the user. L1 done 2026-11-16 (Opus 5.5);
+L2–L4 open. Built before the guided manual run, which then checks this design.
 
 **Why:** with a "Log …" button per run kind, a result can exist without its record, and three
 clicks must be remembered. The user chose the common practice: **a run is logged by the step
@@ -1078,8 +1079,22 @@ Kept: `run_settings`, `studies_dir`, `shared_params`, `config_params`, `code_tag
 
 ### The sub-tasks (each: build, check once, stop for the user's review, commit message)
 
-- [ ] **L1. The names** (no behaviour change): the table above in the notebook, the test
+- [x] **L1. The names** (no behaviour change): the table above in the notebook, the test
   file, and the guide where a name appears. The logged content is identical.
+  **Done 2026-11-16.** The table in `03`; the user's two additions: `log_tuning_run`'s
+  comprehension `dataset` → `dataset_name` (the same meaning), and the test file's locals
+  follow the notebook (`tuning_run`, `for model_name, best_run in`, `dataset_inputs`) besides
+  `tuning_dataset_inputs`. The guide names none of them: unchanged. The final run's cell lists
+  `build_mlflow_dataset` after `build_dataset_figures` (sorted). Three format hunks applied
+  as ruff prints them (the digest's slice, a metric key, a test assert). The checks, once
+  (`checks/run_L1.sh` in the scratchpad named in the handoff's top status): ruff `03` 15 and
+  the test file 0, none new; the format hunks HEAD's two; `marimo check`; mypy; the test file
+  36; the non-slow suite 1423; Check B with the new signatures; Check C against M6's pickle,
+  exact; Check D (26 runs, then 24 + 1 skipped and the final refused, all read back);
+  `compare_stores.py`: the 26 runs equal M6's by `run_key` (tags, params, metrics, inputs,
+  206 artifact files; only wall times, the journal's worker ids and datetimes, and the figures'
+  div uuids differ); the guide's three python blocks on that store (§9 exact); the repo's
+  store unchanged, no `.mlflow-local/`.
 - [ ] **L2. The tuning runs logged inside the Tune cells:** the two cells moved up, the call
   and the status line in both Tune cells, the button cell and its logging cell deleted.
   Tests: `test_the_tuning_runs_are_logged_only_behind_their_button` becomes "the tuning runs
