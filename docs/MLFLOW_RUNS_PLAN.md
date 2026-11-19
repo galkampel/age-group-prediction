@@ -1,0 +1,1399 @@
+# Plan: the MLflow runs of the tuning notebook
+
+**For:** the user, and the session that implements a sub-task (written so that Claude Opus 5.5
+can implement one from this file and the handoff's §4). One sub-task per approval. Tick a
+sub-task when it is done and update the status line.
+
+**Status (2026-11-16, §9):** §9 planned (Fable) and approved by the user: the final run also
+logs the test SHAP values as a table and each model's 5 worst test buildings' waterfalls
+(7 tables, 33 figures). Two sub-tasks, W1 (the notebook and the tests) and W2 (the docs and
+the checker), then the check store's re-check of the final run. **W1 committed `6dd7b32`;
+W2 built and checked** (Opus 5.5; the user commits it); next the check store's re-check.
+
+**Status (2026-11-16):** §8 planned and approved (logged where the result is produced, no
+logging buttons; replaces decision 2). **§8 complete:** L1 (the names) committed
+`fb8e50f`; L2 + L3 (each run logged by the step that produces it; the logged content equal
+to M6's) committed `904c2bd`; L4 (the docs) done, for the user to commit. Next: the guided
+manual run with four clicks (the prompt at the top of the handoff).
+
+**Status (2026-11-14):** M0 done (the probe; its findings in §1 and in M1–M6's exact calls; the
+user's four choices 11–14), committed `8e1ea98`. M1 done (the MLflow cell; the user's choice
+there: no MLflow global), committed `2451c8a`. M2 done (a run record keeps its study), committed `dabc406`. M3 done (the 24 tuning runs
+behind a button; the user's choices 15, the trials as CSV at 6 significant digits, and 16, the
+bare `return`), committed `7e5bc30`. M4 done (the best runs' run behind a button: 108 metrics,
+7 CSV tables with the runs tables' dicts as JSON text, choice 17; 18 figures; the two returns
+restored, ruff `03` 15), committed `fba91f9`. M5 done (the count figures and the shares bars
+each a function in its own cell, the user's choice; the older loop names made informative in
+the same change, the user's choice, so the checks ran once), committed `94a47c3`. **Then a
+review before M6** (Fable 5.2, read-only): [MLFLOW_RUNS_REVIEW.md](MLFLOW_RUNS_REVIEW.md), ten
+findings. The user accepted every recommendation:
+- F1: the store guard on an existing experiment;
+- F2: the best runs' key;
+- F3: M6's restored return;
+- F4 + F6: `log_evaluation_run` and `code_tags`;
+- F5: `best_params` per best run and `prediction_floor`;
+- F7 (b), F8, F9 and F10 (a), (c).
+
+**They change M6 below:** M6 builds them first, then the final run, one check run. The M6 steps
+here are as first planned: read them with the review's §2–§3. **M6 done** (the review's
+findings and the final run, one change, one check run), committed `486891a`. **Next** (the
+user's request): first a second Fable 5.2 review of the whole flow, read-only, recorded as
+[MLFLOW_RUNS_REVIEW.md](MLFLOW_RUNS_REVIEW.md) §7 with the user's decisions. Then one Opus 5.5
+session that builds the accepted findings and M7, with one check run. Both prompts are at the
+top of the handoff.
+
+**The second review done (2026-11-15):** [MLFLOW_RUNS_REVIEW.md](MLFLOW_RUNS_REVIEW.md) §7.
+Its verdict: the flow is correct, complete and simple enough; a model of every run kind was
+rebuilt from the scratch store alone and reproduced its logged scores exactly. Three findings,
+decided by the user (do not re-ask): G1 and G2 into M7's guide, G3 two tests. **No notebook
+change. Next: M7** (Opus 5.5), which builds G3's tests first; the prompt is at the top of the
+handoff.
+
+**Complete (2026-11-15).** M7 done (G3's two tests, the guide
+[MLFLOW_RUNS.md](MLFLOW_RUNS.md), the links, the old plan's notes, §5's two rows), all checks
+passed in one run; committed `d59fa47`. Next: a cold read of the guide and the two tests by
+Fable 5.2, read-only (MLFLOW_RUNS_REVIEW.md §8; the prompt at the top of the handoff), then
+the user's PR `feat/mlflow-runs` into `main`. E11's
+final run on the real studies stays the user's to start.
+
+## 1. The question and the verdict
+
+The question (the handoff's §7): how do the tuning notebook's results become MLflow runs,
+with every item of §7.4's inventory placed?
+
+**The verdict: 26 runs in one experiment, written by three buttons in `03`, from notebook
+cells only.**
+
+| Run | How many | Button | Holds |
+|---|---|---|---|
+| a tuning run (`stage=tuning`) | 24, one per study | "Log the tuning runs" | the settings, the best parameters, the CV and point scores, the trials table, the declaration, the journal file |
+| the best runs' run (`stage=best_runs`) | 1 | "Log the best runs" | the two best runs' bootstrap, the paired difference, the inspection, their tables and figures, the 24 runs' tables |
+| the final run (`stage=final`, `final=true`) | 1 | "Log the final run" | the test scores, tables and figures; the only run with test metrics |
+
+**Since 2026-11-16 (§8): no logging buttons.** Each run is logged by the click that produces
+it: the tuning runs by the two "Tune …" buttons as each study finishes, the best runs' run
+after "Inspect the best runs", the final run after "Evaluate on the test part". The runs and
+what they hold are unchanged.
+
+### The user's decisions (2026-11-14; do not re-ask)
+
+1. **Run structure:** 24 + 1 + 1 runs; a study's trials are a logged table, not child runs.
+2. **Trigger:** one button per run kind, all in the one experiment.
+   **Replaced 2026-11-16 (§8):** a run is logged by the step that produces it; no logging button.
+3. **A run that exists is skipped;** the cell reports logged and skipped counts.
+4. **The model:** the declaration only (the components' `to_dict()` and the best parameters as
+   JSON). No pickle, no logged model. A model is rebuilt with `from_params` and refit.
+5. **The code lives in notebook cells.** What two cells repeat is a function in a cell that
+   reads no global. No `src/mlflow_runs.py`.
+6. **No read-back cell** (D4's table): the comparison is the MLflow UI. The user was unsure;
+   this is the common practice and a one-cell addition later if wanted.
+7. **The EDA notebook logs nothing.**
+8. **The final run:** its own button, refused when a `final=true` run exists in the experiment.
+9. **The old `tracking/` package and its guide are left untouched.**
+10. **Figures:** a fixed set built by the logging cell, independent of the menus. No waterfalls.
+    **Amended 2026-11-16 (§9):** the final run logs 10 waterfalls chosen by a fixed rule, and
+    the SHAP values every other one is rebuilt from.
+
+### What was checked, and what was not
+
+Read from the MLflow 3.16 docs and the installed 3.16.0 source:
+
+- `log_table(data, artifact_file, run_id=None)` writes JSON and **appends when the file
+  exists** in the run; `load_table(artifact_file, run_ids=…)` reads it back.
+- `log_figure(figure, artifact_file)` takes a plotly figure and writes `.html` with plotly.js
+  from the CDN. It has **no `run_id` argument**: it needs the active run.
+- `log_dict(dictionary, artifact_file, run_id=None)`.
+- `mlflow.data.from_pandas(df, source, targets, name, digest)`; `log_input(dataset, context)`.
+  **A digest is at most 36 characters;** `config_hash` is 64.
+- `search_runs(experiment_names=…, filter_string="tags.x = '…'")` returns a frame.
+- Names may hold slashes; a parameter value at most 6,000 characters, a tag 8,000; 100
+  parameters per batch.
+- **MLflow's default tracking URI is `sqlite:///mlflow.db`,** which from the repo root is the
+  canonical store. An unset `MLFLOW_TRACKING_URI` must be refused like the canonical one.
+- `kaleido` is not installed: no PNG.
+
+**Confirmed by M0 (2026-11-14; the probe on Check C's 3-trial copy, `PYTHONWARNINGS=error`,
+a store in the scratchpad; every read-back asserted):**
+- **Two calls warn under pandas 3.0.5, and both are filtered** (the user's choice, below):
+  - `log_table` on any frame with a `str` column: MLflow's own
+    `select_dtypes(include=["object"])` raises `pandas.errors.Pandas4Warning` ("For backward
+    compatibility, 'str' dtypes are included by select_dtypes…", attributed to
+    `mlflow.tracking.client`). Under `-W error` every table fails.
+  - `log_input` of a frame with int columns (X's `n_daycares_500m`, `n_apartments`; Y):
+    `UserWarning` "Hint: Inferred schema contains integer column(s)…" (attributed to
+    `mlflow.types.utils`), raised inside a `try/except Exception` in MLflow, so under `-W error`
+    the schema is silently dropped (`None`), and in the notebook the warning prints.
+  - With both filtered, nothing else warns: `import mlflow`, the store's creation, every call of
+    M3, M4 and M6, `search_runs`, `load_table`, `load_dict`.
+  - **MLflow's computed digest also warns** (`digest_utils`: "all arguments of all will be
+    keyword-only"): a dataset must be given its digest.
+- **`trials_dataframe()` through `log_table`:** its datetimes come back as ISO strings and
+  `duration` as `"P0DT0H0M2.636103S"` (not equal). The converted form (§4 M3) reads back
+  exactly equal. The UI's Artifacts tab shows a `log_table` file as a table ("View as table").
+- **The source with none given:** `CodeDatasetSource` holding the run's `mlflow.user`,
+  `mlflow.source.name` (the running script's path) and `mlflow.source.type` (`LOCAL`); kept.
+- **Wall time:** one tuning run 0.1–0.15 s; the 24 in 1.0 s; the second pass (24 skips)
+  0.1 s; the best runs' run 0.3–0.4 s; the final run 0.3–0.4 s (3-trial journals).
+- **A record keeping its `Study`:** `pickle` and cloudpickle both work (3,008 bytes for a
+  3-trial study, reloaded with its trials). Check C's records still drop it (a `Study` has no
+  `==` for the reference comparison).
+- **Read back, each equal:** params as `str(value)` (63 in the copy's Model 1 run 0); metrics as
+  `float`; tags; the four JSONs after a JSON round trip; the journal's bytes; 12 of the 13
+  tables (the dict columns of `model1_runs` too). `test_building_scores` differs only by
+  its columns' index name (`metric`, from `compute_metrics`): JSON drops it.
+  **Corrected at M3:** the tables were equal only to `assert_frame_equal`'s default tolerance
+  (rtol 1e-5), not exactly. `log_table` writes `to_json(orient="split")` at pandas' default
+  `double_precision=10` (10 decimal places: `2.6185068e-08` comes back `2.62e-08`), its reader
+  adds 1-ulp noise (`0.09158` → `0.09158000000000001`), and an all-`None` column comes back
+  `float64` NaN. Check D's first run (all 24 trials tables) showed it.
+- **Also seen:** a missing folder of the sqlite file is created by MLflow; the artifact folder
+  is created at the first artifact; a new store prints two alembic `INFO` lines to stderr
+  ("Creating initial MLflow database tables…"); `set_experiment` of a missing experiment prints
+  an `INFO` line and creates it without our artifact location (so M1 creates it first); an unset
+  URI resolves to `sqlite:///<cwd>/mlflow.db` and creates nothing until a store call; a run
+  that raises inside `with mlflow.start_run()` ends `FAILED` with its tags; `log_table` into an
+  existing file doubles the table (3 rows → 6); the run's page groups metric charts by the
+  name's prefix (`val/difference/bias (6)`); a figure's HTML loads plotly.js from
+  `cdn.plot.ly` (needs the network; 13–56 KB per file) and renders in the UI's viewer;
+  `load_table` and `load_dict` print a tqdm "Downloading artifacts" bar on stderr unless
+  `MLFLOW_ENABLE_ARTIFACTS_PROGRESS_BAR=false`.
+- **The UI** (`mlflow ui`, 3.16): opens in its "GenAI" mode with an "MLflow Assistant" panel;
+  the runs list under the experiment; the screenshots are named in the handoff's top status.
+
+**The user's choices at M0 (2026-11-14; do not re-ask):**
+
+11. **The trials table:** the converted form: `number, value, seconds, params_*,
+    user_attrs_*, state` (the start and end times dropped; the journal keeps them).
+12. **The two warnings:** two narrow filters (category, message start, module) set once in the
+    MLflow cell; not a cast at every call.
+13. **The datasets' digest:** the SHA-256 of the part's rows (pandas' row hashes), its first
+    36 characters; `config_hash` stays a parameter. A changed split gets its own dataset record.
+14. **The git tags:** `git_commit` (HEAD) and `git_dirty` (`"true"` when a tracked file is
+    modified), read once in the MLflow cell with `git` run in `project_root / "src"` (in Check
+    C's copy a symlink to the repo, where `project_root` itself is not a repository).
+
+**The user's choices at M3 (2026-11-14; do not re-ask):**
+
+15. **A logged table's precision is chosen, not MLflow's:** a table is for reading in the UI; the
+    exact record is the journal, `best_params.json` and the `best.*` parameters. The trials are
+    logged as CSV at 6 significant digits, `mlflow.log_text(trials.to_csv(index=False,
+    float_format="%.6g"), "trials.csv")` (tiny hyperparameters keep their digits; the UI shows a
+    `.csv` as a table: the installed bundle's artifact viewer lists `csv`, `tsv`). M4 and M6's
+    tables follow the same rule, planned there (their dict columns need a look).
+16. **marimo's bare `return`** in a logging cell is kept: ruff on `03` goes 15 → 16 at M3 (a 15th
+    PLR1711, like the 14 markdown and display cells); M4 and M6 add one each.
+
+**The user's choice after M3, for M4 (2026-11-14; do not re-ask):**
+
+17. **A dict column in a CSV table is JSON text:** `model1_runs` and `model2_runs`'
+    `feature_transformers` and `hyperparameters` each written with `json.dumps` per cell before
+    `to_csv(index=False, float_format="%.6g")` (the floats inside a dict stay full precision; a
+    dict is not a float column). Checked on M3's Check C pickle: both tables' dicts read back
+    equal through `pd.read_csv` and `json.loads`; no NaN in the text.
+
+**Settled by the probe without a question:** M2's form, as the plan recommended: the record
+keeps its study (it pickles; the logging needs its name, trials and best parameters, and loading
+it again would repeat the tune cell's name). The skip rule and the final run's guard match a
+`FINISHED` run only, so a run that failed mid-logging is logged again (decision 3's "a run that
+exists" is a complete one); the failed run stays in the UI marked failed.
+
+### Facts of the notebook the steps rest on (HEAD `10570a8`)
+
+- A run record's keys: the run settings, `feature_transformers`, `model`, `components`,
+  `cv_best`, `n_complete`, `n_failed`, `seconds`, `scores`. **It keeps no study, study name
+  or study seed.**
+- `build_study_name(step, run_settings, objective_name, study_seed)` is a notebook function;
+  the steps are `"independent_cohorts"` and `"total_times_probability_joint"`; run *i* has
+  `study_seed = seed + i`.
+- `tuner.tune_*` return `(optuna.Study, seconds)`. The journal file is
+  `studies_dir / f"{study_name}.log"`. A study name is unique only inside its `studies_dir`.
+- `flatten`, `config_params`, `EXPERIMENT_SETTINGS` exist but their cells do not return them.
+- The figure functions `forest_figure`, `ridge_figure`, `permutation_figure`,
+  `beeswarm_figure` take their data and the palette. The two count figures and the shares
+  bars are built inline in cells that read menus.
+- Neither notebook imports `mlflow`. The notebook tests already pass scratch `MLFLOW_*`
+  variables to the script.
+
+## 2. The sub-tasks at a glance
+
+| # | Sub-task | What you see change | Size | Implement with |
+|---|---|---|---|---|
+| M0 | The probe: one run of each kind logged by hand on the 3-trial copy, read back | screenshots of the MLflow UI on a scratch store; nothing in the repo | medium | **Fable** |
+| M1 | The MLflow cell: the store's guard and the experiment | a line naming the experiment and the store; a refusal on the canonical store | small | Opus 5.5 |
+| M2 | A run record keeps its study | nothing | small | Opus 5.5 |
+| M3 | "Log the tuning runs": the 24 runs | a button; 24 runs in the UI | medium | Opus 5.5 |
+| M4 | "Log the best runs": the comparison's run | a button; 1 run with 18 figures | medium | Opus 5.5 |
+| M5 | The count figures and the shares bars as functions | nothing | small | Opus 5.5 |
+| M6 | "Log the final run", guarded | a button; 1 run tagged `final=true`; a refusal on a second | medium | Opus 5.5 |
+| M7 | Docs and close | a guide, the links, the old plan's notes | small | Opus 5.5 |
+
+**Why Fable for M0:** it makes the design choices the docs leave open (the five unconfirmed
+points above, the trials table's form, the metric names as the UI shows them) and rewrites
+M2–M6's exact calls from what it saw. The others are steps whose check says plainly whether
+they are right.
+
+**The order:** M0, M1, M2, M3, M4, M5, M6, M7. M3 needs M1 and M2; M6 needs M5.
+
+**Which model for which session** (one session per sub-task; switch the model before starting):
+
+| Session | Model | Prompt |
+|---|---|---|
+| M0 | **Fable** | §7, the first prompt |
+| M1, M2, M3, M4, M5, M6, M7 | Opus 5.5 | §7, the second prompt, with the sub-task's number |
+
+**If an Opus session meets a choice this file does not make** (a call that warns, a step that
+does not fit the code as it is, a check that cannot say whether the result is right), it stops
+and tells the user the sub-task needs a Fable session; it does not choose by itself. M0 exists
+so that this does not happen: after it, M1–M6 hold the exact calls as they were seen to work.
+
+## 3. How a sub-task is done
+
+The standing rules are the handoff's §4 and the review plan's §3 (the state check first; tell
+the user before editing a notebook; never commit, `checkout`, `stash`, `reset` or `mv`; new
+cells formatted alone and spliced in; no new ruff finding; a notebook function reads no global;
+no private helpers; the stop's summary, md5 and commit message). Added for this plan:
+
+1. **The store.** Never write the repo root's `mlflow.db` or `mlartifacts/`, nor
+   `.mlflow-local/` (the user's scratch store). Every check uses
+   `MLFLOW_TRACKING_URI=sqlite:///$S/mlflow_<sub-task>.db` and an artifact location in `$S`,
+   both removed with `rm` before a run.
+2. **The runner:** copy `checks/run_S5_3.sh` (its EDA figure step set back to the exact
+   `compare_figures.py`), rename the outputs, keep the references `check_c_s5_3_*` (or the
+   previous sub-task's).
+3. **Check C stays equal** to its reference except what the sub-task's "Validate" names. The
+   patched `run_button` clicks the logging buttons too, so from M3 on Check C logs to the
+   scratch store.
+4. **Check D** (new in M3, `checks/check_d_mlflow.py`): reads the scratch store after Check
+   C's run and asserts the runs against the notebook's own values (the copy's `defs`). The
+   model is M0's probe (`probes/probe_m0.py` in the scratchpad the handoff names): its
+   read-back block and `compare_table`. Run it with `MLFLOW_ENABLE_ARTIFACTS_PROGRESS_BAR=false`
+   (else a tqdm bar per download). Params compare as `str(value)`, metrics as `float(value)`,
+   the JSONs after `json.loads(json.dumps(...))`, a CSV table by its text (exactly equal to the
+   check's own `to_csv(index=False, float_format="%.6g")`) and its values to 6 digits (choice
+   15). Check D runs the copy a second time on Check C's store: the skips and the read-back in
+   one run.
+5. **The notebook tests** (`tests/characterization/test_hyperparameter_tuning_notebook.py`)
+   gain a test per sub-task as named below. A script run must leave the store with no run.
+6. **Never click "Evaluate on the test part" or "Log the final run" on the user's cache.**
+
+## 4. The sub-tasks
+
+### [x] M0. The probe (Fable; read-only for the repo)
+
+**Done 2026-11-14.** The probe (`probes/probe_m0.py`, run by `probes/run_probe_m0.sh`; log
+`run_probe_m0.log`, the first run's `m0_shots/run_probe_m0_first.log`) ended `PROBE M0 DONE`
+under `-W error` with every read-back asserted; its first run stopped on `log_table`'s
+`Pandas4Warning`, the second ran with the filter, the third with the user's four choices. The
+findings are §1's "Confirmed by M0"; the choices §1's 11–14; M1–M6 below hold the calls as
+run. The repo unchanged: `git status` clean, the notebooks' md5 equal, the root's `mlflow.db`
+(md5, size, mtime) and `mlartifacts/` (411 entries, a stat listing) equal before and after, no
+`.mlflow-local/`. The screenshots: `m0_shots/` (the run list, a tuning run's page, both trials
+forms, a figure in the UI's viewer, the metric charts, the final run's table and figure).
+
+- **Model:** **Fable** (switch to Fable for this session). It makes design choices from a probe; see §2.
+- **Evidence:** the five unconfirmed points of §1; the handoff's §7.8 asks for a first
+  sub-task that logs by hand and reads back.
+- **Steps:** on Check C's 3-trial copy of `03` (every button clicked but none of the new
+  ones, which do not exist yet), in a script in the scratchpad with a store in the scratchpad
+  and `PYTHONWARNINGS=error`:
+  1. Set the experiment as M1 will; assert the unset URI resolves to `sqlite:///mlflow.db`.
+  2. Log one tuning run by hand with M3's calls; one best runs' run with M4's; one final run
+     with M6's.
+  3. Read each back: `search_runs` by the `run_key` tag; `load_table` equal to the frame
+     logged; the artifacts listed; a figure's HTML opened and screenshotted.
+  4. Log the same tuning run a second time into the same run and show the table doubled (the
+     reason for the skip rule).
+  5. Time 24 tuning runs.
+  6. Try a record holding its `Study` through Check C's pickling.
+  7. Start `mlflow ui` on the scratch store, screenshot the run list, one run's page, a
+     table and a figure for the user.
+- **Decided here, with the user where it is a choice:** the trials table's form
+  (`study.trials_dataframe()` as it is, or with columns converted); M2's form (the record
+  keeps `study`, or the logging cell loads it); the dataset's source; any warning filter.
+- **Validate:** every read-back equal; the repo unchanged (`git status` clean, md5 equal);
+  the repo root's `mlflow.db` and `mlartifacts/` unchanged (their listing before and after).
+- **The stop:** the findings written into this file's M1–M6; the screenshots.
+- **Commit:**
+  ```text
+  docs(notebook): the MLflow probe's findings; the runs plan's calls confirmed (M0)
+  ```
+
+### [x] M1. The MLflow cell
+
+**Done 2026-11-14** (`03`'s md5 `659e410dc1b64a68501f4f3e331875a3`). `checks/run_M1.sh` (log
+`run_M1.log`): the non-slow suite 1416 passed (S5.3's 1412 + 4), mypy clean, the notebook tests
+36 (32 + 4), ruff `03` 15 / `02` 11 as at HEAD (none new), the format hunks the user's two, `marimo
+check` clean, Check B on both (M1's assertions), Check C on both equal to S5.3 with nothing
+excepted, both notebooks' 21 + 27 figures identical, the scratch store 0 runs, the repo's
+`mlflow.db` and `mlartifacts/` unchanged. The mutation (`run_mutant_M1.sh`): the copy as is 3
+passed; without the canonical URI's `raise`, the `sqlite:///mlflow.db` case fails.
+
+- **Model:** Opus 5.5.
+- **Evidence:** D1e; MLflow's default URI is the canonical store.
+- **The user's choice at M1 (2026-11-14; do not re-ask): no MLflow global.** The notebook test
+  fixture `notebook_defs` runs the notebook inside the pytest process, and the old `tracking/`
+  tests (not marked slow either) run later in the same session; `mlflow.set_tracking_uri`
+  writes a module global and `os.environ["MLFLOW_TRACKING_URI"]`, `set_experiment` a global
+  active experiment. So the cell calls neither: MLflow 3.16 reads `MLFLOW_TRACKING_URI` and,
+  with no active experiment, `MLFLOW_EXPERIMENT_NAME` at every call
+  (`fluent._get_experiment_id` → `_get_experiment_id_from_env`). Confirmed before the edit by
+  `probes/probe_m1_env.py` under `-W error`: the run in the named experiment, its artifacts
+  under the artifact location, the table equal, the schema logged, the URI and the
+  environment unchanged. **M3, M4 and M6 call no setter either** (their skip and guard
+  queries, `start_run`, `load_table` use the active experiment the variable names).
+- **Steps (done):**
+  1. **The MLflow cell**, after the data cell (`def _(pd, project_root)`): its own imports
+     (`os`, `subprocess`, `warnings`, `Path`, `mlflow`; not the setup's imports cell, `02`'s
+     twin); the six refusals (each a `ValueError` naming the variable: the URI unset, not
+     `sqlite:///`, or its file `project_root / "mlflow.db"`; the experiment unset; the
+     artifact location unset or `project_root / "mlartifacts"`); the two warning filters (§1,
+     12); `create_experiment(name, artifact_location=str(Path(location).resolve()))` when
+     missing; `git_tags` (`git_commit`, `git_dirty`, `git` in `project_root / "src"`); the line
+     `experiment=… tracking_uri=…`. It returns `git_tags, mlflow`: the logging cells read
+     both, so marimo runs them after it (the filters and the experiment set first).
+  2. The data cell returns `config_params`; the settings cell `EXPERIMENT_SETTINGS`.
+  3. `.env.example`: the run command names `notebooks/03_hyperparameter_tuning.py`.
+- **Tests (done):** `_mlflow_environment(scratch)` (the four variables of a scratch store);
+  `_run(notebook, scratch, cwd, environment)` (a `None` removes a variable);
+  `_project_copy(tmp_path, source)` (a copy with `configs` **and `src`** linked; the
+  seed-override test's copy had no `src`, where the cell's `git` would raise);
+  `notebook_store` and `notebook_defs` (the variables set for the in-process run only, in
+  `pytest.MonkeyPatch.context()`); `test_a_script_run_opens_no_mlflow_run` (the experiment with
+  its artifact location, no run, the git tags, no URI leaked into the environment or into
+  `mlflow.get_tracking_uri()`); `test_the_mlflow_cell_refuses_the_canonical_store` (×3:
+  `MLFLOW_TRACKING_URI` unset, `sqlite:///mlflow.db`, `AGE_GROUP_MLFLOW_ARTIFACT_LOCATION=
+  mlartifacts`; each on `_project_copy` run from the copy's root, so a missing refusal opens
+  the copy's store, never the repo's; exit ≠ 0, `ValueError` and the variable in stderr, no
+  `mlflow.db` or `mlartifacts` in the copy).
+- **Validate:** `checks/run_M1.sh` (the four variables exported to `$S/mlflow_M1.db` and
+  `$S/mlartifacts_M1`; Check B `check_b_m1_tuning.py`: `mlflow`, `git_tags`, `config_params`,
+  `EXPERIMENT_SETTINGS`, the experiment with its artifact location, no run, no active
+  experiment); Check C on both equal to S5.3 with nothing excepted; both notebooks' figures
+  identical; the repo's store listed before and after.
+- **Mutation:** `checks/run_mutant_M1.sh`: on a full copy, the canonical URI's `raise`
+  replaced by `pass`; the `sqlite:///mlflow.db` refusal case fails.
+- **The scripts every later check needs:** the four MLflow variables exported (the notebook
+  refuses to run without them), as `run_M1.sh` does; `run_dump_m1.sh` is the figure dump
+  without its inline URI.
+- **Commit:**
+  ```text
+  feat(notebook): the MLflow cell sets the experiment and refuses the canonical store (M1)
+  ```
+
+### [x] M2. A run record keeps its study
+
+**Done 2026-11-14** (`03`'s md5 `74b39c08ded5cafbbbb68016d7f87649`). Both tune cells' records
+gain `"study": _study` after `"components"`, and their comment says the logging reads the
+study's name, trials and best parameters. `checks/run_M2.sh` (log `run_M2.log`): the non-slow
+suite 1416, mypy clean, the notebook tests 36, ruff `03` 15 / `02` 11 (none new), the two format
+hunks, Check B on both, Check C on both equal to M1's run with nothing excepted (the records
+compared without `study`), the 21 + 27 figures identical, the scratch store 0 runs, the repo's
+store unchanged. Check C (`checks/check_c_m2_tuning.py`) asserts each record's study against the
+study it recomputes in memory: its name (the check's own `study_file`, not the notebook's
+`build_study_name`), its best value equal to `cv_best`, 3 trials, each trial's params; its
+`record()` drops `study` before pickling. **The mutation as run** (the line below could not be
+written: Model 1's cell has no Model 2 study): Model 1's records each keep the first run's study
+(`run_mutant_M2.sh`); Check C fails at run 1 (seed 43, the study named `…seed=42`).
+
+- **Model:** Opus 5.5 (its form confirmed by M0).
+- **Evidence:** the logging needs the study's name (the run's key), its trials and its best
+  parameters; the record drops the study the tuner returned. Rebuilding the name and the
+  journal path in the logging cell would repeat the tune cell and `src`.
+- **Steps** (as recommended; M0 confirms or replaces): in both tune cells add
+  `"study": _study` to the record. Nothing else reads it.
+- **Validate:** Check C equal except each record's new key `study` (the check scripts drop it
+  before pickling and assert its `study_name` equals `build_study_name(...)` for run *i*).
+- **Mutation:** store Model 2's study in every Model 1 record; the name assertion fails.
+- **Commit:**
+  ```text
+  feat(notebook): a run record keeps its study (M2)
+  ```
+
+### [x] M3. "Log the tuning runs"
+
+**Done 2026-11-14** (`03`'s md5 `fa59251c25ea424474111a3f04c7cc3e`). The four cells after Model
+2's tables cell, as below but for the trials table: CSV at 6 significant digits (the user's
+choice 15, after Check D's first run found `log_table`'s 10-decimal rounding); the imports cell's
+return gains `optuna` (the function's cell reads it; it was imported, not returned). The test
+`test_the_tuning_runs_are_logged_only_behind_their_button` (the stop; `shared_params`, 22;
+the two datasets; the button unclicked); a script run's no-run assertion stays M1's test.
+`checks/run_M3.sh` (log `run_M3.log`; the first run's `run_M3_first.log`): the non-slow suite
+1417 (+1), mypy clean, the notebook tests 37, ruff `03` 16 (choice 16: a 15th PLR1711) / `02`
+11, the two format hunks, `marimo check` clean, Check B on both (`check_b_m3_tuning.py`: M3's
+names, no run), Check C on both equal to M2's run with nothing excepted (its click logs the 24
+runs), the 21 + 27 figures identical (the dump in its own store), the scratch store 24 runs, the
+repo's store unchanged (the listing's one difference: `git status`'s count, the plan edited
+during the run). **Check D** (`checks/check_d_mlflow.py`, new): the copy run a second time on
+Check C's store: "Logged 0 tuning runs, skipped 24 (already logged).", the same 24 run ids; per
+run the key (the check's own study and studies-dir names), the run name, the tags (`git_commit`,
+`git_dirty` from the check's own `git`), the parameters (`str`), the 52 metrics (`float`),
+`trials.csv`'s text exactly and its values to 1e-5, the four JSONs, the journal's bytes, the six
+artifacts, the artifact URI under the scratch location, the two inputs (names, digests, schema
+with `long`). In `run_M3.log` Check D failed on a bug of the check (the study's `None` against
+the CSV's NaN in its value comparison, after the text matched); fixed (both sides parsed from
+CSV) and rerun alone on the same store (`check_d_m3_rerun.log`): OK, 128 s. **The mutation**
+(`run_mutant_M3.sh`, log `run_mutant_M3.log`): the skip's `return None` made `pass`; Check C on
+the mutant passes (its first run logs 24), Check D's second run logs 24 more (the store 48 runs)
+and fails ("Logged 24 tuning runs, skipped 0"). (The script's printed exits read the subshell's
+`$pipestatus`: 0 both; the AssertionError is the result.)
+
+- **Model:** Opus 5.5 (its calls confirmed by M0).
+- **Steps** (the calls as M0 ran them, `probes/probe_m0.py`'s `log_tuning_run`; four new cells
+  after Model 2's tables cell, in this order):
+  1. **The runs' shared inputs** (no button; cheap): reads `DATA_SETTINGS`,
+     `EXPERIMENT_SETTINGS`, `config_hash`, `hashlib`, `mlflow`, `pd`, the three parts.
+     ```python
+     # What every run logs as parameters: the data's version and settings, the experiment's
+     # settings (the selection metric among them) and the parts' sizes.
+     shared_params = {
+         "config_hash": config_hash, **DATA_SETTINGS, **EXPERIMENT_SETTINGS,
+         "n_train": len(train_age_group.X), "n_val": len(val_age_group.X), "n_test": len(test_age_group.X),
+     }
+
+     def build_dataset(dataset, name):
+         """`dataset` (an AgeGroupDataset) as an MLflow dataset named `name`: its X and Y side by
+         side, the digest the SHA-256 of its rows (pandas' row hashes), its first 36 characters
+         (MLflow's limit)."""
+         frame = dataset.X.join(dataset.Y)
+         digest = hashlib.sha256(pd.util.hash_pandas_object(frame).to_numpy()).hexdigest()[:36]
+         return mlflow.data.from_pandas(frame, name=name, digest=digest)
+
+     tuning_datasets = {
+         "training": build_dataset(train_age_group, "train"),
+         "validation": build_dataset(val_age_group, "val"),
+     }
+     ```
+     It returns `build_dataset`, `shared_params`, `tuning_datasets` (22 parameters; M6 builds
+     its two datasets with `build_dataset`). `from_pandas` with a digest warns nothing; without
+     one MLflow's digest raises under `-W error` (M0). No `source`: MLflow records the running
+     script (`CodeDatasetSource`). `targets` stays unset (it takes one column; Y has three).
+  2. **The function** (reads `mlflow`, `optuna`):
+     ```python
+     def log_tuning_run(record, model, run_settings, study_seed, studies_dir, objective_name,
+                        shared_params, config_params, datasets, git_tags):
+         """One study's run in the active experiment; its id, or None when a FINISHED run
+         has its key (a FAILED one is logged again)."""
+         study = record["study"]
+         run_key = f"{studies_dir.name}/{study.study_name}"
+         if mlflow.search_runs(
+             filter_string=f"tags.run_key = '{run_key}' and attributes.status = 'FINISHED'",
+             output_format="list",
+         ):
+             return None
+         if model == "independent_cohorts":
+             family = run_settings["family"]
+         elif model == "total_times_probability":
+             family = f"{run_settings['total_family']}+{run_settings['probability_family']}"
+         else:
+             raise ValueError(f"unknown model {model!r}")
+         # The trials: a row per trial, its seconds a number (a timedelta would come back as
+         # text); the start and end times are in the journal.
+         trials = study.trials_dataframe(
+             attrs=("number", "value", "duration", "params", "user_attrs", "state")
+         )
+         trials["duration"] = trials["duration"].dt.total_seconds()
+         trials = trials.rename(columns={"duration": "seconds"})
+         # The search space the trials drew: each parameter's distribution, as Optuna's JSON.
+         search_space = {}
+         for trial in study.trials:
+             for name, distribution in trial.distributions.items():
+                 search_space[name] = optuna.distributions.distribution_to_json(distribution)
+         with mlflow.start_run(run_name=f"{model} {family} exposure={run_settings['use_exposure']}") as run:
+             mlflow.set_tags({"run_key": run_key, "stage": "tuning", "model": model, "family": family,
+                              "notebook": "notebooks/03_hyperparameter_tuning.py", **git_tags})
+             mlflow.log_params({
+                 **run_settings, **shared_params, "study_seed": study_seed,
+                 **{f"feature_transformer.{name}": value for name, value in record["feature_transformers"].items()},
+                 **{f"best.{name}": value for name, value in study.best_params.items()},
+             })
+             mlflow.log_metrics({
+                 f"cv/{objective_name}": record["cv_best"],
+                 **{f"{dataset}/{cohort}/{metric}": score
+                    for (dataset, cohort, metric), score in record["scores"]["score"].items()},
+                 "seconds": record["seconds"], "n_complete": record["n_complete"], "n_failed": record["n_failed"],
+             })
+             # (as built, choice 15: the trials as CSV at 6 significant digits)
+             mlflow.log_text(trials.to_csv(index=False, float_format="%.6g"), "trials.csv")
+             mlflow.log_dict({c.name: c.to_dict() for c in record["components"]}, "components.json")
+             mlflow.log_dict(study.best_params, "best_params.json")
+             mlflow.log_dict(search_space, "search_space.json")
+             mlflow.log_dict(config_params, "config.json")
+             mlflow.log_artifact(str(studies_dir / f"{study.study_name}.log"), artifact_path="study")
+             for context, dataset in datasets.items():
+                 mlflow.log_input(dataset, context=context)
+         return run.info.run_id
+     ```
+     (M0 asserted the union has one distribution per name; a parameter no trial drew is
+     absent.) The run key is 260 characters in the copy (a tag holds 8,000); the run has 52
+     metrics and, in the copy's Model 1 run 0, 63 parameters (fewer with the shared
+     hyperparameters).
+  3. **The button** `log_tuning_runs = mo.ui.run_button(label="Log the tuning runs")`, with a
+     line saying it logs the 24 runs to the experiment the MLflow cell names and skips a
+     logged one.
+  4. **The logging cell:** `mo.stop(not log_tuning_runs.value, mo.md("Click the button to
+     log the tuning runs to MLflow."))`; then
+     ```python
+     _logged = _skipped = 0
+     for _model, _settings_list, _runs in (
+         ("independent_cohorts", MODEL1_RUN_SETTINGS, MODEL1_RUNS),
+         ("total_times_probability", MODEL2_RUN_SETTINGS, MODEL2_RUNS),
+     ):
+         for _i, (_run_settings, _record) in enumerate(zip(_settings_list, _runs, strict=True)):
+             _run_id = log_tuning_run(_record, _model, _run_settings, seed + _i, tuner.storage_dir,
+                                      tuner.objective_metric.name, shared_params, config_params,
+                                      tuning_datasets, git_tags)
+             _logged += _run_id is not None
+             _skipped += _run_id is None
+     mo.md(f"Logged {_logged} tuning runs, skipped {_skipped} (already logged).")
+     ```
+     M0's times: 24 runs in 1.0 s, 24 skips in 0.1 s (3-trial journals).
+- **Tests:** the logging cell holds `mo.stop(not `; a script run leaves no run.
+- **Validate:** Check C equal with nothing excepted. Check D: 24 runs; each run's tags (with
+  `git_commit`, `git_dirty`), parameters (`str`) and metrics (`float`) equal the record's
+  values; `trials.csv`'s text exactly equal to the converted trials of `record["study"]` at
+  `float_format="%.6g"` (choice 15; first planned as `load_table("trials.json")`); the four JSONs equal; the journal's bytes equal the copy's file; two
+  dataset inputs (contexts `training`, `validation`), their digests `build_dataset`'s, their
+  schema not empty (the filter works: under `-W error` without it the schema is silently
+  `None`); a second run of the copy on the same store leaves 24 runs and every trials table 3
+  rows.
+- **Mutation:** drop the skip; the second run gives 48 runs and Check D fails.
+- **Commit:**
+  ```text
+  feat(notebook): the 24 tuning runs logged to MLflow behind a button (M3)
+  ```
+
+### [x] M4. "Log the best runs"
+
+**Done 2026-11-15** (`03`'s md5 `051cfb32b338c8e94b3bac3581b652ce`). The three cells after
+section 5's beeswarm cell, as below with the tables as settled (CSV at 6 significant digits,
+the runs tables' `feature_transformers` and `hyperparameters` `json.dumps`ed per cell); the two
+returns restored. After the user's review of names: the function `build_dataset_figures`
+(its `dataset`, `"val"` or `"test"`, and `permutation_results`), the logging cell's `column`,
+`component`, `_table`, `_record`, `_composite_scores`, `_composite_difference`; M3's
+`build_dataset(dataset, name)` and its `component`. The logging cell builds the 108 metrics, the 7 tables and the 18 figures
+before `start_run` (a failure there leaves no FAILED run); its skip is `mo.stop(bool(…), "The
+best runs' run is logged: skipped.")`; it ends "Logged the best runs' run: 108 metrics, 7
+tables, 18 figures." The button's line says to click it after "Inspect the best runs". The test
+`test_the_best_runs_are_logged_only_behind_their_button` (one cell holds `_figures =
+build_dataset_figures(` and the `mo.stop`; the button unclicked; no inspection name in a script
+run). `checks/run_M4.sh` (log `run_M4.log`; the first run's `run_M4_first.log` stopped at
+`make_copy_tuning.py`, whose `best_replicate_scores,` count the logging cell raised: it now
+asserts the best runs' cell's return; and a format hunk in the test, fixed): the non-slow suite
+1418 (+1), mypy clean, the notebook tests 38, ruff `03` 15 / `02` 11, the two format hunks,
+`marimo check` clean, Check B on both (`check_b_m4_tuning.py`: `build_dataset_figures`' 16
+parameters, the button unclicked, no run), Check C on both equal to M3's run with nothing
+excepted (its click logs 25 runs), the 21 + 27 figures identical to M3's, the scratch store 25
+runs, the repo's store unchanged. **Check D** (`checks/check_d_mlflow.py`, extended): before
+the second run 25 FINISHED runs (24 `tuning`, 1 `best_runs`); the second run shows both skips
+and leaves the same 25 ids; M3's 24 as before; the best runs' run: the key, the name, the
+artifact URI, the tags (each `best.<model>` the check's own study name of the record minimizing
+the validation composite rmse), the 22 parameters, the 108 metrics from the frames' composite
+rows, the 7 CSV texts exactly and their values to 1e-5 (the dicts equal through `json.loads`),
+each of the 18 figures' HTML equal to the check's own figure (the four figure functions called
+directly; plotly's div uuid masked), the 2 components, exactly 27 artifacts, the two inputs.
+**The mutation** (`run_mutant_M4.sh`, log `run_mutant_M4.log`): `"best_runs_val_scores":
+best_difference_df`; Check C on the mutant passes (it logs 25), Check D fails on
+`best_runs_val_scores`'s text.
+
+- **Model:** Opus 5.5 (its calls confirmed by M0).
+- **Steps** (the calls as M0 ran them; three new cells after the beeswarm cell of section 5):
+  1. **The figures' function** (M6 calls it again: decision 5). It reads no global; the four
+     figure functions are its arguments:
+     ```python
+     def build_dataset_figures(dataset, scores_df, replicate_scores, difference_df,
+                               difference_replicates, permutation_results, explanations, X,
+                               metric_name, bound_names, seed, palette, forest_figure,
+                               ridge_figure, permutation_figure, beeswarm_figure):
+         """The 18 figures of one dataset (`dataset`: "val" or "test") by artifact path: the forest
+         and the ridge of `metric_name` for the two runs and for their difference; per model
+         the permutation figure of the composite and each cohort and the beeswarm of each
+         cohort. `permutation_results` is {model: {cohort (the composite first): {split:
+         result}}}."""
+         difference_name = difference_df["model"].iloc[0]
+         figures = {
+             f"figures/{dataset}_forest_runs_{metric_name}.html": forest_figure(
+                 scores_df, metric_name, bound_names["lower"], bound_names["upper"], palette),
+             f"figures/{dataset}_ridge_runs_{metric_name}.html": ridge_figure(
+                 replicate_scores, metric_name, palette),
+             f"figures/{dataset}_forest_difference_{metric_name}.html": forest_figure(
+                 difference_df, metric_name, bound_names["lower"], bound_names["upper"], palette,
+                 share_x_axis=True, rule_at=0),
+             f"figures/{dataset}_ridge_difference_{metric_name}.html": ridge_figure(
+                 {difference_name: difference_replicates}, metric_name, palette,
+                 share_x_axis=True, rule_at=0),
+         }
+         for model, by_cohort in permutation_results.items():
+             for cohort, by_split in by_cohort.items():
+                 figures[f"figures/{dataset}_permutation_{model}_{cohort}.html"] = permutation_figure(
+                     by_split, list(X.columns), f"{cohort} {metric_name}", palette)
+             for cohort in explanations[model].output_names:
+                 figures[f"figures/{dataset}_beeswarm_{model}_{cohort}.html"] = beeswarm_figure(
+                     explanations[model], X, cohort, seed, palette)
+         return figures
+     ```
+  2. **The button** `log_best_runs = mo.ui.run_button(label="Log the best runs")`.
+  3. **The logging cell.** `mo.stop(not log_best_runs.value, …)`; it reads the inspection's
+     `best_runs_permutation`, `best_runs_shap` (so it runs only after that click). Then:
+     - **Skip:** `_key = f"{tuner.storage_dir.name}/best_runs"`; when
+       `mlflow.search_runs(filter_string=f"tags.run_key = '{_key}' and attributes.status =
+       'FINISHED'", output_format="list")` is not empty, `mo.stop(True, mo.md("The best runs'
+       run is logged: skipped."))`.
+     - `with mlflow.start_run(run_name="best runs"):`
+     - **Tags:** `{"run_key": _key, "stage": "best_runs", **{f"best.{model}":
+       run["study"].study_name for model, run in best_runs.items()}, "notebook":
+       "notebooks/03_hyperparameter_tuning.py", **git_tags}`.
+     - **Parameters:** `shared_params` (the selection metric is in it, from
+       `EXPERIMENT_SETTINGS`).
+     - **Metrics, the composite only (108):** with `_statistics = ["score", "mean", "median",
+       "sd", CI_BOUND_NAMES["lower"], CI_BOUND_NAMES["upper"]]`, for each composite row of
+       `best_runs_val_scores_df` `f"val/{row['model']}/{row['metric']}/{statistic}"` (72), and
+       of `best_difference_df` `f"val/difference/{row['metric']}/{statistic}"` (36). The UI
+       groups each model and metric's six statistics in one chart section. The cohorts' rows
+       are in the tables.
+     - **Tables:** `mlflow.log_table(frame, f"tables/{name}.json")` for `best_runs_val_scores`,
+       `best_difference`, `importance`, `model1_runs`, `model1_scores`, `model2_runs`,
+       `model2_scores` (each the `<name>_df` frame; read back equal in M0 only to rtol 1e-5, the
+       dict columns too). **As settled after M3 (choices 15 and 17):**
+       `mlflow.log_text(frame.to_csv(index=False, float_format="%.6g"), f"tables/{name}.csv")`,
+       the runs tables' two dict columns first made JSON text
+       (`frame.assign(**{c: frame[c].map(json.dumps) for c in ("feature_transformers",
+       "hyperparameters")})`; `json` is the first imports cell's).
+     - **Returns to restore (found after M3):** the paired-difference cell and the importance
+       table's cell end in a bare `return` (marimo's trim), but the logging cell reads their
+       names: `return best_difference_df, best_difference_replicates` and
+       `return (importance_df,)`. ruff on `03`: 16 + 1 (the logging cell's bare `return`) − 2 =
+       15. `make_copy_tuning.py` rewrites the difference cell's return anyway (it still finds
+       the cell by its `build_paired_difference(` line).
+     - **Figures (18):** `for path, figure in build_dataset_figures("val",
+       best_runs_val_scores_df, best_replicate_scores, best_difference_df,
+       best_difference_replicates, best_runs_permutation, best_runs_shap, shap_rows.X,
+       SELECTION_METRIC.name, CI_BOUND_NAMES, seed, PALETTE, forest_figure, ridge_figure,
+       permutation_figure, beeswarm_figure).items(): mlflow.log_figure(figure, path)`
+       (`log_figure` needs the active run: inside the `with`). Each file 13–56 KB, plotly.js
+       from the CDN.
+     - **JSON:** `mlflow.log_dict({c.name: c.to_dict() for c in run["components"]},
+       f"components/{model}.json")` for each best run.
+     - **Datasets:** `tuning_datasets`, as M3.
+  M0 logged it in 0.3–0.4 s.
+- **Tests:** the cell holds `mo.stop(not `; a script run leaves no run.
+- **Validate:** Check C equal; Check D: 25 runs; the tables equal the notebook's frames; the
+  18 figure files present; the composite metrics equal the frames' rows; the second run skips.
+- **Mutation:** log `best_difference_df` under the scores table's file name; Check D fails.
+- **Commit:**
+  ```text
+  feat(notebook): the best runs' comparison logged to MLflow as one run (M4)
+  ```
+
+### [x] M5. The count figures and the shares bars as functions
+
+**Done 2026-11-15** (`03`'s md5 `8d9713dbcd875948a732cbdf124afc55`, `02`'s
+`a98d4dc4578cb884ca31b9d4dde3d992`). **The user's two choices (do not re-ask):** each function
+in its own cell, like every other figure function in `03` (so a script run defines it, and M6's
+logging cell does not depend on the menus); the older uninformative names renamed in this
+change, so the checks ran once.
+- Before the count figures' cell, `def _(go, style_figure)`: `counts_histogram_figure(buildings,
+  count_name, model_color, palette)` and `counts_scatter_figure(buildings, count_name,
+  palette)`, `buildings` one model's rows of `test_buildings_df`, `count_name` `"total"` or a
+  cohort. The display cell calls them with the menus' model and cohort.
+- Before the shares cell, `def _(go, np, style_figure)`: `selection_shares_bars_figure(
+  true_counts, predicted_counts, model_colors, palette)`, the raw counts (a column per cohort;
+  {model: counts}), so M6 calls it for all the test buildings without the cell's tables. The
+  shares cell calls it with the selection's counts.
+- Each body is the cell's code moved, its operations in the same order (the JSON identical).
+- The renames: `k, v` → `name, value` (`02` and `03`, the shared setup kept alike);
+  `part` → `field` (the SHAP rows' cell) and `dataset` (the inspection cell); the setup test's
+  `part` → `dataset_name`.
+- The test `test_the_count_figures_and_the_shares_bars_are_built_by_functions` (each
+  function on a small frame: the traces, the scatter's x the truth and y the prediction, the
+  bars' interval on the truth only).
+
+`checks/run_M5.sh` (log `run_M5.log`): the non-slow suite 1419 (+1), mypy clean, the notebook
+tests 39, ruff `03` 15 / `02` 11, the two format hunks in each, `marimo check` clean, Check B on
+both (`check_b_m5_tuning.py`: the three functions' parameters; no figure without the click),
+Check C on both equal to M4's run with nothing excepted, Check D unchanged (25 runs), **the 21 +
+27 figures identical to M4's run**, the scratch store 25 runs, the repo's store unchanged.
+**The mutation** (`run_mutant_M5.sh`, the dump only): the scatter's axes swapped;
+`compare_figures.py` fails on `['test_counts_scatter']`.
+
+- **Model:** Opus 5.5.
+- **Evidence:** the two count figures and the shares bars are built inline from menus; M6
+  logs them at a fixed state, so each is now built twice: a function is justified.
+- **Steps:** move each figure's body into a function in its cell (`counts_histogram_figure`,
+  `counts_scatter_figure`, `selection_shares_bars_figure`), taking its data, the labels and
+  the palette; the cell calls it with the menus' values. The exported names stay.
+- **Validate:** Check C equal with nothing excepted; `03`'s 21 figures' JSON identical to
+  `figures_m4_tuning.json` (as run; first planned against `figures_s5_3_tuning.json`).
+- **Mutation:** swap the scatter's axes in the function; the figure comparison fails.
+- **Commit:**
+  ```text
+  refactor(notebook): the count figures and the shares bars each built by a function (M5)
+  ```
+
+### [x] M6. "Log the final run"
+
+**Done 2026-11-15** (`03`'s md5 `7c7ab7ad53773ad757f64e55590896ec`; `02` unchanged). The
+review's findings, built as listed below, then the final run.
+- **The final run's cells,** after the shares cell:
+  - the button, "Log the final run";
+  - the logging cell. It stops unless clicked, and is refused when a FINISHED `final=true` run
+    exists ("A final run exists in the experiment: nothing logged."). It builds its 6 tables
+    and 23 figures (the 18 of `build_dataset_figures("test", …)`, two count figures of the
+    total per model, the shares bars of every test building), then calls `log_evaluation_run`.
+- **What the final run holds:** 24 parameters (`n_train_val` among them), 108 `test/` metrics,
+  the datasets `train_val` and `test`; 33 artifacts with `best_params` and `components` ×2.
+- **The one correction to the review's plan:** M4's cell keeps `json`, which its runs tables'
+  dict columns need.
+- **The tests:**
+  - new: `test_the_mlflow_cell_refuses_an_experiment_with_another_artifact_location` (F1)
+    and `test_the_final_run_is_logged_only_behind_its_button`;
+  - adjusted: M1's (`code_tags`), M3's (23 parameters) and M4's (its cell found by
+    `log_best_runs.value`; it calls `log_evaluation_run`).
+
+`checks/run_M6.sh` (log `run_M6.log`), all passed:
+- the non-slow suite 1421 (+2), mypy clean, the notebook tests 41;
+- ruff `03` 15 / `02` 11, the two format hunks, `marimo check` clean;
+- Check B on both (`check_b_m6_tuning.py`: `code_tags`, 23 parameters, the two functions'
+  parameters, the final button unclicked, no run);
+- Check C on both equal to M5's run, with nothing excepted (`check_c_m6_tuning.py`: the
+  records' `study_seed`, asserted and dropped before the comparison). Its click logs the 26
+  runs, the final one on Check C's copy only (E11);
+- the 21 + 27 figures identical to M5's; the scratch store 26 runs; the repo's store
+  unchanged.
+
+**Check D** (`checks/check_d_mlflow.py`, extended):
+- the second run shows the two skips and the final run's refusal, with the same 26 ids;
+- the tuning runs: `code_tags`, no `feature_transformer.*`, 23 shared parameters, the record's
+  `study_seed`, the search space as JSON objects (each reads back as its distribution);
+- the best runs' run: the key with `objective=` and `selection=`, the `best_params` files, 29
+  artifacts;
+- the final run:
+  - its key, its name, its tags (the only `final=true`);
+  - 24 parameters; 108 `test/` metrics, and no `test/` metric in the other 25 runs;
+  - the 6 CSV texts exactly;
+  - the 23 figures' HTML, each equal to the check's own;
+  - 33 artifacts; the two inputs.
+
+**The mutation** (`run_mutant_M6.sh`): the guard disabled, only Check D run, on a copy of the
+main run's store. The mutant logs a second final run (27 runs, 2 final), and Check D fails at
+the refusal's line.
+
+**Read with [MLFLOW_RUNS_REVIEW.md](MLFLOW_RUNS_REVIEW.md) (decided 2026-11-15).** M6 first
+builds the accepted findings, then the steps below:
+- F1: the store guard on an existing experiment, with one refusal test;
+- F2: the best runs' key gains the objective and the selection metric;
+- F4 + F6: `log_evaluation_run` in its own cell, called by M4's cell and by M6's, and
+  `code_tags` in the MLflow cell;
+- F5 (a), (b): `best_params/<model>.json` per best run, `prediction_floor` in
+  `shared_params`;
+- F7 (b): the record's `study_seed`;
+- F8: the search space as JSON objects;
+- F9: no `feature_transformer.*` parameters.
+
+The steps below also change:
+- F3: restore `return (val_against_test_df,)`, and drop "a dict column, if any";
+- F10 (a): the guard in M4's `mo.stop(bool(…), …)` form, with no run id in its message;
+- F10 (c): the count files named `…_total.html`.
+
+The metrics, tables, figures, components and datasets go through `log_evaluation_run`. All of
+it is checked in one run.
+
+- **Model:** Opus 5.5 (its calls confirmed by M0).
+- **Steps** (the calls as M0 ran them; two new cells after the shares bars' cell):
+  1. **The button** `log_final_run = mo.ui.run_button(label="Log the final run")`, with a
+     line saying it logs the test evaluation once per experiment.
+  2. **The logging cell.** `mo.stop(not log_final_run.value, …)`; it reads the test
+     evaluation's and the test explanation's names (so it runs only after that click).
+     - **The guard:**
+       ```python
+       _finals = mlflow.search_runs(
+           filter_string="tags.final = 'true' and attributes.status = 'FINISHED'",
+           output_format="list",
+       )
+       if _finals:
+           mo.stop(True, mo.md(f"A final run exists: {_finals[0].info.run_name} "
+                               f"({_finals[0].info.run_id}); nothing logged."))
+       ```
+       (an `if`, not `mo.stop(bool(_finals), …)`: the message would index an empty list).
+     - `with mlflow.start_run(run_name="final"):`
+     - **Tags:** `{"run_key": f"{tuner.storage_dir.name}/final", "stage": "final", "final":
+       "true", **{f"best.{model}": record["study"].study_name for model, record in
+       best_runs.items()}, "notebook": "notebooks/03_hyperparameter_tuning.py", **git_tags}`.
+     - **Parameters:** `{**shared_params, "n_train_val": len(train_val_age_group.X)}`.
+     - **Metrics, the composite only (108):** as M4 with the prefix `test/`, from
+       `test_scores_df` and `test_difference_df`. No other run holds a `test/` metric.
+     - **Tables:** `tables/<name>.csv` for `test_scores`, `test_difference`,
+       `val_against_test`, `test_importance`, `test_buildings`, `test_building_scores`, as M4
+       logs them (`mlflow.log_text(frame.to_csv(index=False, float_format="%.6g"), …)`; a dict
+       column, if any, as JSON text: choice 17).
+     - **Figures (23):** `build_dataset_figures("test", test_scores_df, test_replicate_scores,
+       test_difference_df, test_difference_replicates, {model: {cohort: {"test": result} for
+       cohort, result in by_cohort.items()} for model, by_cohort in test_permutation.items()},
+       test_shap, test_age_group.X, SELECTION_METRIC.name, CI_BOUND_NAMES, seed, PALETTE,
+       forest_figure, ridge_figure, permutation_figure, beeswarm_figure)` (18); per model M5's
+       `counts_histogram_figure(test_buildings_df[test_buildings_df["model"] == model],
+       "total", MODEL_COLORS[model], PALETTE)` and `counts_scatter_figure(<the same rows>,
+       "total", PALETTE)`, as `figures/test_counts_histogram_<model>_composite.html` and
+       `figures/test_counts_scatter_<model>_composite.html` (4); M5's
+       `selection_shares_bars_figure(test_age_group.Y, test_predictions, MODEL_COLORS,
+       PALETTE)` for all the test buildings, as `figures/test_selection_shares_bars_all.html`
+       (1).
+     - **JSON:** `components/<model>.json` for each best run's components (the test models
+       are refit from them).
+     - **Datasets:** `{"training": build_dataset(train_val_age_group, "train_val"),
+       "testing": build_dataset(test_age_group, "test")}`, each `log_input` with its context.
+  M0 logged it in 0.3–0.4 s; a second click showed the refusal and left one final run.
+- **Tests:** the cell holds `mo.stop(not `; a script run leaves no run.
+- **Validate:** Check C equal; Check D: 26 runs, one `final=true`; no `test/` metric in the
+  other 25; the tables equal; a second run of the copy leaves 26 and shows the refusal.
+- **Mutation:** drop the guard; the second run gives two final runs and Check D fails.
+- **Commit:**
+  ```text
+  feat(notebook): the final run logged to MLflow once, refused when one exists (M6)
+  ```
+
+### [x] M7. Docs and close
+
+**Done 2026-11-15** (no notebook or `src` file changed; the notebooks' md5 as M6's). One
+change, checked once by `checks/run_M7.sh` (log `run_M7.log`):
+- **G3's tests** in `tests/characterization/test_hyperparameter_tuning_notebook.py`, each on a
+  `tmp_path` store with the experiment created first and the four variables set in
+  `pytest.MonkeyPatch.context()`:
+  - `test_a_tuning_run_is_logged_once_then_skipped`: a 2-trial in-memory study and a small
+    record (a stand-in journal file, a `Bunch` component); the second call returns `None`, one
+    FINISHED run; its name, tags, parameters, metric names, six artifacts, `best_params.json`,
+    `trials.csv`'s 2 rows;
+  - `test_an_evaluation_run_logs_the_composite_and_each_best_runs_files`: two 1-trial studies,
+    a cohort row that must not become a metric; the 18 metrics with their values, the
+    `best.<model>` tags, the CSV table's text, `best_params/` and `components/` per model;
+  - each asserts no active run and the tracking URI not the scratch one after its calls. **The
+    user's choice (do not re-ask):** a run leaves MLflow's thread-local `_last_active_run_id`
+    set (a probe: nothing else; nothing in `src` or `tests` reads it); accepted.
+- **The guide** [MLFLOW_RUNS.md](MLFLOW_RUNS.md) (§1–§9, with G1, G2, the review's §7.5 list,
+  M0's UI notes); the links from `docs/README.md` (a guide row, two plan rows, the status),
+  `MODULE_REFERENCE.md` and the root `README.md`; the dated notes on E9, E10, D1e–D5 in
+  `EXPERIMENT_NOTEBOOK_PLAN.md`, D1–D5 ticked (the user's choice); §5's two rows below.
+- **The checks:** ruff and the format on the test file clean; the test file 36 passed (34 + 2);
+  the non-slow suite 1423 passed (1421 + 2), 1 skipped, 19 deselected, 1 xfailed; mypy clean
+  (28 files).
+- **The guide's commands as written** (`.env` replaced by a scratch env file naming a copy of
+  M6's store, `mlflow_M7_guide.db`, its artifact paths pointed at this scratchpad's copy):
+  the script run printed the experiment line and left 26 runs; `mlflow ui` answered
+  `/health`, listed 26 runs and served a CSV artifact, then stopped; §8's block found one
+  tuning run per `best.<model>`; §9's recipe rebuilt the best tuning run, both models of the
+  best runs' run and of the final run, each refit and **exactly** equal to its logged
+  composite scores; the repo's files unchanged by the commands.
+- **The mutation** (on `mut_m7/`, a copy with `src` and `configs` linked): the copy as is, both
+  new tests pass; with the skip's `return None` made `pass`, the tuning test fails at the
+  second call (it returns a run id).
+- The repo's `mlflow.db` and `mlartifacts/` unchanged, no `.mlflow-local/`; the checks' own
+  store never created.
+
+
+**Built first, from the second review ([MLFLOW_RUNS_REVIEW.md](MLFLOW_RUNS_REVIEW.md) §7,
+decided 2026-11-15); the notebook is not edited:**
+- **G3, two tests** in `tests/characterization/test_hyperparameter_tuning_notebook.py`, each
+  calling a logging function from `notebook_defs` on a `tmp_path` store (the four variables
+  set with `monkeypatch`):
+  - `log_tuning_run` twice with a 2-trial in-memory study and a small record: the second
+    call returns `None` and the store holds one run; its key, name, tags, parameter and
+    metric names, its six artifacts;
+  - `log_evaluation_run` once with two small frames: the metric names, the `best.<model>`
+    tags, the table, `best_params` and `components` files.
+  If a call leaves an MLflow global set (M1's concern: the old `tracking/` tests run after),
+  stop and ask. **Mutation:** M3's (the skip's `return None` made `pass`, on a copy): the new
+  tuning test fails.
+- **G1, in the guide:** for the best runs' run and the final run, the recipe reads `family`
+  and `use_exposure` from `components/<model>.json` (a tuning run has them as parameters). So
+  the steps' sentence below, "`components.json` is the readable declaration, not an input",
+  holds for a tuning run only. The recipe was run on M6's store and was exact (the script
+  `review2/rebuild_from_store.py` in the scratchpad: the model for the guide's code block).
+- **G2, in the guide:** the columns to add in the UI's runs list to compare the 24 runs (the
+  tags `model`, `family`; the parameter `use_exposure`; `val/composite/<selection metric>`,
+  sorted). The run names stay.
+- **The review's §7.5 list** goes into the guide (the link from an evaluation run to its
+  tuning runs, the metric names, `git_dirty`, a deleted run, the `Default` experiment,
+  `mlflow.source.name`).
+- **§5's two rows corrected:** the fitted model's (where `family` and `use_exposure` come
+  from per run kind); the tags' (`model` and `family` are a tuning run's; an evaluation run
+  has `best.<model>`).
+- **The checks, once:** the touched test file and the non-slow suite, mypy, ruff and the
+  format on the test file; the guide's commands as written on a scratch store; G3's mutation.
+  No notebook changed, so Check B, C and D are not rerun (M6's run stands).
+
+- **Model:** Opus 5.5.
+- **Steps:** `docs/MLFLOW_RUNS.md` (how to run the notebook and the UI on the scratch store;
+  what each of the three runs holds; the skip rule and the final run's guard; that
+  `MLFLOW_EXPERIMENTS_GUIDE.md` and `tracking/` are the old stack's; M0's notes on the UI:
+  `mlflow ui --backend-store-uri <the .env URI> --artifacts-destination <a scratch folder>` run
+  from the repo root would default its artifact destination to the canonical `./mlartifacts`,
+  so the guide names one; the UI opens in its "GenAI" mode with an assistant panel; a
+  figure loads plotly.js from the CDN, so it needs the network; the two warning filters and
+  why; the store's refusals, with M6's (an existing experiment whose artifact location is not
+  the variable's, the review's F1). **The rebuild recipe** (the review's F5 c):
+  `best_params` in each run (`best_params.json` in a tuning run, `best_params/<model>.json` in
+  the other two); `from_params(best_params, name=…, family=…, use_exposure=…,
+  feature_transformer_dict=<the code's candidates at git_commit>)`; then the model with
+  `y_min=prediction_floor` and `random_state=seed`. `components.json` is the readable
+  declaration, not an input.); `docs/README.md`,
+  `MODULE_REFERENCE.md` and the root `README.md` link it; a dated note on E9, E10, D1e–D5 in
+  `EXPERIMENT_NOTEBOOK_PLAN.md`; this plan's status "complete"; the handoff.
+- **Validate:** the guide's commands run as written on a scratch store; the links resolve;
+  the full runner once more.
+- **Commit:**
+  ```text
+  docs(notebook): the MLflow runs guide; the experiment plan's MLflow decisions closed (M7)
+  ```
+
+## 5. Where each item of the inventory goes
+
+| Item | Where | Note |
+|---|---|---|
+| the run's settings, `use_exposure`, the sharing flags | tuning run, parameters | |
+| `config_hash`, the data settings, `prediction_floor` | every run, parameters | `prediction_floor` since M6 (the models' `y_min`) |
+| the config's dotted keys | tuning run, `config.json` | the same in every run; the hash stands for it as a parameter |
+| the split's method and sizes, `n_train` / `n_val` / `n_test` | every run, parameters | |
+| `seed`, the study's seed | parameters | |
+| `n_trials`, `n_startup_trials`, `n_splits`, the objective | every run, parameters | |
+| the search space | tuning run, `search_space.json` | too long for a parameter; each distribution a JSON object (M6) |
+| the best parameters; the components' `to_dict()` | tuning run, parameters `best.*`, `best_params.json`, `components.json` | |
+| `cv_best`, the point scores, `seconds`, `n_complete`, `n_failed` | tuning run, metrics | |
+| the bootstrap statistics, the paired difference | best runs' run: the composite as metrics, all rows as tables | |
+| the test scores | the final run only | |
+| the trials dataframe of each study | tuning run, `trials.csv` | 6 significant digits (choice 15) |
+| the runs and scores tables | best runs' run, tables | a row of them is a tuning run |
+| `importance_df`; `test_importance_df` | best runs' run; final run | |
+| `val_against_test_df`, `test_buildings_df`, `test_building_scores_df` | final run, tables | |
+| the EDA's trials tables, `eda_best_df`, its 27 figures | **left out** | decision 7 |
+| the forest and the ridge, the permutation figures, the beeswarms | best runs' run (validation), final run (test) | a fixed set |
+| the two count figures, the shares bars | final run | the composite; all neighborhoods |
+| the waterfalls | **left out** | each is one building (decision 10) |
+| the fitted model | **left out** | decision 4; rebuilt with `from_params` from the run's `best_params` (all three run kinds since M6), `prediction_floor` and `seed`; `family` and `use_exposure` from a tuning run's parameters, from `components/<model>.json` in the two evaluation runs (G1); `components.json` is the readable declaration; [MLFLOW_RUNS.md](MLFLOW_RUNS.md) §9 |
+| the study's journal file | tuning run, artifact | |
+| the feature transformers' description | tuning run: their names as parameters, their declaration in `components.json` | |
+| the bootstrap replicates | **left out** | no reader: the ridge figure shows them, and the seed recomputes them |
+| the model's label, the family | tuning run, tags `model`, `family` | an evaluation run has `best.<model>` (the best run's study name) instead (REVIEW §7.4) |
+| the stage, the git commit and `git_dirty`, the notebook | every run, tags | `code_tags` since M6 |
+| the dataset (its hash, its rows) | every run, `log_input` | the digest the rows' SHA-256, its first 36 characters (choice 13); `config_hash` a parameter |
+
+## 6. Questions still open
+
+- None from M0: its five points are settled (§1, "Confirmed by M0"), its choices made (§1,
+  11–14).
+- A read-back table (decision 6) can be added after M6 if the UI alone proves not enough.
+- The old `tracking/` package's deletion stays the roadmap's step.
+
+## 7. The prompt for the first implementing session (M0, a Fable session)
+
+```text
+Read docs/MLFLOW_RUNS_PLAN.md in full, then docs/EXPERIMENT_NOTEBOOK_HANDOFF.md: the status at
+the top, §4 and §7. Then the cells M3, M4 and M6 name in notebooks/03_hyperparameter_tuning.py.
+Verify the state first: the branch feat/mlflow-runs, HEAD my commit of the MLflow plan,
+`git status` clean; the notebooks' md5 as the handoff's top status; no iCloud-offloaded files.
+If anything differs, stop and show me the diff. Copy the scratchpad the top status names into
+yours, set each script's S= to it, compile the pycache.
+Then do M0 only (the probe), planned first in plan mode: on Check C's 3-trial copy, with a
+store in your scratchpad and PYTHONWARNINGS=error, log one run of each kind by hand with the
+plan's calls and read each back. Settle the plan's five unconfirmed points; ask me, with the
+interactive question tool and screenshots of the MLflow UI, where a point is a choice. Then
+write the findings into the plan's M1-M6 so that Opus can implement them exactly.
+Edit no notebook, no src file and no test. Never write the repo root's mlflow.db or
+mlartifacts/, nor .mlflow-local/. Don't run the test evaluation on my cache (E11). Stop with a
+summary, the notebooks' md5 (unchanged) and the commit message in a copyable code block; tick
+M0 and update the status lines. I commit myself: never commit, no Co-Authored-By line, no
+"Generated with Claude Code" in PR text, never git checkout/stash/reset/mv.
+```
+
+**The prompt for each later session** (an Opus 5.5 session; replace `<M>` with the sub-task,
+M1 to M7, in order):
+
+```text
+Read docs/MLFLOW_RUNS_PLAN.md in full (the status, §1's decisions and facts, §2, §3 how a
+sub-task is done, §4's <M>), then docs/EXPERIMENT_NOTEBOOK_HANDOFF.md: the status at the top
+and §4 (how to work, git and the editor, the checks, the traps, the iCloud notes, the user's
+style). Then the cells <M> names in notebooks/03_hyperparameter_tuning.py.
+Verify the state first: the branch feat/mlflow-runs, HEAD my commit of the previous sub-task,
+`git status` clean; the notebooks' md5 as the handoff's top status; no iCloud-offloaded files.
+If anything differs, stop and show me the diff. Copy the scratchpad the top status names into
+yours, set each script's S= to it, compile the pycache. If that scratchpad is gone, tell me
+before rewriting anything.
+Then do sub-task <M> only, exactly as the plan describes: plan it first in plan mode (re-verify
+its facts and line numbers read-only, list the exact edits), wait for my go, implement it, run
+the checks of the plan's §3 and <M>'s validation and mutation. Do not start the next sub-task.
+If a step needs a choice the plan does not make, stop and tell me it needs a Fable session.
+Never write the repo root's mlflow.db or mlartifacts/, nor .mlflow-local/: every check uses a
+store in your scratchpad. Don't run the test evaluation or "Log the final run" on my cache
+(E11). My marimo session may be open: tell me before editing the notebook and remind me to
+reload it after. Keep it simple; no private helpers; a notebook function reads no notebook
+global. Stop with a file-by-file summary, the checks, the notebooks' md5 and the commit message
+in a copyable code block; tick <M> and update the status lines in the plan and at the top of
+the handoff. I commit myself: never commit, no Co-Authored-By line, no "Generated with Claude
+Code" in PR text, never git checkout/stash/reset/mv.
+```
+
+## 8. Logged where the result is produced: no logging buttons (2026-11-16)
+
+**Status:** planned 2026-11-16 (Fable), approved by the user. L1 done 2026-11-16 (Opus 5.5),
+committed `fb8e50f`; L2 and L3 done 2026-11-16 in one stop (the user's choice), committed
+`904c2bd`; L4 done 2026-11-16. **Complete.** Built before the guided manual run, which then
+checks this design.
+
+**Why:** with a "Log …" button per run kind, a result can exist without its record, and three
+clicks must be remembered. The user chose the common practice: **a run is logged by the step
+that produces it.** This replaces decision 2 of §1 ("one button per run kind"). Logging code
+only: no model, setting or selection changes.
+
+### The flow after the change
+
+| Click | What it does | What it logs |
+|---|---|---|
+| "Tune the independent cohorts model" | tunes or loads its 8 studies | each study's tuning run, as the study finishes |
+| "Tune the total times probability model" | tunes or loads its 16 studies | each study's tuning run, as the study finishes |
+| "Inspect the best runs" | bootstrap, permutation, SHAP | the best runs' run |
+| "Evaluate on the test part" | refit, test scores, explanation | the final run |
+
+Four buttons instead of seven. Unchanged: the 24 + 1 + 1 runs and everything they hold, the
+`run_key` skip, the final run's guard, and a script run logging nothing.
+
+### The design
+
+1. **The tuning runs: one call inside each Tune cell's loop.**
+   - The loop is tune or load → refit and score → build the run's dict → append. The call
+     to `log_tuning_run(...)` goes right after the dict is built.
+   - A study loaded from the cache is logged too; each study is logged when it finishes.
+   - The cell ends with "Logged n tuning runs, skipped m (already logged)."
+   - The "Log the tuning runs" button and its cell are deleted.
+   - The cell building `shared_params` and the datasets, and the cell defining
+     `log_tuning_run`, move above the two Tune cells: the file reads in the order it runs.
+2. **The two evaluation runs: the logging cell stays, its button goes.**
+   - An evaluation's results come from several cells, so there is no single loop to log
+     from. The logging cell already sits after them and takes their results as inputs.
+   - marimo runs a cell when its inputs exist: with the button and its `mo.stop` deleted, the
+     cell runs once "Inspect the best runs" (or "Evaluate on the test part") has produced its
+     results.
+   - The skip and the guard stay in these cells, with their messages.
+   - **The final run's guard stays at the logging step,** not at the evaluation: the
+     evaluation is seeded, and the test menus stay readable in a reopened notebook.
+3. **No new function, class or module.** Only names change.
+
+### The names (the user's notes: df, not frame; meaningful names)
+
+| Where | Today | New | Why |
+|---|---|---|---|
+| `log_tuning_run` | `record` | `tuning_run` | the notebook calls these "runs" (`MODEL1_RUNS`) |
+| `log_tuning_run` | `model` | `model_name` | the label, not a fitted model |
+| `log_tuning_run` | `objective_name` | `objective_metric_name` | matches `tuner.objective_metric` |
+| `log_tuning_run` | `with … as run` | `as mlflow_run` | MLflow's run, apart from `tuning_run` |
+| `log_evaluation_run`, `build_dataset_figures` | `dataset` (`"val"` / `"test"`) | `dataset_name` | a name, not the data |
+| `log_evaluation_run` | `for model, record in best_runs` | `for model_name, best_run in best_runs` | as above |
+| `log_evaluation_run` | `for name, table in tables`, "{name: frame}" | `for name, df in tables`, "{name: df}" | df, not frame |
+| `build_dataset` | the function's name | `build_mlflow_dataset` | it returns an MLflow dataset |
+| `build_mlflow_dataset` | `dataset`, `frame` | `age_group_dataset`, `df` | its type; df, not frame |
+| the datasets cell | `tuning_datasets` | `tuning_dataset_inputs` | matches the parameter `dataset_inputs` |
+| a comment ("the frame's row positions") | frame | df | df, not frame |
+
+Kept: `run_settings`, `studies_dir`, `shared_params`, `config_params`, `code_tags`,
+`best_runs`, `tables`, `figures`, `scores_df`, `difference_df`.
+
+### The sub-tasks (each: build, check once, stop for the user's review, commit message)
+
+- [x] **L1. The names** (no behaviour change): the table above in the notebook, the test
+  file, and the guide where a name appears. The logged content is identical.
+  **Done 2026-11-16.** The table in `03`; the user's two additions: `log_tuning_run`'s
+  comprehension `dataset` → `dataset_name` (the same meaning), and the test file's locals
+  follow the notebook (`tuning_run`, `for model_name, best_run in`, `dataset_inputs`) besides
+  `tuning_dataset_inputs`. The guide names none of them: unchanged. The final run's cell lists
+  `build_mlflow_dataset` after `build_dataset_figures` (sorted). Three format hunks applied
+  as ruff prints them (the digest's slice, a metric key, a test assert). The checks, once
+  (`checks/run_L1.sh` in the scratchpad named in the handoff's top status): ruff `03` 15 and
+  the test file 0, none new; the format hunks HEAD's two; `marimo check`; mypy; the test file
+  36; the non-slow suite 1423; Check B with the new signatures; Check C against M6's pickle,
+  exact; Check D (26 runs, then 24 + 1 skipped and the final refused, all read back);
+  `compare_stores.py`: the 26 runs equal M6's by `run_key` (tags, params, metrics, inputs,
+  206 artifact files; only wall times, the journal's worker ids and datetimes, and the figures'
+  div uuids differ); the guide's three python blocks on that store (§9 exact); the repo's
+  store unchanged, no `.mlflow-local/`.
+- [x] **L2. The tuning runs logged inside the Tune cells:** the two cells moved up, the call
+  and the status line in both Tune cells, the button cell and its logging cell deleted.
+  Tests: `test_the_tuning_runs_are_logged_only_behind_their_button` becomes "the tuning runs
+  are logged inside the two Tune cells" (each cell calling `tuner.tune_` also calls
+  `log_tuning_run(` and has its `mo.stop`; no `log_tuning_runs` name; the `shared_params`
+  and dataset asserts stay).
+  **Done 2026-11-16.** The datasets cell and `log_tuning_run`'s cell now sit after section
+  5's helpers (`summarize_replicates`), before `MODEL1_RUN_SETTINGS`. In each loop the dict
+  is named `_tuning_run` (the user's choice), appended, then logged; each Tune cell shows
+  "Logged n tuning runs, skipped m (already logged)." (8 and 16 runs) and gains five sorted
+  parameters. The loops' comments say the runs logged so far stay; the two Tune buttons' text
+  says each run is logged as its study finishes. The test is
+  `test_the_tuning_runs_are_logged_inside_the_two_tune_cells` (also: `log_tuning_run` defined
+  before the first Tune cell). ruff `03` 15 → 14 (the deleted logging cell's bare `return`).
+- [x] **L3. The two evaluation runs logged without a button:** the two button cells and the
+  two `mo.stop(not ….value)` lines deleted. Tests: the two "logged only behind their button"
+  tests become "logged by the cell that follows the evaluation" (no button; an input that
+  exists only after `run_inspection` / `run_test_evaluation`).
+  `test_a_script_run_opens_no_mlflow_run` stays the behavioural guard.
+  **Done 2026-11-16, with L2 (one stop).** Each logging cell opens with a comment that it runs
+  once its click has produced what it reads; the skip and the guard unchanged. "Inspect the
+  best runs" and "Evaluate on the test part" say in their text that the run is then logged (a
+  second one skipped or refused). The tests:
+  `test_the_best_runs_are_logged_by_the_cell_that_follows_the_inspection` (reads
+  `importance_df`) and `test_the_final_run_is_logged_by_the_cell_that_follows_the_test_evaluation`
+  (reads `test_scores_df`), each with no `.value` in the cell and the button's name gone.
+  **The checks of L2 + L3, once** (`checks/run_L2.sh`): ruff `03` 14 and the test file 0, the
+  format hunks HEAD's two; `marimo check`; mypy; the test file 36; the non-slow suite 1423;
+  Check B (no logging button; a script run opens no run); Check C against L1's pickle,
+  exact; Check D (26 FINISHED runs after one pass; the second pass shows "skipped 8",
+  "skipped 16", the best runs' skip and the final run's refusal, the same 26 runs read back);
+  `compare_stores.py`: the 26 runs equal M6's by `run_key`; the guide's three python blocks
+  (§9 exact); the repo's store unchanged, no `.mlflow-local/`.
+- [x] **L4. The docs:** `MLFLOW_RUNS.md` (§1's table: "Button" → "Logged by the click",
+  "Needs first" dropped; §6's messages; "three buttons"); the README's line on the three
+  buttons; decision 2 of §1 marked replaced; the handoff's top status, the notebook's new
+  md5 and the manual run's prompt with four clicks; the memory.
+  **Done 2026-11-16.** `MLFLOW_RUNS.md`: §1's opening and table (one "Logged by the click"
+  column; a study loaded from the cache logged like one just tuned), §6's skips and guard
+  (each Tune cell's own count; the guard in the logging cell, not the evaluation), §8's
+  sentence, the link to this §8; no python block changed. The root README (the notebook's
+  line, and step 4 of "Run The Modeling Notebook"), `docs/README.md`'s index line; a note
+  under §1's verdict table (decision 2 was marked at planning); the D2/D3 note of
+  [EXPERIMENT_NOTEBOOK_PLAN.md](EXPERIMENT_NOTEBOOK_PLAN.md). The older plans' "three buttons
+  patched" (past checks) and the reviews are history: unchanged. The manual run's prompt: the
+  user's choice, the best runs' skip and the final run's refusal shown by re-running only
+  their logging cells (no second inspection or test evaluation).
+- [x] **L5. The validation's three findings** (Fable, 2026-11-16; the logged content
+  unchanged, the store equal to M6's):
+  - F1: a display menu re-ran a logging cell (which skipped). `best_difference_df` is now
+    computed with the best runs' bootstrap and `val_against_test_df` with the test
+    evaluation, so each logging cell depends on the buttons only (traced in the cell graph);
+  - F2: the dataset digest in two statements; the Tune cells' comments say "runs";
+  - F3: the logged and skipped counters as a plain `if`/`else`;
+  - the guide's §10: checking the logging, step by step.
+
+L2 and L3 may be one stop; L1 is separate so its diff is names only.
+
+### Validate (static checks first, each check once; §3's rules apply)
+
+1. `ruff check`, `ruff format --diff` on the notebook and the test file; mypy.
+2. The test file, then the non-slow suite.
+3. Check C and Check D on a 3-trial copy and a scratch store, adapted to the removed buttons:
+   24 + 1 + 1 FINISHED runs after one pass, the same 26 after a second (all skipped, the
+   final refused); the logged content equal to M6's.
+4. The guide's §8 and §9 blocks on that store: §9 exact for all three run kinds.
+5. A script run opens no run; the repo's `mlflow.db` and `mlartifacts/` unchanged; no
+   `.mlflow-local/`.
+
+## 9. The SHAP values and waterfalls in the final run (2026-11-16)
+
+**Status:** planned 2026-11-16 (Fable), approved by the user. W1 committed `6dd7b32`; W2
+built and checked; the re-check open.
+
+**Why:** the final run holds the mean |SHAP| (`tables/test_importance.csv`) and the
+beeswarms, but not the per-building SHAP values, and no waterfall: the notebook shows one
+building chosen in a dropdown, and decision 10 logged none. The user chose **option A: the
+values as a table, plus a small fixed set of waterfalls.** Rejected: the table alone (nothing
+to look at in the UI), and every waterfall (2 models × 306 buildings × 4 targets = 2,448
+files). Logging code only: no model, setting, selection or evaluation change.
+
+### The decisions
+
+1. **The table: `tables/test_shap_values.csv`, a row per model, building and cohort.**
+   Columns: `model`, `building_id`, `cohort`, `base_value`, then one column per feature, named
+   as X's columns (9). 2 × 306 × 3 = 1,836 rows, about 200 KB.
+   - It is the `shap.Explanation` flattened and nothing else: `base_value` and the SHAP
+     values, in SHAP's own terms. A row's `base_value` plus its nine values is the cohort's
+     predicted count.
+   - The features' raw values, the true and the predicted counts are in
+     `tables/test_buildings.csv` (logged already), joined on `model` and `building_id`. They
+     are not repeated here: one source of truth.
+   - No `composite` row: the total's waterfall is the three cohort rows summed, as the
+     notebook sums them.
+   - Wide (a column per feature), not long: a row is one waterfall, and the UI shows it as a
+     table. It goes through `log_evaluation_run`'s `tables` like the other six (CSV, 6
+     significant digits): `log_evaluation_run` is unchanged.
+2. **The waterfalls: each model's 5 worst test buildings by the selection metric on the
+   composite, explained for the total: 10 figures.**
+   - The rule is the reading tables' default (worst, composite, the selection metric, k = 5),
+     so the logged figures are the buildings the notebook's first table shows. Each model
+     ranks its own buildings, from `test_building_scores_df`.
+   - One figure per building (the total), not one per cohort (30): a cohort's waterfall is
+     rebuilt from the table.
+   - The worst, not the best: a waterfall is read to understand an error.
+   - The paths: `figures/test_waterfall_<model>_total_<rank>_<building_id>.html`, rank 1 the
+     worst (the UI lists them worst first).
+   - k is a local of the logging cell (`_n_worst_buildings = 5`), not a menu and not a
+     parameter of the run. The menu `test_reading_k` keeps its own default: a changed menu
+     default must not change what is logged.
+3. **`waterfall_figure`, a function in its own cell,** used by the display cell and by the
+   logging cell (two callers, so a function; as M5's count figures). It is the display
+   cell's loop body moved, unchanged:
+
+   ```python
+   def waterfall_figure(explanation, age_group_dataset, predictions, building_id, cohort, palette):
+   ```
+
+   `age_group_dataset` holds the rows `explanation` explains (`X`, `Y`, `ids`, `groups`);
+   `predictions` is one model's; `cohort` is a cohort or `"composite"` (the total: the
+   values and bases of `explanation.output_names` summed). The display cell keeps its menus,
+   its text and one call per model.
+4. **Not `mlflow.shap`** (checked on MLflow 3.16.0):
+   - `mlflow.shap.log_explanation(predict_function, features)` computes its own explanation
+     with `shap.KernelExplainer` (approximate; its background a k-means summary of
+     `features`; no exposure) and logs `.npy` files and a matplotlib bar plot. The
+     notebook's values are exact, per cohort, against a background drawn from the rows the
+     models were fitted on, each row with its exposure. It cannot take an explanation that
+     exists.
+   - `mlflow.shap.log_explainer` pickles an explainer as a model: decision 4 (no pickle), and
+     `ShapExplainer` builds one explainer per row.
+   - `mlflow.log_table` writes JSON for the evaluation UI; the run's tables are CSV text.
+5. **The best runs' run is unchanged** (no validation SHAP table): its explanation covers 100
+   sampled rows of models fitted for selection, and the run has no per-building table to
+   join the values to. The reported explanation is the final run's.
+
+### The new counts
+
+| | Before | After |
+|---|---|---|
+| the final run's tables | 6 | 7 (`test_shap_values` added) |
+| the final run's figures | 23 | 33 (10 waterfalls added) |
+| the message | "Logged the final run: 108 metrics, 6 tables, 23 figures." | "Logged the final run: 108 metrics, 7 tables, 33 figures." |
+
+Unchanged: the 108 metrics, the tags, the parameters, the inputs, the JSON files, the tuning
+runs and the best runs' run (7 tables, 18 figures).
+
+### The sub-tasks (each: build, check once, stop for the user's review, commit message)
+
+- [x] **W1. The notebook and the tests.** Built 2026-11-16 (Opus 5.5). The checks, once
+  (`checks/run_W1.sh` in the handoff's scratchpad): ruff and the format hunks as HEAD's,
+  `marimo check` clean, mypy clean; Check B (`waterfall_figure`'s 6 parameters; no waterfall
+  without the click); Check C (every block OK, the displayed waterfalls checked independently,
+  "Logged the final run: 108 metrics, 7 tables, 33 figures."; the frames equal to L5's run);
+  Check D (skipped 8, skipped 16, the best runs skipped, the final refused; `test_shap_values`
+  1,836 × 13, its text exact, base + values = the prediction, max gap 8.5e-14; the 10
+  waterfalls' paths and HTML; 44 artifacts); the store equal to L5's but the final run's 11 new
+  files; the guide's three blocks (§9 exact); the mutation (the composite as the first cohort)
+  fails the new test. **One test refined:** the final cell's guard `".value" not in` matched
+  the SHAP arrays' `.values`; it is now `re.search(r"\.value\b", …) is None` (a `.value` read
+  is still caught). The test file then 37 passed; the non-slow suite 1423 passed besides that
+  test (not rerun after the one-line test change).
+  Files: `notebooks/03_hyperparameter_tuning.py`,
+  `tests/characterization/test_hyperparameter_tuning_notebook.py`.
+  1. A new cell before the waterfalls' menus cell: `waterfall_figure` (decision 3; the cell's
+     parameters `go, np, pd, style_figure`, as the count figures' cell reads `go` and
+     `style_figure`).
+  2. The display cell: its loop body becomes the call; the parameters it no longer uses
+     leave its list (`go`, `np`, `pd`, `style_figure`, and `COHORTS` if only the sum read
+     it). The view is unchanged.
+  3. The final run's logging cell (parameters added, sorted: `pd`, `waterfall_figure`):
+     - `_tables["test_shap_values"]`: per model and cohort position of `test_shap`, a df of
+       `values[:, :, position]` under `feature_names`, with `model`, `building_id`
+       (`test_age_group.ids`), `cohort` and `base_value` in front; concatenated in the
+       models' and `output_names`' order.
+     - the 10 figures: per model, `nlargest(_n_worst_buildings)` of the selection metric over
+       its composite rows of `test_building_scores_df` (in the buildings' order, so a tie
+       keeps the earlier building, as the menus rank), each `waterfall_figure(...,
+       "composite", PALETTE)`.
+     - the cell's comments on the tables and the figures say the two additions. No `.value`.
+  4. The tests:
+     - new, `test_the_waterfall_figure_steps_from_the_base_to_the_prediction`: a small
+       `shap.Explanation` (as the beeswarm's test) with two outputs; for one cohort and for
+       `"composite"`: the trace's `base`, its `x` in descending |SHAP| (the composite's the
+       outputs summed), its labels `<column> = <value>`, the two rules at the base and at the
+       prediction, the title's true and predicted counts.
+     - `test_the_final_run_is_logged_by_the_cell_that_follows_the_test_evaluation` gains:
+       `"test_shap_values"` and `waterfall_figure(` in the logging cell; `waterfall_figure(`
+       also in the cell that returns `test_waterfall_figures`.
+- [x] **W2. The docs and the checker.** Built 2026-11-16 (Opus 5.5): `MLFLOW_RUNS.md` §1,
+  §4 (the table, the tables list with `test_shap_values` and its join, the figures list with
+  the waterfalls' rule and paths), §6 (`mlflow.source.name`: the notebook's path under
+  `marimo edit`, the script's under a check script; read from the check store and the W1
+  store), §10's message; no other count left in the docs. `check_store.py`'s final stage: 7
+  tables, 33 figures, `test_shap_values` (its first four columns, 2 × 3 × `n_test` rows), ranks
+  1–5 of each model's waterfalls. Checked once on a copy of the W1 store (`… check-w1 final`):
+  every expectation met but `git_commit` and `git_dirty` (that store was logged from the
+  uncommitted build, as expected).
+  Files: `docs/MLFLOW_RUNS.md`, the scratchpad's `manual/check_store.py`; the handoff and the
+  memory are the main session's.
+  1. `MLFLOW_RUNS.md`:
+     - §1: the final run's line names the per-building SHAP values and the waterfalls;
+     - §4's table ("7 tables, 33 figures"), the final run's tables list (`test_shap_values`,
+       with its columns and the join to `test_buildings`), the figures list (the 10
+       waterfalls and their rule), and one sentence: any other waterfall is the table's row
+       (or three rows summed) with `test_buildings`' values;
+     - §10's step 5 message; §3's "open first" unchanged (`tables/test_scores.csv`);
+     - §6's last bullet corrected: under `marimo edit`, `mlflow.source.name` is the
+       notebook's absolute path (seen in all 26 runs of the check store); under a script
+       it is that script. The `notebook` tag is the path relative to the repository, the
+       same in both.
+  2. `check_store.py`: the final stage expects 7 tables and 33 figures; `test_shap_values`
+     among the tables; 5 `test_waterfall_<model>_total_` figures per model; the JSON files
+     unchanged.
+  3. The root README names no count: unchanged.
+
+W1 and W2 may be one stop if the user prefers; W2 has no code.
+
+### Validate W1 (static checks first, each check once; §3's rules apply)
+
+The scripts: copy `checks/run_L5.sh`, `make_copy_tuning_l5.py` and `check_d_l2.py` from the
+scratchpad the handoff's top status names; a scratch store, never the repo's.
+
+1. `ruff check` on the notebook and the test file (none new), `ruff format --diff` (HEAD's
+   hunks only: the new cells formatted alone and spliced in), `marimo check`, mypy.
+2. The test file (36 → 37), then the non-slow suite (1423 → 1424).
+3. Check B: `waterfall_figure` defined by a script run; a script run opens no run.
+4. Check C on the 3-trial copy against L5's pickle, exact: the display's
+   `test_waterfall_figures` are in it, so the moved code draws the same figures.
+5. Check D on that run's store, with three additions for the final run:
+   - `tables/test_shap_values.csv`: its text equal to the check's own table built from the
+     copy's `test_shap`; 1,836 rows; per row, `base_value` plus the nine values equal to
+     `<cohort>_predicted` of `tables/test_buildings.csv` (to the CSV's 6 digits);
+   - the 10 waterfall paths equal to each model's 5 worst by the selection metric on the
+     composite, computed by the check from `test_building_scores_df`; each file's HTML equal
+     to `waterfall_figure` called directly (the div's uuid masked);
+   - 7 tables, 33 figures, the message; the other 25 runs equal to L5's by `run_key`
+     (`compare_stores.py`), the final run equal but for the 11 new files.
+   The second pass: skipped 8, skipped 16, the best runs skipped, the final refused.
+6. One mutation on a copy, caught by the new test: `waterfall_figure` explaining the first
+   cohort when `cohort` is `"composite"`.
+7. The repo's `mlflow.db` and `mlartifacts/` unchanged; no `.mlflow-local/`; `.mlflow-check/`
+   untouched.
+
+### Validate W2
+
+The guide's counts and names against Check D's store (§4's lists equal to the final run's
+files); `check_store.py ... final` on a copy of that store's database: 0 failures. No code
+check is repeated.
+
+### The check store's re-check (the user's clicks, after W1 and W2 are committed)
+
+Only the final run is logged again. E11's look has happened on this store; the evaluation is
+seeded, so the scores repeat.
+
+1. Commit first, and commit nothing until step 6 is done: the new final run's `git_commit`
+   must be HEAD with `git_dirty` `false`.
+2. In the MLflow UI, delete the final run (§6: a deleted run is not seen by the guard).
+3. Reopen the notebook (the guide's §10, step 2; `.env` still names the check store).
+4. Click the clicks; expect:
+
+   | Click | Expect |
+   |---|---|
+   | "Tune the independent cohorts model" | "Logged 0 tuning runs, skipped 8 (already logged)."; nothing tuned (the cache holds the studies) |
+   | "Tune the total times probability model" | "Logged 0 tuning runs, skipped 16 (already logged)." |
+   | "Inspect the best runs" | "The best runs' run is logged: skipped." |
+   | the paired difference's Plot or Metric menu changed | the best runs' logging cell does not run again (its message stays; no new run) |
+   | "Evaluate on the test part" | "Logged the final run: 108 metrics, 7 tables, 33 figures." |
+   | a waterfall menu or building changed | the final run's logging cell does not run again |
+   | the notebook's last cell re-run (▶) | "A final run exists in the experiment: nothing logged." |
+
+   The two skip messages and the menu rows are what the first manual run could not record.
+5. `check_store.py <a copy of the database> age-group-check final`: 0 failures (one FINISHED
+   final run, 7 tables, 33 figures). Run it with the `final` stage only: the other 25 runs
+   carry the earlier commit, which the stages `tuning` and `best_runs` would report against
+   HEAD.
+6. The same scores: the new final run's 108 metrics and its six earlier tables' text equal
+   to the deleted run's (in `manual/store_all.db`, the first manual run's copy).
+7. In the UI: `tables/test_shap_values.csv` opens as a table; a waterfall draws.
+
+### Open
+
+- The check store's 25 other runs keep their earlier `git_commit`. That is correct (they
+  were logged by that code), and step 5 allows for it; nothing to decide unless the user
+  wants the whole store logged again from one commit.

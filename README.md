@@ -12,8 +12,12 @@ building-level DataFrame:
 	current behavior and formulas.
 - [Modeling guide](docs/MODELING_GUIDE.md) explains the supported pipeline,
   public APIs, configuration, evidence, and invariants.
-- [MLflow experiments guide](docs/MLFLOW_EXPERIMENTS_GUIDE.md) covers scratch
-  setup, run layout, searching, final-run semantics, and model loading.
+- [MLflow experiments guide](docs/MLFLOW_EXPERIMENTS_GUIDE.md) covers the old
+  stack's `tracking` package: scratch setup, run layout, searching, final-run
+  semantics, and model loading.
+- [MLflow runs](docs/MLFLOW_RUNS.md): the tuning notebook's runs (24 tuning
+  runs, the best runs' run, the guarded final run), the store, the UI, and how
+  to rebuild a model from a run.
 - [Feature engineering](docs/FEATURE_ENGINEERING.md) explains feature specs,
   fitted transformations, and how each model uses them.
 - [Feature transformations](docs/FEATURE_TRANSFORMATIONS.md): the typed
@@ -132,12 +136,12 @@ The research source is a pair of version-controlled marimo notebooks:
   (the log loss, the Poisson deviance, RMSE) on one setting per model: every
   trial, the best models refit and scored on validation, and figures of
   both;
-- `notebooks/03_hyperparameter_tuning.py` runs the experiments: one MLflow run per
-  setting (composite model × estimator family × feature variant × exposure),
-  tuned by cross-validation on the training part, compared on the validation
-  part, and one final test-part run (see
-  [docs/EXPERIMENT_NOTEBOOK_PLAN.md](docs/EXPERIMENT_NOTEBOOK_PLAN.md) until
-  `docs/EXPERIMENTS.md` exists in D5).
+- `notebooks/03_hyperparameter_tuning.py` runs the experiments: 24 runs (model
+  × estimator family × exposure), each tuned by cross-validation on the training
+  part; each model's best run compared on the validation part; then the test
+  part evaluated once. Each step logs its result to MLflow as it is produced: a
+  run per study, the best runs' comparison, and one final run (see
+  [docs/MLFLOW_RUNS.md](docs/MLFLOW_RUNS.md)).
 
 The Jupyter-to-marimo cutover is complete. `research.ipynb` has been removed;
 marimo `.py` notebooks are the sole research source.
@@ -182,7 +186,9 @@ marimo `.py` notebooks are the sole research source.
 
 4. Read the setup cells: the synthetic population (150 neighborhoods, 1529
    buildings), the train/validation/test split, the feature variants and the
-   MLflow experiment from `.env`. Nothing is fitted.
+   MLflow experiment from `.env`. Nothing is fitted. The buttons that tune and
+   evaluate (each logs its runs), and how to open the runs in the MLflow UI, are
+   in [the MLflow runs guide](docs/MLFLOW_RUNS.md).
 
 5. Each run cell sits behind its own **Run** button (added from D2 on).
 

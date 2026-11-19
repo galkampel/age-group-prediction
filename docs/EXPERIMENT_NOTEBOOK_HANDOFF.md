@@ -1,4 +1,1338 @@
-# Handoff: the experiment notebooks, PR 7 closed (the user's PR and merge next); then E11's run, the MLflow runs and D4
+# Handoff: the experiment notebooks, PR 7 merged (#26); the simplification review done; the MLflow runs plan complete (MLFLOW_RUNS_PLAN.md, M0–M7; the guide MLFLOW_RUNS.md); the cold read done (MLFLOW_RUNS_REVIEW.md §8) and its seven findings built (the guide, the two tests); the PR feat/mlflow-runs into main open, not merged; the logging buttons replaced by logging where each result is produced (MLFLOW_RUNS_PLAN.md §8, L1–L4, complete); the guided manual run logged and checked on a check store (the test part included: E11's look done); next the final run's SHAP values and waterfalls (MLFLOW_RUNS_PLAN.md §9, W1–W2), the check store's re-check, then the merge
+
+**Status (2026-11-16, the guided manual run: the four clicks logged and checked; §9 planned; the user commits it):**
+- **The state:** branch `feat/mlflow-runs`, HEAD `87ac778` (L5). This change: this status and
+  [MLFLOW_RUNS_PLAN.md](MLFLOW_RUNS_PLAN.md) §9 (planned by Fable; its status line and a note
+  under decision 10). The notebooks' md5 unchanged: `03_hyperparameter_tuning.py`
+  `f527e65cce15b4303fb0915f13f1b8e9`, `02_objective_eda.py` `a98d4dc4578cb884ca31b9d4dde3d992`,
+  `01_eda.py` `4bc1ba3a52dc2ad55d0097a707bd1ccc`.
+- **The check store:** `.env` names `.mlflow-check/` in the repo (absolute paths, git-ignored),
+  experiment `age-group-check`. A store left from the paused run (the experiment, no run) was
+  deleted by the user; the notebook created it again at 15:06.
+- **The four clicks** (the user, `marimo edit`, on the user's cache: every study loaded, nothing
+  tuned), read back from the store: the 8 tuning runs at 15:14:08–12 and the 16 at
+  15:14:53–15:15:06, each as its study finished (**marimo's live editor runs the logging after a
+  click**: the one thing no check covered); the best runs' run at 15:19:20; the final run at
+  15:24:17. 26 runs, all FINISHED, 26 distinct `run_key`s, none failed or deleted.
+- **Not recorded** (the user closed the notebook before reading the messages): the skip
+  messages, the guard's refusal, and that a display menu does not re-run a logging cell. No
+  second run was logged; §9's re-check records them.
+- **marimo saved the notebook** at 15:24:18 (its own format: `__generated_with` 0.24.0, nine
+  trimmed returns, `build_dataset_figures` as `@app.function`, an empty cell; no logic change).
+  The runs ran HEAD's code (`git_dirty` read at the open); the user restored the file from HEAD
+  (md5 `f527e65c…`).
+- **`manual/check_store.py`** on a copy of the store (`manual/store_all.db` in
+  `/private/tmp/claude-501/-Users-galkampel-Desktop-Projects-age-group-prediction/1e116e6f-752d-40d8-bedc-ad034d51e94c/scratchpad`),
+  stages `tuning best_runs final`: **0 failures.** Every run: `git_commit` `87ac778…`,
+  `git_dirty` `false`, the 23 shared parameters. Tuning: 24 (8 + 16), one study folder, 52
+  metrics, `n_complete` 100, the 6 artifacts, `train`/`val`. Best runs' run: 108 `val/…`
+  metrics, 7 tables, 18 figures (8 permutation, 6 beeswarm, 4 forest/ridge), the 4 JSON;
+  `best.independent_cohorts` `…family=lgbm_gaussian__use_exposure=True__share_hyperparams=True__share_feature_transformer=False__objective=rmse__seed=44`,
+  `best.total_times_probability` `total_times_probability_joint__total_family=lgbm_poisson__probability_family=logistic__use_exposure=True__objective=rmse__seed=42`
+  (each its model's best by `val/composite/rmse`). Final run: `final=true`, `n_train_val`, 108
+  `test/…` metrics, 6 tables, 23 figures, `train_val`/`test`.
+- **The final run's test scores (E11), the composite** (the real final run must reproduce them):
+
+  | metric | independent_cohorts | total_times_probability | difference |
+  |---|---|---|---|
+  | rmse | 4.22628782473959 | 4.197264187294447 | -0.02902363744514247 |
+  | mae | 3.1317791958497594 | 3.10181778349625 | -0.029961412353509242 |
+  | poisson_deviance | 2.033815021873322 | 2.0022649729563184 | -0.031550048917003526 |
+  | log_loss | 1.0831892007468973 | 1.0789887411675123 | -0.004200459579384974 |
+  | wmape | 0.3885624140816433 | 0.38484507707116605 | -0.003717337010477273 |
+  | bias | -0.3656160565769752 | -0.4552643090753547 | -0.08964825249837949 |
+- **The user's decision (do not re-ask): option A,** the final run also logs the test SHAP
+  values as a table and a small fixed set of waterfalls (not every waterfall: 2,448 files;
+  not the table alone). Fable planned it: [MLFLOW_RUNS_PLAN.md](MLFLOW_RUNS_PLAN.md) §9
+  (`tables/test_shap_values.csv`, each model's 5 worst test buildings' waterfalls of the total;
+  7 tables, 33 figures; W1 the notebook and the tests, W2 the docs and the checker). Opus 5.5
+  builds it in this session. A logging change, allowed after E11 (the user's plan of
+  2026-11-15, item 3).
+- **W1 built and checked** (the plan's §9 has the checks): `waterfall_figure` in its own cell,
+  the display one call per model; the final run's logging cell adds `test_shap_values` and the
+  10 waterfalls (`_n_worst_buildings = 5`, no menu read); the test file one new test (37) and
+  the final cell's guard as a whole-word `\.value\b` (the SHAP `.values` matched the old
+  substring). The notebook's md5 after W1: `03_hyperparameter_tuning.py`
+  `5a3877b70faa044d41f7c6301a091cf6` (the other two unchanged). The scratchpad's references for
+  the next change: `check_c_w1_tuning.pkl`, `mlflow_W1.db` / `mlartifacts_W1`. On the 3-trial
+  copy, each model's 5 worst (rmse, composite): independent cohorts B_001396, B_001453,
+  B_000240, B_001023, B_000102; total times probability B_001396, B_001443, B_001023,
+  B_001453, B_000945 (the user's store has other models: its own buildings). Committed
+  `6dd7b32`.
+- **W2 built** (docs only: the guide's §1, §4, §6, §10; the plan's tick) and the scratchpad's
+  `manual/check_store.py` (the final stage: 7 tables, 33 figures, `test_shap_values`, the
+  waterfalls' ranks; the pre-W2 version kept as `check_store_before_w2.py`). The notebooks'
+  md5 unchanged since W1.
+- **The re-check, after the user commits W2:** in the UI delete the final run; reopen the
+  notebook; the four clicks (skipped 8, skipped 16, the best runs skipped, the final logged
+  with 7 tables and 33 figures), a menu change under each evaluation (no logging re-run), the
+  last cell re-run (refused); note the messages before closing; then `check_store.py <copy>
+  age-group-check final` (the final stage only: the other 25 runs name `87ac778`), the scores
+  equal to the table above, the UI walk, the guide's §8 and §9.
+- **Next:** W1, W2 (each stopped for review); then the check store's re-check (§9: the final
+  run deleted in the UI, the four clicks again, the skips and the menus recorded,
+  `check_store.py … final`, the same scores), the UI walk (the guide's §3, §7) and the guide's
+  §8 and §9 by the user; then the merge and the user's plan, item 4 (the check store deleted,
+  `.env` back on `.mlflow-local/`; from a clean `main`, the real logging of all three run
+  kinds; the final run's test scores compared with the table above).
+
+**Status (2026-11-16, §8 validated by Fable; L5 built, its three findings; the user commits it):**
+- **The validation** (read-only, on `5256bbc`): the build matches §8 and has no defect.
+  - the three commits' diffs against §8; nothing outside the logging changed;
+  - the cell graph: each evaluation logging cell runs only after its click;
+  - Opus's logs (all passed); `manual/check_store.py` on a copy of `mlflow_L2.db` (26 runs,
+    the guide's counts);
+  - three mutations on copies, each failing a rewritten test (a Tune cell that stops
+    logging, a logging cell reading a `.value`, the final guard removed).
+- **L5** ([MLFLOW_RUNS_PLAN.md](MLFLOW_RUNS_PLAN.md) §8): F1 (a display menu re-ran a
+  logging cell: `best_difference_df` now computed with the best runs' bootstrap,
+  `val_against_test_df` with the test evaluation), F2 (the digest in two statements; "runs"
+  in two comments), F3 (the counters as `if`/`else`); and the guide's new §10 (checking the
+  logging, step by step). The notebook and two docs changed; no test changed.
+- **The checks, each once** (`checks/run_L5.sh` to step 4, then `run_L5_rest.sh`; the copy
+  script `make_copy_tuning_l5.py`, its anchors moved with F1): mypy; the test file 36; the
+  non-slow suite 1423; Check B; Check C (equal to L2's run); Check D (skipped 8, skipped 16,
+  the best runs skipped, the final refused); the L5 store equal to M6's; the guide's three
+  blocks (§9 exact). ruff: two more bare `return`s (choice 16), no other finding.
+- **The notebook's md5:** `03_hyperparameter_tuning.py` `f527e65cce15b4303fb0915f13f1b8e9`
+  (the other two unchanged). It replaces the md5 in the status below and in its prompt's
+  state check; HEAD there is the commit of L5.
+- **Not tested by any check:** that marimo's live editor runs each logging cell after its
+  click (the checks run the notebook as a script). The manual run's first click tests it.
+- **Next: the manual run.** Either the guided session (the prompt in the status below), or
+  alone with the guide's §10.
+
+**Status (2026-11-16, §8 complete: L4 built, the docs; the user commits it):**
+- **The state:** branch `feat/mlflow-runs`, on `904c2bd` (L2 + L3). L4 changed docs only:
+  [MLFLOW_RUNS.md](MLFLOW_RUNS.md) (§1's opening and table, §6's skips and guard, §8's
+  sentence, the link to the plan's §8), the root `README.md` (the notebook's line; step 4 of
+  "Run The Modeling Notebook"), [README.md](README.md)'s index line,
+  [MLFLOW_RUNS_PLAN.md](MLFLOW_RUNS_PLAN.md) (a note under §1's verdict table; L4 ticked;
+  the status lines), [EXPERIMENT_NOTEBOOK_PLAN.md](EXPERIMENT_NOTEBOOK_PLAN.md) (the D2/D3
+  note), this status. No python block of the guide changed; no check run (docs only).
+- **The notebooks' md5 (unchanged since L2 + L3):** `03_hyperparameter_tuning.py`
+  `9902b43a815de8d9e75623ce9ae56927`; `02_objective_eda.py`
+  `a98d4dc4578cb884ca31b9d4dde3d992`; `01_eda.py` `4bc1ba3a52dc2ad55d0097a707bd1ccc`.
+- **The repo's store** (as 2026-11-16's paused run recorded it, unchanged by every check):
+  `mlflow.db` md5 `5af703e5d57843e824fd1f42314c1222`, 411 entries under `mlartifacts/`, no
+  `.mlflow-local/`. The check store (`.env`: `MLFLOW_EXPERIMENT_NAME=age-group-check`) not
+  created yet.
+- **The scratchpad:**
+  `/private/tmp/claude-501/-Users-galkampel-Desktop-Projects-age-group-prediction/769136fe-c768-42a9-83d4-4713a0d90200/scratchpad`
+  (`58edf1e9…` copied in full with `manual/`, repointed; the pycache compiled; L1–L3's
+  runners, `compare_stores.py`, the stores `mlflow_L1.db`, `mlflow_L2.db` and the pickles
+  `check_c_l1_tuning.pkl`, `check_c_l2_tuning.pkl`).
+- **The user's plan stands** (the 2026-11-15 status below, items 1–5; do not re-ask), with
+  four clicks instead of seven. The prompt of 2026-11-15 is replaced by this one.
+- **Next: the guided manual run** (Opus 5.5; the user clicks, the session guides and checks
+  the store read-only). Paste:
+
+  ```text
+  Read docs/EXPERIMENT_NOTEBOOK_HANDOFF.md: the status at the top, my plan (items 1-4 of the
+  2026-11-15 status) and §4 (how to work, the traps, the iCloud notes, my style);
+  docs/MLFLOW_RUNS.md (the guide); the root README's "Run The Modeling Notebook";
+  .env.example.
+  Verify the state first: the branch feat/mlflow-runs, HEAD my commit of L4 (on 904c2bd),
+  `git status` clean; the notebooks' md5 as the handoff's top status; no iCloud-offloaded
+  files (the handoff's §4 check: 0). If anything differs, stop and show me the diff. Copy the
+  scratchpad the handoff's top status names into yours (repoint.py: OLD and NEW set, manual/
+  among its folders), compile the pycache. If that scratchpad is gone, tell me before
+  rewriting anything.
+  Plan first in plan mode and wait for my go. Then guide me through a complete manual run of
+  the tuning notebook, logging to a check store, before I merge the PR. I click and I run the
+  commands on my machine; you never run the notebook on my cache and never click for me. One
+  step at a time: what to do, how long it takes, what I should see; wait for what I report and
+  check it before the next step. Four clicks log every run; there is no logging button.
+  1. The check store: the .env values (a store and an experiment of its own: not the root's
+     mlflow.db or mlartifacts/, not .mlflow-local/; outside iCloud if that is simpler), then
+     the guide's §2 script run (no run logged).
+  2. The tuning runs: first say whether my cache holds the studies, so a click loads rather
+     than tunes. "Tune the independent cohorts model", then "Tune the total times
+     probability model": each logs its runs as its studies finish ("Logged 8 tuning runs,
+     skipped 0", then 16). Then each button again: "skipped 8", "skipped 16".
+  3. "Inspect the best runs": it logs the best runs' run. Then re-run only its logging cell
+     (no second inspection): "The best runs' run is logged: skipped."
+  4. The test part, E11's one look (my decision in the handoff): "Evaluate on the test part"
+     logs the final run. Then re-run only the final run's logging cell (no second test
+     evaluation): "A final run exists in the experiment: nothing logged." Record the final
+     run's test/<model>/<metric>/score values.
+  5. After each logging step, with my go, check the check store read-only from the scratchpad
+     (manual/check_store.py on a copy of the db, its stages tuning, best_runs, final): every
+     run kind's tags, parameters, metrics, artifacts and inputs, the counts and the run keys
+     against the guide's §1 and §4-§6. And walk me through the UI as the guide's §3 and §7
+     say, the journal's charts included.
+  6. The guide's §8 and §9, run by me on the check store: §9 must rebuild all three run kinds
+     exactly and skip nothing.
+  If something is wrong, stop and show me the evidence with a recommendation; fix nothing
+  without my go (a fix goes on this branch, before the merge; never a model, setting or
+  selection change after the test part). Never write the repo root's mlflow.db or
+  mlartifacts/, nor .mlflow-local/. Edit no notebook and no src file. Record what was checked,
+  the store's counts and the final run's test scores in the handoff's top status, with the
+  steps after the merge (my plan, item 4). Stop with a summary, the notebooks' md5 (unchanged)
+  and the commit message in a copyable code block. I commit myself: never commit, no
+  Co-Authored-By line, no "Generated with Claude Code", never git checkout/stash/reset/mv.
+  ```
+
+**Status (2026-11-16, §8's L2 + L3 built: no logging button; committed `904c2bd`):**
+- **The state:** branch `feat/mlflow-runs`, on `fb8e50f` (L1). L2 + L3 changed
+  `notebooks/03_hyperparameter_tuning.py` (the two Tune cells log each study's run as it
+  finishes; the two evaluation runs logged by the cells after their clicks; the three logging
+  buttons gone: four clicks instead of seven) and
+  `tests/characterization/test_hyperparameter_tuning_notebook.py` (three tests rewritten);
+  the status lines here and in [MLFLOW_RUNS_PLAN.md](MLFLOW_RUNS_PLAN.md) (§8, L2 and L3
+  ticked with their checks).
+- **The notebooks' md5:** `03_hyperparameter_tuning.py` `9902b43a815de8d9e75623ce9ae56927`
+  (was `a351ef4f…`); `02_objective_eda.py` `a98d4dc4578cb884ca31b9d4dde3d992` and `01_eda.py`
+  `4bc1ba3a52dc2ad55d0097a707bd1ccc` unchanged.
+- **The checks, once, all passed** (`checks/run_L2.sh` in the scratchpad below); the logged
+  content equal to M6's. The repo's `mlflow.db` and `mlartifacts/` unchanged; no
+  `.mlflow-local/`; the user's check store not created.
+- **Next:** L4 (the docs: the guide, the README, decision 2, this status, the guided manual
+  run's prompt with four clicks, the memory), in the same session, after the user's go.
+
+**Status (2026-11-16, §8's L1 built: the names; committed `fb8e50f`):**
+- **The state:** branch `feat/mlflow-runs`, on `257602a` (the §8 plan). L1 changed
+  `notebooks/03_hyperparameter_tuning.py` and
+  `tests/characterization/test_hyperparameter_tuning_notebook.py` (names only; the logged
+  content identical), and the status lines here and in [MLFLOW_RUNS_PLAN.md](MLFLOW_RUNS_PLAN.md)
+  (§8, L1 ticked with its checks).
+- **The notebooks' md5:** `03_hyperparameter_tuning.py` `a351ef4f8d32c20158fa9af677c05f88`
+  (was `7c7ab7ad…`); `02_objective_eda.py` `a98d4dc4578cb884ca31b9d4dde3d992` and `01_eda.py`
+  `4bc1ba3a52dc2ad55d0097a707bd1ccc` unchanged.
+- **The checks, once, all passed** (the plan's §8, L1). The repo's `mlflow.db` and
+  `mlartifacts/` unchanged; no `.mlflow-local/`; the user's check store not created.
+- **The scratchpad:**
+  `/private/tmp/claude-501/-Users-galkampel-Desktop-Projects-age-group-prediction/769136fe-c768-42a9-83d4-4713a0d90200/scratchpad`:
+  `58edf1e9…` copied in full, `manual/` from `d4faa49a…`, repointed (119 files), the pycache
+  compiled. New: `checks/run_L1.sh`, `check_b_l1_tuning.py`, `check_d_l1.py`,
+  `compare_stores.py` (a store against a reference store by `run_key`); L1's store
+  `mlflow_L1.db` / `mlartifacts_L1` and pickle `check_c_l1_tuning.pkl` (the references for L2).
+- **Next:** L2 (the tuning runs logged inside the Tune cells), in the same session, after the
+  user's go; then L3 and L4.
+
+**Status (2026-11-16, the guided manual run paused; a change planned first):**
+- **The user's decision:** a run is logged by the step that produces it, with no logging
+  button (the common practice). It replaces decision 2 of the MLflow plan. The plan is
+  [MLFLOW_RUNS_PLAN.md](MLFLOW_RUNS_PLAN.md) §8 (L1–L4: the names, the tuning runs logged
+  inside the Tune cells, the two evaluation runs logged without a button, the docs).
+  Logging code only, so it is allowed before E11's look.
+- **The state:** branch `feat/mlflow-runs`, on `2ba477c`; this change is the plan's §8, its
+  status line, the note under decision 2, and this status. The notebooks' md5 unchanged
+  (below).
+- **The manual run so far** (the plan of the status below, steps 0–1 only; nothing clicked,
+  nothing logged):
+  - the state verified; the user's cache holds all 24 studies, complete
+    (`studies/data=dd15b240__…__n_trials=100__n_startup_trials=10/`, 100 trials each; one
+    journal also holds a deleted partial study), so a Tune click loads;
+  - the check store is the user's choice in `.env` (`MLFLOW_EXPERIMENT_NAME=age-group-check`;
+    the store in `~/mlflow-check/`, or `.mlflow-check/` in the repo, git-ignored by the
+    existing patterns); not created yet;
+  - the repo's store before: `mlflow.db` md5 `5af703e5d57843e824fd1f42314c1222`, 411 entries
+    under `mlartifacts/`, no `.mlflow-local/`.
+- **The scratchpads:** this session's
+  `/private/tmp/claude-501/-Users-galkampel-Desktop-Projects-age-group-prediction/d4faa49a-a1dc-4f96-90f6-6fa3f0da65ca/scratchpad`
+  holds the scripts only (`checks/`, `probes/`, `viewer/`, `review3/`, `review4/`,
+  `guide_blocks/`, repointed; the pycache) and `manual/check_store.py` (the check store
+  against the guide, per stage; read-only). The references, the project copies and the
+  stores are still in the previous one (`58edf1e9…`, the status below).
+- **Next: build §8** (Opus 5.5, a sub-task per approval). Paste:
+
+  ```text
+  Read docs/EXPERIMENT_NOTEBOOK_HANDOFF.md: the status at the top and §4 (how to work, the
+  checks, the traps, the iCloud notes, my style); docs/MLFLOW_RUNS_PLAN.md §8 (the plan) and
+  §3 (how a sub-task is done); docs/MLFLOW_RUNS.md.
+  Verify the state first: the branch feat/mlflow-runs, HEAD my commit of this plan (on
+  2ba477c), `git status` clean; the notebooks' md5 as the handoff's status of 2026-11-15; no
+  iCloud-offloaded files (the handoff's §4 check: 0). If anything differs, stop and show me the
+  diff. Copy the scratchpad 58edf1e9… (the full one) into yours, then manual/check_store.py
+  from d4faa49a… (repoint.py: OLD and NEW set), compile the pycache. If a scratchpad is gone,
+  tell me before rewriting anything.
+  Build the plan's §8, one sub-task per approval, starting with L1 (the names; no behaviour
+  change). Before each sub-task, summarize it in the chat and wait for my go. Tell me before
+  editing the notebook. Static checks first, then each check once (§8's Validate). Change no
+  model, setting or selection. Never write the repo root's mlflow.db or mlartifacts/, nor
+  .mlflow-local/, nor my check store. Never click the test part on my cache.
+  Stop after each sub-task with a file-by-file summary, the checks, the notebooks' md5 and
+  the commit message in a copyable code block; tick the sub-task and update the status lines
+  in the plan and at the top of the handoff. After L4, rewrite the guided manual run's prompt
+  for four clicks. I commit myself: never commit, no Co-Authored-By line, no "Generated with
+  Claude Code", never git checkout/stash/reset/mv.
+  ```
+
+**Status (2026-11-15, the cold read's findings built; the user commits it and opens the PR):**
+- **The state:** branch `feat/mlflow-runs`; the build committed as `29d28d4` (on `e906eed`,
+  the cold read), then this handoff's plan below. The build changed:
+  - `tests/characterization/test_hyperparameter_tuning_notebook.py`: T1 (the tuning test
+    asserts the metrics' values) and T2 (a dataset input in each of the two logging tests, a
+    figure in the evaluation test; `plotly.graph_objects` imported);
+  - [MLFLOW_RUNS.md](MLFLOW_RUNS.md): H1 (§3's path through the UI), H2 (`first_run` returns
+    `None`, §9 rebuilds what it finds; §8's sentence), H3 (MLflow's terms, §1), H4 (the three
+    corrections), H5 (a study's journal read with Optuna, end of §7); 392 → 444 lines;
+  - [MLFLOW_RUNS_REVIEW.md](MLFLOW_RUNS_REVIEW.md) (§8 ticked, the checks), this handoff.
+- **The notebooks' md5 (unchanged):** `03_hyperparameter_tuning.py`
+  `7c7ab7ad53773ad757f64e55590896ec`; `02_objective_eda.py`
+  `a98d4dc4578cb884ca31b9d4dde3d992`; `01_eda.py` `4bc1ba3a52dc2ad55d0097a707bd1ccc`.
+- **The checks, once** (`review4/run_build.sh`, `run_build.log`; the review's §8.6 has the
+  details), all passed: ruff and the format; the test file 36; the non-slow suite 1423; mypy;
+  the guide's script run, `mlflow ui` and its three python blocks on the scratch store (§9
+  exact for all three kinds); §9 on a copy without the final run (finishes, "skipped: no final
+  run"); the two mutations of §8.4 each fail a new test, and a `log_figure`-only mutant fails
+  the evaluation test. The repo's files, `mlflow.db` and `mlartifacts/` unchanged; no
+  `.mlflow-local/`.
+- **The user's plan (2026-11-15; do not re-ask):**
+  1. commit this change and open the PR `feat/mlflow-runs` into `main`, **not merged yet**;
+  2. **a guided manual run before the merge** (the next session, below): the user clicks every
+     button of the tuning notebook on the user's cache, logging to a **check store** (a
+     throwaway store and experiment, not `.mlflow-local/`, not the root's `mlflow.db` or
+     `mlartifacts/`), and checks that each run kind holds what the guide says;
+  3. **the test part is included:** "Evaluate on the test part" and "Log the final run" are
+     clicked in the check. The user decided that this click is **E11's one look**:
+     - no model, setting or selection changes after it; a problem found may change only the
+       logging or the evaluation code (on this branch, before the merge);
+     - the test evaluation is seeded (the refit, the bootstrap, the permutation, SHAP; §9's
+       recipe rebuilt a final run's test scores exactly), so the real final run must
+       reproduce the check's test scores: the check records them;
+  4. then the merge; the check store deleted, `.env` back on `.mlflow-local/`; from a clean
+     `main` (`git_dirty` `false`; a squash merge changes the commit, so runs logged on the
+     branch would name a commit not on `main`), the real logging of all three run kinds; the
+     final run's test scores compared with the check's;
+  5. then the roadmap's §5 (the old stack's deletion, `tracking/` with it).
+- **Next: the guided manual run** (Opus 5.5; the user clicks, the session guides and checks
+  the store read-only). **Replaced 2026-11-16** by the prompt at the top (four clicks, no
+  logging button); kept for the record. It read:
+
+  ```text
+  Read docs/EXPERIMENT_NOTEBOOK_HANDOFF.md: the status at the top (my plan, items 1-4) and §4
+  (how to work, the traps, the iCloud notes, my style); docs/MLFLOW_RUNS.md (the guide); the
+  root README's "Run The Modeling Notebook"; .env.example.
+  Verify the state first: the branch feat/mlflow-runs, HEAD my commit of this handoff (on
+  29d28d4, the cold read's findings built), `git status` clean; the notebooks' md5 as the handoff's top status; no
+  iCloud-offloaded files (the handoff's §4 check: 0). If anything differs, stop and show me the
+  diff. Copy the scratchpad the handoff's top status names into yours (repoint.py: OLD and NEW
+  set), compile the pycache. If that scratchpad is gone, tell me before rewriting anything.
+  Plan first in plan mode and wait for my go. Then guide me through a complete manual run of
+  the tuning notebook, logging to a check store, before I merge the PR. I click and I run the
+  commands on my machine; you never run the notebook on my cache and never click for me. One
+  step at a time: what to do, how long it takes, what I should see; wait for what I report and
+  check it before the next step.
+  1. The check store: the .env values (a store and an experiment of its own: not the root's
+     mlflow.db or mlartifacts/, not .mlflow-local/; outside iCloud if that is simpler), then
+     the guide's §2 script run.
+  2. The tuning runs and the best runs: the clicks (first say whether my cache holds the
+     studies, so a click loads rather than tunes), then each button again (skipped).
+  3. The test part, E11's one look (my decision in the handoff): "Evaluate on the test part",
+     "Log the final run", then that button again (refused). Record the final run's
+     test/<model>/<metric>/score values.
+  4. After each logging step, with my go, check the check store read-only from the scratchpad
+     (review3/check_guide.py is the model): every run kind's tags, parameters, metrics,
+     artifacts and inputs, the counts and the run keys against the guide's §1 and §4-§6. And
+     walk me through the UI as the guide's §3 and §7 say, the journal's charts included.
+  5. The guide's §8 and §9, run by me on the check store: §9 must rebuild all three run kinds
+     exactly and skip nothing.
+  If something is wrong, stop and show me the evidence with a recommendation; fix nothing
+  without my go (a fix goes on this branch, before the merge; never a model, setting or
+  selection change after the test part). Never write the repo root's mlflow.db or
+  mlartifacts/, nor .mlflow-local/. Edit no notebook and no src file. Record what was checked,
+  the store's counts and the final run's test scores in the handoff's top status, with the
+  steps after the merge (my plan, item 4). Stop with a summary, the notebooks' md5 (unchanged)
+  and the commit message in a copyable code block. I commit myself: never commit, no
+  Co-Authored-By line, no "Generated with Claude Code", never git checkout/stash/reset/mv.
+  ```
+- **The scratchpad:** `/private/tmp/claude-501/-Users-galkampel-Desktop-Projects-age-group-prediction/58edf1e9-66ab-4510-90cf-1ff156847685/scratchpad`
+  (the previous one copied and repointed, `mlflow_M7_guide.db` pointed at its own
+  `mlartifacts_M6`, the pycache compiled; `review4/` is this session's).
+
+**Status (2026-11-15, after the cold read; the user commits it):**
+- **The state:** branch `feat/mlflow-runs`, on `3ac23b1` (the handoff after M7, on `d59fa47`).
+  The cold read changed two docs only: [MLFLOW_RUNS_REVIEW.md](MLFLOW_RUNS_REVIEW.md) (§8, its
+  status) and this handoff.
+- **The notebooks' md5 (unchanged):** `03_hyperparameter_tuning.py`
+  `7c7ab7ad53773ad757f64e55590896ec`; `02_objective_eda.py`
+  `a98d4dc4578cb884ca31b9d4dde3d992`; `01_eda.py` `4bc1ba3a52dc2ad55d0097a707bd1ccc`.
+- **The cold read** (Fable 5.2, read-only, on a copy of M6's store): the guide is correct
+  against the code and the store (every count and name read back; its commands and both
+  python blocks run as written), and a reader new to MLflow gets lost in two places. Seven
+  findings, **all accepted by the user (do not re-ask;** the review's §8.6):
+  - H1: §3 does not say to click "Model training" (the UI's default "GenAI" mode shows an
+    empty traces page and no runs list), nor what a run's page holds;
+  - H2: §8's and §9's blocks stop with an unpack `ValueError` on a store without a best runs'
+    run or a final run (the user's store until E11): `first_run` returns `None`, the recipe
+    rebuilds what it finds;
+  - H3: a list of MLflow's terms at the top of §1;
+  - H4: three small corrections (three variables, not four; the "Button (click after)"
+    heading; §2's notes on the MLflow global and the warning filters cut to one sentence);
+  - H5: a block that reads a study's journal with Optuna (its trial charts);
+  - T1: the tuning test asserts the metrics' values (a mutation with wrong values passes
+    today);
+  - T2: a dataset input in each test and a figure in the evaluation test (a mutation
+    without `log_input` and `log_figure` passes today).
+- **Decisions 4 and 1 kept** (the review's §8.5, written for a reader new to MLflow): no
+  logged model (revisit when code outside the notebook must predict: a pyfunc model from
+  code for the final model, then the registry); no nested runs (2,400 child runs for 24
+  studies; `trials.csv` and the journal give the table and the charts).
+- **The checks,** each once (`review3/run_review3.sh`, `run_review3.log`): the script run, §8's
+  and §9's blocks (exact), the same blocks on a store without the final run and without the
+  best runs' run (both fail: H2), `check_guide.py` (the guide's counts), `journal.py` (H5),
+  the two mutations (`mut_values`, `mut_inputs`: both new tests pass on each); the UI's
+  screenshots in `review3/shots/`. The repo's files, its `mlflow.db` and `mlartifacts/`
+  unchanged; no `.mlflow-local/`.
+- **Next: one session builds the seven findings** (the guide and the test file only; one
+  change, checked once), then the user's PR. Paste:
+
+  ```text
+  Read docs/MLFLOW_RUNS_REVIEW.md §8 (the findings H1-H5, T1, T2 and my decisions in §8.6),
+  docs/MLFLOW_RUNS.md, and docs/EXPERIMENT_NOTEBOOK_HANDOFF.md: the status at the top and §4
+  (how to work, the checks, the traps, the iCloud notes, my style).
+  Verify the state first: the branch feat/mlflow-runs, HEAD my commit of the cold read (on
+  3ac23b1), `git status` clean; the notebooks' md5 as the handoff's top status; no
+  iCloud-offloaded files (the handoff's §4 check: 0). If anything differs, stop and show me the
+  diff. Copy the scratchpad the handoff's top status names into yours (repoint.py: OLD and NEW
+  set, each script's S= yours; the guide store mlflow_M7_guide.db and guide.env pointed at
+  your copy of mlartifacts_M6), compile the pycache. If that scratchpad is gone, tell me before
+  rewriting anything.
+  Plan first in plan mode and wait for my go. Then build the seven accepted findings, one
+  change, checked once:
+  1. T1 and T2 in tests/characterization/test_hyperparameter_tuning_notebook.py (the two tests
+     test_a_tuning_run_is_logged_once_then_skipped and
+     test_an_evaluation_run_logs_the_composite_and_each_best_runs_files only).
+  2. The guide docs/MLFLOW_RUNS.md: H1 (§3's path through the UI), H2 (first_run returns None,
+     the recipe rebuilds the run kinds it finds; §8's sentence), H3 (MLflow's terms), H4 (the
+     three corrections), H5 (the journal block). Keep it short: the guide must not grow more
+     than the findings ask.
+  The checks, once (review3/run_review3.sh in the scratchpad is the model): ruff and the format
+  on the test file, the test file, the non-slow suite, mypy; the guide's commands and every
+  python block as written on the scratch store with guide.env; §9's recipe also on a copy of
+  the store without its final run (it must finish and say what it skipped); the two mutations
+  of the review's §8.4, each of which must now fail a new test.
+  Edit no notebook and no src file; run no notebook on my cache. Never write the repo root's
+  mlflow.db or mlartifacts/, nor .mlflow-local/. Tick the findings as built in the review's §8
+  and update the handoff's top status. Stop with a file-by-file summary, the checks, the
+  notebooks' md5 (unchanged) and the commit message in a copyable code block. I commit myself:
+  never commit, no Co-Authored-By line, no "Generated with Claude Code", never
+  git checkout/stash/reset/mv.
+  ```
+- **Then:** the user's PR `feat/mlflow-runs` into `main`. Then, when the user decides: the real
+  run on the user's cache (the tuning and best runs' logging on the user's store; E11's test
+  evaluation and final run, which no session runs), and the roadmap's §5 (the old stack's
+  deletion, `tracking/` with it).
+- **The scratchpad:** `/private/tmp/claude-501/-Users-galkampel-Desktop-Projects-age-group-prediction/c73241c0-b5f9-4b8e-9ec4-2806ad0534cb/scratchpad` (the previous one copied and repointed, the pycache compiled;
+  `review3/` is this session's).
+
+**Status (2026-11-15, end of M7; the user commits it and opens the PR):**
+- **The state:** branch `feat/mlflow-runs`, on `3e929e9` (the second review). M7 changed:
+  - `tests/characterization/test_hyperparameter_tuning_notebook.py`: G3's two tests,
+    `log_tuning_run` and `log_evaluation_run` called on a `tmp_path` store;
+  - [MLFLOW_RUNS.md](MLFLOW_RUNS.md) (new): the guide;
+  - links: `docs/README.md`, [MODULE_REFERENCE.md](MODULE_REFERENCE.md), the root `README.md`;
+  - [EXPERIMENT_NOTEBOOK_PLAN.md](EXPERIMENT_NOTEBOOK_PLAN.md): its status, the dated notes on
+    E9, E10, D1e–D5, D1–D5 ticked;
+  - [MLFLOW_RUNS_PLAN.md](MLFLOW_RUNS_PLAN.md) (complete; M7 as built; §5's two rows),
+    [MLFLOW_RUNS_REVIEW.md](MLFLOW_RUNS_REVIEW.md) (its status), this handoff.
+- **The notebooks' md5 (unchanged):** `03_hyperparameter_tuning.py`
+  `7c7ab7ad53773ad757f64e55590896ec`; `02_objective_eda.py`
+  `a98d4dc4578cb884ca31b9d4dde3d992`; `01_eda.py` `4bc1ba3a52dc2ad55d0097a707bd1ccc`.
+- **The checks** (the plan's M7 has the details), all passed in one run: the test file 36, the
+  non-slow suite 1423, mypy clean, ruff and the format clean; the guide's commands on a copy of
+  M6's store (the rebuild recipe exact for all three run kinds); the mutation caught by the new
+  tuning test. No Check B, C or D (no notebook changed).
+- **The user's choices in M7 (do not re-ask):** a run's leftover `_last_active_run_id` (MLflow's
+  thread-local) accepted, the tests assert no active run and no URI left set; D1–D5 ticked.
+- **In the scratchpad below** (the previous one copied and repointed, the pycache compiled):
+  `checks/run_M7.sh` and `run_M7.log`; `guide.env`, `guide_blocks/` (the guide's two python
+  blocks and their logs); `mlflow_M7_guide.db` (M6's store, its artifact paths pointed at this
+  scratchpad's `mlartifacts_M6`); `mut_m7/`.
+- **Next, before the PR (the user's request, 2026-11-15): a cold read by Fable 5.2,**
+  read-only: is the guide clear to a reader new to MLflow, are the two new tests readable,
+  and decision 4 (no logged model) explained against common practice. Its findings go to
+  [MLFLOW_RUNS_REVIEW.md](MLFLOW_RUNS_REVIEW.md) §8. Switch the model to Fable 5.2 after
+  committing M7, then paste:
+
+  ```text
+  Read docs/MLFLOW_RUNS.md first and cold, as its reader would: someone who runs the tuning
+  notebook and is new to MLflow. Note where you get lost, what a term assumes, what a step leaves
+  out. Then read docs/MLFLOW_RUNS_PLAN.md (the status, §1's decisions 1-17, M7 as built, §5),
+  docs/MLFLOW_RUNS_REVIEW.md (both reviews and my decisions), and
+  docs/EXPERIMENT_NOTEBOOK_HANDOFF.md: the status at the top and §4 (how to work, the checks, the
+  traps, the iCloud notes, my style).
+  Verify the state first: the branch feat/mlflow-runs, HEAD my commit of this prompt (on
+  d59fa47, M7),
+  `git status` clean; the notebooks' md5 as the handoff's top status; no iCloud-offloaded files
+  (the handoff's §4 check: 0). If anything differs, stop and show me the diff. Copy the scratchpad
+  the handoff's top status names into yours (repoint.py: each script's S= set to yours), compile
+  the pycache. If that scratchpad is gone, tell me before rewriting anything.
+  Then a read-only review, planned first in plan mode; wait for my go. Three questions:
+  1. The guide: can a reader new to MLflow understand the whole flow from it (what each button
+     logs, where to look in the UI, how the runs are compared, how a model is rebuilt)? Is
+     anything wrong against the notebook's code, missing, or longer than it needs to be? You may
+     run its commands on the scratchpad's mlflow_M7_guide.db with guide.env (as
+     checks/run_M7.sh does) and open mlflow ui on it, run from the scratchpad; screenshots welcome.
+  2. The two new tests in tests/characterization/test_hyperparameter_tuning_notebook.py
+     (test_a_tuning_run_is_logged_once_then_skipped,
+     test_an_evaluation_run_logs_the_composite_and_each_best_runs_files): readable, asserting
+     what matters, nothing redundant?
+  3. Two decisions, explained to me (new to MLflow) against common practice, each with whether
+     it is right for this project now. Do not reopen either without concrete evidence, marked
+     as such.
+     - Decision 4, no logged model: what logging a model (log_model, the Model Registry,
+       serving) would give and what the rebuild from best_params gives, for tuning runs and
+       for a final model; the old stack's no-pickle pyfunc
+       (src/age_group_prediction/tracking/pyfunc_model.py).
+     - Decision 1, no nested runs: a study's trials as trials.csv in its run, against a child
+       run per trial under the study's run (MLflow's own Optuna examples do that): what each
+       gives in the UI (comparing trials, charts), the cost (24 x n_trials runs, the skip
+       rule), and what the logged journal already allows.
+  Keep it short: a real finding beats a long list; say plainly what is clear enough. Write the
+  findings as §8 of docs/MLFLOW_RUNS_REVIEW.md (each: location, evidence, the change, the effort,
+  your recommendation), ask me about each with the interactive question tool (the options, the
+  evidence, your recommendation first), and record my decisions there and in the handoff's top
+  status. Edit no notebook, no test, no src file and no other doc; run no notebook on my cache.
+  Never write the repo root's mlflow.db or mlartifacts/, nor .mlflow-local/. Stop with a
+  summary, the notebooks' md5 (unchanged) and the commit message in a copyable code block. I
+  commit myself: never commit, no Co-Authored-By line, no "Generated with Claude Code", never
+  git checkout/stash/reset/mv.
+  ```
+- **Then:** the user's PR `feat/mlflow-runs` into `main`. Then, when the user decides: the real
+  run on the user's cache (the tuning and best runs' logging on the user's store; E11's test
+  evaluation and final run, which no session runs), and the roadmap's §5 (the old stack's
+  deletion, `tracking/` with it).
+- **The scratchpad:** `/private/tmp/claude-501/-Users-galkampel-Desktop-Projects-age-group-prediction/80e130dc-d36d-49a1-9d11-3f70ba7e51f9/scratchpad`.
+
+**Status (2026-11-15, after the second review; the user commits it):**
+- **The state:** branch `feat/mlflow-runs`, on `42a1d1b` (the handoff after M6). The review
+  changed three docs only: [MLFLOW_RUNS_REVIEW.md](MLFLOW_RUNS_REVIEW.md) (§7),
+  [MLFLOW_RUNS_PLAN.md](MLFLOW_RUNS_PLAN.md) (the status, M7's heading), this handoff.
+- **The notebooks' md5 (unchanged):** `03_hyperparameter_tuning.py`
+  `7c7ab7ad53773ad757f64e55590896ec`; `02_objective_eda.py`
+  `a98d4dc4578cb884ca31b9d4dde3d992`; `01_eda.py` `4bc1ba3a52dc2ad55d0097a707bd1ccc`.
+- **The review** (Fable 5.2, read-only, on M6's store): the flow is correct, complete and
+  simple enough. A model of every run kind was rebuilt from the store alone and reproduced its
+  logged scores exactly. Three findings, decided (do not re-ask):
+  - G1 (the guide): an evaluation run's `family` and `use_exposure` are read from
+    `components/<model>.json`;
+  - G2 (the guide): the columns to add in the UI's runs list; the run names stay;
+  - G3 (two tests): `log_tuning_run` and `log_evaluation_run` called on a `tmp_path` store.
+- **In the scratchpad below** (the previous one copied, its scripts repointed, the pycache
+  compiled), new in `review2/`: `inspect_store.py` and its log; `rebuild_from_store.py` and its
+  log (the recipe, run); `shots/` (six screenshots of the UI).
+- **Next: one Opus 5.5 session, M7** (switch the model to Opus 5.5 after you commit the review).
+  It builds G3's tests first, then the guide. No notebook is edited, so Check B, C and D are not
+  rerun.
+
+  ```text
+  Read docs/MLFLOW_RUNS_PLAN.md in full (the status; §1's decisions and choices 1-17; §3;
+  §4's M7 with its heading, and M1-M6 as built; §5), docs/MLFLOW_RUNS_REVIEW.md (both
+  reviews and my decisions; §7 is the second), then docs/EXPERIMENT_NOTEBOOK_HANDOFF.md: the
+  status at the top and §4 (how to work, git and the editor, the checks, the traps, the iCloud
+  notes, the user's style).
+  Verify the state first: the branch feat/mlflow-runs, HEAD my commit of the second review,
+  `git status` clean; the notebooks' md5 as the handoff's top status; no iCloud-offloaded
+  files (the handoff's §4 check: 0). If anything differs, stop and show me the diff. Copy the
+  scratchpad the handoff's top status names into yours (repoint.py: each script's S= set to
+  yours), compile the pycache. If that scratchpad is gone, tell me before rewriting anything.
+  Then do M7 as its heading in the plan says, as one change: first G3's two tests (the two
+  logging functions called from notebook_defs on a tmp_path store) with their mutation, then
+  the guide docs/MLFLOW_RUNS.md (how to run the notebook and the MLflow UI on a scratch store,
+  what each of the three run kinds holds, the skip rule and the final run's guard, the store's
+  refusals, the rebuild recipe per run kind (G1), comparing the 24 runs in the UI (G2), the
+  second review's §7.5 list, M0's UI notes); the links from docs/README.md,
+  MODULE_REFERENCE.md and the root README.md; the dated note in EXPERIMENT_NOTEBOOK_PLAN.md;
+  §5's two corrected rows; the plan's status "complete". Plan it first in plan mode (re-verify
+  the facts and line numbers read-only, list the exact edits), wait for my go, implement it.
+  Edit no notebook and no src file. Keep it simple, informative names, no private helpers.
+  Run every check once: ruff and the format on the test file, the touched test file, the
+  non-slow suite and mypy; the guide's commands as written on a scratch store (the rebuild
+  recipe on the scratchpad's mlflow_M6.db, with review2/rebuild_from_store.py as the model);
+  the mutation on a copy. Every check exports the four MLflow variables to the scratchpad. If
+  a test call leaves an MLflow global set, or a step needs a choice the plan and the reviews
+  do not make, stop and ask me with the interactive question tool (the options, the evidence,
+  your recommendation first).
+  Never write the repo root's mlflow.db or mlartifacts/, nor .mlflow-local/. Don't run the
+  test evaluation or "Log the final run" on my cache (E11). Stop with a file-by-file summary,
+  the checks, the notebooks' md5 (unchanged), the commit message and the PR description
+  (feat/mlflow-runs into main) in copyable code blocks; tick M7 and update the status lines
+  in the plan and at the top of the handoff. I commit and open the PR myself: never commit,
+  no Co-Authored-By line, no "Generated with Claude Code" in PR text, never git
+  checkout/stash/reset/mv.
+  ```
+- **The test part has still not been run on the user's cache** (E11).
+- **The scratchpad to copy first:** `/private/tmp/claude-501/-Users-galkampel-Desktop-Projects-age-group-prediction/b8845946-63a4-4782-865e-9cde83c05ffe/scratchpad`.
+
+**Status (2026-11-15, end of M6: the review's findings and the final run; the user commits it):**
+- **The state:** branch `feat/mlflow-runs`, on `3e08860` (the review). M6 changed:
+  - `notebooks/03_hyperparameter_tuning.py`:
+    - the MLflow cell refuses an existing experiment whose artifact location is not the
+      variable's (F1), and returns `code_tags` (F6);
+    - the records keep `study_seed` (F7 b); `shared_params` gains `prediction_floor` (F5 b);
+    - `log_tuning_run`: `json` objects in the search space (F8), no `feature_transformer.*`
+      (F9), `dataset_inputs`;
+    - `log_evaluation_run` in its own cell (F4, F5 a), called by M4's cell (whose key gains the
+      objective and the selection, F2) and by the final run's cell;
+    - the validation-against-test cell returns `val_against_test_df` (F3);
+    - the two new final run cells;
+  - `tests/characterization/test_hyperparameter_tuning_notebook.py` (2 new tests, 3 adjusted);
+  - [MLFLOW_RUNS_PLAN.md](MLFLOW_RUNS_PLAN.md) (M6 ticked and as built; §5's rows; M7's steps
+    with the rebuild recipe and F1's refusal; the status);
+  - [MLFLOW_RUNS_REVIEW.md](MLFLOW_RUNS_REVIEW.md) (its status);
+  - this handoff.
+- **The notebooks' md5:** `03_hyperparameter_tuning.py` `7c7ab7ad53773ad757f64e55590896ec`
+  (new); `02_objective_eda.py` `a98d4dc4578cb884ca31b9d4dde3d992`, `01_eda.py`
+  `4bc1ba3a52dc2ad55d0097a707bd1ccc` (unchanged).
+- **The checks** (the plan's M6 has the numbers): all passed in one run; Check D covers the 26
+  runs; the mutation (Check D only, on a copy of the store) caught.
+- **The next change's scripts and references** (in the scratchpad below):
+  - the runner `checks/run_M6.sh`; the mutation `checks/run_mutant_M6.sh`;
+  - Check B `checks/check_b_m6_tuning.py`; Check C `checks/check_c_m6_tuning.py`; Check D
+    `checks/check_d_mlflow.py` (M5's kept as `check_d_mlflow_m5.py`);
+  - the references `check_c_m6_tuning.pkl`, `check_c_m6_eda.pkl` (with its figures' JSON),
+    `figures_m6_tuning.json`, `figures_m6_eda.json`;
+  - the store `mlflow_M6.db` with `mlartifacts_M6`: a 3-trial copy's 26 runs, for the guide's
+    commands. The mutant's extra final run is in `mlflow_mut_M6.db`, its artifacts in
+    `mlartifacts_M6`.
+- **Next: two sessions, in this order** (the user's request, 2026-11-15): a second Fable 5.2
+  review of the whole flow, now that all three run kinds exist, before the final documentation;
+  then one Opus 5.5 session that builds the accepted findings (if any) and M7, with one check
+  run. M6 is committed as `486891a`. Commit this handoff update first: session 1's prompt
+  assumes HEAD is that commit.
+  1. **Session 1, Fable 5.2** (switch the model to Fable 5.2 before pasting):
+     - It plans in plan mode.
+     - It reviews read-only: on the code and on M6's scratch store (26 runs).
+     - It puts each finding to the user, and records the decisions in
+       `docs/MLFLOW_RUNS_REVIEW.md` §7.
+     - It edits no notebook, test or `src` file.
+
+     ```text
+     Read docs/MLFLOW_RUNS_PLAN.md in full (§1's decisions and the user's choices 1-17, §4 M0-M6
+     as built and M7 as designed, §5 the inventory), docs/MLFLOW_RUNS_REVIEW.md (the first review
+     before M6, its ten findings and the user's decisions, all built in M6), then
+     docs/EXPERIMENT_NOTEBOOK_HANDOFF.md: the status at the top and §4 (how to work, the checks,
+     the traps, the iCloud notes, the user's style).
+     Verify the state first: the branch feat/mlflow-runs, HEAD my commit of the handoff after M6
+     (on 486891a, M6),
+     `git status` clean; 03's md5 7c7ab7ad53773ad757f64e55590896ec, 02's
+     a98d4dc4578cb884ca31b9d4dde3d992; no iCloud-offloaded files. If anything differs, stop and
+     show me the diff. Copy the scratchpad the handoff's top status names into yours
+     (repoint.py: each script's S= set to yours), compile the pycache. If that scratchpad is
+     gone, tell me before rewriting anything.
+     Then do a second review of the whole MLflow flow, read-only, before the final docs (M7):
+     plan it first in plan mode, wait for my go. Scope: every MLflow cell of
+     notebooks/03_hyperparameter_tuning.py (the MLflow cell, the shared inputs, log_tuning_run
+     and its button and cell, build_dataset_figures, log_evaluation_run, the best runs' and the
+     final run's buttons and cells, the M5 figure functions they call), the MLflow tests in
+     tests/characterization/test_hyperparameter_tuning_notebook.py, and M6's scratch store
+     (mlflow_M6.db with mlartifacts_M6 in the scratchpad: a 3-trial copy's 24 tuning runs, the
+     best runs' run and the final run), read with MlflowClient only. You may open `mlflow ui` on
+     that store, run from the scratchpad with --artifacts-destination in it, and screenshot it.
+     Judge it against MLflow's best practices (what is a parameter, a metric, a tag, an artifact,
+     a dataset input; run names and keys; what a reader of the UI needs to compare runs and
+     rebuild a model) and against simplicity: what can be removed or made simpler now that the
+     three run kinds exist, what is repeated, what nothing reads; then completeness against §5,
+     and what M7's guide must say. Keep it short: a real finding beats a long list; say plainly
+     when the code is simple enough. Do not reopen my decisions (1-17, the first review's)
+     without concrete evidence, marked as such.
+     Write the findings as §7 of docs/MLFLOW_RUNS_REVIEW.md (each: location, evidence, the
+     change, the effort, the decision it touches, your recommendation), then ask me about each
+     with the interactive question tool (the options, the evidence, your recommendation first),
+     and record my decisions there, in the plan's M7 heading (what M7's session builds first)
+     and in the handoff's top status. Edit no notebook, no test and no src file; run no
+     notebook on my cache. Never write the repo root's mlflow.db or mlartifacts/, nor
+     .mlflow-local/. Stop with a summary and the commit message in a copyable code block. I
+     commit myself: never commit, no Co-Authored-By line, never git
+     checkout/stash/reset/mv.
+     ```
+  2. **Session 2, Opus 5.5** (switch the model back to Opus 5.5 after you commit session 1's
+     review):
+     - It builds the accepted findings of the second review, if any, then M7 (the guide, the
+       links, the plan's close).
+     - One check run covers both.
+     - It drafts the PR text at the stop.
+
+     ```text
+     Read docs/MLFLOW_RUNS_PLAN.md in full (the status; §1's decisions and choices 1-17; §3;
+     §4's M7 with its heading, and M1-M6 as built; §5), docs/MLFLOW_RUNS_REVIEW.md (both
+     reviews and my decisions), then docs/EXPERIMENT_NOTEBOOK_HANDOFF.md: the status at the
+     top and §4 (how to work, git and the editor, the checks, the traps, the iCloud notes, the
+     user's style).
+     Verify the state first: the branch feat/mlflow-runs, HEAD my commit of the second review,
+     `git status` clean; the notebooks' md5 as the handoff's top status; no iCloud-offloaded
+     files. If anything differs, stop and show me the diff. Copy the scratchpad the handoff's
+     top status names into yours (repoint.py: each script's S= set to yours), compile the
+     pycache. If that scratchpad is gone, tell me before rewriting anything.
+     Then do, as one change: the second review's accepted findings (if any), then M7 (the guide
+     docs/MLFLOW_RUNS.md: how to run the notebook and the MLflow UI on a scratch store, what
+     each of the three run kinds holds, the skip rule and the final run's guard, the store's
+     refusals, the rebuild recipe, M0's UI notes; the links from docs/README.md,
+     MODULE_REFERENCE.md and the root README.md; the dated note in EXPERIMENT_NOTEBOOK_PLAN.md;
+     the plan's status "complete"). Plan it first in plan mode (re-verify the facts and line
+     numbers read-only, list the exact edits), wait for my go, implement it. Keep it simple,
+     informative names, best practices, no private helpers; a notebook function reads no
+     notebook global. Run every check once: the cheap static checks and the touched tests
+     first, then the runner (checks/run_M6.sh as the model, its Check D extended to the
+     accepted findings), the guide's commands as written on a scratch store, and a mutation
+     that reruns only what it needs. Every check exports the four MLflow variables to the
+     scratchpad. If a step needs a choice the plan and the reviews do not make, stop and ask
+     me with the interactive question tool (the options, the evidence, your recommendation
+     first).
+     Never write the repo root's mlflow.db or mlartifacts/, nor .mlflow-local/. Don't run the
+     test evaluation or "Log the final run" on my cache (E11). My marimo session may be open:
+     tell me before editing the notebook and remind me to reload it after; edit the notebook
+     with the Edit tool. Stop with a file-by-file summary, the checks, the notebooks' md5, the
+     commit message and the PR description (feat/mlflow-runs into main) in copyable code
+     blocks; tick M7 and update the status lines in the plan and at the top of the handoff. I
+     commit and open the PR myself: never commit, no Co-Authored-By line, no "Generated with
+     Claude Code" in PR text, never git checkout/stash/reset/mv.
+     ```
+
+     If session 1 accepts no code change, session 2 is M7 alone, as written.
+- **The test part has still not been run on the user's cache** (E11).
+- **The scratchpad to copy first:** `/private/tmp/claude-501/-Users-galkampel-Desktop-Projects-age-group-prediction/ca74efc7-1e4b-4d55-ab40-01c82355adba/scratchpad`.
+
+**Status (2026-11-15, after M5 (`94a47c3`): the MLflow logging reviewed before M6; the user commits it):**
+- **The review:** Fable 5.2, read-only, on HEAD `94a47c3` and M5's scratch store. It is
+  [MLFLOW_RUNS_REVIEW.md](MLFLOW_RUNS_REVIEW.md): ten findings, every recommendation accepted
+  by the user. They are:
+  - three bugs: F1 the store guard on an existing experiment, F2 the best runs' stale key, F3
+    M6's missing return;
+  - one function for the two evaluation runs (F4) and `code_tags` (F6);
+  - the rebuild gap (F5: `best_params` per best run, `prediction_floor`, the guide's recipe);
+  - minor: F7 (b), F8, F9, F10 (a) and (c).
+
+  They change M6: the plan's M6 heading lists them. Nothing executable changed in this step: no
+  check run; the notebooks' md5 unchanged (`03` `8d9713dbcd875948a732cbdf124afc55`, `02`
+  `a98d4dc4578cb884ca31b9d4dde3d992`); the repo's store unchanged.
+- **Next: M6 with the review, an Opus 5.5 session.** The M5 status's prompt below holds, with
+  two changes:
+  - HEAD is the user's commit of this review (on `94a47c3`);
+  - the prompt also reads `docs/MLFLOW_RUNS_REVIEW.md` and builds its accepted findings first,
+    in the same change and the same single check run.
+
+**Status (2026-11-15, end of M5, the count figures and the shares bars as functions; the user commits it):**
+- **The state:** branch `feat/mlflow-runs`, on `fba91f9` (M4). M5 changed
+  `notebooks/03_hyperparameter_tuning.py`:
+  - a cell before the count figures' cell, with `counts_histogram_figure` and
+    `counts_scatter_figure`;
+  - a cell before the shares cell, with `selection_shares_bars_figure`;
+  - both display cells now call them;
+  - the loop names `k, v` → `name, value`, and `part` → `field` / `dataset`.
+
+  It also changed `notebooks/02_objective_eda.py` (the same `name, value` in the shared setup),
+  `tests/characterization/test_hyperparameter_tuning_notebook.py` (one test; the setup test's
+  `dataset_name`), [MLFLOW_RUNS_PLAN.md](MLFLOW_RUNS_PLAN.md) (M5 ticked and as built; M6's
+  calls with the new signatures; the status) and this handoff.
+- **The user's two choices at M5** (the plan's M5; do not re-ask):
+  - each figure function gets its own cell;
+  - the older names are renamed in the same change, so the checks run once. The user asks for
+    efficiency: never run the same checks twice.
+- **The notebooks' md5:** `03_hyperparameter_tuning.py` `8d9713dbcd875948a732cbdf124afc55`,
+  `02_objective_eda.py` `a98d4dc4578cb884ca31b9d4dde3d992` (both new); `01_eda.py`
+  `4bc1ba3a52dc2ad55d0097a707bd1ccc` (unchanged).
+- **The checks** (the plan's M5 has the numbers): all passed in one run; the 21 + 27 figures
+  identical to M4's; the mutation (the dump only) caught.
+- **The next change's scripts and references** (in the scratchpad below):
+  - the runner `checks/run_M5.sh`;
+  - Check B `checks/check_b_m5_tuning.py`; Check C `checks/check_c_m2_tuning.py`; Check D
+    `checks/check_d_mlflow.py` (M6 extends it to the final run: 26 runs, one `final=true`);
+  - the mutation `checks/run_mutant_M5.sh`;
+  - the references `check_c_m5_tuning.pkl`, `check_c_m5_eda.pkl` (with its two figures' JSON),
+    `figures_m5_tuning.json`, `figures_m5_eda.json`.
+- **Next: M6, an Opus 5.5 session.** The prompt:
+
+  ```text
+  Read docs/MLFLOW_RUNS_PLAN.md in full (the status; §1's decisions, facts, M0's findings, its
+  correction at M3 and choices 11-17; §2; §3 how a sub-task is done; §4's M6, and M1-M5 as
+  built), then docs/EXPERIMENT_NOTEBOOK_HANDOFF.md: the status at the top and §4 (how to work,
+  git and the editor, the checks, the traps, the iCloud notes, the user's style). Then the cells
+  M6 names in notebooks/03_hyperparameter_tuning.py (the test evaluation's cells, the test
+  explanation, the test tables, M5's figure functions and the shares cell, M4's best runs'
+  logging cell as the model).
+  Verify the state first: the branch feat/mlflow-runs, HEAD my commit of M5 (on fba91f9),
+  `git status` clean; 03's md5 8d9713dbcd875948a732cbdf124afc55, 02's
+  a98d4dc4578cb884ca31b9d4dde3d992; no iCloud-offloaded files. If anything differs, stop and
+  show me the diff. Copy the scratchpad the handoff's top status names into yours (repoint.py:
+  each script's S= set to yours), compile the pycache. If that scratchpad is gone, tell me
+  before rewriting anything.
+  Then do sub-task M6 only: plan it first in plan mode (re-verify its facts and line numbers
+  read-only, list the exact edits; the tables as CSV at 6 significant digits, a dict column as
+  JSON text, choices 15 and 17; informative names), wait for my go, implement it, run the
+  checks of the plan's §3 and M6's validation and mutation (Check D extended to the final
+  run). Run every check once: cheap static checks first, then one full run; a mutation reruns
+  only what it needs. Every check exports the four MLflow variables to the scratchpad, as
+  checks/run_M5.sh does. Do not start M7.
+  If a step needs a choice the plan does not make, stop and ask me with the interactive
+  question tool (the options, the evidence, your recommendation first).
+  Never write the repo root's mlflow.db or mlartifacts/, nor .mlflow-local/. Don't run the
+  test evaluation or "Log the final run" on my cache (E11): only on Check C's copy. My marimo
+  session may be open: tell me before editing the notebook and remind me to reload it after;
+  edit the notebook with the Edit tool. Keep it simple; no private helpers; a notebook function
+  reads no notebook global. Stop with a file-by-file summary, the checks, the notebooks' md5
+  and the commit message in a copyable code block; tick M6 and update the status lines in the
+  plan and at the top of the handoff. I commit myself: never commit, no Co-Authored-By line, no
+  "Generated with Claude Code" in PR text, never git checkout/stash/reset/mv.
+  ```
+- **The test part has still not been run on the user's cache** (E11).
+- **The scratchpad to copy first:** `/private/tmp/claude-501/-Users-galkampel-Desktop-Projects-age-group-prediction/ca74efc7-1e4b-4d55-ab40-01c82355adba/scratchpad`
+  (M4's and M5's scripts, logs and references).
+
+**Status (2026-11-15, end of M4, the best runs' run logged behind a button; the user commits it):**
+- **The state:** branch `feat/mlflow-runs`, on `b7e9d62` (the user's commit of the M4 prompt, on
+  `7e5bc30`, M3). M4 changed `notebooks/03_hyperparameter_tuning.py` (three cells after
+  section 5's beeswarm cell: `build_dataset_figures`, the button "Log the best runs", the logging
+  cell; the paired-difference cell returns `best_difference_df, best_difference_replicates`, the
+  importance table's cell `(importance_df,)`),
+  `tests/characterization/test_hyperparameter_tuning_notebook.py` (one test),
+  [MLFLOW_RUNS_PLAN.md](MLFLOW_RUNS_PLAN.md) (M4 ticked and as built; M6's tables as CSV; the
+  status) and this handoff.
+- **The notebooks' md5:** `03_hyperparameter_tuning.py` `051cfb32b338c8e94b3bac3581b652ce`
+  (new); `02_objective_eda.py` `1f9bbe7601794c7d646a67ce2588d536`, `01_eda.py`
+  `4bc1ba3a52dc2ad55d0097a707bd1ccc` (unchanged).
+- **The run M4 logs** (`stage=best_runs`, run name "best runs", key
+  `<studies dir>/best_runs`): the 22 shared parameters; 108 composite metrics
+  (`val/<model>/<metric>/<statistic>`, `val/difference/<metric>/<statistic>`); 7 tables
+  `tables/<name>.csv` at 6 significant digits, the runs tables' two dict columns JSON text
+  (choice 17); 18 figures `figures/val_*.html`; `components/<model>.json` ×2; the two datasets.
+  A second click shows "The best runs' run is logged: skipped."; it runs only after "Inspect the
+  best runs" (it reads the inspection's results).
+- **The checks** (the plan's M4 has the numbers): all passed; Check D extended to the best runs'
+  run (each figure's HTML compared to the check's own, the div uuid masked); the mutation caught.
+- **The next change's scripts and references** (in the scratchpad below): the runner
+  `checks/run_M4.sh` (Check C's click logs 25 runs to `$S/mlflow_M4.db`; Check D after it on the
+  same copy and store; the figure dump in its own store); Check B `checks/check_b_m4_tuning.py`;
+  Check C `checks/check_c_m2_tuning.py` (unchanged); Check D `checks/check_d_mlflow.py` (M3's
+  version kept as `check_d_mlflow_m3.py`); `make_copy_tuning.py` (its best runs' check now
+  asserts that cell's return); the mutation `checks/run_mutant_M4.sh`; the references
+  `check_c_m4_tuning.pkl`, `check_c_m4_eda.pkl` with `check_c_m4_eda_figures.json` and
+  `check_c_m4_eda_metric_figures.json`, `figures_m4_tuning.json`, `figures_m4_eda.json`.
+- **Next: M5, an Opus 5.5 session.** The prompt:
+
+  ```text
+  Read docs/MLFLOW_RUNS_PLAN.md in full (the status; §1's decisions, facts, M0's findings, its
+  correction at M3 and choices 11-17; §2; §3 how a sub-task is done; §4's M5, and M1-M4 as
+  built), then docs/EXPERIMENT_NOTEBOOK_HANDOFF.md: the status at the top and §4 (how to work,
+  git and the editor, the checks, the traps, the iCloud notes, the user's style). Then the cells
+  M5 names in notebooks/03_hyperparameter_tuning.py (section 6's count figures' cell, the
+  histogram and the scatter, and the shares bars' cell, with the menus they read).
+  Verify the state first: the branch feat/mlflow-runs, HEAD my commit of M4 (on b7e9d62),
+  `git status` clean; 03's md5 051cfb32b338c8e94b3bac3581b652ce, 02's
+  1f9bbe7601794c7d646a67ce2588d536; no iCloud-offloaded files. If anything differs, stop and
+  show me the diff. Copy the scratchpad the handoff's top status names into yours (repoint.py:
+  each script's S= set to yours), compile the pycache. If that scratchpad is gone, tell me
+  before rewriting anything.
+  Then do sub-task M5 only: plan it first in plan mode (re-verify its facts and line numbers
+  read-only, list the exact edits: each figure's body moved into a function in its cell, taking
+  its data, the labels and the palette and reading no global; the exported names unchanged),
+  wait for my go, implement it, run the checks of the plan's §3 and M5's validation (Check C
+  equal with nothing excepted; 03's 21 figures' JSON identical to M4's run,
+  figures_m4_tuning.json; Check D unchanged, 25 runs) and its mutation. Every check exports the
+  four MLflow variables to the scratchpad, as checks/run_M4.sh does. Do not start M6.
+  If a step needs a choice the plan does not make, stop and ask me with the interactive
+  question tool (the options, the evidence, your recommendation first).
+  Never write the repo root's mlflow.db or mlartifacts/, nor .mlflow-local/. Don't run the
+  test evaluation or "Log the final run" on my cache (E11). My marimo session may be open:
+  tell me before editing the notebook and remind me to reload it after; edit the notebook
+  with the Edit tool. Keep it simple; no private helpers; a notebook function reads no
+  notebook global. Stop with a file-by-file summary, the checks, the notebooks' md5 and the
+  commit message in a copyable code block; tick M5 and update the status lines in the plan and
+  at the top of the handoff. I commit myself: never commit, no Co-Authored-By line, no
+  "Generated with Claude Code" in PR text, never git checkout/stash/reset/mv.
+  ```
+- **The test part has still not been run on the user's cache** (E11).
+- **The scratchpad to copy first:** `/private/tmp/claude-501/-Users-galkampel-Desktop-Projects-age-group-prediction/ca74efc7-1e4b-4d55-ab40-01c82355adba/scratchpad`
+  (the previous one copied whole, every script's `S=` set to it, plus M4's scripts, logs and
+  references).
+
+**Status (2026-11-14, end of M3, the 24 tuning runs logged behind a button; M4 planned):**
+- **The state:** branch `feat/mlflow-runs`; M3 committed as `7e5bc30` (on `21960d5`, the M3
+  prompt); then the user's commit of this handoff update (choice 17 and the M4 prompt). M3
+  changed `notebooks/03_hyperparameter_tuning.py` (four cells after Model 2's tables cell: the
+  shared inputs, `log_tuning_run`, the button "Log the tuning runs", the logging cell; the
+  imports cell returns `optuna`), `tests/characterization/test_hyperparameter_tuning_notebook.py`
+  (one test), [MLFLOW_RUNS_PLAN.md](MLFLOW_RUNS_PLAN.md) (M3 ticked; §1's correction and the
+  user's choices 15, 16; §3; M4's and M6's table notes; §5; the status) and this handoff.
+- **The notebooks' md5:** `03_hyperparameter_tuning.py` `fa59251c25ea424474111a3f04c7cc3e`
+  (new); `02_objective_eda.py` `1f9bbe7601794c7d646a67ce2588d536`, `01_eda.py`
+  `4bc1ba3a52dc2ad55d0097a707bd1ccc` (unchanged).
+- **The user's two choices at M3** (the plan's §1, 15 and 16; do not re-ask): a logged table is
+  for reading, its precision chosen: the trials as `trials.csv` at 6 significant digits
+  (`log_table` rounds to 10 decimal places and its reader adds 1-ulp noise; M0's "exact"
+  read-back was `assert_frame_equal`'s default tolerance); marimo's bare `return` kept (ruff `03`
+  16).
+- **M4 planned after M3** (in the M3 session, read-only; the plan's M4 holds it): its tables as
+  CSV at 6 significant digits (choice 15), the runs tables' dict columns as JSON text (**the
+  user's choice 17**: `json.dumps` per cell; checked on M3's pickle, both tables' dicts read
+  back equal); the paired-difference cell and the importance table's cell get their returns
+  back (`best_difference_df, best_difference_replicates`; `importance_df`), so ruff on `03`
+  goes 16 + 1 − 2 = 15; the rest of the plan's M4 matches the code (the figure functions'
+  signatures, the inspection's `{model: {cohort: {split: result}}}`, `json` returned by the
+  first imports cell). The tests: one more (38 notebook tests, 1418 in the suite).
+- **The checks** (the plan's M3 has the numbers): all passed; Check D new; the mutation caught.
+- **The next change's scripts and references:** the runner `checks/run_M3.sh` (Check C's click
+  logs to `$S/mlflow_M3.db`; Check D after it on the same copy and store; the figure dump in its
+  own store); Check B `checks/check_b_m3_tuning.py`; Check C `checks/check_c_m2_tuning.py`
+  (unchanged); Check D `checks/check_d_mlflow.py` (M4 extends it to the best runs' run); the
+  mutation `checks/run_mutant_M3.sh`; the references `check_c_m3_tuning.pkl`,
+  `check_c_m3_eda.pkl` with `check_c_m3_eda_figures.json` and
+  `check_c_m3_eda_metric_figures.json`, `figures_m3_tuning.json`, `figures_m3_eda.json`.
+- **Next: M4, an Opus 5.5 session.** The prompt:
+
+  ```text
+  Read docs/MLFLOW_RUNS_PLAN.md in full (the status; §1's decisions, facts, M0's findings, its
+  correction at M3 and choices 11-17; §2; §3 how a sub-task is done; §4's M4, and M1-M3 as
+  built), then docs/EXPERIMENT_NOTEBOOK_HANDOFF.md: the status at the top and §4 (how to work,
+  git and the editor, the checks, the traps, the iCloud notes, the user's style). Then the cells
+  M4 names in notebooks/03_hyperparameter_tuning.py (M3's four cells after Model 2's tables
+  cell, the best runs' cells, the paired-difference cell, the inspection cell, the importance
+  table's cell, the beeswarm cell of section 5).
+  Verify the state first: the branch feat/mlflow-runs, HEAD my commit of the handoff's M4 prompt
+  (on 7e5bc30, M3), `git status` clean; 03's md5 fa59251c25ea424474111a3f04c7cc3e, 02's
+  1f9bbe7601794c7d646a67ce2588d536; no iCloud-offloaded files. If anything differs, stop and
+  show me the diff. Copy the scratchpad the handoff's top status names into yours (repoint.py:
+  each script's S= set to yours), compile the pycache. If that scratchpad is gone, tell me
+  before rewriting anything.
+  Then do sub-task M4 only: plan it first in plan mode (re-verify its facts and line numbers
+  read-only, list the exact edits; the tables as CSV at 6 significant digits with the dict
+  columns as JSON text, choices 15 and 17; the two returns to restore; ruff on 03 at 15), wait
+  for my go, implement it, run the checks of the plan's §3 and M4's validation and mutation
+  (Check D extended to the best runs' run). Every check exports the four MLflow variables to
+  the scratchpad, as checks/run_M3.sh does. Do not start M5.
+  If a step needs a choice the plan does not make, stop and ask me with the interactive
+  question tool (the options, the evidence, your recommendation first).
+  Never write the repo root's mlflow.db or mlartifacts/, nor .mlflow-local/. Don't run the
+  test evaluation or "Log the final run" on my cache (E11). My marimo session may be open:
+  tell me before editing the notebook and remind me to reload it after; edit the notebook
+  with the Edit tool. Keep it simple; no private helpers; a notebook function reads no
+  notebook global. Stop with a file-by-file summary, the checks, the notebooks' md5 and the
+  commit message in a copyable code block; tick M4 and update the status lines in the plan and
+  at the top of the handoff. I commit myself: never commit, no Co-Authored-By line, no
+  "Generated with Claude Code" in PR text, never git checkout/stash/reset/mv.
+  ```
+- **The test part has still not been run on the user's cache** (E11).
+- **The scratchpad to copy first:** `/private/tmp/claude-501/-Users-galkampel-Desktop-Projects-age-group-prediction/777d3f6f-df18-4452-bdca-ff13a1d24d0d/scratchpad`
+  (the previous one copied whole, every script's `S=` set to it, plus M3's scripts, logs and
+  references).
+
+**Status (2026-11-14, end of M2, a run record keeps its study; the user commits it):**
+- **The state:** branch `feat/mlflow-runs`; M2 committed as `dabc406` (on `2451c8a`, M1); then
+  the user's commit of this handoff update (the M3 prompt below).
+  M2 changed `notebooks/03_hyperparameter_tuning.py` (each tune cell's record gains
+  `"study": _study`; its comment), [MLFLOW_RUNS_PLAN.md](MLFLOW_RUNS_PLAN.md) (M2 ticked, the
+  status) and this handoff.
+- **The notebooks' md5:** `03_hyperparameter_tuning.py` `74b39c08ded5cafbbbb68016d7f87649`
+  (new); `02_objective_eda.py` `1f9bbe7601794c7d646a67ce2588d536`, `01_eda.py`
+  `4bc1ba3a52dc2ad55d0097a707bd1ccc` (unchanged).
+- **The checks:** all passed (the plan's M2 has the numbers); the mutation caught.
+- **The next change's scripts and references:** the runner `checks/run_M2.sh` (the four MLflow
+  variables exported); Check C `checks/check_c_m2_tuning.py` (its `KEYS1`/`KEYS2` hold `study`;
+  `record()` drops it); Check B `checks/check_b_m1_tuning.py`; the references
+  `check_c_m2_tuning.pkl`, `check_c_m2_eda.pkl` with `check_c_m2_eda_figures.json` and
+  `check_c_m2_eda_metric_figures.json`, `figures_m2_tuning.json`, `figures_m2_eda.json`.
+- **Next: M3, an Opus 5.5 session:** the first logging; Check D is new there. M2 is committed
+  as `dabc406`; this prompt was added after it (the user commits this handoff update). The
+  prompt (the plan's §7 second prompt, with what M1 and M2 taught):
+
+  ```text
+  Read docs/MLFLOW_RUNS_PLAN.md in full (the status; §1's decisions, facts, M0's findings and
+  choices 11-14; §2; §3 how a sub-task is done; §4's M3, and M1 and M2 as built), then
+  docs/EXPERIMENT_NOTEBOOK_HANDOFF.md: the status at the top and §4 (how to work, git and the
+  editor, the checks, the traps, the iCloud notes, the user's style). Then the cells M3 names
+  in notebooks/03_hyperparameter_tuning.py (the MLflow cell after the data cell, the two tune
+  cells and their records with "study", Model 2's tables cell).
+  Verify the state first: the branch feat/mlflow-runs, HEAD my commit of the handoff's M3
+  prompt (on dabc406, M2), `git status` clean; 03's md5 74b39c08ded5cafbbbb68016d7f87649, 02's
+  1f9bbe7601794c7d646a67ce2588d536; no iCloud-offloaded files. If anything differs, stop and
+  show me the diff. Copy the scratchpad the handoff's top status names into yours (repoint.py:
+  each script's S= set to yours), compile the pycache. If that scratchpad is gone, tell me
+  before rewriting anything.
+  Then do sub-task M3 only, exactly as the plan describes: plan it first in plan mode
+  (re-verify its facts and line numbers read-only, list the exact edits), wait for my go,
+  implement it, run the checks of the plan's §3 and M3's validation and mutation. Check D
+  (checks/check_d_mlflow.py) is new: model it on probes/probe_m0.py's read-back block. The
+  notebook sets no MLflow global (M1's choice), so every check exports the four MLflow
+  variables to the scratchpad, as checks/run_M2.sh does. Do not start M4.
+  If a step needs a choice the plan does not make, stop and ask me with the interactive
+  question tool (the options, the evidence, your recommendation first).
+  Never write the repo root's mlflow.db or mlartifacts/, nor .mlflow-local/. Don't run the
+  test evaluation or "Log the final run" on my cache (E11). My marimo session may be open:
+  tell me before editing the notebook and remind me to reload it after; edit the notebook
+  with the Edit tool. Keep it simple; no private helpers; a notebook function reads no
+  notebook global. Stop with a file-by-file summary, the checks, the notebooks' md5 and the
+  commit message in a copyable code block; tick M3 and update the status lines in the plan and
+  at the top of the handoff. I commit myself: never commit, no Co-Authored-By line, no
+  "Generated with Claude Code" in PR text, never git checkout/stash/reset/mv.
+  ```
+- **The test part has still not been run on the user's cache** (E11).
+- **The scratchpad to copy first:** `/private/tmp/claude-501/-Users-galkampel-Desktop-Projects-age-group-prediction/41d4cdb4-9818-43cb-bab7-d9e33511d815/scratchpad`.
+
+**Status (2026-11-14, end of M1, the MLflow cell; the user commits it):**
+- **The state:** branch `feat/mlflow-runs`, HEAD the user's commit of M1, on `8e1ea98` (M0).
+  M1 changed `notebooks/03_hyperparameter_tuning.py`, `tests/characterization/test_hyperparameter_tuning_notebook.py`,
+  `.env.example`, [MLFLOW_RUNS_PLAN.md](MLFLOW_RUNS_PLAN.md) (M1 ticked, its text as built, the
+  status) and this handoff.
+- **The notebooks' md5:** `03_hyperparameter_tuning.py` `659e410dc1b64a68501f4f3e331875a3`
+  (new); `02_objective_eda.py` `1f9bbe7601794c7d646a67ce2588d536`, `01_eda.py`
+  `4bc1ba3a52dc2ad55d0097a707bd1ccc` (unchanged).
+- **What M1 added:** the MLflow cell after the data cell (the six refusals, the two warning
+  filters, the experiment created with its artifact location, `git_tags`; it returns
+  `git_tags, mlflow`); the data cell returns `config_params`, the settings cell
+  `EXPERIMENT_SETTINGS`. **The user's choice at M1: no MLflow global** (no `set_tracking_uri`,
+  no `set_experiment`): MLflow reads the two variables at every call. The plan's M1 has the
+  reason (the in-process test fixture; the old `tracking/` tests in the same session).
+- **Every check now needs the four MLflow variables** (the notebook refuses to run without
+  them): `checks/run_M1.sh` exports them to `$S/mlflow_M1.db` and `$S/mlartifacts_M1`;
+  `probes/run_dump_m1.sh` is the figure dump without its inline URI; `checks/check_b_m1_tuning.py`
+  is Check B with M1's assertions. **The next change's references:** `check_c_m1_tuning.pkl`,
+  `check_c_m1_eda.pkl` with `check_c_m1_eda_figures.json` and `check_c_m1_eda_metric_figures.json`;
+  `figures_m1_tuning.json`, `figures_m1_eda.json` (all equal to S5.3's).
+- **The checks** (the plan's M1 has the numbers): all passed; the mutation caught.
+- **Next: M2, an Opus 5.5 session** (the plan's §7, the second prompt with `M2`).
+- **The test part has still not been run on the user's cache** (E11).
+- **The scratchpad to copy first:** `/private/tmp/claude-501/-Users-galkampel-Desktop-Projects-age-group-prediction/41d4cdb4-9818-43cb-bab7-d9e33511d815/scratchpad`
+  (as M0's status below describes it, plus M1's scripts, logs and references).
+
+**Status (2026-11-14, end of M0, the probe; the user commits it):**
+- **The state:** branch `feat/mlflow-runs`, HEAD the user's commit of M0, on `37c3889` (the
+  plan); `git status` clean after it. M0 changed only
+  [MLFLOW_RUNS_PLAN.md](MLFLOW_RUNS_PLAN.md) (§1's findings and choices, §3's Check D notes,
+  M0 ticked, M1–M6's exact calls, §5, §6) and this handoff (the title, this status); no
+  notebook, `src`, test or check. The repo's `mlflow.db` and `mlartifacts/` were listed before
+  and after (equal); no `.mlflow-local/` was made.
+- **The notebooks' md5 (unchanged):** `01_eda.py` `4bc1ba3a52dc2ad55d0097a707bd1ccc`,
+  `02_objective_eda.py` `1f9bbe7601794c7d646a67ce2588d536`, `03_hyperparameter_tuning.py`
+  `1117fc7f89b031bb3d11d33c83e700ef`.
+- **What M0 found** (the plan's §1, "Confirmed by M0"): pandas 3 makes two MLflow calls warn
+  (`log_table` on a `str` column: a `Pandas4Warning` that fails every table under `-W error`;
+  `log_input` on an int column: a `UserWarning` MLflow swallows, so the schema is silently
+  dropped under `-W error`), and MLflow's own dataset digest warns too; the raw trials frame
+  reads back as text; everything else read back equal; 24 runs log in 1 s.
+- **The user's four choices** (the plan's §1, 11–14; do not re-ask): the converted trials
+  table; two narrow warning filters in the MLflow cell; the datasets' digest the rows'
+  SHA-256; the tags `git_commit` and `git_dirty` from `git` in `project_root / "src"`.
+- **Next: M1, an Opus 5.5 session** (the plan's §7, the second prompt with `M1`). M1–M6 hold
+  the calls as run; an Opus session that meets a choice they do not make stops and asks for
+  a Fable session.
+- **The test part has still not been run on the user's cache** (E11).
+- **The scratchpad to copy first:** `/private/tmp/claude-501/-Users-galkampel-Desktop-Projects-age-group-prediction/41d4cdb4-9818-43cb-bab7-d9e33511d815/scratchpad`:
+  the previous one copied whole, every script's `S=` set to it (`repoint.py`: 95 files),
+  `pycache/` compiled. New in it: `probes/probe_m0.py` (the probe; Check D's model: its
+  read-back block and `compare_table`), `probes/run_probe_m0.sh` (the runner: the copy, the
+  store `m0/store/mlflow_m0.db`, the artifacts `m0/mlartifacts`), `probes/probe_m0_first.py`
+  (the version before the choices), `probes/cdp_shot.py` (screenshots of the MLflow UI through
+  Chrome's DevTools protocol: headless `--screenshot` captures the UI's figure viewer before
+  it renders), `listing_m0.sh` with `listing_before_m0.txt` / `listing_after_m0.txt`,
+  `run_probe_m0.log`, and `m0_shots/` (the UI's screenshots and the first run's log). The
+  references and the runner for M1 are unchanged: `check_c_s5_3_*`, `run_S5_3.sh`.
+- **To look at the UI on M0's store:** from `$S/m0`, `mlflow ui --backend-store-uri
+  sqlite:///$S/m0/store/mlflow_m0.db --artifacts-destination $S/m0/ui_artifacts --host
+  127.0.0.1 --port 5055` (never from the repo root).
+
+**Status (2026-11-14, end of the planning session: the MLflow plan written and decided; nothing implemented):**
+- **The state:** branch `feat/mlflow-runs`, HEAD the user's commit of this update, on `1a7a66a`;
+  `git status` clean. This session wrote [MLFLOW_RUNS_PLAN.md](MLFLOW_RUNS_PLAN.md) and changed
+  this handoff (the title, this status, §6's status); no code, notebook, test or check, and no
+  probe was run.
+- **The notebooks' md5 (unchanged):** `01_eda.py` `4bc1ba3a52dc2ad55d0097a707bd1ccc`,
+  `02_objective_eda.py` `1f9bbe7601794c7d646a67ce2588d536`, `03_hyperparameter_tuning.py`
+  `1117fc7f89b031bb3d11d33c83e700ef`.
+- **The plan:** 26 runs in one experiment (24 tuning runs with the trials as a table, one best
+  runs' run, one final run), written by three buttons in `03`, from notebook cells only. The
+  user's ten decisions are in the plan's §1 (do not re-ask): a run that exists is skipped; the
+  model is its declaration as JSON, no pickle; no `src` module; no read-back cell; the EDA logs
+  nothing; the final run refused when one exists; the old `tracking/` untouched; a fixed set of
+  figures, no waterfalls.
+- **Next: M0, the probe, a Fable session** (the plan's §7, the first prompt). Then M1–M7, one
+  Opus 5.5 session each (the plan's §7, the second prompt). An Opus session that meets a choice
+  the plan does not make stops and asks for a Fable session.
+- **Found while planning (the plan's §1 has the list):** MLflow's default tracking URI is
+  `sqlite:///mlflow.db`, the canonical store when run from the repo root, so an unset URI is
+  refused too; `log_table` appends to an existing file; a dataset's digest holds at most 36
+  characters; a run record keeps no study or study name (M2); `pyproject.toml` has no MLflow
+  warning filter (§7.6's "6 deselected warnings" is not there); `.env.example` names the
+  deleted `notebooks/02_experiments.py` (M1 fixes it).
+- **The test part has still not been run on the user's cache** (E11).
+- **The scratchpad to copy first:** `/private/tmp/claude-501/-Users-galkampel-Desktop-Projects-age-group-prediction/b0674d2b-cc80-4b81-888b-d8d9c03849c5/scratchpad`:
+  the previous one copied whole, every script's `S=` set to it (`repoint.py`: 95 files),
+  `pycache/` compiled. The references and the runner are as the status below names them
+  (`check_c_s5_3_*`, `run_S5_3.sh`).
+- **A question during the work** goes through the interactive question tool, with the options
+  and the recommendation.
+
+**Status (2026-11-14, end of session: S5.3 committed as `10570a8`; the simplification review is complete; the next session plans the MLflow part):**
+- **The state:** branch `feat/mlflow-runs`, HEAD the user's commit of this update, on `10570a8`
+  (S5.3); `git status` clean. This update changed only this handoff (the top status, §6's
+  status and prompt, the new §7); no code, notebook or check.
+- **The notebooks' md5:** `01_eda.py` `4bc1ba3a52dc2ad55d0097a707bd1ccc`, `02_objective_eda.py`
+  `1f9bbe7601794c7d646a67ce2588d536`, `03_hyperparameter_tuning.py`
+  `1117fc7f89b031bb3d11d33c83e700ef`.
+- **Next:** the MLflow plan, by Fable in plan mode: **§7 is its brief, §6 holds the prompt.**
+  The plan is a new `docs/MLFLOW_RUNS_PLAN.md`; its sub-tasks are implemented by Opus 5.5
+  unless one needs a design choice made from a probe (the user, 2026-11-14).
+- **The test part has still not been run on the user's cache** (E11).
+- **The scratchpad to copy first:** `/private/tmp/claude-501/-Users-galkampel-Desktop-Projects-age-group-prediction/fe433a52-12f5-4642-94a4-b6aa46f6e1ea/scratchpad`:
+  `checks/`, `probes/`, `viewer/`, `new_cells_*`, `s5_0/`–`s5_3/`, the logs, every pickle and
+  JSON (each script's `S=` set to it; compile `pycache/` first). **The next change's
+  references:** `check_c_s5_3_tuning.pkl`, `check_c_s5_3_eda.pkl` with
+  `check_c_s5_3_eda_figures.json` and `check_c_s5_3_eda_metric_figures.json`;
+  `figures_s5_3_tuning.json` and `figures_s5_3_eda.json` (every figure's JSON). The runner to
+  copy is `run_S5_3.sh`, with its EDA figure step set back to the exact `compare_figures.py`;
+  the tuning's Check C is `check_c_s5_tuning.py`. The runners already point
+  `MLFLOW_TRACKING_URI` at `sqlite:///$S/mlflow.db`.
+- **A question during the work** goes through the interactive question tool, with the options
+  and the recommendation (the user, 2026-11-14).
+
+**Status (2026-11-14: S5.2 committed as `8c318c7`; S5.3 done and checked, then committed as `10570a8`; the simplification review is complete):**
+- **S5.3** (the review plan's S5, ticked, has the details): `02` has its own `PALETTE` and
+  `style_figure` cell; its two figure cells use them. **Every check passed** (`run_S5_3.sh`,
+  log `run_S5_3.log`): the suite 1412, mypy 28, the notebook tests 32, ruff `03` 15 / `02` 11,
+  the format hunks, `marimo check`, Check B on both, Check C on both with every frame equal to
+  S5.2's run; `02`'s 27 figures' traces equal and their look as the user approved in S5.0;
+  `03`'s 21 figures unchanged; the mutation (`run_mutant_S5_3.sh`) caught.
+- **The commit (the user's):**
+
+  ```text
+  refactor(notebook): the objective EDA's figures use the palette and the shared style (S5.3)
+  ```
+  Its files: `notebooks/02_objective_eda.py`, `docs/SIMPLIFICATION_REVIEW_PLAN.md`, this
+  handoff.
+- **The notebooks' md5:** `02_objective_eda.py` `1f9bbe7601794c7d646a67ce2588d536`,
+  `03_hyperparameter_tuning.py` `1117fc7f89b031bb3d11d33c83e700ef` (unchanged).
+- **The test part has still not been run on the user's cache** (E11).
+- **The figures since S5:** each notebook has one palette cell (`PALETTE`, a dictionary of the
+  tokens; `03` also `MODEL_COLORS`) and `style_figure(figure, palette)`; a figure calls it once
+  it has its axes, then sets what is its own. A new figure does the same; a notebook function
+  takes the palette as an argument.
+- **The scratchpad to copy first:** `/private/tmp/claude-501/-Users-galkampel-Desktop-Projects-age-group-prediction/fe433a52-12f5-4642-94a4-b6aa46f6e1ea/scratchpad`:
+  `checks/`, `probes/`, `viewer/`, `new_cells_*`, `s5_0/`–`s5_3/` (the pairs pages), the logs,
+  every pickle and JSON (each script's `S=` set to it; compile `pycache/` first). **The next
+  change's references:** `check_c_s5_3_tuning.pkl`, `check_c_s5_3_eda.pkl` with
+  `check_c_s5_3_eda_figures.json` and `check_c_s5_3_eda_metric_figures.json`, and
+  `figures_s5_3_tuning.json` / `figures_s5_3_eda.json` (every figure's JSON,
+  `probes/run_dump_s5.sh <tag>`, compared with `checks/compare_figures_s5.py` and
+  screenshotted with `checks/shots_s5.py`). The runner to copy is `run_S5_3.sh`, with its EDA
+  figure step set back to the exact `compare_figures.py` (S5.3 allowed the style's keys once);
+  the tuning's Check C is `check_c_s5_tuning.py`.
+- **Next:** the MLflow plan (§6, step 2), in plan mode.
+
+**Status (2026-11-14: S5.1 committed as `80f6733`; S5.2 done and checked, then committed as `8c318c7`):**
+- **S5.2** (the review plan's S5 has the details): `PALETTE["raises"]`, `PALETTE["lowers"]` and
+  `MODEL_COLORS` in the palette cell; the waterfall, the two count figures and the shares bars
+  read them and call `style_figure`. **Every check passed** (`run_S5_2.sh`, log
+  `run_S5_2.log`): the suite 1412, mypy 28, the notebook tests 32, ruff `03` 15 / `02` 11, the
+  format hunks, `marimo check`, Check B on both, Check C on both equal to S5.1's run with
+  nothing excepted; the waterfall and the bars pixel-equal to S5.0's approved screenshots, the
+  other 18 of `03`'s figures pixel-identical; the mutation (`run_mutant_S5_2.sh`) caught.
+- **The commit (the user's):**
+
+  ```text
+  refactor(notebook): the waterfall, the count figures and the shares bars use the palette and the shared style (S5.2)
+  ```
+  Its files: `notebooks/03_hyperparameter_tuning.py`, `docs/SIMPLIFICATION_REVIEW_PLAN.md`,
+  this handoff.
+- **The notebooks' md5:** `02_objective_eda.py` `ba6656a2e3eb94de8a1a21a712e05095` (unchanged),
+  `03_hyperparameter_tuning.py` `1117fc7f89b031bb3d11d33c83e700ef`.
+- **The test part has still not been run on the user's cache** (E11).
+- **The scratchpad:** the one the status below names, now also holding `run_S5_2.sh`,
+  `run_mutant_S5_2.sh`, `new_cells_s5_2/splice_s5_2.py`, `s5_2/` (the pairs page), the logs,
+  and **S5.3's references** `check_c_s5_2_tuning.pkl`, `check_c_s5_2_eda.pkl`,
+  `figures_s5_2_tuning.json`, `figures_s5_2_eda.json`.
+- **Next:** S5.3 (`02`'s two figure cells: its own palette cell and `style_figure`, D41; the box
+  figure without x gridlines; the look changes as S5.0's pairs show, and Check C's EDA figure
+  references are regenerated), then S5 is ticked and the MLflow plan follows (§6, step 2).
+
+**Status (2026-11-14: S8 committed as `e9ebf4d`; S5.0 done; S5.1 done and checked, then committed as `80f6733`):**
+- **S5.0** (the probe; the review plan's S5 has the numbers): the shared style as a
+  `style_figure(figure, palette)` function, not a plotly template (the user left the choice to
+  best practice); the waterfall, the shares bars and `02`'s figures take the shared style (the
+  user's choice).
+- **S5.1:** `PALETTE` and `style_figure` in one new cell; `forest_figure`, `ridge_figure`,
+  `permutation_figure`, `beeswarm_figure` take `palette`; `style_cohort_rows` is the forest's
+  and the ridge's common ending. **Every check passed** (`run_S5_1.sh`, log `run_S5_1.log`):
+  the suite 1412, mypy 28, the notebook tests 32, ruff `03` 15 / `02` 11, the format hunks,
+  `marimo check`, Check B on both, Check C on both equal to S8's run with nothing excepted;
+  every figure's traces equal and all 21 of `03`'s screenshots pixel-identical to HEAD's; the
+  mutation (`run_mutant_S5_1.sh`) caught.
+- **The commit (the user's):**
+
+  ```text
+  refactor(notebook): the figures' palette and shared style defined once; the four figure functions take the palette (S5.1)
+  ```
+  Its files: `notebooks/03_hyperparameter_tuning.py`,
+  `tests/characterization/test_hyperparameter_tuning_notebook.py`,
+  `docs/SIMPLIFICATION_REVIEW_PLAN.md`, this handoff.
+- **The notebooks' md5:** `02_objective_eda.py` `ba6656a2e3eb94de8a1a21a712e05095` (unchanged),
+  `03_hyperparameter_tuning.py` `18cd7adbcb2d2055c751624374e07fd4`.
+- **The test part has still not been run on the user's cache** (E11).
+- **The scratchpad to copy first:** `/private/tmp/claude-501/-Users-galkampel-Desktop-Projects-age-group-prediction/fe433a52-12f5-4642-94a4-b6aa46f6e1ea/scratchpad`:
+  everything the status below lists (the four stale probe scripts are updated), plus
+  `probes/dump_figures_s5.py`, `run_dump_s5.sh`, `restyle_s5.py`, `pairs_s5.py`,
+  `checks/compare_figures_s5.py`, `shots_s5.py`, `check_c_s5_tuning.py`, `run_S5_1.sh`,
+  `run_mutant_S5_1.sh`, `new_cells_s5_1/` (the four cells and `splice_s5_1.py`), `s5_0/` and
+  `s5_1/` (the pairs pages). **S5.2's references:** `check_c_s5_1_tuning.pkl`,
+  `check_c_s5_1_eda.pkl`; the figures' "before" stays S5.0's dump of HEAD `e9ebf4d`
+  (`figures_today_tuning.json`, `figures_today_eda.json`). The screenshots need Google Chrome;
+  a figure comparison allows only the layout keys the stop names.
+- **Next:** S5.2 (the waterfall, the two count figures, the shares bars: `PALETTE`,
+  `style_figure`, one definition of the models' colors; the waterfall and the bars change as
+  S5.0's pairs show), then S5.3 (`02`), then the MLflow plan (§6, step 2).
+
+**Status (2026-11-13, end of session: S6 committed as `81988ea`; S8 done and checked, uncommitted; S7 dropped; next S5 with Fable):**
+- **S8** (`src`, the review plan's S8, ticked with its Done note):
+  `Component.select_component_params(best_params, name)`; both `from_params` call it; one unit
+  test; the guide names it. **Every check passed** (`run_S8.sh`, log `run_S8.log`): the suite
+  1412, mypy 28, the notebook tests 32, ruff, `marimo check`, Check B on both, Check C on both
+  equal to S6's run with nothing excepted; the mutation (`run_mutant_S8.sh`, a full copy) fails
+  both shared-entry tests.
+- **The commit (the user's):**
+
+  ```text
+  refactor(tuning): the components' from_params select their params through one method (S8)
+  ```
+  Its files: `src/age_group_prediction/hyperparameter_tuning/components.py`,
+  `tests/unit/test_hyperparameter_tuning_components.py`, `docs/HYPERPARAMETER_TUNING.md`,
+  `docs/SIMPLIFICATION_REVIEW_PLAN.md`, this handoff.
+- **S7 dropped** (the user, 2026-11-13, option (a)): the objective EDA's purpose is to compare
+  Model 2's two variants, coordinate descent and the joint method; both stay.
+- **The notebooks' md5 (unchanged by S8):** `02_objective_eda.py`
+  `ba6656a2e3eb94de8a1a21a712e05095`, `03_hyperparameter_tuning.py`
+  `986a753e9e1da986743cda40450f7f2c`.
+- **The test part has still not been run on the user's cache** (E11).
+- **The scratchpad to copy first:** `/private/tmp/claude-501/-Users-galkampel-Desktop-Projects-age-group-prediction/d561fa55-f8a3-41d2-9ef6-8b9217fb07c1/scratchpad`: `checks/`, `probes/`, `viewer/`, `new_cells_*`, the
+  logs, every pickle and JSON, `pycache/` (each script's `S=` set to it). **S5's references:**
+  `check_c_s8_tuning.pkl`, `check_c_s8_eda.pkl` (with its two figures' JSON); the runner to copy
+  is `run_S8.sh` (the tuning's Check C `check_c_s34_tuning.py`). S5 changes figures' JSON on
+  purpose: its Check C keeps the frames equal and compares the figures as the review plan's S5
+  says. **Before S5.0's probe:** `probes/make_copy_probe.py`, `probes/look_7_1e.py`,
+  `probes/probe_7_1.py`, `viewer/beeswarm_7_1b.py` still read names S2 and S4 removed
+  (`best_model1/2`, `model1_shap`, `model1_permutation`, `importance_metric`): update them
+  (`best_runs[label]["model"]`, `best_runs_shap[label]`, `best_runs_permutation[label]`,
+  `SELECTION_METRIC`).
+- **Next:** S5 with Fable (§6's prompt), then the MLflow plan (§6, step 2).
+
+**Status (2026-11-13, S3 + S4 committed as `22edab1`; S6 done and checked, uncommitted; S8 planned):**
+- **S6** (the review plan's S6, ticked with its Done note): the EDA's independent cohorts cell
+  refits `_components_by_trial[_study.best_trial.number]`; only `notebooks/02_objective_eda.py`
+  changed (−11 / +4) and the two docs.
+- **Every check passed** (`run_S6.sh`, log `run_S6.log`): the suite 1411, mypy 28, the notebook
+  tests 32, ruff `03` 15 / `02` 11, the format hunks, `marimo check`, Check B on both, Check C on
+  both equal to S3 + S4's run with nothing excepted; the mutation (`run_mutant_S6.sh`) caught.
+- **The commit (the user's):**
+
+  ```text
+  refactor(notebook): the EDA's best components read from the trials' list (S6)
+  ```
+- **The notebooks' md5:** `02_objective_eda.py` `ba6656a2e3eb94de8a1a21a712e05095`,
+  `03_hyperparameter_tuning.py` `986a753e9e1da986743cda40450f7f2c` (unchanged).
+- **S8 is planned** (in the chat, 2026-11-13): `Component.select_component_params(best_params,
+  name)` beside `set_estimator_params`, both `from_params` call it; one unit test of the method;
+  the guide's table and §-paragraph on `from_params`; `run_S8.sh` against `check_c_s6_*`; the
+  mutation (no `"shared"`) on a full copy must fail the shared-draw test and the new one. It
+  depends on neither S7 nor S5; the user decides whether it goes before them.
+- **The scratchpad** (named in the status below) also holds `run_S6.sh`, `run_mutant_S6.sh`,
+  `new_cells_s6/`, the logs, and **the next references** `check_c_s6_tuning.pkl` and
+  `check_c_s6_eda.pkl` (with its two figures' JSON); the tuning's Check C is still
+  `check_c_s34_tuning.py`.
+- **The test part has still not been run on the user's cache** (E11).
+
+**Status (2026-11-13, S1 and S2 committed; S3 + S4 done together and checked, uncommitted; next S6):**
+- **Committed (the user's):** S1 `5bf8e48`, S2 `c01483f` (its message first read S3's, reworded by
+  the user and force-pushed).
+- **S3 + S4** (the user asked for one stop): `build_importance_table` builds sections 5's and 6's
+  importance tables; the permutation importance always scores `SELECTION_METRIC`
+  (`importance_metric` gone), the best runs' "Metric" menu offers the six metrics and only draws;
+  section 5's sentence is the user's choice. Each sub-task's Done note in the review plan has the
+  details.
+- **Every check passed** (`run_S34.sh`, log `run_S34.log`): the suite 1411, mypy 28, the
+  notebook tests 32, ruff `03` 15 (one more `PLR1711`: the best-runs figure cell's bare `return`)
+  / `02` 11, the format hunks, `marimo check`, Check B on both, Check C on both equal to S2's run
+  with nothing excepted; S3's mutation (`run_mutant_S34.sh`) caught.
+- **Uncommitted:** `notebooks/03_hyperparameter_tuning.py`,
+  `tests/characterization/test_hyperparameter_tuning_notebook.py`,
+  `docs/SIMPLIFICATION_REVIEW_PLAN.md`, this handoff. The commit:
+
+  ```text
+  refactor(notebook): the importance table built by one function; the permutation importance on the selection metric, the best runs' Metric menu only draws (S3, S4)
+  ```
+- **The notebooks' md5:** `02_objective_eda.py` `373c1c39f717935cb08ce14ff6e05a3a` (unchanged),
+  `03_hyperparameter_tuning.py` `986a753e9e1da986743cda40450f7f2c`.
+- **The test part has still not been run on the user's cache** (E11).
+- **The scratchpad:** the one named in the status below, now also holding `run_S2.sh`,
+  `run_S34.sh`, their mutants, `check_c_s2_tuning.py` / `check_c_s34_tuning.py` (with their
+  `make_check_c_*.py`), `new_cells_s2/`, `new_cells_s34/`, their logs, and **the next sub-task's
+  references** `check_c_s34_tuning.pkl` and `check_c_s34_eda.pkl` (with its two figures' JSON).
+  The next runner is `run_S34.sh` copied, its outputs renamed and its references these.
+- **Next:** S6 (Opus 5.5); then S7 and S5 (Fable; their probes must first update the scripts
+  that still read `best_model1`, `model1_shap`, `importance_metric`: `probes/make_copy_probe.py`,
+  `probes/look_7_1e.py`, `probes/probe_7_1.py`, `viewer/beeswarm_7_1b.py`); then S8.
+
+**Status (2026-11-13, S1 done and checked, uncommitted; next S2):**
+- **S1** (the review plan's S1, ticked there with its Done note): `summarize_replicates` and
+  `build_paired_difference` in one new cell after the bootstrap evaluator's; the four statistics
+  blocks and the two difference blocks are calls. Only `notebooks/03_hyperparameter_tuning.py`
+  changed (and the two docs); no `src` or test change.
+- **Every check passed** (`run_S1.sh`, log `run_S1.log`): the suite 1411, mypy 28, the notebook
+  tests 32, ruff `03` 14 / `02` 11, the format hunks, `marimo check`, Check B on both, Check C on
+  both equal to PR 7's close with nothing excepted; the mutation (`run_mutant_S1.sh`) caught.
+- **The commit (the user's):**
+
+  ```text
+  refactor(notebook): the bootstrap statistics and the paired difference each in one function (S1)
+  ```
+- **The notebooks' md5:** `02_objective_eda.py` `373c1c39f717935cb08ce14ff6e05a3a` (unchanged),
+  `03_hyperparameter_tuning.py` `89ca8db69185d361b1a8dfef7735ca67`.
+- **The test part has still not been run on the user's cache** (E11).
+- **The scratchpad to copy first:** `/private/tmp/claude-501/-Users-galkampel-Desktop-Projects-age-group-prediction/d561fa55-f8a3-41d2-9ef6-8b9217fb07c1/scratchpad`: the same files as the
+  status below lists, each script's `S=` set to it, `pycache/` compiled, plus `run_S1.sh`,
+  `run_mutant_S1.sh`, `new_cells_s1/` (the new cell and `splice_s1.py`), the logs `run_S1.log`,
+  `run_mutant_S1.log`, and **S2's references** `check_c_s1_tuning.pkl` and `check_c_s1_eda.pkl`
+  (with its two figures' JSON). S2's runner is `run_S1.sh` copied, its outputs renamed and its
+  references these.
+- **Next:** S2 (the review plan's §4), in a new Opus 5.5 session; then S3, S4, S6; S7 and S5 with
+  Fable; S8.
+
+**Status (2026-11-12, end of session: the review written, decided and committed as `9b5baf0`; the next session starts at §6 with S1):**
+- **The review for overcomplication is written** as
+  [SIMPLIFICATION_REVIEW_PLAN.md](SIMPLIFICATION_REVIEW_PLAN.md): 8 sub-tasks recommended to
+  accept (S1–S8, each with its steps, its validation, its commit message and the model to
+  implement it with: Opus 5.5, or Fable for S5 and S7), 8 findings recommended to leave
+  (L1–L8), each with a **Decision** line the
+  user marks. Docs only: no notebook, `src` or test change.
+- **The verdict:** the package is not overcomplicated (one small merge, S8); the weight is in
+  `03` after the runs (repeated blocks, S1–S3 and S5; a menu that sets the permutation
+  importance's metric, S4); the EDA's coordinate descent could leave (S7).
+- **Three sub-tasks change what is shown:** S4 (the importance's metric), S5 (every figure's
+  JSON, the look kept), S7 (the EDA shows two models).
+- **S4's side effect is expected from marimo's rule, not yet probed.**
+- **The user's decisions (2026-11-12):** S1–S8 all accepted (S7 as (b): coordinate descent
+  leaves the EDA notebook, the two `src` methods stay; S4 by best practice, without waiting for
+  the manual check); L1–L8 all left as they are.
+- **Next:** the accepted sub-tasks, one stop each, in the order S1, S2, S3, S4, S6, S7, S5, S8
+  (the review plan's §3 and §4; Opus 5.5 for all but S5 and S7, which are planned and done
+  with Fable); then the MLflow plan (§6, step 2).
+- **The review's docs are committed** as `9b5baf0` (the user's, on `bd90f66`). **Uncommitted:**
+  this handoff's end-of-session update (§6's status and the next session's prompt). The commit:
+
+  ```text
+  docs(notebook): the handoff at the session's end: the review decided, S1 next with its prompt
+  ```
+- **The notebooks' md5 (unchanged):** `02_objective_eda.py` `373c1c39f717935cb08ce14ff6e05a3a`,
+  `03_hyperparameter_tuning.py` `47c8ce343350475eebe8c2007a00397e`.
+- **The test part has still not been run on the user's cache** (E11, the user's).
+- **The scratchpad to copy first:** `/private/tmp/claude-501/-Users-galkampel-Desktop-Projects-age-group-prediction/a655f82e-bc56-46e9-8f40-acd442dc310a/scratchpad`: `checks/`, `probes/`, `viewer/`,
+  `new_cells_7_1e/` (each script's `S=` set to it), the logs `run_close_7.log`, `run_7_1e.log`,
+  `run_7_1e_rest.log`, `pr_7.md`, the pickles `check_c_close_7_tuning.pkl` and
+  `check_c_close_7_eda.pkl` with its two figures' JSON (the references), `check_c_7_1e_*`,
+  `check_c_7_1d_*`, `check_c_7_1b2_beeswarm.json`, `check_c_3_1l.pkl`, `probe_7_1.pkl`, and a
+  compiled `pycache/`. No check was run in this session.
+
+**Status (2026-11-12, PR 7 merged; the next session starts at §6):**
+- **PR 7 is merged** as #26, squashed into `main` as `574287e` (its tree identical to the close
+  commit `4b279fb`); `feat/test-evaluation` deleted locally and on GitHub.
+- **The branch `feat/mlflow-runs`** is from `main` at `574287e`; its first commit is this update.
+- **Next (the user's, 2026-11-12):** before the MLflow plan, a **review for overcomplication**
+  of the hyperparameter tuning and the visualization, with the simplifications it proposes
+  (§6). The review and the plan are written in the next session.
+- **The notebooks' md5 (unchanged):** `02_objective_eda.py` `373c1c39f717935cb08ce14ff6e05a3a`,
+  `03_hyperparameter_tuning.py` `47c8ce343350475eebe8c2007a00397e`.
+- **The test part has still not been run on the user's cache** (E11, the user's).
+- **The scratchpad to copy first:** the one named in the status below (PR 7's close), with the
+  same files.
 
 **Status (2026-11-12, PR 7 closed, before the user's commit, PR and merge; the next session starts at §6):**
 - **7.1d and 7.1e are committed** as `aaf7196` (the user's; the md5 as checked, no marimo save).
@@ -862,7 +2196,7 @@ which the two notebooks now hold: 1–5 in the EDA, 1–4 and 6 (as 5) in the tu
 
 ## 2. State
 
-### PR 7 (2026-11-08, open; `feat/test-evaluation`)
+### PR 7 (2026-11-12, closed: merged as #26, `574287e`; `feat/test-evaluation`)
 
 - **Commits** (from `main` at `f9c92a5`):
 
@@ -881,7 +2215,10 @@ which the two notebooks now hold: 1–5 in the EDA, 1–4 and 6 (as 5) in the tu
   | `57fd52a` | 7.1b: SHAP per cohort, the tables and the beeswarm (with marimo's save from the user's session) |
   | `9779eb2` | 7.1c: the test part explained; 7.1b's save undone (with marimo's save from the user's session) |
   | `aaf7196` | 7.1d and 7.1e (one commit): the permutation importance drawn, per cohort under a Cohort menu; the scatter by the true total, the shares' n; 7.1c's save undone |
-  | (uncommitted) | PR 7 closed: the checks on HEAD, the cache plan's status, this handoff for after the merge |
+  | `4b279fb` | PR 7 closed: the checks on HEAD, the cache plan's status, this handoff for after the merge |
+
+  The merge: #26, squashed into `main` as `574287e`, identical to `4b279fb`; the branch
+  deleted locally and on GitHub. `feat/mlflow-runs` starts from it.
 - **7.0's Check C baselines** (3 trials, both sharing flags off; the cv RMSE) are in the cache
   plan's 7.0 Done note:
   - Model 1, exposure on / off: `lgbm_poisson` 4.4495 / 4.5284, `lgbm_gaussian` 4.4543 /
@@ -1969,17 +3306,72 @@ constructor, data in the call; fitting and evaluating as separate steps; no priv
 
 ## 6. Next, and the prompt
 
-**Status (2026-11-12, PR 7 closed, before the user's commit, PR and merge):**
-- PR 7 is on `feat/test-evaluation` (from `main` at `f9c92a5`): 7.0 `a74b2ff`, 7.0b
-  `8ef9b3f`, 5.4a `f0d240c`, 5.4b `96030f1`, 7.2 `0316c06`, 7.3 `19e69ec`, 7.1a `a47a748`,
-  7.1b `57fd52a`, 7.1c `9779eb2`, 7.1d and 7.1e `aaf7196` (§2's "PR 7"). The close (the cache
-  plan's status, this handoff) is uncommitted; the user commits it as
+**Status (2026-11-14, M0 done):** M0 (the probe) is ticked in
+[MLFLOW_RUNS_PLAN.md](MLFLOW_RUNS_PLAN.md), its findings and the user's four choices in its §1,
+M1–M6 hold the calls as run. **Next: M1 with Opus 5.5** (the plan's §7, the second prompt).
+
+**Status (2026-11-14, the MLflow plan written and decided):**
+- Step 2 below is **planned**: [MLFLOW_RUNS_PLAN.md](MLFLOW_RUNS_PLAN.md), sub-tasks M0–M7,
+  none implemented. **Next: M0 (the probe) with Fable,** then M1–M7 with Opus 5.5; both prompts
+  are in the plan's §7. The planning prompt below is spent.
+
+**Status (2026-11-14, the simplification review complete; the MLflow plan next):**
+- Step 1 below is **done**: [SIMPLIFICATION_REVIEW_PLAN.md](SIMPLIFICATION_REVIEW_PLAN.md), S1–S6
+  and S8 implemented (S5 as `80f6733`, `8c318c7`, `10570a8`), S7 dropped.
+- **Step 2 is next: the MLflow plan.** [§7](#7-the-mlflow-part-the-brief-for-the-plan) is its
+  brief. Fable writes the plan in plan mode, as `docs/MLFLOW_RUNS_PLAN.md`; Opus 5.5 implements
+  its sub-tasks, one stop each, unless a sub-task needs a design choice made from a probe.
+- Step 3 (E11's run on the user's cache) is still the user's, at any time.
+
+**The prompt for the MLflow planning session** (a Fable session; plan only):
+
+```text
+Read docs/EXPERIMENT_NOTEBOOK_HANDOFF.md: the status at the top, §4 (how to work, git and the
+editor, the checks, the traps, the iCloud notes, the user's style), §6 and §7 (the MLflow
+part's brief) in full. Then docs/EXPERIMENT_NOTEBOOK_PLAN.md's E9, E10, E11 and D1e-D5 with
+their dated notes (earlier decisions, several to be revisited), docs/SIMPLIFICATION_REVIEW_PLAN.md
+§2-§3 as the form a plan takes here, and the cells §7's "The flow today" names in
+notebooks/03_hyperparameter_tuning.py and notebooks/02_objective_eda.py.
+Verify the state first: the branch feat/mlflow-runs, HEAD my commit of the handoff's
+end-of-session update (on 10570a8), `git status` clean; the notebooks' md5 as the handoff's top
+status; no iCloud-offloaded files. If anything differs, stop and show me the diff. Copy the
+scratchpad the top status names into yours, set each script's S= to it, compile the pycache. If
+that scratchpad is gone, tell me before rewriting anything.
+Then plan the MLflow part in plan mode. Do not implement anything in this session.
+1. Re-verify §7's facts read-only (the names, the stores, what each button computes), and check
+   every MLflow call you intend to plan against the MLflow 3.16 docs (the searching-mlflow-docs
+   skill): log_table, log_figure with plotly, log_dict, log_input and mlflow.data, the logged
+   models of MLflow 3, search_runs, nested runs. Say what you could not confirm.
+2. Ask me §7's open questions with the interactive question tool, one topic per question, each
+   with its options, the evidence and your recommendation first. Explain the context in the chat
+   before asking. Wait for my answers.
+3. Write docs/MLFLOW_RUNS_PLAN.md in the review plan's form: the question and the verdict, the
+   sub-tasks at a glance (a table with what I see change, the size and the model to implement
+   with), how a sub-task is done, then each sub-task with its evidence, exact steps, validation,
+   mutation and commit message. Mark each sub-task for Opus 5.5 unless it needs a design choice
+   made from a probe; say why for each one you keep for Fable. Write it so an Opus session can
+   implement a sub-task from that file and the handoff's §4 alone. End it with the prompt for
+   the first implementing session.
+4. The plan must place every item of §7's inventory in a run, or say why it is left out: the
+   best parameters, the metrics, the tables (the trials dataframe of each study among them), the
+   figures, the artifacts, the tags and the dataset.
+Then stop: a summary of the plan, the questions still open, the notebooks' md5 (unchanged) and
+the commit message in a copyable code block; update the status lines at the top of the handoff.
+Don't run the test evaluation on my cache (E11). Never write the repo root's mlflow.db or
+mlartifacts/: a probe uses a store in your scratchpad. My marimo session may be open: this
+session edits no notebook. Keep it simple; no private helpers; a notebook function reads no
+notebook global; src returns the library's object. I commit myself: never commit, no
+Co-Authored-By line, no "Generated with Claude Code" in PR text, never git
+checkout/stash/reset/mv.
+```
+
+**Status (2026-11-12, PR 7 merged as #26, `574287e`):**
+- `main` holds PRs 3–7. The branch `feat/mlflow-runs` is from `main` at `574287e`; its first
+  commit is this handoff with the merge recorded (the user's):
 
   ```text
-  docs(notebook): PR 7 closed: the checks on HEAD, the plan's status; the handoff for after the merge
+  docs(notebook): the handoff after PR #26's merge; a simplification review of the tuning and the figures next, then the MLflow plan
   ```
-
-  then pushes, opens the PR (the text in the scratchpad's `pr_7.md`) and squash-merges it.
 - The notebooks' md5:
   - `01_eda.py` `4bc1ba3a52dc2ad55d0097a707bd1ccc`;
   - `02_objective_eda.py` `373c1c39f717935cb08ce14ff6e05a3a`;
@@ -1989,18 +3381,48 @@ constructor, data in the call; fitting and evaluating as separate steps; no priv
   the scratchpad named in the status at the top. If they are gone, rewrite the scripts from §4
   and run Check C on HEAD before the first edit, keeping those pickles.
 - The user's cache `studies/` holds 50 studies; a click loads them. **The test part has still not
-  been run on it** (E11: the user reads the test part first).
+  been run on it** (E11: the user's run, at any time).
 
-Next, one step per approval, each stopped with a file-by-file summary, the checks, the
-notebooks' md5 and the commit message in a copyable code block:
-1. **PR 7's merge (the user's):** after it, record the merge (the squash hash on `main`), delete
-   `feat/test-evaluation` locally (`git branch -D`: `-d` refuses a squash-merged branch) and on
-   GitHub, and start the next branch from `main` (its first commit: this handoff with the merge
-   recorded).
-2. **E11's run (the user's):** the user clicks "Evaluate on the test part" on the real cache once,
-   after reading the test part; the assistant does not run it.
-3. **Then, unless the user names another:** the MLflow runs and D4 (EXPERIMENT_NOTEBOOK_PLAN.md's
-   D4: the comparison table and the final run), planned first.
+**Status (2026-11-12, end of session; the review decided; the next session starts at S1):**
+- Step 1 below is **done as a review and decided**:
+  [SIMPLIFICATION_REVIEW_PLAN.md](SIMPLIFICATION_REVIEW_PLAN.md) holds the findings, the
+  user's decisions (S1–S8 accepted, S7 as (b); L1–L8 left) and, per accepted sub-task, the
+  steps, the validation, the mutation and the commit message.
+- **What remains of step 1:** implementing S1, S2, S3, S4, S6, S7, S5, S8 in that order, one
+  stop each. **Opus 5.5** for S1–S4, S6 and S8; **Fable** for S7 and S5 (planned in plan mode
+  first; S5 in four stops, S7 in three).
+- **No check was run in this session** (docs only). The check scripts and the references are
+  in `/private/tmp/claude-501/-Users-galkampel-Desktop-Projects-age-group-prediction/a655f82e-bc56-46e9-8f40-acd442dc310a/scratchpad`, each script's `S=` already set to it and its `pycache/` compiled; a new session
+  copies them to its own scratchpad and sets `S=` again.
+- **Open, the user's (one minute, any time):** S4's manual check (the review plan's S4), to
+  record whether changing the best-runs "Metric" menu discards the inspection results. S4 is
+  accepted either way.
+- The step-2 MLflow plan starts only after the accepted sub-tasks are done or dropped.
+
+Next (the user's, 2026-11-12), one step per approval, each stopped with a file-by-file summary,
+the checks, the notebooks' md5 and the commit message in a copyable code block:
+1. **A review for overcomplication, before the MLflow plan** (read-only; planned first in plan
+   mode). Is the code overcomplicated, and can it be simplified? Two areas:
+   - **the hyperparameter tuning:** the package `src/age_group_prediction/hyperparameter_tuning/`
+     (`params.py`, `search_spaces.py`, `components.py`, `builders.py`, `aggregation.py`,
+     `cross_validation.py`, `__init__.py`; about 1240 lines) and the notebooks' tuning cells
+     (the run settings, the loops, the records, the runs and scores tables, F4's two functions,
+     `build_trials_table`);
+   - **the visualization** (only in the notebooks; no `src` module plots): `03`'s
+     `forest_figure`, `ridge_figure`, `permutation_figure`, `beeswarm_figure`, the waterfall
+     cell, 7.3's count and share figures, and `02`'s EDA figure cells.
+
+   Each finding judged against the user's rules (§3's "do not overcomplicate", §4's "The user's
+   style", the API preferences): what can be removed, merged or made plainer; its evidence (the
+   lines, what reads it, what a change would break or change in the outputs); a recommendation
+   and its trade-off. The findings go into a new plan doc in `docs/`, as sub-tasks the user
+   accepts or rejects one by one; each accepted simplification is its own stop, its outputs
+   unchanged unless the user decides otherwise (Check C equal to the close's run), a valid path
+   kept (the study cache's names, the records' keys), a `src` change its own approved stop.
+2. **Then the MLflow plan** (in plan mode, after the review's decisions): the MLflow runs and
+   D4 (EXPERIMENT_NOTEBOOK_PLAN.md: the comparison table and the final run, E11), and what
+   happens to the old `tracking/` package (the old stack's; the roadmap deletes it).
+3. **E11's run** of the test part on the user's cache is the user's, at any time.
 
 The user's preferences:
 - plan docs in `docs/`, split into sub-tasks validated one at a time;
@@ -2014,30 +3436,262 @@ The user's preferences:
 - the user commits; marimo's editor may trim returns when the user saves (check the md5 and
   show the diff before each sub-task).
 
-**The prompt for the next session:**
+**The prompt for the next session:** (for an Opus 5.5 session; S1 only)
 
 ```text
-Read docs/EXPERIMENT_NOTEBOOK_HANDOFF.md in full (the status at the top, §1, §2's "PR 7"
-block, §3, §4's checks (since PR 7's close), traps, iCloud notes, §5, §6 first), then
-docs/NOTEBOOK_CACHE_EVALUATION_PLAN.md (its status line and §6), then
-docs/EXPERIMENT_NOTEBOOK_PLAN.md (E11 and D4).
+Read docs/SIMPLIFICATION_REVIEW_PLAN.md in full (the status, §2 the sub-tasks at a glance,
+§3 how a sub-task is done, §4's S1), then docs/EXPERIMENT_NOTEBOOK_HANDOFF.md: the status at
+the top, §4 (how to work, git and the editor, the checks since PR 7's close, the traps, the
+iCloud notes, the user's style) and §6. Then the code S1 names in
+notebooks/03_hyperparameter_tuning.py: the bootstrap evaluator's cell, the best-runs cell, the
+paired-difference cell, the test evaluation cell and the test figures cell.
 Verify the state first:
-- PR 7 merged into main (its squash hash), or the branch feat/test-evaluation with HEAD my
-  close commit and `git status` clean;
+- the branch feat/mlflow-runs, HEAD my commit of the handoff's end-of-session update (on
+  9b5baf0, the review's docs), `git status` clean;
 - the notebooks' md5 (`cat <file> | md5`): 02_objective_eda.py
   373c1c39f717935cb08ce14ff6e05a3a, 03_hyperparameter_tuning.py 47c8ce343350475eebe8c2007a00397e;
 - no iCloud-offloaded files: `find .git src notebooks tests docs configs -flags +dataless -type f
   | grep -vc __pycache__` is 0.
-If anything differs (my marimo editor may have saved over it: trimmed returns, an empty cell),
-stop and show me the diff. Then copy checks/, probes/, viewer/, the logs and the pickles the
-status at the top lists from the scratchpad it names (or rewrite them from §4), set each
-script's S= to the new scratchpad, and compile the pycache (§4's iCloud notes).
-First, if PR 7 is merged: record the merge (§6 step 1) and wait for my commit. Then plan the
-next step (§6: the MLflow runs and D4, unless I name another) in plan mode and wait for my go.
+If anything differs (my marimo editor may have saved over a notebook: trimmed returns, an empty
+cell), stop and show me the diff. Then copy checks/, probes/, viewer/, the logs and the pickles
+from the scratchpad the handoff's top status names into your scratchpad, set each script's S=
+to it, and compile the pycache (§4's iCloud notes). If that scratchpad is gone, tell me before
+rewriting anything.
+Then do sub-task S1 only (the bootstrap statistics and the paired difference as two
+functions), exactly as the review plan's S1 describes: plan it first in plan mode (re-verify
+its line numbers and facts read-only, list the exact edits), wait for my go, implement it, run
+the checks of the review plan's §3 (the runner copied from run_close_7.sh, Check C equal to
+check_c_close_7_tuning.pkl and check_c_close_7_eda.pkl with nothing excepted, and S1's
+mutation). The outputs must not change. Do not start S2.
+Do not do S5 or S7 in this session: they are planned for another model.
 Don't run the test evaluation on my cache: that run is mine (E11). My marimo session may be
 open: tell me before editing the notebook and remind me to reload it after (not to save from
-it). Keep the implementation simple. Stop each step with a file-by-file summary, the checks, the
-notebooks' md5 and the commit message in a copyable code block. I commit myself: never commit,
-no Co-Authored-By line, no "Generated with Claude Code" in PR text, never git
-checkout/stash/reset/mv.
+it). Keep the implementation simple; no private helpers; a notebook function reads no notebook
+global. Stop with a file-by-file summary, the checks, the notebooks' md5 and the commit message
+in a copyable code block; tick S1 and update the status lines in the review plan and at the top
+of the handoff. I commit myself: never commit, no Co-Authored-By line, no "Generated with
+Claude Code" in PR text, never git checkout/stash/reset/mv.
 ```
+
+**The prompt for the S5 session** (a Fable session; S5.0 first, each stop approved):
+
+```text
+Read docs/SIMPLIFICATION_REVIEW_PLAN.md (the status, §2, §3 how a sub-task is done, §4's S5;
+S1-S4, S6 and S8 are done, S7 was dropped), then docs/EXPERIMENT_NOTEBOOK_HANDOFF.md: the
+status at the top, §4 (how to work, git and the editor, the checks, the traps, the iCloud notes,
+the user's style) and §6. Then the figure code S5 names: notebooks/03_hyperparameter_tuning.py's
+forest_figure, ridge_figure, permutation_figure, beeswarm_figure, the waterfall, the two count
+figures and the shares bars, and notebooks/02_objective_eda.py's two figure cells.
+Verify the state first: the branch feat/mlflow-runs, HEAD my commit of S8 (on 81988ea),
+`git status` clean; the notebooks' md5 as the handoff's top status; no iCloud-offloaded files.
+If anything differs, stop and show me the diff. Copy the scratchpad the top status names into
+yours, set each script's S= to it, compile the pycache; update the four probe scripts the top
+status lists before S5.0.
+Then plan S5 in plan mode, starting with S5.0 (read-only): screenshots of each figure as today
+and with the shared style, shown to me as pairs, and your recommendation: a plotly template or a
+style_figure function. Wait for my choice. Then S5.1, S5.2, S5.3, one stop each with my approval:
+every frame equal to check_c_s8_*, each figure's traces equal and its effective layout equal (or
+the screenshots alike), screenshots before and after shown to me.
+Don't run the test evaluation on my cache (E11). My marimo session may be open: tell me before
+editing a notebook and remind me to reload it after. Keep it simple; no private helpers; a
+notebook function reads no notebook global. Stop each step with a file-by-file summary, the
+checks, the notebooks' md5 and the commit message in a copyable code block; tick and update the
+status lines. I commit myself: never commit, no Co-Authored-By line, no "Generated with Claude
+Code" in PR text, never git checkout/stash/reset/mv.
+```
+
+## 7. The MLflow part: the brief for the plan
+
+Written 2026-11-14 for the session that plans it. Facts here were read from the code on HEAD
+`10570a8`; the plan re-verifies them. What MLflow itself does is stated as a practice to check
+against the docs, not as a verified fact.
+
+### 7.1 The goal, and what is out of scope
+
+**The goal:** the tuning notebook's results become MLflow runs: each run's settings and best
+parameters, its metrics, its tables, its figures and its artifacts, so that the runs can be
+compared in the MLflow UI and a result can be traced to its data, seed and code.
+
+**Out of scope:**
+- no re-tuning: the 50 stored studies are loaded, never recomputed;
+- the outputs of both notebooks stay as they are (Check C equal to `check_c_s5_3_*`);
+- the repo root's `mlflow.db` and `mlartifacts/` are the canonical store of the old stack's
+  final evaluation and **must never be written**;
+- E11's run of the test part on the user's cache stays the user's.
+
+### 7.2 The setup that exists
+
+- **MLflow 3.16.0** (`mlflow>=3.16,<4`, the optional dependency group `tracking`) and Optuna
+  4.9.0, both in `~/.venvs/age-group-prediction` and the project's `.venv`.
+- **The scratch store:** `.env` (template `.env.example`) sets
+  `MLFLOW_TRACKING_URI=sqlite:///.mlflow-local/mlflow.db`,
+  `MLFLOW_EXPERIMENT_NAME=age-group-local` and
+  `AGE_GROUP_MLFLOW_ARTIFACT_LOCATION=.mlflow-local/mlartifacts`. The notebook is run with
+  `uv run --env-file .env --group notebook --group tracking marimo edit <notebook>`.
+- **Neither notebook imports `mlflow` yet.** What was written for it: `flatten` and
+  `config_hash` in both notebooks' data cell (the simulator's config as dotted keys, and its
+  SHA-256, the data's version).
+- **The old `tracking/` package** (`src/age_group_prediction/tracking/`, 1,858 lines:
+  `runs.py`, `candidates.py`, `evidence.py`, `final.py`, `pyfunc_model.py`, `settings.py`) and
+  [MLFLOW_EXPERIMENTS_GUIDE.md](MLFLOW_EXPERIMENTS_GUIDE.md) belong to the old stack. They
+  cannot log the new models; the roadmap deletes them
+  ([MODEL_REIMPLEMENTATION_PLAN.md](MODEL_REIMPLEMENTATION_PLAN.md) §5).
+- **The earlier decisions,** in [EXPERIMENT_NOTEBOOK_PLAN.md](EXPERIMENT_NOTEBOOK_PLAN.md): E9
+  (what one run logs), E10 (inline calls first, then functions in one new module
+  `mlflow_runs.py`, no class), E11 (the final run, refit on train + validation, tagged
+  `final=true`), D1e (the guard that refuses the canonical store), D2–D5. Their dated notes say
+  which parts are superseded: there is no study per cohort, no `TuningResult`, no
+  `feature_variant`; the tuning (D2, D3) and the final evaluation (E11, PR 7) already exist in
+  the notebook without MLflow.
+
+### 7.3 The flow today
+
+`notebooks/03_hyperparameter_tuning.py`, in order. The names are the notebook's; a logging cell
+would read them.
+
+1. **The data:** `DATA_SETTINGS`, the simulated frame, `config_hash`.
+2. **The split:** `train_age_group`, `val_age_group`, `test_age_group` (each with `X`, `Y`,
+   `exposure`, `groups`, `ids`); one `seed`.
+3. **The metrics:** `METRICS` (six), `OBJECTIVE_METRIC` (the studies' objective, RMSE),
+   `SELECTION_METRIC` (the best run's rule, RMSE).
+4. **The tuner and the cache:** `tuner` (a `CrossValidationTuner`; `n_trials` 100); `studies_dir`,
+   a folder named after the data's hash, the split and the trial settings, holding one Optuna
+   journal file per study, named by `build_study_name`.
+5. **The independent cohorts model** (the button `run_model1`): 8 run settings
+   (`MODEL1_RUN_SETTINGS`: family × exposure), one joint study each. `MODEL1_RUNS` holds a record
+   per run: the settings, `feature_transformers`, `components` (their `to_dict()` is the
+   declaration), the fitted `model`, `cv_best`, `n_complete`, `n_failed`, `seconds`, `scores` (a
+   point score per dataset, cohort and metric). The tables `model1_runs_df`, `model1_scores_df`.
+6. **The total times probability model** (the button `run_model2`): 16 run settings
+   (`MODEL2_RUN_SETTINGS`), `MODEL2_RUNS`, `model2_runs_df`, `model2_scores_df`.
+7. **The best runs:** `best_runs` (one record per model, the lowest validation composite
+   `SELECTION_METRIC`); `best_runs_val_scores_df` (the point score and the bootstrap's mean,
+   median, sd and 95% bounds), `best_replicate_scores`; the paired difference
+   `best_difference_df`, `best_difference_replicates`; the figures `best_runs_figure`,
+   `best_difference_figure` (a forest or a ridge, by a menu).
+8. **The inspection** (the button `run_inspection`): `best_runs_permutation`, `best_runs_shap`,
+   `importance_df`, `permutation_figures`, `shap_beeswarm_figures`.
+9. **The test evaluation** (the button `run_test_evaluation`; **E11: the user's click on the
+   real cache**): `test_models` (refit on train + validation), `test_predictions`,
+   `test_scores_df`, `test_replicate_scores`, `test_difference_df`, `val_against_test_df`,
+   `test_runs_figure`, `test_difference_figure`; `test_shap`, `test_permutation`,
+   `test_importance_df`, `test_permutation_figures`, `test_beeswarm_figures`.
+10. **The reading of the test predictions:** `test_buildings_df`, `test_building_scores_df`,
+    `test_waterfall_figures`, `test_counts_histogram`, `test_counts_scatter`, the selection's
+    tables and `test_selection_shares_bars`. Most follow menus (a model, a cohort, a
+    neighborhood, a building), so a logged figure is one menu state.
+
+`notebooks/02_objective_eda.py` (the button `run_eda`): three objectives per model, Model 2 by
+coordinate descent and by the joint method; `eda_model1_df`, `eda_model2_df`,
+`eda_model2_joint_df`; the trials tables `eda_model1_trials_df`, `eda_model2_trials_df`,
+`eda_model2_joint_trials_df` (built by `build_trials_table`: a row per trial with its id, state,
+seconds, objective, the six metrics, the transformers' names and the hyperparameters);
+`eda_best_df`; `eda_figures`, `eda_metric_figures`. **The tuning notebook keeps no trials:** its
+records hold the best model only (3.4, M14), and the trials are read back from the stored
+studies.
+
+### 7.4 What to log: the inventory to place
+
+The plan places each item in a run, or says why it is left out.
+
+| Kind | Items |
+|---|---|
+| Parameters | the run's settings (the model, the family or families, `use_exposure`, the sharing flags); the data's `config_hash` and the config's dotted keys; the split's method and sizes, `n_train` / `n_val` / `n_test`; `seed` and the study's seed; `n_trials`, `n_startup_trials`, `n_splits`, the objective; the search space; **the best parameters**, per component (the study's `best_params`, and the components' `to_dict()`) |
+| Metrics | `cv_best`; every point score per dataset (train, validation), cohort and metric; for the best runs the bootstrap's mean, median, sd and bounds, and the paired difference; `seconds`, `n_complete`, `n_failed`; the test scores **only** in the final run |
+| Tables | **the trials dataframe of each study**; the runs and scores tables; `importance_df` and `test_importance_df`; `val_against_test_df`; `test_buildings_df` and `test_building_scores_df`; from the EDA, the trials tables and `eda_best_df` |
+| Figures | the forest and the ridge (the runs and the difference, validation and test); the permutation figures; the beeswarms; the waterfalls; the two count figures; the shares bars; from the EDA, `eda_figures` and `eda_metric_figures` |
+| Artifacts | the fitted model; the components' declarations and the best parameters as JSON; the study's journal file; the feature transformers' description; the bootstrap replicates, if the plan finds a reader for them |
+| Tags and lineage | the model's label, the family, the stage (a tuning run, a best run, the final run), the git commit, the notebook; the dataset (its hash, its rows) |
+
+### 7.5 MLflow practices to apply
+
+Each is to be **checked against the MLflow 3.16 docs before it is planned** (the
+`searching-mlflow-docs` skill); the handoff's author did not verify them in this repo.
+
+- **One experiment, set once** in a guarded cell (D1e): the tracking URI read from the
+  environment, the canonical store refused, no run opened at import.
+- **A run per study, the trials as a logged table.** 24 runs with a trials table each, against
+  2,400 child runs (one per trial) that the UI must list and the store must hold. The child-run
+  form is the usual Optuna pattern and makes each trial filterable; state both with their cost
+  and let the user choose (§7.7).
+- **`mlflow.log_table`** for a frame the UI should show and `load_table` should read back;
+  `log_artifact` for a file nobody queries.
+- **`mlflow.log_figure`** takes a plotly figure and writes HTML, which keeps the hover text.
+  `kaleido` is not installed, so a PNG is not available without a new dependency.
+- **`mlflow.log_dict`** for JSON (the best parameters, the components' declarations).
+- **Parameters are flat and short:** dotted keys (`flatten` exists); a long value (the search
+  space) is better as a JSON artifact than as a parameter.
+- **Metric names** in one scheme, for example `<dataset>/<cohort>/<metric>`, so the UI groups
+  them; one logged value per name (these are not training curves).
+- **The dataset's lineage** through `mlflow.data` and `mlflow.log_input`, the digest the
+  `config_hash`.
+- **The model as an MLflow 3 logged model** with a signature and an input example, if the
+  flavor can carry this model (§7.6); otherwise as a plain artifact.
+- **Tags, not free text,** for what a search filters on; the git commit as a tag.
+- **Reading back:** `mlflow.search_runs` returns a frame; a comparison table needs nothing
+  more.
+
+### 7.6 The traps of this repo
+
+- **marimo reruns cells, and a click loads the cache.** A logging call inside a tune cell would
+  log again at every click and every rerun. Logging needs its own button, and a rule for a run
+  that already exists: skip it, replace it, or refuse. The study's name (`build_study_name`) is
+  the natural key, as it is for the study cache.
+- **The fitted models need cloudpickle:** `pickle` fails on a feature transformer's lambda
+  (§4's traps). And `predict(X, exposure=...)` takes a second input, which a plain scikit-learn
+  flavor's signature does not carry; the old `tracking/pyfunc_model.py` shows one way the old
+  stack wrapped it.
+- **The checks:** Check C runs each notebook's 3-trial copy with every button clicked under
+  `PYTHONWARNINGS=error`, with `MLFLOW_TRACKING_URI=sqlite:///$S/mlflow.db` (the scratchpad). A
+  logging cell must pass there, and must not make the 3-trial copy write the user's store. A
+  unit test uses a store in `tmp_path` and `pytest.importorskip("mlflow")`. The suite deselects
+  6 MLflow warnings of the old stack; a new warning under `-W error` fails a run.
+- **The characterization tests** pin that no model is fitted outside a run button and that
+  every cell holding `tuner.tune_` holds `mo.stop(not `; D1e adds "the script opens no run".
+- **Importing the package imports the old stack** (pyro, about 3 s; §5). A new module is not
+  imported from the package root (E10).
+- **`mo.ui.table` and the menus:** a figure in the notebook is one menu state; decide which
+  states are logged (the defaults, or each model and cohort).
+- **The user's rules** (§4, and the API preferences): a function only if it is reused; `src`
+  returns the library's object and the caller builds the frames; nothing global, settings
+  injected; no private helpers; a notebook function reads no notebook global.
+
+### 7.7 The open questions for the user
+
+Each is asked with the interactive question tool: the options, the evidence, the
+recommendation first.
+
+1. **The run structure:** a run per study with the trials as a table; or a parent run per study
+   with a child run per trial; and whether the two best runs and the final run are runs of
+   their own or tags on existing ones.
+2. **Where the logging code lives:** inline in the notebook's cells, or functions in
+   `src/age_group_prediction/mlflow_runs.py` (E10), and from which sub-task on.
+3. **What triggers logging:** one "Log to MLflow" button for everything computed so far, or one
+   per section; and what happens when the run exists.
+4. **The model:** an MLflow 3 logged model (which flavor, with the exposure), or a cloudpickle
+   artifact.
+5. **D4's comparison table:** the notebook already has the runs tables, the best runs and PR
+   7's validation-against-test table. Is a table read back with `search_runs` still wanted?
+6. **The EDA notebook:** does it log anything (its 50 studies' trials tables and figures), or
+   is MLflow the tuning notebook's only?
+7. **The final run and its guard:** logged from the test button's results, tagged `final=true`,
+   refused when one exists in the experiment (D4)? On the user's click only.
+8. **The old `tracking/` package and its guide:** left untouched, or deleted in this work.
+9. **The figures' menu states** to log, and whether the EDA's 27 figures are worth their size.
+
+### 7.8 How the plan is written, and who implements it
+
+- **The plan:** `docs/MLFLOW_RUNS_PLAN.md`, by Fable in plan mode, in
+  [the review plan](SIMPLIFICATION_REVIEW_PLAN.md)'s form: the question and the verdict; the
+  sub-tasks at a glance (what the user sees change, the size, the model to implement with); how
+  a sub-task is done; then each sub-task with its evidence, exact steps, validation, mutation
+  and commit message.
+- **The implementing model:** Opus 5.5 for every sub-task whose steps can be written exactly
+  and whose check says plainly whether it is right. Fable only where a design choice is made
+  from a probe (for example how the model is logged, if the docs leave it open); the plan says
+  why for each.
+- **Each sub-task is one stop:** planned in plan mode first, the user's go, the checks of §4,
+  a file-by-file summary, the notebooks' md5, the commit message in a copyable code block.
+- **A first sub-task worth considering:** a read-only probe on the 3-trial copy with a store in
+  the scratchpad, logging one run by hand and reading it back (the table, a figure, the model),
+  so that every later step rests on a call that was seen to work.

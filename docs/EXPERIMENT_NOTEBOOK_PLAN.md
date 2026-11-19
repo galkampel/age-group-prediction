@@ -36,6 +36,13 @@ notebook tunes both models in 24 run cells and inspects each model's best run, t
 logging of D2–D3, E9, E10), D4 (the comparison table and E11's final run) and D5. **Next:**
 [EXPERIMENT_NOTEBOOK_HANDOFF.md](EXPERIMENT_NOTEBOOK_HANDOFF.md) §6.
 
+**Status (2026-11-15):** the MLflow part of PR D is closed by
+[MLFLOW_RUNS_PLAN.md](MLFLOW_RUNS_PLAN.md) (M0–M7, branch `feat/mlflow-runs`): 24 tuning
+runs, the best runs' run and a guarded final run, each logged behind a button from the
+notebook's cells; the guide is [MLFLOW_RUNS.md](MLFLOW_RUNS.md). E9, E10 and D1e–D5 carry a
+note of how each was settled; D1–D5 are ticked. E11's final run on the real studies is the
+user's to start.
+
 **Branch state:** `feat/experiment-notebook` from `main` at `49301d0`, HEAD
 `98640ba`; non-slow suite 1295 passed, 1 skipped, 1 xfailed.
 
@@ -409,6 +416,14 @@ Test metrics (`test/<metric>`) appear **only** in the final run (E11).
 > There is no `TuningResult` or `TrialRecord`, no `feature_variant` (the transformer is
 > searched per component) and no nested study per cohort.
 
+> **2026-11-15:** settled by [MLFLOW_RUNS_PLAN.md](MLFLOW_RUNS_PLAN.md) (§5 places every
+> item): one run per study, no nested runs; the trials as `trials.csv`, the search space
+> as `search_space.json`, the best parameters as `best.*` and `best_params.json`, the
+> components' `to_dict()`, the study's journal; the validation statistics and importance in
+> one best runs' run; no `model.joblib` (a model is rebuilt from `best_params`), PNG plots
+> replaced by plotly HTML. Test metrics are still in the final run only. What each run kind
+> holds: [MLFLOW_RUNS.md](MLFLOW_RUNS.md) §4–§5.
+
 **E10. MLflow helper: start inline, extract functions, no class.** The first
 run cell uses `mlflow.start_run` and plain `log_params` / `log_metrics` /
 `log_artifact` calls. When the second cell repeats them, the repeated parts
@@ -419,6 +434,12 @@ nothing persists across the calls (the experiment and URI are process-global
 through `mlflow.set_experiment`), so a class would carry no settings, and the
 user's rule is that every class is justified. The module is **not** imported
 from the package root. The old `tracking/` is left untouched.
+
+> **2026-11-15:** no module: the logging lives in the notebook's cells, what two cells
+> repeat is a function in a cell that reads no global (`log_tuning_run`,
+> `log_evaluation_run`, `build_dataset_figures`; MLFLOW_RUNS_PLAN.md decision 5). No MLflow
+> global is set either: no `set_experiment`; MLflow reads `MLFLOW_TRACKING_URI` and
+> `MLFLOW_EXPERIMENT_NAME` at every call (M1). The old `tracking/` is still untouched.
 
 **E11. The final evaluation refits on train + validation** (user's choice).
 After the comparison table, the winning setting's `best_params` are rebuilt
@@ -770,7 +791,20 @@ Branch `feat/experiment-notebook` from `main`. The notebook is a marimo file,
 guarded by a `mo.ui.run_button()` (as the deleted `02_model_fitting.py` was), so opening the
 notebook fits nothing. Docs in `docs/EXPERIMENTS.md`.
 
-### [ ] D1. The notebook skeleton
+> **2026-11-15:** D1–D5 are closed, the MLflow items by
+> [MLFLOW_RUNS_PLAN.md](MLFLOW_RUNS_PLAN.md):
+> - D1e: done in M1 (the MLflow cell: the six refusals, later F1's seventh; no
+>   `set_experiment`);
+> - D2, D3: the tuning by the notebook tuning plan; the logging by M3, a run per study
+>   behind "Log the tuning runs", with no `mlflow_runs.py` (E10's note); since 2026-11-16
+>   ([MLFLOW_RUNS_PLAN.md](MLFLOW_RUNS_PLAN.md) §8) logged inside the two Tune cells, no
+>   logging button;
+> - D4: no comparison cell (decision 6: the MLflow UI compares the runs, the guide's §7);
+>   the best runs' run (M4) and the final run (M6), refused when a `final=true` run exists,
+>   with no confirmation checkbox;
+> - D5: the guide is [MLFLOW_RUNS.md](MLFLOW_RUNS.md), not `docs/EXPERIMENTS.md` (M7).
+
+### [x] D1. The notebook skeleton
 
 `notebooks/02_experiments.py` is written in five stops, D1a–D1e, so that each
 notebook section is verified before the next is written. Each stop ends with
@@ -875,7 +909,7 @@ declarations module (decision 2026-10-14, §2).
     rule were verified by probe and review on 2026-10-15 only; a GLM
     variant listing `n_apartments` would now fit unnoticed until step 3
     fits models on the variants.
-- [ ] **D1e. C7 MLflow guard.**
+- [x] **D1e. C7 MLflow guard.**
   - Written: the MLflow cell (scratch store only, `set_experiment`, refusal
     on the canonical store).
   - Done when: with `.env`, the script prints `experiment=...
@@ -885,7 +919,7 @@ declarations module (decision 2026-10-14, §2).
     `test_no_model_is_fitted_outside_a_run_button`. Mutations: delete the
     `raise`; add `mlflow.start_run()`; add an unguarded `.fit(`.
 
-### [ ] D2. The first run: Model 1 × LightGBM × `tree` × exposure on
+### [x] D2. The first run: Model 1 × LightGBM × `tree` × exposure on
 
 One cell, inline MLflow calls (E10):
 
@@ -916,7 +950,7 @@ folds LightGBM fits ≈ a few minutes).
 > What remains of both is the MLflow logging (E9, E10), planned from the run records; the
 > checkboxes stay open.
 
-### [ ] D3. The remaining runs and the helper module
+### [x] D3. The remaining runs and the helper module
 
 - Write the second cell (Model 2: Poisson total × LR probability, `total_base`
   / `cohort_probability_base`, exposure on), then extract what the two cells
@@ -949,7 +983,7 @@ folds LightGBM fits ≈ a few minutes).
 **Done when:** every cell runs on the scratch store; the helper's tests pass;
 no two cells repeat a block of more than ~5 lines of logging.
 
-### [ ] D4. The comparison table and the final run (E11)
+### [x] D4. The comparison table and the final run (E11)
 
 - Comparison cell: `mlflow.search_runs(experiment_names=[...],
   filter_string="tags.mlflow.parentRunId = ''")` → a table of
@@ -968,7 +1002,7 @@ no two cells repeat a block of more than ~5 lines of logging.
 **Done when:** the table shows every setting; the final run exists once and
 holds `test/*` metrics only there.
 
-### [ ] D5. Docs and close
+### [x] D5. Docs and close
 
 - `docs/EXPERIMENTS.md`: how to run (env, commands, time budget), the three-way
   split and seeds, what a run logs (the E9 table), how to add a setting (a cell

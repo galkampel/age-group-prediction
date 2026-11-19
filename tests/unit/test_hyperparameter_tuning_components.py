@@ -12,6 +12,7 @@ from sklearn.linear_model import LogisticRegression, PoissonRegressor
 
 from age_group_prediction.feature_engineering import FeatureTransformer, Plan
 from age_group_prediction.hyperparameter_tuning import (
+    Component,
     CountComponent,
     LGBMParams,
     LogisticParams,
@@ -157,6 +158,22 @@ def test_a_component_reads_only_its_own_entries_from_the_params() -> None:
         "poisson_glm", PoissonGLMParams(alpha=0.1), use_exposure=False
     )
     assert component.feature_transformer is TRANSFORMERS["ses_only"]
+
+
+def test_a_components_params_are_its_own_and_the_shared_entries_unprefixed() -> None:
+    # Another cohort's entries are left out, though its name extends this one's.
+    best_params = {
+        "n_elementary__alpha": 0.1,
+        "n_elementary__feature_transformer": "ses_only",
+        "n_elementary_school__alpha": 9.0,
+        "shared__dispersion": 0.15,
+        "total__alpha": 1.0,
+    }
+    assert Component.select_component_params(best_params, "n_elementary") == {
+        "alpha": 0.1,
+        "feature_transformer": "ses_only",
+        "dispersion": 0.15,
+    }
 
 
 def test_a_shared_choice_is_read_as_every_components_own() -> None:

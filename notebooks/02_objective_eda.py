@@ -201,7 +201,10 @@ def _(DATA_SETTINGS, X, config, df, groups, hashlib, json, mo, pd):
         json.dumps(config_params, sort_keys=True).encode()
     ).hexdigest()
 
-    print("data_settings " + " ".join(f"{k}={v}" for k, v in DATA_SETTINGS.items()))
+    print(
+        "data_settings "
+        + " ".join(f"{name}={value}" for name, value in DATA_SETTINGS.items())
+    )
     print(
         f"data rows={len(df)} neighborhoods={groups.nunique()} "
         f"config_hash={config_hash}"
@@ -261,7 +264,7 @@ def _(mo, pd):
     }
     print(
         "experiment_settings "
-        + " ".join(f"{k}={v}" for k, v in EXPERIMENT_SETTINGS.items())
+        + " ".join(f"{name}={value}" for name, value in EXPERIMENT_SETTINGS.items())
     )
     mo.md(f"```text\n{pd.DataFrame([EXPERIMENT_SETTINGS]).to_string(index=False)}\n```")
     return (
@@ -1031,18 +1034,11 @@ def _(
                 _feature_transformer_dict,
             )
         )
-        _best_components = tuple(
-            CountComponent.from_params(
-                _study.best_params,
-                name=cohort,
-                family=_family,
-                use_exposure=_use_exposure,
-                feature_transformer_dict=COUNT_FEATURE_TRANSFORMERS[_family],
-            )
-            for cohort in COHORTS
-        )
+        # The best trial's model, refit on the training part.
         _model = build_independent_cohorts_model(
-            _best_components, y_min=PREDICTION_FLOOR, random_state=seed
+            _components_by_trial[_study.best_trial.number],
+            y_min=PREDICTION_FLOOR,
+            random_state=seed,
         ).fit(train_age_group.X, train_age_group.Y, exposure=train_age_group.exposure)
         # Every metric on validation, per cohort and for the composite; the
         # study's value (in its own objective) and its seconds on each row.
@@ -1427,8 +1423,51 @@ def _(EDA_OBJECTIVES, mo, tuner):
 
 
 @app.cell
+def _():
+    # The figures' palette, the dataviz skill's reference: the three
+    # categorical colors that stay apart for colorblind readers, the red of
+    # the best trial's star, then the surface, the inks, the gridline and the
+    # axis line.
+    PALETTE = {
+        "categorical": ["#2a78d6", "#eb6834", "#1baf7a"],
+        "best": "#e34948",
+        "surface": "#fcfcfb",
+        "ink": "#52514e",
+        "muted": "#898781",
+        "grid": "#e1e0d9",
+        "axis": "#c3c2b7",
+    }
+
+    def style_figure(figure, palette):
+        """Set the figures' shared style on `figure`, from `palette`: the
+        surface behind the paper and the plot, the font, and on every axis
+        the gridline, no zero line, the axis line and muted ticks. Call it
+        once the figure has its axes; what the figure sets after it wins."""
+        figure.update_layout(
+            template="plotly_white",
+            paper_bgcolor=palette["surface"],
+            plot_bgcolor=palette["surface"],
+            font={
+                "family": "system-ui, -apple-system, Segoe UI, sans-serif",
+                "color": palette["ink"],
+                "size": 12,
+            },
+        )
+        for update_axes in (figure.update_xaxes, figure.update_yaxes):
+            update_axes(
+                gridcolor=palette["grid"],
+                zeroline=False,
+                linecolor=palette["axis"],
+                tickfont={"color": palette["muted"]},
+            )
+
+    return PALETTE, style_figure
+
+
+@app.cell
 def _(
     METRICS,
+    PALETTE,
     eda_best_df,
     eda_model1_trials_df,
     eda_model2_joint_trials_df,
@@ -1437,6 +1476,7 @@ def _(
     go,
     make_subplots,
     mo,
+    style_figure,
 ):
     # Per model and objective, every metric per trial, a panel each on its own
     # scale, the trials in order on a shared axis (the total times probability
@@ -1447,7 +1487,6 @@ def _(
     # secondary ink, the chart surface); the trials translucent, so
     # overlapping ones show darker.
     _metric_names = [metric.name for metric in METRICS]
-    _surface, _ink = "#fcfcfb", "#52514e"
     eda_figures = {}
     for _model, _trials in (
         ("independent_cohorts", eda_model1_trials_df),
@@ -1489,7 +1528,11 @@ def _(
                         x=_study_trials.index,
                         y=_study_trials[_metric_name],
                         mode="markers",
-                        marker={"size": 5, "color": "#2a78d6", "opacity": 0.6},
+                        marker={
+                            "size": 5,
+                            "color": PALETTE["categorical"][0],
+                            "opacity": 0.6,
+                        },
                         text=_labels,
                         hovertemplate=f"%{{text}}<br>{_metric_name} %{{y:.4f}}<extra></extra>",
                         name="trials",
@@ -1507,8 +1550,8 @@ def _(
                         marker={
                             "symbol": "star",
                             "size": 12,
-                            "color": "#e34948",
-                            "line": {"width": 2, "color": _surface},
+                            "color": PALETTE["best"],
+                            "line": {"width": 2, "color": PALETTE["surface"]},
                         },
                         text=[_labels[_best_position]],
                         hovertemplate=f"best: %{{text}}<br>{_metric_name} %{{y:.4f}}<extra></extra>",
@@ -1522,7 +1565,7 @@ def _(
             if _probability_start is not None:
                 # The rule in every panel; its label once, in the top panel.
                 _figure.add_vline(
-                    x=_probability_start - 0.5, line_width=1, line_color=_ink
+                    x=_probability_start - 0.5, line_width=1, line_color=PALETTE["ink"]
                 )
                 _figure.add_annotation(
                     text="probability step",
@@ -1534,12 +1577,10 @@ def _(
                     yanchor="top",
                     showarrow=False,
                 )
+            style_figure(_figure, PALETTE)
             _figure.update_layout(
                 title=f"tuned on {_objective}",
                 height=1000,
-                template="plotly_white",
-                paper_bgcolor=_surface,
-                plot_bgcolor=_surface,
                 legend={"orientation": "h", "y": -0.06},
                 hovermode="closest",
             )
@@ -1587,6 +1628,7 @@ def _(METRICS, mo, tuner):
 @app.cell
 def _(
     METRICS,
+    PALETTE,
     eda_best_df,
     eda_model1_trials_df,
     eda_model2_joint_trials_df,
@@ -1594,6 +1636,7 @@ def _(
     eda_recorded_metric,
     go,
     mo,
+    style_figure,
 ):
     # Per model and recorded metric, the objectives' studies compared: a box per
     # objective with every trial a point and its best trial a star (the model it
@@ -1603,11 +1646,10 @@ def _(
     # with its own marker; the y-axis spans the bulk of the trials (their 2nd to
     # 98th percentile) and every star.
     _styles = {
-        "log_loss": ("#2a78d6", "circle"),
-        "poisson_deviance": ("#eb6834", "diamond"),
-        "rmse": ("#1baf7a", "triangle-up"),
+        "log_loss": (PALETTE["categorical"][0], "circle"),
+        "poisson_deviance": (PALETTE["categorical"][1], "diamond"),
+        "rmse": (PALETTE["categorical"][2], "triangle-up"),
     }
-    _surface, _ink = "#fcfcfb", "#52514e"
     eda_metric_figures = {}
     for _model, _trials in (
         ("independent_cohorts", eda_model1_trials_df),
@@ -1671,7 +1713,7 @@ def _(
                             "symbol": "star",
                             "size": 14,
                             "color": _color,
-                            "line": {"width": 1.5, "color": _ink},
+                            "line": {"width": 1.5, "color": PALETTE["ink"]},
                         },
                         text=[_labels[_best_index]],
                         hovertemplate=f"best of {_objective}: %{{text}}<br>{_metric.name} %{{y:.4f}}<extra></extra>",
@@ -1683,17 +1725,17 @@ def _(
             _low, _high = _trials[_metric.name].quantile([0.02, 0.98])
             _low, _high = min(_low, *_star_values), max(_high, *_star_values)
             _padding = 0.05 * (_high - _low)
+            style_figure(_figure, PALETTE)
             _figure.update_layout(
                 title=f"{_metric.name} by objective",
                 height=500,
-                template="plotly_white",
-                paper_bgcolor=_surface,
-                plot_bgcolor=_surface,
                 boxmode=_boxmode,
                 scattermode="group",
                 legend={"orientation": "h", "y": -0.15},
                 hovermode="closest",
             )
+            # No gridline through a box.
+            _figure.update_xaxes(showgrid=False)
             _figure.update_yaxes(
                 title_text=_metric.name, range=[_low - _padding, _high + _padding]
             )

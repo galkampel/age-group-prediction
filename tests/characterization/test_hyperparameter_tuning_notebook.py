@@ -22,6 +22,7 @@ from pathlib import Path
 import numpy as np
 import optuna
 import pandas as pd
+import plotly.graph_objects as go
 import pytest
 import shap
 from optuna.samplers import RandomSampler
@@ -39,29 +40,62 @@ NOTEBOOK_PATH = PROJECT_ROOT / "notebooks" / "03_hyperparameter_tuning.py"
 OBJECTIVE_EDA_PATH = PROJECT_ROOT / "notebooks" / "02_objective_eda.py"
 
 
-def _run(notebook: Path, scratch: Path) -> subprocess.CompletedProcess[str]:
-    """Run ``notebook`` as a script against a scratch MLflow store under ``scratch``.
+def _mlflow_environment(scratch: Path) -> dict[str, str]:
+    """The MLflow variables of a scratch store under ``scratch``, away from the canonical one."""
+    return {
+        "MLFLOW_DISABLE_AGENT_HINT": "1",
+        "MLFLOW_TRACKING_URI": f"sqlite:///{scratch / 'mlflow.db'}",
+        "MLFLOW_EXPERIMENT_NAME": "test-hyperparameter-tuning-notebook",
+        "AGE_GROUP_MLFLOW_ARTIFACT_LOCATION": str(scratch / "artifacts"),
+    }
+
+
+def _run(
+    notebook: Path,
+    scratch: Path,
+    cwd: Path = PROJECT_ROOT,
+    environment: dict[str, str | None] | None = None,
+) -> subprocess.CompletedProcess[str]:
+    """Run ``notebook`` as a script from ``cwd`` against a scratch MLflow store under ``scratch``.
 
     The editable install does not resolve for a plain ``python <script>``
     invocation here (pytest works through ``pyproject.toml``'s ``pythonpath``),
     so ``src`` is passed explicitly. The MLflow variables point away from the
-    repository's canonical store for the cells that will use them.
+    repository's canonical store; ``environment`` overrides them (a ``None``
+    value removes one).
     """
     env = dict(os.environ)
     env["PYTHONPATH"] = str(PROJECT_ROOT / "src")
-    env["MLFLOW_DISABLE_AGENT_HINT"] = "1"
-    env["MLFLOW_TRACKING_URI"] = f"sqlite:///{scratch / 'mlflow.db'}"
-    env["MLFLOW_EXPERIMENT_NAME"] = "test-hyperparameter-tuning-notebook"
-    env["AGE_GROUP_MLFLOW_ARTIFACT_LOCATION"] = str(scratch / "artifacts")
+    env.update(_mlflow_environment(scratch))
+    for name, value in (environment or {}).items():
+        if value is None:
+            env.pop(name, None)
+        else:
+            env[name] = value
     return subprocess.run(
         [sys.executable, str(notebook)],
-        cwd=PROJECT_ROOT,
+        cwd=cwd,
         env=env,
         capture_output=True,
         text=True,
         timeout=180,
         check=False,
     )
+
+
+def _project_copy(tmp_path: Path, source: str) -> Path:
+    """``source`` as the notebook of a project copy under ``tmp_path``; its path.
+
+    The notebook finds the config and the code relative to its own directory,
+    so the copy's ``configs`` and ``src`` link to the repository's.
+    """
+    project_copy = tmp_path / "project"
+    (project_copy / "notebooks").mkdir(parents=True)
+    for name in ("configs", "src"):
+        (project_copy / name).symlink_to(PROJECT_ROOT / name, target_is_directory=True)
+    notebook_copy = project_copy / "notebooks" / NOTEBOOK_PATH.name
+    notebook_copy.write_text(source, encoding="utf-8")
+    return notebook_copy
 
 
 def _printed(stdout: str, prefix: str) -> dict[str, str]:
@@ -174,17 +208,8 @@ def test_a_seed_override_not_reaching_the_simulator_is_caught(tmp_path: Path) ->
     # the hash alone cannot show.
     source = NOTEBOOK_PATH.read_text(encoding="utf-8")
     assert source.count("simulation_seed = None") == 1
-    # A copy beside a configs/ link, because the notebook finds the config
-    # relative to its own directory.
-    project_copy = tmp_path / "project"
-    (project_copy / "notebooks").mkdir(parents=True)
-    (project_copy / "configs").symlink_to(
-        PROJECT_ROOT / "configs", target_is_directory=True
-    )
-    notebook_copy = project_copy / "notebooks" / NOTEBOOK_PATH.name
-    notebook_copy.write_text(
-        source.replace("simulation_seed = None", "simulation_seed = 7"),
-        encoding="utf-8",
+    notebook_copy = _project_copy(
+        tmp_path, source.replace("simulation_seed = None", "simulation_seed = 7")
     )
     result = _run(notebook_copy, tmp_path / "store")
     assert result.returncode == 0, result.stderr
@@ -209,16 +234,458 @@ def test_a_tuning_cell_outside_a_run_button_is_caught() -> None:
 
 
 @pytest.fixture(scope="module")
-def notebook_defs() -> dict:
-    """The names a script run defines, in this process; the buttons stay unclicked, so nothing is fitted."""
+def notebook_store(tmp_path_factory: pytest.TempPathFactory) -> Path:
+    """The scratch MLflow store of the in-process run below."""
+    return tmp_path_factory.mktemp("notebook_store")
+
+
+@pytest.fixture(scope="module")
+def notebook_defs(notebook_store: Path) -> dict:
+    """The names a script run defines, in this process; the buttons stay unclicked, so nothing is fitted.
+
+    The MLflow variables point at a scratch store for the run only; the MLflow
+    cell sets no global, so nothing reaches the tests that run after.
+    """
     spec = importlib.util.spec_from_file_location(
         "hyperparameter_tuning_notebook", NOTEBOOK_PATH
     )
     assert spec is not None and spec.loader is not None
     notebook = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(notebook)
-    _, defs = notebook.app.run()
+    with pytest.MonkeyPatch.context() as patch:
+        for name, value in _mlflow_environment(notebook_store).items():
+            patch.setenv(name, value)
+        _, defs = notebook.app.run()
     return dict(defs)
+
+
+def test_a_script_run_opens_no_mlflow_run(
+    notebook_defs: dict, notebook_store: Path
+) -> None:
+    # M1: the MLflow cell creates the experiment with its artifact location and
+    # reads the code's tags (the notebook and git); it opens no run, and sets no
+    # MLflow global (the tracking URI and the active experiment are read from the
+    # environment at every call), so the old tracking tests that run after see
+    # none.
+    mlflow = pytest.importorskip("mlflow")
+    environment = _mlflow_environment(notebook_store)
+    client = mlflow.MlflowClient(environment["MLFLOW_TRACKING_URI"])
+    experiment = client.get_experiment_by_name(environment["MLFLOW_EXPERIMENT_NAME"])
+    assert experiment is not None
+    assert experiment.artifact_location == str((notebook_store / "artifacts").resolve())
+    experiment_ids = [item.experiment_id for item in client.search_experiments()]
+    assert client.search_runs(experiment_ids) == []
+    code_tags = notebook_defs["code_tags"]
+    assert set(code_tags) == {"notebook", "git_commit", "git_dirty"}
+    assert code_tags["notebook"] == "notebooks/03_hyperparameter_tuning.py"
+    assert re.fullmatch(r"[0-9a-f]{40}", code_tags["git_commit"])
+    assert code_tags["git_dirty"] in {"true", "false"}
+    assert os.environ.get("MLFLOW_TRACKING_URI") != environment["MLFLOW_TRACKING_URI"]
+    assert mlflow.get_tracking_uri() != environment["MLFLOW_TRACKING_URI"]
+
+
+@pytest.mark.parametrize(
+    ("name", "value"),
+    [
+        ("MLFLOW_TRACKING_URI", None),
+        ("MLFLOW_TRACKING_URI", "sqlite:///mlflow.db"),
+        ("AGE_GROUP_MLFLOW_ARTIFACT_LOCATION", "mlartifacts"),
+    ],
+)
+def test_the_mlflow_cell_refuses_the_canonical_store(
+    tmp_path: Path, name: str, value: str | None
+) -> None:
+    # D1e: the repo root's mlflow.db and mlartifacts/ are the old stack's final
+    # evidence, and MLflow's default URI (unset) is sqlite:///mlflow.db in the
+    # working directory. Each run is a copy run from the copy's root, so its
+    # "canonical" store is the copy's: a missing refusal opens that one, never
+    # the repository's.
+    notebook_copy = _project_copy(tmp_path, NOTEBOOK_PATH.read_text(encoding="utf-8"))
+    project_copy = notebook_copy.parents[1]
+    result = _run(
+        notebook_copy, tmp_path / "store", cwd=project_copy, environment={name: value}
+    )
+    error = result.stderr[-2000:]
+    assert result.returncode != 0, error
+    assert "ValueError" in error and name in error, error
+    assert not (project_copy / "mlflow.db").exists()
+    assert not (project_copy / "mlartifacts").exists()
+
+
+def test_the_mlflow_cell_refuses_an_experiment_with_another_artifact_location(
+    tmp_path: Path,
+) -> None:
+    # The review's F1: an experiment that exists keeps the artifact location it
+    # was created with (MLflow creates a missing one with its default, from the
+    # repository's root the canonical mlartifacts/), and MLflow uses it over the
+    # variable: the cell must refuse it, so no run's artifacts land elsewhere.
+    mlflow = pytest.importorskip("mlflow")
+    environment = _mlflow_environment(tmp_path / "store")
+    client = mlflow.MlflowClient(environment["MLFLOW_TRACKING_URI"])
+    client.create_experiment(
+        environment["MLFLOW_EXPERIMENT_NAME"],
+        artifact_location=str((tmp_path / "elsewhere").resolve()),
+    )
+    notebook_copy = _project_copy(tmp_path, NOTEBOOK_PATH.read_text(encoding="utf-8"))
+    result = _run(notebook_copy, tmp_path / "store", cwd=notebook_copy.parents[1])
+    error = result.stderr[-2000:]
+    assert result.returncode != 0, error
+    assert "ValueError" in error, error
+    assert "AGE_GROUP_MLFLOW_ARTIFACT_LOCATION" in error, error
+    experiment_ids = [item.experiment_id for item in client.search_experiments()]
+    assert client.search_runs(experiment_ids) == []
+
+
+def test_the_tuning_runs_are_logged_inside_the_two_tune_cells(
+    notebook_defs: dict,
+) -> None:
+    # §8's L2 (MLFLOW_RUNS_PLAN.md): each Tune cell logs its runs as their
+    # studies finish, behind the Tune button's mo.stop only; no logging button.
+    # A script run builds what each run logs (the shared parameters, the two
+    # datasets) and opens no run (test_a_script_run_opens_no_mlflow_run).
+    source = NOTEBOOK_PATH.read_text(encoding="utf-8")
+    cells = [cell for cell in source.split("@app.cell") if "tuner.tune_" in cell]
+    assert len(cells) == 2
+    for cell, button in zip(cells, ("run_model1", "run_model2"), strict=True):
+        assert re.search(rf"mo\.stop\(\s*not {button}\.value", cell), button
+        assert "_run_id = log_tuning_run(" in cell, button
+    # The file reads in the order it runs: the function before the Tune cells.
+    assert source.index("def log_tuning_run(") < source.index("tuner.tune_")
+    assert "log_tuning_runs" not in source
+    assert "log_tuning_runs" not in notebook_defs
+    assert notebook_defs["shared_params"] == {
+        "config_hash": notebook_defs["config_hash"],
+        **notebook_defs["DATA_SETTINGS"],
+        **notebook_defs["EXPERIMENT_SETTINGS"],
+        "n_train": 917,
+        "n_val": 306,
+        "n_test": 306,
+        "prediction_floor": notebook_defs["PREDICTION_FLOOR"],
+    }
+    assert len(notebook_defs["shared_params"]) == 23
+    dataset_inputs = notebook_defs["tuning_dataset_inputs"]
+    assert {context: dataset.name for context, dataset in dataset_inputs.items()} == {
+        "training": "train",
+        "validation": "val",
+    }
+    assert all(len(dataset.digest) == 36 for dataset in dataset_inputs.values())
+
+
+def test_the_best_runs_are_logged_by_the_cell_that_follows_the_inspection(
+    notebook_defs: dict,
+) -> None:
+    # §8's L3: the best runs' run is logged by the cell that reads the
+    # inspection's results, with no button: it runs once "Inspect the best
+    # runs" has produced them. A script run defines the functions and opens no
+    # run (test_a_script_run_opens_no_mlflow_run).
+    source = NOTEBOOK_PATH.read_text(encoding="utf-8")
+    cells = [
+        cell for cell in source.split("@app.cell") if '"stage": "best_runs"' in cell
+    ]
+    assert len(cells) == 1
+    assert ".value" not in cells[0]
+    assert "\n    importance_df,\n" in cells[0]
+    assert "_figures = build_dataset_figures(" in cells[0]
+    assert "_n_metrics = log_evaluation_run(" in cells[0]
+    assert "log_best_runs" not in source
+    assert callable(notebook_defs["build_dataset_figures"])
+    assert callable(notebook_defs["log_evaluation_run"])
+    assert "best_runs_permutation" not in notebook_defs
+    assert "importance_df" not in notebook_defs
+
+
+def test_the_final_run_is_logged_by_the_cell_that_follows_the_test_evaluation(
+    notebook_defs: dict,
+) -> None:
+    # §8's L3: the final run is logged by the cell that reads the test
+    # evaluation's results, with no button: it runs once "Evaluate on the test
+    # part" has produced them, and its guard refuses a second final run. A
+    # script run evaluates nothing on test.
+    source = NOTEBOOK_PATH.read_text(encoding="utf-8")
+    cells = [cell for cell in source.split("@app.cell") if '"stage": "final"' in cell]
+    assert len(cells) == 1
+    # No menu's or button's `.value` (§9: the SHAP arrays' `.values` are read).
+    assert re.search(r"\.value\b", cells[0]) is None
+    assert "\n    test_scores_df,\n" in cells[0]
+    assert "tags.final = 'true'" in cells[0]
+    assert "_n_metrics = log_evaluation_run(" in cells[0]
+    assert "log_final_run" not in source
+    for name in ("test_scores_df", "test_predictions", "val_against_test_df"):
+        assert name not in notebook_defs, name
+    # §9's W1: the final run also logs the test SHAP values and, at a fixed
+    # rule, the waterfalls the display draws with the same function.
+    assert '"test_shap_values": pd.concat(' in cells[0]
+    assert "_n_worst_buildings = 5" in cells[0]
+    assert "] = waterfall_figure(" in cells[0]
+    displays = [
+        cell
+        for cell in source.split("@app.cell")
+        if "    test_waterfall_figures = {" in cell
+    ]
+    assert len(displays) == 1
+    assert "waterfall_figure(" in displays[0]
+    assert "go.Waterfall(" not in displays[0]
+    assert callable(notebook_defs["waterfall_figure"])
+
+
+def test_a_tuning_run_is_logged_once_then_skipped(
+    notebook_defs: dict, tmp_path: Path
+) -> None:
+    # The second review's G3: log_tuning_run called on a scratch store with a
+    # 2-trial study and a small tuning run. The first call logs the run; the
+    # second finds a FINISHED run with its key and logs nothing (M3's skip).
+    # The cold read's T1 and T2: the metrics' values and a dataset input.
+    # The experiment is created first: MLflow would create it at its default
+    # artifact location, from the repository's root the canonical one.
+    mlflow = pytest.importorskip("mlflow")
+    environment = _mlflow_environment(tmp_path)
+    client = mlflow.MlflowClient(environment["MLFLOW_TRACKING_URI"])
+    experiment_id = client.create_experiment(
+        environment["MLFLOW_EXPERIMENT_NAME"],
+        artifact_location=str((tmp_path / "artifacts").resolve()),
+    )
+    study = optuna.create_study(study_name="a_study", sampler=RandomSampler(seed=0))
+    study.optimize(
+        lambda trial: trial.suggest_float("total__alpha", 1e-4, 1.0, log=True),
+        n_trials=2,
+    )
+    studies_dir = tmp_path / "studies"
+    studies_dir.mkdir()
+    (studies_dir / "a_study.log").write_text("the study's journal\n", encoding="utf-8")
+    scores = pd.DataFrame(
+        {"score": [1.5, 2.5]},
+        index=pd.MultiIndex.from_tuples(
+            [("train", "composite", "rmse"), ("val", "composite", "rmse")],
+            names=["dataset", "cohort", "metric"],
+        ),
+    )
+    tuning_run = {
+        "study": study,
+        "study_seed": 7,
+        "cv_best": study.best_value,
+        "scores": scores,
+        "seconds": 1.0,
+        "n_complete": 2,
+        "n_failed": 0,
+        "components": [Bunch(name="total", to_dict=lambda: {"family": "poisson_glm"})],
+    }
+    code_tags = {
+        "notebook": "notebooks/03_hyperparameter_tuning.py",
+        "git_commit": "0" * 40,
+        "git_dirty": "false",
+    }
+    # Floats: an integer column makes MLflow's schema inference warn.
+    dataset = mlflow.data.from_pandas(
+        pd.DataFrame({"x": [0.5, 1.5], "y": [2.0, 3.0]}), name="train", digest="d" * 36
+    )
+    arguments = (
+        tuning_run,
+        "independent_cohorts",
+        {"family": "poisson_glm", "use_exposure": True},
+        studies_dir,
+        "rmse",
+        {"seed": 42},
+        {"simulation.n_neighborhoods": 150},
+        {"training": dataset},
+        code_tags,
+    )
+    with pytest.MonkeyPatch.context() as patch:
+        for name, value in environment.items():
+            patch.setenv(name, value)
+        run_id = notebook_defs["log_tuning_run"](*arguments)
+        assert run_id is not None
+        assert notebook_defs["log_tuning_run"](*arguments) is None
+    runs = client.search_runs([experiment_id])
+    assert [run.info.run_id for run in runs] == [run_id]
+    run = runs[0]
+    assert run.info.status == "FINISHED"
+    assert run.info.run_name == "independent_cohorts poisson_glm exposure=True"
+    assert {
+        name: value
+        for name, value in run.data.tags.items()
+        if not name.startswith("mlflow.")
+    } == {
+        "run_key": "studies/a_study",
+        "stage": "tuning",
+        "model": "independent_cohorts",
+        "family": "poisson_glm",
+        **code_tags,
+    }
+    assert run.data.params == {
+        "family": "poisson_glm",
+        "use_exposure": "True",
+        "seed": "42",
+        "study_seed": "7",
+        "best.total__alpha": str(study.best_params["total__alpha"]),
+    }
+    assert run.data.metrics == {
+        "cv/rmse": study.best_value,
+        "train/composite/rmse": 1.5,
+        "val/composite/rmse": 2.5,
+        "seconds": 1.0,
+        "n_complete": 2.0,
+        "n_failed": 0.0,
+    }
+    assert [
+        (
+            item.dataset.name,
+            item.dataset.digest,
+            {tag.key: tag.value for tag in item.tags},
+        )
+        for item in run.inputs.dataset_inputs
+    ] == [("train", "d" * 36, {"mlflow.data.context": "training"})]
+    artifacts = Path(run.info.artifact_uri)
+    assert sorted(
+        str(path.relative_to(artifacts))
+        for path in artifacts.rglob("*")
+        if path.is_file()
+    ) == [
+        "best_params.json",
+        "components.json",
+        "config.json",
+        "search_space.json",
+        "study/a_study.log",
+        "trials.csv",
+    ]
+    assert json.loads((artifacts / "best_params.json").read_text()) == study.best_params
+    assert len(pd.read_csv(artifacts / "trials.csv")) == 2
+    # M1's concern: no run is left open and the store is not left as MLflow's
+    # tracking URI for the tests that run after.
+    assert mlflow.active_run() is None
+    assert mlflow.get_tracking_uri() != environment["MLFLOW_TRACKING_URI"]
+
+
+def test_an_evaluation_run_logs_the_composite_and_each_best_runs_files(
+    notebook_defs: dict, tmp_path: Path
+) -> None:
+    # The second review's G3: log_evaluation_run called on a scratch store
+    # with two best runs and small frames. The composite rows (each model's
+    # and the paired difference's) become metrics, a cohort's row does not;
+    # each best run's study names a tag and gives its best_params file. The
+    # cold read's T2: a dataset input and a figure.
+    mlflow = pytest.importorskip("mlflow")
+    environment = _mlflow_environment(tmp_path)
+    client = mlflow.MlflowClient(environment["MLFLOW_TRACKING_URI"])
+    experiment_id = client.create_experiment(
+        environment["MLFLOW_EXPERIMENT_NAME"],
+        artifact_location=str((tmp_path / "artifacts").resolve()),
+    )
+    best_runs = {}
+    for model in ("independent_cohorts", "total_times_probability"):
+        study = optuna.create_study(
+            study_name=f"{model}_study", sampler=RandomSampler(seed=0)
+        )
+        study.optimize(
+            lambda trial: trial.suggest_float("total__alpha", 1e-4, 1.0, log=True),
+            n_trials=1,
+        )
+        best_runs[model] = {
+            "study": study,
+            "components": [
+                Bunch(name="total", to_dict=lambda: {"family": "poisson_glm"})
+            ],
+        }
+    bound_names = notebook_defs["CI_BOUND_NAMES"]
+    statistics = [
+        "score",
+        "mean",
+        "median",
+        "sd",
+        bound_names["lower"],
+        bound_names["upper"],
+    ]
+    scores_df = pd.DataFrame(
+        [
+            {
+                "model": model,
+                "cohort": cohort,
+                "metric": "rmse",
+                **{statistic: value + i for i, statistic in enumerate(statistics)},
+            }
+            for model, cohort, value in (
+                ("independent_cohorts", "composite", 4.0),
+                ("total_times_probability", "composite", 4.5),
+                ("independent_cohorts", "n_elementary", 3.0),
+            )
+        ]
+    )
+    difference_df = pd.DataFrame(
+        [
+            {
+                "model": "independent_cohorts - total_times_probability",
+                "cohort": "composite",
+                "metric": "rmse",
+                **{statistic: -0.5 + i for i, statistic in enumerate(statistics)},
+            }
+        ]
+    )
+    # Floats: an integer column makes MLflow's schema inference warn.
+    dataset = mlflow.data.from_pandas(
+        pd.DataFrame({"x": [0.5, 1.5], "y": [2.0, 3.0]}), name="val", digest="d" * 36
+    )
+    with pytest.MonkeyPatch.context() as patch:
+        for name, value in environment.items():
+            patch.setenv(name, value)
+        n_metrics = notebook_defs["log_evaluation_run"](
+            "best runs",
+            {"run_key": "studies/best_runs", "stage": "best_runs"},
+            {"seed": 42},
+            "val",
+            scores_df,
+            difference_df,
+            bound_names,
+            {"scores": scores_df},
+            {"figures/a_figure.html": go.Figure()},
+            best_runs,
+            {"validation": dataset},
+        )
+    assert n_metrics == 18
+    (run,) = client.search_runs([experiment_id])
+    assert run.info.status == "FINISHED"
+    assert run.info.run_name == "best runs"
+    assert run.data.metrics == {
+        f"val/{name}/rmse/{statistic}": value + i
+        for name, value in (
+            ("independent_cohorts", 4.0),
+            ("total_times_probability", 4.5),
+            ("difference", -0.5),
+        )
+        for i, statistic in enumerate(statistics)
+    }
+    assert {
+        name: value
+        for name, value in run.data.tags.items()
+        if not name.startswith("mlflow.")
+    } == {
+        "run_key": "studies/best_runs",
+        "stage": "best_runs",
+        "best.independent_cohorts": "independent_cohorts_study",
+        "best.total_times_probability": "total_times_probability_study",
+    }
+    assert run.data.params == {"seed": "42"}
+    assert [
+        (
+            item.dataset.name,
+            item.dataset.digest,
+            {tag.key: tag.value for tag in item.tags},
+        )
+        for item in run.inputs.dataset_inputs
+    ] == [("val", "d" * 36, {"mlflow.data.context": "validation"})]
+    artifacts = Path(run.info.artifact_uri)
+    assert (artifacts / "tables" / "scores.csv").read_text() == scores_df.to_csv(
+        index=False, float_format="%.6g"
+    )
+    assert (artifacts / "figures" / "a_figure.html").is_file()
+    for model_name, best_run in best_runs.items():
+        assert (
+            json.loads((artifacts / "best_params" / f"{model_name}.json").read_text())
+            == best_run["study"].best_params
+        )
+        assert json.loads(
+            (artifacts / "components" / f"{model_name}.json").read_text()
+        ) == {"total": {"family": "poisson_glm"}}
+    assert mlflow.active_run() is None
+    assert mlflow.get_tracking_uri() != environment["MLFLOW_TRACKING_URI"]
 
 
 SHARING = [(False, False), (True, False), (True, True)]
@@ -454,11 +921,14 @@ def test_the_two_notebooks_share_one_setup(
         "cv_groups",
     ):
         assert tuning[name] == eda[name], name
-    for part in ("train_age_group", "val_age_group", "test_age_group"):
+    for dataset_name in ("train_age_group", "val_age_group", "test_age_group"):
         for field, tuning_values, eda_values in zip(
-            tuning[part]._fields, tuning[part], eda[part], strict=True
+            tuning[dataset_name]._fields,
+            tuning[dataset_name],
+            eda[dataset_name],
+            strict=True,
         ):
-            assert tuning_values.equals(eda_values), (part, field)
+            assert tuning_values.equals(eda_values), (dataset_name, field)
     assert repr(tuning["cv"]) == repr(eda["cv"])
     for name in ("COUNT_FEATURE_TRANSFORMERS", "PROBABILITY_FEATURE_TRANSFORMERS"):
         assert {
@@ -565,6 +1035,7 @@ def test_the_forest_figure_draws_a_row_per_cohort_and_a_trace_per_model(
     # at its score, the bar its interval; one legend entry per model; the
     # rule in every row. The rows of another metric are not drawn.
     forest_figure = notebook_defs["forest_figure"]
+    palette = notebook_defs["PALETTE"]
     scores = pd.DataFrame(
         [
             {"model": model, "cohort": cohort, "metric": metric}
@@ -576,7 +1047,7 @@ def test_the_forest_figure_draws_a_row_per_cohort_and_a_trace_per_model(
     scores["score"] = range(len(scores))
     scores["lower"] = scores["score"] - 0.5
     scores["upper"] = scores["score"] + 1.0
-    figure = forest_figure(scores, "rmse", "lower", "upper")
+    figure = forest_figure(scores, "rmse", "lower", "upper", palette)
     cohorts = ["composite", "cohort_x", "cohort_y"]
     assert [annotation.text for annotation in figure.layout.annotations] == cohorts
     assert [trace.name for trace in figure.data if trace.showlegend] == [
@@ -602,12 +1073,12 @@ def test_the_forest_figure_draws_a_row_per_cohort_and_a_trace_per_model(
     assert next(traces, None) is None
     assert not figure.layout.shapes
     ruled = forest_figure(
-        scores, "rmse", "lower", "upper", share_x_axis=True, rule_at=0
+        scores, "rmse", "lower", "upper", palette, share_x_axis=True, rule_at=0
     )
     assert len(ruled.layout.shapes) == 3
     assert all(shape.x0 == shape.x1 == 0 for shape in ruled.layout.shapes)
     one_model = forest_figure(
-        scores[scores["model"] == "model_a"], "rmse", "lower", "upper"
+        scores[scores["model"] == "model_a"], "rmse", "lower", "upper", palette
     )
     assert not one_model.layout.showlegend
 
@@ -620,6 +1091,7 @@ def test_the_ridge_draws_a_density_per_model_in_a_row_per_cohort(
     # row's highest density 1; no dots or bars; one legend entry per model;
     # the rule in every row. The columns of another metric are not drawn.
     ridge_figure = notebook_defs["ridge_figure"]
+    palette = notebook_defs["PALETTE"]
     models = ["model_a", "model_b"]
     columns = pd.MultiIndex.from_product(
         [["cohort_x", "cohort_y", "composite"], ["rmse", "mae"]],
@@ -630,7 +1102,7 @@ def test_the_ridge_draws_a_density_per_model_in_a_row_per_cohort(
         model: pd.DataFrame(rng.normal(4.5, 0.3, (200, len(columns))), columns=columns)
         for model in models
     }
-    figure = ridge_figure(replicate_scores, "rmse")
+    figure = ridge_figure(replicate_scores, "rmse", palette)
     cohorts = ["composite", "cohort_x", "cohort_y"]
     assert [annotation.text for annotation in figure.layout.annotations] == cohorts
     assert len(figure.data) == 6 and all(trace.mode == "lines" for trace in figure.data)
@@ -651,7 +1123,9 @@ def test_the_ridge_draws_a_density_per_model_in_a_row_per_cohort(
             np.testing.assert_allclose(curve.y, density / highest)
         assert max(max(curve.y) for curve in curves) == pytest.approx(1.0)
     assert not figure.layout.shapes
-    ruled = ridge_figure(replicate_scores, "rmse", share_x_axis=True, rule_at=0)
+    ruled = ridge_figure(
+        replicate_scores, "rmse", palette, share_x_axis=True, rule_at=0
+    )
     assert len(ruled.layout.shapes) == 3
     assert all(shape.x0 == shape.x1 == 0 for shape in ruled.layout.shapes)
 
@@ -660,18 +1134,17 @@ def test_the_plots_open_on_their_forms_and_the_selection_metric(
     notebook_defs: dict,
 ) -> None:
     # 5.4b: the best runs' plot opens on the forest, the paired difference's
-    # on the ridge; both metric menus on the selection metric. The runs' menu
-    # (which also sets the permutation importance's metric, bias excepted)
-    # offers the two selection metrics and bias; the difference's, all six.
+    # on the ridge; both metric menus on the selection metric. S4: both offer
+    # all six metrics; the runs' menu only draws (the permutation importance
+    # scores the selection metric).
     assert notebook_defs["best_runs_plot"].value == "forest"
     assert notebook_defs["best_difference_plot"].value == "ridge"
     selection = notebook_defs["SELECTION_METRIC"].name
+    metric_names = [metric.name for metric in notebook_defs["METRICS"]]
     runs_metric = notebook_defs["best_runs_metric"]
-    assert list(runs_metric.options) == ["rmse", "poisson_deviance", "bias"]
+    assert list(runs_metric.options) == metric_names
     difference_metric = notebook_defs["best_difference_metric"]
-    assert list(difference_metric.options) == [
-        metric.name for metric in notebook_defs["METRICS"]
-    ]
+    assert list(difference_metric.options) == metric_names
     assert runs_metric.value == difference_metric.value == selection == "rmse"
 
 
@@ -691,7 +1164,8 @@ def test_the_shap_beeswarm_opens_on_the_first_cohort(
     for name in (
         "shap_beeswarm_figures",
         "importance_df",
-        "model1_permutation",
+        "best_runs_permutation",
+        "best_runs_shap",
         "permutation_figures",
     ):
         assert name not in notebook_defs, name
@@ -807,6 +1281,7 @@ def test_the_beeswarm_figure_draws_a_row_per_column_and_per_level(
     # row per sorted level, kept at its place, in gray; one colorbar for the
     # numeric rows; the dots' jitter seeded.
     beeswarm_figure = notebook_defs["beeswarm_figure"]
+    palette = notebook_defs["PALETTE"]
     X = pd.DataFrame(
         {"x": [1.0, 2.0, 3.0, 4.0], "s": ["b", "a", "b", "a"], "z": [5.0] * 4}
     )
@@ -819,7 +1294,7 @@ def test_the_beeswarm_figure_draws_a_row_per_column_and_per_level(
         feature_names=list(X.columns),
         output_names=["cohort_a", "cohort_b"],
     )
-    figure = beeswarm_figure(explanation, X, "cohort_a", 0)
+    figure = beeswarm_figure(explanation, X, "cohort_a", 0, palette)
     labels = ["z", "s = a", "s = b", "x"]
     assert [trace.name for trace in figure.data] == labels
     assert list(figure.layout.yaxis.ticktext) == labels
@@ -830,13 +1305,63 @@ def test_the_beeswarm_figure_draws_a_row_per_column_and_per_level(
     jitter = np.random.default_rng(0).uniform(-0.3, 0.3, len(X))
     np.testing.assert_array_equal(figure.data[0].y, 3 + jitter)
     np.testing.assert_array_equal(figure.data[3].x, [0.1] * 4)
-    other_cohort = beeswarm_figure(explanation, X, "cohort_b", 0)
+    other_cohort = beeswarm_figure(explanation, X, "cohort_b", 0, palette)
     assert [trace.name for trace in other_cohort.data] == [
         "x",
         "s = a",
         "s = b",
         "z",
     ]
+
+
+def test_the_waterfall_figure_steps_from_the_base_to_the_prediction(
+    notebook_defs: dict,
+) -> None:
+    # §9's W1 (the display's waterfall as a function, also logged by the final
+    # run): the building found by its id; from its base a step per column, the
+    # largest |SHAP| on top, to its prediction; the composite the cohorts'
+    # values and bases summed (the total).
+    waterfall_figure = notebook_defs["waterfall_figure"]
+    palette = notebook_defs["PALETTE"]
+    dataset = notebook_defs["AgeGroupDataset"](
+        X=pd.DataFrame({"x": [1.0, 2.5], "s": ["a", "b"]}),
+        Y=pd.DataFrame({"cohort_a": [2, 4], "cohort_b": [1, 3]}),
+        exposure=pd.Series([10.0, 20.0]),
+        groups=pd.Series(["n0", "n1"]),
+        ids=pd.Series(["b0", "b1"]),
+    )
+    values = np.zeros((2, 2, 2))
+    values[1, :, 0] = [0.5, -1.5]
+    values[1, :, 1] = [1.0, 0.25]
+    explanation = shap.Explanation(
+        values=values,
+        base_values=np.array([[1.0, 2.0], [3.0, 1.5]]),
+        feature_names=["x", "s"],
+        output_names=["cohort_a", "cohort_b"],
+    )
+    predictions = pd.DataFrame({"cohort_a": [1.0, 2.0], "cohort_b": [2.0, 2.75]})
+    for cohort, labels, steps, base, prediction, title in (
+        ("cohort_a", ["s = b", "x = 2.5"], [-1.5, 0.5], 3.0, 2.0, "cohort_a: true 4"),
+        (
+            "composite",
+            ["x = 2.5", "s = b"],
+            [1.5, -1.25],
+            4.5,
+            4.75,
+            "the total: true 7",
+        ),
+    ):
+        figure = waterfall_figure(
+            explanation, dataset, predictions, "b1", cohort, palette
+        )
+        (trace,) = figure.data
+        assert trace.type == "waterfall" and trace.base == base
+        assert list(trace.y) == labels
+        np.testing.assert_array_equal(trace.x, steps)
+        assert [shape.x0 for shape in figure.layout.shapes] == [base, prediction]
+        assert (
+            figure.layout.title.text == f"b1 (n1), {title}, predicted {prediction:.2f}"
+        )
 
 
 def test_the_permutation_figure_draws_a_box_per_split_ordered_by_the_last(
@@ -847,6 +1372,7 @@ def test_the_permutation_figure_draws_a_box_per_split_ordered_by_the_last(
     # draws its first category at the bottom), the last split in blue, an
     # earlier one in gray, a dotted rule at 0.
     permutation_figure = notebook_defs["permutation_figure"]
+    palette = notebook_defs["PALETTE"]
     train = Bunch(
         importances=np.array([[0.9, 1.1], [0.0, 0.2], [0.4, 0.6]]),
         importances_mean=np.array([1.0, 0.1, 0.5]),
@@ -856,7 +1382,7 @@ def test_the_permutation_figure_draws_a_box_per_split_ordered_by_the_last(
         importances_mean=np.array([0.2, 0.0, 0.6]),
     )
     figure = permutation_figure(
-        {"train": train, "val": val}, ["a", "b", "c"], "composite rmse"
+        {"train": train, "val": val}, ["a", "b", "c"], "composite rmse", palette
     )
     assert [trace.name for trace in figure.data] == ["train", "val"]
     assert [trace.marker.color for trace in figure.data] == ["#898781", "#2a78d6"]
@@ -868,7 +1394,47 @@ def test_the_permutation_figure_draws_a_box_per_split_ordered_by_the_last(
         (0, "dot")
     ]
     assert figure.layout.xaxis.title.text == "drop in the composite rmse when shuffled"
-    test_only = permutation_figure({"test": train}, ["a", "b", "c"], "n_x rmse")
+    test_only = permutation_figure(
+        {"test": train}, ["a", "b", "c"], "n_x rmse", palette
+    )
     assert list(test_only.layout.yaxis.categoryarray) == ["b", "c", "a"]
     assert test_only.layout.xaxis.title.text == "drop in the n_x rmse when shuffled"
     assert [trace.marker.color for trace in test_only.data] == ["#2a78d6"]
+
+
+def test_the_count_figures_and_the_shares_bars_are_built_by_functions(
+    notebook_defs: dict,
+) -> None:
+    # M5: the test reading's figures are functions, so the final run logs them
+    # at a fixed state; a script run defines them without the test click.
+    palette, model_colors = notebook_defs["PALETTE"], notebook_defs["MODEL_COLORS"]
+    buildings = pd.DataFrame(
+        {
+            "building_id": ["b0", "b1", "b2"],
+            "neighborhood_id": ["n0", "n0", "n1"],
+            "total_true": [3, 5, 8],
+            "total_predicted": [2.5, 5.5, 7.0],
+        }
+    )
+    histogram = notebook_defs["counts_histogram_figure"](
+        buildings, "total", "#123456", palette
+    )
+    assert [trace.name for trace in histogram.data] == ["true", "predicted"]
+    assert list(histogram.data[0].x) == [3, 5, 8]
+    assert list(histogram.data[1].x) == [2.5, 5.5, 7.0]
+    assert histogram.data[1].marker.color == "#123456"
+    scatter = notebook_defs["counts_scatter_figure"](buildings, "total", palette)
+    # The markers: x the true counts, y the predictions (the first trace is the
+    # dotted line of equality).
+    assert list(scatter.data[1].x) == [3, 5, 8]
+    assert list(scatter.data[1].y) == [2.5, 5.5, 7.0]
+    assert scatter.layout.xaxis.title.text == "true total"
+    true_counts = pd.DataFrame({"a": [1, 3], "b": [2, 2]})
+    predicted_counts = {model: true_counts * 1.0 for model in model_colors}
+    bars = notebook_defs["selection_shares_bars_figure"](
+        true_counts, predicted_counts, model_colors, palette
+    )
+    assert [trace.name for trace in bars.data] == ["true", *model_colors]
+    assert list(bars.data[0].x) == ["a", "b"] and list(bars.data[0].y) == [0.5, 0.5]
+    assert bars.data[0].error_y.array is not None
+    assert all(trace.error_y.array is None for trace in bars.data[1:])
