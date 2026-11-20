@@ -37,8 +37,9 @@ with the rest; the legacy search space (`modeling_config.py`, `configs/modeling.
 
 2026-11-20: PR #27 merged as e9ebd69; A1 committed (7524113); B1 committed (9df22d9); B2
 committed (5b3f8d7); B3 done (the docs, the old studies moved to `studies/retired/`, Check C
-re-recorded: the handoff's status of 2026-11-20; awaiting the user's commit). Task B complete.
-Next: C1 (Fable).
+re-recorded: the handoff's status of 2026-11-20; committed 9a8910b). Task B complete. C1 done
+(the kept lists per run kind in Task C, the chart view measured on B3's store, C2–C4's prompts
+refined; docs only, awaiting the user's commit). Next: C2 (Opus).
 
 ## Step 0 — clean start (done 2026-11-19)
 
@@ -140,12 +141,83 @@ Files: `notebooks/03_hyperparameter_tuning.py` — `shared_params` (l.1021–106
 Rule: **a param or metric is something you would put on a chart axis or filter by; everything
 else is an artifact.** A value identical in every run cannot separate runs in a chart.
 
-| Run kind | Now | Proposed |
+**The kept lists (C1, 2026-11-20):**
+
+| Run kind | Params | Metrics | New artifacts |
+|---|---|---|---|
+| Tuning (24) | the run's settings (`family`, or `total_family` and `probability_family`; `use_exposure`; Model 1's `share_hyperparams` and `share_feature_transformer`); `config_hash`, `seed`, `split_method`, `n_trials`, `objective_metric`; `best.<name>` per best parameter, under the study's own names. 9 + `best.*` for Model 1, 8 + `best.*` for Model 2 (was 28 / 27 + `best.*`). | 16 (was 52): `cv/<objective>`, `{train,val}/composite/<6 metrics>`, `seconds`, `n_complete`, `n_failed` | `settings.json`, `scores.csv`; the six others unchanged |
+| Best runs | 6 (was 23): `config_hash`, `seed`, `split_method`, `n_trials`, `objective_metric`, `selection_metric` | 54 (was 108): `val/<model or difference>/<metric>/{score, ci95_lower, ci95_upper}` | `settings.json` |
+| Final | the same 6 (was 24) | 54 (was 108): `test/…`, the same names | `settings.json` |
+
+- **`settings.json` is the complete record:** the 23 shared settings as they are now
+  (`shared_params`, unchanged), plus `study_seed` in a tuning run and `n_train_val` in the
+  final run. The params are a subset of it.
+- **Only in `settings.json` from now on** (18, each one value in all 24 runs of a store):
+  `config_path`, `n_neighborhoods`, `buildings_per_neighborhood_rate`, `simulation_seed`,
+  `test_size`, `val_size`, `n_splits`, `n_startup_trials`, `n_resamples`, `alpha`, `n_repeats`,
+  `n_shap_rows`, `n_shap_background`, `n_train`, `n_val`, `n_test`, `prediction_floor`, and in
+  a tuning run `selection_metric`; also `study_seed` (it differs per run, and is in the
+  `run_key`) and the final run's `n_train_val`.
+- **`selection_metric` is a param of the evaluation runs only** (the user's choice): a tuning
+  run does not depend on it and its `run_key` does not hold it, so a skipped run would keep
+  the value of its first logging.
+- **`scores.csv`** (the user's choice): all 48 rows of the run's scores, columns `dataset`,
+  `cohort`, `metric`, `score`, the composite's 12 rows included, floats written in full (no
+  `float_format`): the exact record of the 36 per-cohort scores that leave the metrics.
+- **Unchanged:** the tags, the dataset inputs, the tuning run's six artifacts, the evaluation
+  runs' tables (they keep `mean`, `median`, `sd`), figures and per-model JSON.
+
+**The chart view, measured (C1; B3's 3-trial store, 26 runs, read with sqlite, read-only).**
+A scatter draws a run only if it holds both the param and the metric. Runs holding the param
+(all hold `val/composite/rmse`):
+
+| x axis | Check store (sharing off) | Real setup (sharing on) |
 |---|---|---|
-| Tuning (24) params | ~28 + `best.*` | the run's settings (family, exposure, sharing), `best.*` (the scatter's x axis), and the few settings that differ between re-runs (`config_hash`, `seed`, `n_trials`, `objective_metric`, `selection_metric`, `split_method`). The other ~17 constants → one `settings.json` artifact. |
-| Tuning metrics | 52 | 16: `cv/<objective>`, `{train,val}/composite/<6 metrics>`, `seconds`, `n_complete`, `n_failed`. Per-cohort scores → `scores.csv` in the run. |
-| Best runs / final metrics | 108 each | 54: per model and for the difference, `<metric>/{score, ci95_lower, ci95_upper}`. Mean, median, sd stay in the logged table. |
-| Best runs / final params | 23 (+1) | the same short list as above. |
+| `best.shared__<LightGBM name>` | none | 4 (Model 1: the 2 LightGBM families × exposure) |
+| `best.<cohort>__<LightGBM name>` | 4 per cohort | none |
+| `best.shared__alpha` (check: `best.<cohort>__alpha`) | 4 | 4 (2 GLM + 2 NB2; their ranges differ) |
+| `best.total__<LightGBM name>` | 8 | 8 |
+| `best.total__alpha` | 8 | 8 (4 GLM + 4 NB2; their ranges differ) |
+| `best.total__dispersion` | 4 | 4 |
+| `best.probability__<LightGBM name>` | 8 | 8 |
+| `best.probability__C` | 8 | 8 |
+
+- **The prefixed names compare across the families of one component role** (the Poisson and
+  the Gaussian LightGBM share `shared__…`, and `total__…`), **never across the two models.**
+  No alias is added (the user's choice, asked twice; a common `best.count__<name>` for a
+  12-run scatter was offered and declined).
+- **The check store has no `best.shared__…`** (Check C runs with both sharing flags off), so
+  the scatter to open in C4 is `best.total__num_leaves` against `val/composite/rmse`, 8 points.
+- **Every numeric `best.*` value is a number in every run that has it;** the transformer and
+  calibration names are categories (a filter or a group, not a scatter axis).
+- **Each point is one study's best trial,** so a scatter across runs shows where the best
+  settings landed, with family, exposure and model differing between the points. A
+  hyperparameter's effect is read within one study: `trials.csv`, or Optuna's `plot_slice` on
+  the journal (`MLFLOW_RUNS.md` §7).
+- **Models and families are compared by score:** the runs table sorted by
+  `val/composite/<selection>` with the `family` tag (in all 24 runs) and `use_exposure` as
+  columns; a bar chart of that metric, one bar per run; the runs grouped by the `family` or
+  `model` tag.
+- **Not verified in C1** (it needs the UI on a copy of the store): that MLflow 3.16's scatter
+  takes a param on an axis and reads its text as a number; that the chart view draws only the
+  first 10 visible runs until all runs are shown; the bar chart and the grouping. C4's guided
+  look confirms them.
+
+**Checked against Task D's read:**
+
+| `04` needs | From | Kept |
+|---|---|---|
+| each model's tuning runs | the tags `stage`, `model` | yes |
+| the runs of the current setup | `tags.run_key LIKE '<folder>/%'` and `params.objective_metric` | yes |
+| each model's best | `metrics.val/composite/<selection>` | yes |
+| the rebuild | `components.json` (each component's family, each count component's `use_exposure`), `best_params.json` | yes |
+| the study name | the `run_key`'s second part | yes |
+| `y_min`, `random_state` | `04`'s own constants, asserted against the run's `prediction_floor` (`settings.json`) and `seed` (a param) | `prediction_floor` moved, readable; `seed` kept |
+
+`MLFLOW_RUNS.md` §9's recipe reads `prediction_floor` as a param of every run kind: after
+C2–C3 it is in `settings.json` only (C4 changes that line and the table's row; the rest of
+the recipe reads kept params and is unchanged). For D1: the best runs' and the final run's
+keys share the folder prefix, so the `stage` filter is required.
 
 **Run names.** A name is optional: without one MLflow generates a random one (like
 `bold-cat-123`). The practice is to set a short readable name saying what distinguishes the
@@ -153,17 +225,18 @@ run, and to put everything you filter or group by in tags and params, never to p
 Names need not be unique. The current names (`<model> <family> exposure=<bool>`, `best runs`,
 `final`) already do this; the plan keeps them.
 
-- **C1 (Fable) — design stop.** The exact kept lists, checked against what Task D's read needs
-  (`val/composite/<selection>`, `components.json`, `best_params.json`, the study name) and
-  against the chart view (a scatter of `best.shared__num_leaves` against
-  `val/composite/rmse` across the LightGBM runs). No code.
-- **C2 (Opus).** The tuning runs: `shared_params` split into params and `settings.json`,
-  `scores.csv`, the tests at l.339 and l.431.
-- **C3 (Opus).** The evaluation runs: `log_evaluation_run`'s metrics, the test at l.558.
-- **C4 (Sonnet).** `docs/MLFLOW_RUNS.md` §4–§5 and `check_store.py`'s counts (copied into the
-  repo's scratch area for the session; it lives in an old scratchpad).
+- **C1 (Fable) — design stop. Done 2026-11-20.** The lists, the measurements and the check
+  above. No code.
+- **C2 (Opus).** The tuning runs: `shared_params` stays the complete dict and is logged as
+  `settings.json` (with `study_seed`); the params are the run's settings, the five named keys
+  and `best.*`; 16 metrics; `scores.csv`; the tests at l.339 and l.431.
+- **C3 (Opus).** The evaluation runs: `log_evaluation_run` logs the 6 params, `settings.json`
+  and the statistics `score`, lower, upper (54 metrics); the test at l.558.
+- **C4 (Sonnet).** `docs/MLFLOW_RUNS.md` §4–§5, §7, §9's `prediction_floor` and §10's two
+  messages; `check_store.py`'s counts
+  and lists (copied into the session's scratchpad; it lives in an old one).
   - Verify (C2–C4): the touched tests; a 3-trial run into a scratch store, then the UI's chart
-    view opened by you with one scatter.
+    view opened by you with the scatter and the bar chart.
 
 ## Task D — split into tuning and inspection notebooks
 
@@ -246,11 +319,23 @@ B3: docs/HYPERPARAMETER_TUNING.md §4's table (Task B's final ranges and scales,
 C1: decide exactly which params and metrics each run kind keeps, by the rule in Task C (a chart axis or a filter; the rest an artifact). Check the lists against what the inspection notebook's read will need (val/composite/<selection>, components.json, best_params.json, the study name) and against the chart view: on a scratch store with 3-trial runs, show which scatter plots work across runs (a best.* hyperparameter against a validation metric) and whether the prefixed names (shared__, total__, probability__) compare across families. Output: the kept lists per run kind written into Task C, what moves to settings.json and scores.csv, open choices asked with the question tool, and C2–C4's prompts refined below.
 ```
 
-**C2 (Opus)** — the opening, then: `C2: the tuning runs as C1 decided: shared_params split into params and settings.json, scores.csv, the tests that pin them.`
+**C2 (Opus)** — the opening, then:
 
-**C3 (Opus)** — the opening, then: `C3: the evaluation runs as C1 decided: log_evaluation_run's metrics and params, the test that pins them.`
+```text
+C2: the tuning runs as C1 decided (Task C's kept lists), in notebooks/03_hyperparameter_tuning.py. shared_params stays the complete dict of 23 settings; log_tuning_run logs it with study_seed as settings.json, and as params only the run's settings, config_hash, seed, split_method, n_trials, objective_metric and best.<name> (no selection_metric, no study_seed, none of the other settings). Metrics: cv/<objective>, the composite's 12 train/val scores, seconds, n_complete, n_failed (16). scores.csv: all 48 rows of tuning_run["scores"] as dataset, cohort, metric, score, floats written in full (no float_format). The other six artifacts, the tags and the inputs are unchanged; log_evaluation_run and its two callers are not touched (C3). Tests: the shared_params pin (l.356–365) stays, and the tuning-run test (l.431) pins the exact param names of a Model 1 and a Model 2 run, the 16 metric names, settings.json equal to shared_params plus study_seed, and scores.csv read back (float_precision="round_trip") equal to the scores exactly. Verify: ruff, marimo check, the touched tests, run once; a mutation per kept list (a param added, a metric added, scores.csv rounded).
+```
 
-**C4 (Sonnet)** — the opening, then: `C4: docs/MLFLOW_RUNS.md §4–§5 and check_store.py's counts; a 3-trial run into a scratch store, then guide me to open the chart view with one scatter.`
+**C3 (Opus)** — the opening, then:
+
+```text
+C3: the evaluation runs as C1 decided (Task C's kept lists), in notebooks/03_hyperparameter_tuning.py. log_evaluation_run is given the complete settings (shared_params; the final run's with n_train_val) and logs them as settings.json, and as params only config_hash, seed, split_method, n_trials, objective_metric, selection_metric. Metrics: per model and for the difference, per metric, the statistics score and the two bounds (bound_names) only: 54 in a run; mean, median and sd stay in the tables, which are unchanged, as are the figures, the per-model JSON, the tags and the inputs. The two callers' messages need no change (they print the returned count). Tests: the evaluation-run test (l.558; its n_metrics 18 becomes 9) pins the 6 param names, the metric names and settings.json. Verify: ruff, marimo check, the touched tests, run once; a mutation per kept list.
+```
+
+**C4 (Sonnet)** — the opening, then:
+
+```text
+C4: the docs and the checker for C2–C3. docs/MLFLOW_RUNS.md: §4 (the params per run kind, settings.json and scores.csv among the artifacts, what settings.json holds), §5 (16 and 54 metrics), §7 (models and families are compared by score: the runs table, a bar chart of val/composite/<selection>, the runs grouped by the family or model tag; a best.* scatter holds only the runs of one component role, Task C's coverage table; a hyperparameter's effect is read within a study), §9's table and recipe (prediction_floor from settings.json for every run kind; the rest unchanged, it reads kept params), §10's two messages (108 metrics becomes 54). check_store.py copied from /private/tmp/claude-501/-Users-galkampel-Desktop-Projects-age-group-prediction/1e116e6f-752d-40d8-bedc-ad034d51e94c/scratchpad/manual/ into this session's scratchpad: the param lists per run kind, 16 and 54 metrics, the two new artifacts. Then a 3-trial run into a scratch store (never the repo's stores), check_store.py with 0 failures, and guide me in the UI's chart view, one step at a time: show all runs (the view may draw only the first 10), the scatter of best.total__num_leaves against val/composite/rmse (8 points expected), and a bar chart of val/composite/rmse over the 24 tuning runs grouped by the family tag. Record in Task C what the look showed for the points C1 could not verify (a param on a scatter axis read as a number, the first-10 default, the bar chart and the grouping).
+```
 
 **D1 (Fable; design stop + read-only probe)** — the opening, then:
 
