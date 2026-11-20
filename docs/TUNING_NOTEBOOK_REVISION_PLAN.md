@@ -35,7 +35,8 @@ with the rest; the legacy search space (`modeling_config.py`, `configs/modeling.
 
 ## Status
 
-2026-11-20: PR #27 merged as e9ebd69; A1 done (the SHAP colours; awaiting the user's commit). Next: B1 (Fable).
+2026-11-20: PR #27 merged as e9ebd69; A1 committed (7524113); B1 done (the search space decided
+with measurements; this file awaits the user's commit). Next: B2 (Opus).
 
 ## Step 0 — clean start (done 2026-11-19)
 
@@ -68,34 +69,54 @@ Files: `src/age_group_prediction/hyperparameter_tuning/search_spaces.py` (l.57�
 shared by the regressor and the classifier), `params.py` (`LGBMParams`), `components.py`
 (`make_estimator`, l.134–203), their unit tests, `docs/HYPERPARAMETER_TUNING.md` §4/§10.
 
-Facts that drive the ranges: ~917 training rows, ~733 per CV fold, ~11 features; no early
+Facts that drive the ranges: ~917 training rows, ~733 per CV fold, 10–11 features; no early
 stopping (ruled out: the composite's `fit` has no `eval_set`); TPE, 100 trials, 10 startup.
 
-Proposed space (B1 confirms each row with measurements before any code):
+**Final space (B1, 2026-11-20; measured on the current data and on copies of the stored studies):**
 
-| Hyperparameter | Now | Proposed | Reason |
+| Hyperparameter | Was | Final | Evidence |
 |---|---|---|---|
-| `max_depth` | 3–8 | **removed; fixed `-1`** | LightGBM grows leaf-wise; the docs tune `num_leaves`, not depth. Today 54–96% of the `num_leaves` range is dead under the depth cap. |
-| `num_leaves` | 7–63 | **about 4–32, log** | Now the main complexity control. With ~733 rows, 63 leaves is ~12 rows a leaf; the upper half only overfits. B1 measures it. |
-| `min_child_samples` | 5–40 | keep (maybe 5–50) | The second structure control; with `num_leaves` it bounds the tree. |
-| `n_estimators` | 50–400 | **50–200** | Your note. |
-| `learning_rate` | 0.01–0.2 log | **0.001–0.2 log** | Your note. One caution: with ≤200 trees and no early stopping, rates under ~0.01 cannot fit (200 trees at 0.001 move the model ~18% of the way). B1 measures how many trials land there; you decide whether to keep 0.001 or raise the upper bound. |
-| `reg_alpha`, `reg_lambda` | 1e-8–10 log | **1e-6–10 log** | Your note; below 1e-6 is indistinguishable from 0. |
-| `min_split_gain`, `subsample`, `colsample_bytree` | 0–1, 0.7–1, 0.7–1 | keep; B1 checks them | |
-| `boosting_type` | default | **default (`gbdt`) only** | `dart` needs more trees, is slower and has no stable stopping point; `goss` is a speed device for large data (here ~900 rows); `rf` is a different model. A categorical here spends the 100-trial budget on a choice that rarely wins. |
+| `max_depth` | 3–8 | **not tuned; fixed `-1`** | In the 30 stored LightGBM studies (34 LightGBM components, 3,400 component-trials) 35.6% of the component-trials had `num_leaves > 2**max_depth`, so `num_leaves` did nothing (95.6% at depth 3, 71.9% at 4, 47.0% at 5); 13 of the 34 best settings were among them. Its fANOVA share was 1.5% (mean over 29 studies; one had no variance). |
+| `num_leaves` | 7–63 | **4–32, log** | CV RMSE with `max_depth=-1`, the rest fixed: the Poisson regressors are best at 12–16 (Model 1: 4.414 at 12; the total: 4.388 at 16), the Gaussian at 8 (4.442), the classifier at 4 (4.410). At 63 they are 0.9–2.7% worse than their best, at 2 leaves 0.6–4.3% worse; the training RMSE falls from 4.45 to 1.46 over the range (Poisson Model 1) while the CV score turns at 12. |
+| `min_child_samples` | 5–40 | **5–40, log** (the user's choice) | With 733 rows a regressor's tree reaches on average about 570 / value leaves: 118 at 5, 57 at 10, 28 at 20, 14 at 40, 11 at 50 (the largest tree 5–10% more). The regressors are best at 1–5 and 2.1–2.2% worse than their best at 40 (8 leaves; 0.9–2.1% at 32 leaves); the classifier is flat over 5–50 (CV RMSE within 0.12% at 8 leaves, 0.35% at 32). For the regressors, uniform 5–40 puts 56% of the draws above 20 and 14% where `num_leaves` cannot be reached (20% with 5–50); the log scale 31% and 7%. Values of 1–3 scored 0.05–0.5% better than 5, the same sign in all six rows but inside the seed-to-seed range (0.4–0.8%), so the lower bound stays 5. |
+| `n_estimators` | 50–400 | **50–200** | Your note; no problem found. 23 of the 34 old best settings used more than 200 trees, mostly at low rates (median 0.029; 5 of the 23 at 0.09–0.2). The grid has no cell above 200 trees, so that the cap costs nothing rests on the whole studies only (next row): Model 1 4.3842 / 4.3833 against the old space's 4.3828, the joint model 4.3521 against 4.3488 (+0.08%, one seed). |
+| `learning_rate` | 0.01–0.2 log | **0.005–0.2 log** (the user's choice; the note said 0.001) | With at most 200 trees a Poisson regressor needs `learning_rate × n_estimators` of about 4: 0.95 of the gap between the constant model (CV RMSE 5.339) and the best cell is recovered at 4, 0.79 at 2 (+4.4%), 0.55 at 1 (+9.4%), 0.15 at 0.2 (+17.8%). The classifier is best at 0.01–0.02 with 100–200 trees and 5–13% worse at 0.2. No cell below 0.01 was the best for any model. Draws with a product of 1 or less: 40.5% from 0.001, 14.6% from 0.005, 3.5% from 0.01. Whole 100-trial studies on the new space (with `min_child_samples` still uniform 5–40; the final log scale was not run), best CV RMSE: Model 1 (Poisson, exposure; seeds 42, 43) 4.4008 / 4.4009 from 0.001, 4.3842 / 4.3833 from 0.005, 4.3841 / 4.3859 from 0.01 (old space 4.3828); the joint model (one seed) 4.3662 / 4.3521 / 4.3366 (old space 4.3488). |
+| `reg_alpha`, `reg_lambda` | 1e-8–10 log | **1e-6–10 log** | Your note; confirmed. The CV RMSE is the same to four decimals at 1e-8 and 1e-6 and within 0.0002 at 1e-3; it first moves at 0.1. |
+| `min_split_gain`, `subsample`, `colsample_bytree` | 0–1, 0.7–1, 0.7–1 | **kept, unchanged** (the user's choice) | At the 8-leaf base each moves the CV RMSE by at most 0.03 (about 0.7%), the size of the seed-to-seed range (0.4–0.8%; seed sd 0.007–0.013); fANOVA share 2–8% each against 21–45% for `learning_rate`. `min_split_gain` 0–1 is inert at 8 leaves except for the Gaussian with exposure (real split gains: median 6–13 for the Poisson fits and the classifier, 100 for the Gaussian, 2 for the Gaussian with exposure, where 12% of the splits are under 1) but prunes 32-leaf trees (Gaussian with exposure: 4.543 at 0 to 4.406 at 1). Not measured: whether a study without them does better. |
+| `boosting_type` | default | **default (`gbdt`) only** | Not measured; the reason stands: `dart` needs more trees and has no stable stopping point, `goss` is a speed device for large data, `rf` is a different model. |
 
-- **B1 (Fable) — design stop.** Measure on the current data: leaves actually reached per tree,
-  score against `num_leaves` and against `learning_rate × n_estimators` in the stored studies,
-  the weighted classifier's `min_child_samples`. Output: the final table, and how the old
-  journals in `studies/` are retired (they are matched by name only, so a new space would load
-  stale results; `02_objective_eda.py` shares them). No code.
-- **B2 (Opus).** `suggest_lgbm_hyperparams`, `LGBMParams` (drop `max_depth`), `make_estimator`
-  (`max_depth=-1` fixed beside `subsample_freq`), the unit tests' names and fixtures
-  (`test_hyperparameter_tuning_{search_spaces,params,components,builders}.py`, the notebook
-  test's `total__max_depth` line).
-  - Verify: the touched unit tests; a mutation per range.
-- **B3 (Opus).** `docs/HYPERPARAMETER_TUNING.md` §4 table and §10 hazard; retire the old
-  studies as B1 decided; re-record the 3-trial baselines (Check C: 8 + 16 runs).
+What `min_child_samples` counts (B1): LightGBM estimates a leaf's row count from its hessian, so
+the bound is on the leaf's share of the hessian (the weights and, for Poisson, the predicted
+mean), not on its rows; only the unweighted Gaussian is bounded in rows (smallest leaf at a bound
+of 5: 2 rows for the Poisson fit with or without exposure, 1 for the Gaussian total with
+exposure, exactly 5 for the unweighted Gaussian).
+The classifier is fitted on one row per (building, cohort with a child), 2,161 rows a fold
+weighted by 17,366 children; the bound counts those rows, not children, so it is about three
+times looser than for the regressor (42 leaves reachable at 40 against 14). One shared range
+serves both, since the classifier does not react to it.
+
+The old journals (the user's choice): the directory
+`studies/data=dd15b240__…__n_startup_trials=10/` (50 journals, 20 MB, git-ignored) is moved to
+`studies/retired/2026-11-20_lgbm-space-v1/` in B3, after asking. No code change; `02` and `03`
+both tune afresh on the next click. A later change of the space needs the same manual step
+(`docs/HYPERPARAMETER_TUNING.md` §10 says so).
+
+The measurement scripts and their outputs are in the B1 session's scratchpad
+(`…/25384ce9-321d-4e2d-bfd8-d174714c7fbc/scratchpad/b1/`, temporary); the numbers above are the record.
+
+- **B1 (Fable) — design stop. Done 2026-11-20.** The table above.
+- **B2 (Opus).** `suggest_lgbm_hyperparams` with the final ranges (`num_leaves` and
+  `min_child_samples` with `log=True`), `LGBMParams` without `max_depth`, `make_estimator` with
+  `max_depth=-1` fixed beside `subsample_freq` in both the regressor and the classifier, the
+  unit tests' names and fixtures (`test_hyperparameter_tuning_{search_spaces,params,components,builders}.py`;
+  `components` l.212 and `builders` l.150–208 use `max_depth` as the changed hyperparameter and
+  need another one; the notebook test's l.807–809 `max_depth` asserts).
+  - Verify: the touched unit tests; a mutation per range and per scale.
+- **B3 (Opus).** `docs/HYPERPARAMETER_TUNING.md` §4 table (the final ranges and scales, with the
+  one-line reason per row) and §10 hazard (the `2**max_depth` item goes; the "found by name
+  only" item gains the manual retirement step); the handoff's two `2**max_depth` notes marked
+  resolved; the old studies moved aside as decided, after asking; the 3-trial baselines
+  re-recorded (Check C: 8 + 16 runs).
   - Verify: Check C against the new baselines, run once.
 
 **Note for you:** the check store's test scores (E11's one look) were produced with the old
@@ -202,13 +223,13 @@ B1: decide the LightGBM search space with measurements. Start from Task B's tabl
 **B2 (Opus)** — the opening, then:
 
 ```text
-B2: build the search space B1 decided: suggest_lgbm_hyperparams, LGBMParams without max_depth, make_estimator with max_depth=-1 fixed beside subsample_freq, the unit tests' names and fixtures, the notebook test's max_depth line. The legacy space (modeling_config.py, configs/modeling.toml, models/direct_cohort.py) is not touched. Verify: the touched unit tests, a mutation per range.
+B2: build the search space B1 decided (Task B's final table): suggest_lgbm_hyperparams with num_leaves 4–32 log, min_child_samples 5–40 log, learning_rate 0.005–0.2 log, n_estimators 50–200, reg_alpha / reg_lambda 1e-6–10 log, min_split_gain 0–1, subsample 0.7–1, colsample_bytree 0.7–1, and no max_depth; LGBMParams without max_depth; make_estimator with max_depth=-1 fixed beside subsample_freq, for the regressor and the classifier. The unit tests' names and fixtures (test_hyperparameter_tuning_search_spaces, _params, _components, _builders): where a test uses max_depth as the hyperparameter it changes (components l.212, builders l.150–208, params l.34), use num_leaves; the notebook test's max_depth asserts (l.807–809). The legacy space (modeling_config.py, configs/modeling.toml, models/direct_cohort.py) is not touched, and nothing in studies/ is touched (B3 retires it). Verify: the touched unit tests, a mutation per range and per log scale; ruff and mypy on the touched files.
 ```
 
 **B3 (Opus)** — the opening, then:
 
 ```text
-B3: docs/HYPERPARAMETER_TUNING.md §4's table and §10's hazard; retire the old studies as B1 decided (ask me before deleting anything); re-record the 3-trial baselines (Check C, 8 + 16 runs), run once.
+B3: docs/HYPERPARAMETER_TUNING.md §4's table (Task B's final ranges and scales, one line of reason per row) and §10's hazards (the 2**max_depth item removed; the "found by name only" item says a changed space needs the studies directory moved aside); the two 2**max_depth notes in docs/EXPERIMENT_NOTEBOOK_HANDOFF.md marked resolved, and the note that the test set gets a second look. Retire the old studies as B1 decided: move studies/data=dd15b240__… to studies/retired/2026-11-20_lgbm-space-v1/ (ask me before moving; nothing is deleted), and check 02_objective_eda.py and 03 then find no stored study. Re-record the 3-trial baselines (Check C, 8 + 16 runs), run once.
 ```
 
 **C1 (Fable; design stop, no code change)** — the opening, then:
