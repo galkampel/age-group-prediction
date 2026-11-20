@@ -173,6 +173,67 @@ Plan mode per sub-task with a chat summary before approval; static checks (ruff,
 review before the stop; commit message in a copyable block, committed by you; no writes to the
 repo's `mlflow.db`, `mlartifacts/` or `.mlflow-local/`; `find . -flags +dataless` before a run.
 
+## Session prompts
+
+One session per sub-task, in the plan's order: A1 → B1 → B2 → B3 → C1 → C2 → C3 → C4 → D1 → D2
+→ D3 → D4 → D5 → E. At its stop a session prints the **next** sub-task's prompt from this
+section, verbatim, in a copyable block, with the model's name above it. It does not write a new
+prompt. A design stop (B1, C1, D1) may refine the prompts of its own task's build sub-tasks
+here, as part of its output.
+
+**Every prompt starts with this opening** (replace `<ID>`):
+
+```text
+Read docs/TUNING_NOTEBOOK_REVISION_PLAN.md: the Status line, the decisions at the top, sub-task <ID>'s task section, the standing rules and the session prompts. Plan sub-task <ID> in plan mode and do only <ID>. Before the first edit: confirm the branch is feat/tuning-notebook-revision, the working tree is clean, and no source file is offloaded (find . -flags +dataless, caches aside). At the stop: a file-by-file summary, the check results, the commit message in a copyable block, the plan's Status line updated, and the next sub-task's prompt printed verbatim from the plan with its model named.
+```
+
+**A1 (Sonnet)** — the opening, then:
+
+```text
+A1: the SHAP colours in notebooks/03_hyperparameter_tuning.py. PALETTE["shap"] is a plotly colour scale of about 8 stops sampled from shap.plots.colors.red_blue, written as hex literals; show me the sampled values and how you got them. beeswarm_figure uses it instead of palette["blues"] (the counts scatter keeps the blues); the colour value is the feature clipped to its 5th–95th percentile, then min–max; category levels stay gray, one colour bar. PALETTE["raises"] / ["lowers"] become #ff0051 / #008bfb. Update the two beeswarm captions and the docs lines that say "blue ramp". The beeswarm test still passes; add asserts for the colour scale and the clipping. Verify: ruff, marimo check, the touched tests (run once), and a figure dump of one validation beeswarm and one waterfall for me to look at.
+```
+
+**B1 (Fable; design stop, no code change)** — the opening, then:
+
+```text
+B1: decide the LightGBM search space with measurements. Start from Task B's table; my notes are fixed (max_depth not tuned and set to -1, n_estimators 50–200, learning_rate lower bound 0.001, reg_alpha / reg_lambda lower bound 1e-6, boosting_type the default) unless a measurement shows a problem, which you put to me as a question. Measure on the current data and the stored studies (read-only, scripts in the scratchpad): the leaves a tree actually reaches against num_leaves and min_child_samples at ~733 rows a fold; the score against num_leaves; the score against learning_rate × n_estimators, and how many trials would land where the model cannot fit with at most 200 trees; what min_child_samples means for the weighted classifier; whether min_split_gain, subsample and colsample_bytree earn their place in 100 trials. Decide how the old journals in studies/ are retired (matched by name only; 02_objective_eda.py shares them). Output: the final table with the evidence per row written into Task B, the open choices asked with the question tool, and B2's and B3's prompts refined below.
+```
+
+**B2 (Opus)** — the opening, then:
+
+```text
+B2: build the search space B1 decided: suggest_lgbm_hyperparams, LGBMParams without max_depth, make_estimator with max_depth=-1 fixed beside subsample_freq, the unit tests' names and fixtures, the notebook test's max_depth line. The legacy space (modeling_config.py, configs/modeling.toml, models/direct_cohort.py) is not touched. Verify: the touched unit tests, a mutation per range.
+```
+
+**B3 (Opus)** — the opening, then:
+
+```text
+B3: docs/HYPERPARAMETER_TUNING.md §4's table and §10's hazard; retire the old studies as B1 decided (ask me before deleting anything); re-record the 3-trial baselines (Check C, 8 + 16 runs), run once.
+```
+
+**C1 (Fable; design stop, no code change)** — the opening, then:
+
+```text
+C1: decide exactly which params and metrics each run kind keeps, by the rule in Task C (a chart axis or a filter; the rest an artifact). Check the lists against what the inspection notebook's read will need (val/composite/<selection>, components.json, best_params.json, the study name) and against the chart view: on a scratch store with 3-trial runs, show which scatter plots work across runs (a best.* hyperparameter against a validation metric) and whether the prefixed names (shared__, total__, probability__) compare across families. Output: the kept lists per run kind written into Task C, what moves to settings.json and scores.csv, open choices asked with the question tool, and C2–C4's prompts refined below.
+```
+
+**C2 (Opus)** — the opening, then: `C2: the tuning runs as C1 decided: shared_params split into params and settings.json, scores.csv, the tests that pin them.`
+
+**C3 (Opus)** — the opening, then: `C3: the evaluation runs as C1 decided: log_evaluation_run's metrics and params, the test that pins them.`
+
+**C4 (Sonnet)** — the opening, then: `C4: docs/MLFLOW_RUNS.md §4–§5 and check_store.py's counts; a 3-trial run into a scratch store, then guide me to open the chart view with one scatter.`
+
+**D1 (Fable; design stop + read-only probe)** — the opening, then:
+
+```text
+D1: design the split into 03 (tuning) and a new 04_model_inspection.py. Probe on a scratch store: select each model's best run with mlflow.search_runs, rebuild it from components.json + best_params.json with from_params, refit, and show the scores equal the tuning run's logged ones. Decide: what 04 repeats from 03 and how the copies are pinned equal (the D41 precedent); what 04 does when the store has fewer than 24 finished runs; whether the model1_runs / model2_runs tables stay in the best runs' run; the evaluation runs' notebook tag; which tests move. Output: the decisions written into Task D, open choices asked with the question tool, and D2–D5's prompts refined below.
+```
+
+**D2, D3, D4 (Opus), D5 (Sonnet)** — the opening, then the sub-task's lines from Task D as D1
+left them.
+
+**E (Opus guides, the user clicks)** — the opening, then: `E: guide me through the full run on a fresh check store (03 two clicks, 04 two clicks), one step at a time, and remind me to note each message before closing marimo; then check_store.py, the test scores into the handoff, and the PR's title and description.`
+
 ## Verification (end to end)
 
 1. `pytest tests/unit -k hyperparameter_tuning` and
