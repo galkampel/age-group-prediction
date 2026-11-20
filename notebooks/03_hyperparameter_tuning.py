@@ -1076,10 +1076,13 @@ def _(json, mlflow, optuna):
         code_tags,
     ):
         """One study's run in the active experiment; its id, or None when a FINISHED run
-        has its key (a FAILED one is logged again). Parameters: the run's settings, five
-        of `shared_params` and the best parameters; metrics: the cross-validation score,
-        the composite's scores and the study's counts; `settings.json` and `scores.csv`
-        hold the rest."""
+        has its key (a FAILED one is logged again). Tags: the run key, the study folder
+        (the key's first part), the stage, the model, the family and `code_tags`.
+        Parameters: the run's settings, five of `shared_params`, the study's seed and
+        the best parameters; metrics: the cross-validation score, the composite's
+        scores, each cohort's validation score under the objective and the study's
+        counts; `settings.json` and `scores.csv` hold the rest. Optuna's optimization
+        history and slice plot as figures."""
         study = tuning_run["study"]
         run_key = f"{studies_dir.name}/{study.study_name}"
         if mlflow.search_runs(
@@ -1116,6 +1119,7 @@ def _(json, mlflow, optuna):
             mlflow.set_tags(
                 {
                     "run_key": run_key,
+                    "study_folder": studies_dir.name,
                     "stage": "tuning",
                     "model": model_name,
                     "family": family,
@@ -1123,8 +1127,9 @@ def _(json, mlflow, optuna):
                 }
             )
             # settings.json holds every setting; the parameters are the few a chart's
-            # axis or a filter uses: the run's settings, five shared ones and the best
-            # parameters (which name each component's feature transformer too).
+            # axis or a filter uses: the run's settings, five shared ones, the study's
+            # seed and the best parameters (which name each component's feature
+            # transformer too).
             mlflow.log_params(
                 {
                     **run_settings,
@@ -1138,6 +1143,7 @@ def _(json, mlflow, optuna):
                             "objective_metric",
                         )
                     },
+                    "study_seed": tuning_run["study_seed"],
                     **{
                         f"best.{name}": value
                         for name, value in study.best_params.items()
@@ -1147,12 +1153,15 @@ def _(json, mlflow, optuna):
             mlflow.log_metrics(
                 {
                     f"cv/{objective_metric_name}": tuning_run["cv_best"],
+                    # The composite's scores and each cohort's validation score
+                    # under the objective (in the run key, so never stale).
                     **{
                         f"{dataset_name}/{cohort}/{metric}": score
                         for (dataset_name, cohort, metric), score in tuning_run[
                             "scores"
                         ]["score"].items()
                         if cohort == "composite"
+                        or (dataset_name == "val" and metric == objective_metric_name)
                     },
                     "seconds": tuning_run["seconds"],
                     "n_complete": tuning_run["n_complete"],
@@ -1183,6 +1192,14 @@ def _(json, mlflow, optuna):
             mlflow.log_dict(study.best_params, "best_params.json")
             mlflow.log_dict(search_space, "search_space.json")
             mlflow.log_dict(config_params, "config.json")
+            # A hyperparameter's effect is read within one study: Optuna's figures.
+            mlflow.log_figure(
+                optuna.visualization.plot_optimization_history(study),
+                "figures/optimization_history.html",
+            )
+            mlflow.log_figure(
+                optuna.visualization.plot_slice(study), "figures/slice.html"
+            )
             mlflow.log_artifact(
                 str(studies_dir / f"{study.study_name}.log"), artifact_path="study"
             )
@@ -2776,11 +2793,15 @@ def _(mlflow):
         tables,
         figures,
         best_runs,
+        study_folder,
         dataset_inputs,
     ):
         """One run, in the active experiment, of the two best runs evaluated on
-        `dataset_name` ("val" or "test"); its number of metrics. It logs `tags` and each
-        best run's study name as `best.<model>`; `settings` (the run's complete
+        `dataset_name` ("val" or "test"); its number of metrics. It logs `tags`,
+        `study_folder` (the folder of the best runs' studies) as a tag, each best run's
+        study name as `best.<model>` and its tuning run's id as `best.<model>.run_id`
+        (the FINISHED run keyed `<study_folder>/<study name>`; a ValueError, before any
+        run is opened, when there is none); `settings` (the run's complete
         settings) as `settings.json`, six of them as parameters; as metrics, the
         composite's score and its interval's bounds per model (`scores_df`) and for
         their paired difference (`difference_df`), named
@@ -2808,13 +2829,30 @@ def _(mlflow):
                 for statistic in statistics
             },
         }
+        # Each best run's tuning run, found before the run opens: a store without it
+        # is inconsistent, and no FAILED evaluation run is left behind.
+        tuning_run_ids = {}
+        for model_name, best_run in best_runs.items():
+            run_key = f"{study_folder}/{best_run['study'].study_name}"
+            tuning_runs = mlflow.search_runs(
+                filter_string=f"tags.run_key = '{run_key}' and attributes.status = 'FINISHED'",
+                output_format="list",
+            )
+            if not tuning_runs:
+                raise ValueError(f"no FINISHED tuning run has the run_key {run_key!r}")
+            tuning_run_ids[model_name] = tuning_runs[0].info.run_id
         with mlflow.start_run(run_name=run_name):
             mlflow.set_tags(
                 {
                     **tags,
+                    "study_folder": study_folder,
                     **{
                         f"best.{model_name}": best_run["study"].study_name
                         for model_name, best_run in best_runs.items()
+                    },
+                    **{
+                        f"best.{model_name}.run_id": run_id
+                        for model_name, run_id in tuning_run_ids.items()
                     },
                 }
             )
@@ -2961,6 +2999,7 @@ def _(
         _tables,
         _figures,
         best_runs,
+        tuner.storage_dir.name,
         tuning_dataset_inputs,
     )
     mo.md(
@@ -4328,6 +4367,7 @@ def _(
         _tables,
         _figures,
         best_runs,
+        tuner.storage_dir.name,
         {
             "training": build_mlflow_dataset(train_val_age_group, "train_val"),
             "testing": build_mlflow_dataset(test_age_group, "test"),

@@ -40,9 +40,12 @@ committed (5b3f8d7); B3 done (the docs, the old studies moved to `studies/retire
 re-recorded: the handoff's status of 2026-11-20; committed 9a8910b). Task B complete. C1
 committed (bfa070e; the kept lists per run kind in Task C, the chart view measured on B3's
 store, C2–C4's prompts refined). C2 committed (e299d66; the tuning runs log the kept params
-and 16 metrics, `settings.json` and `scores.csv`). C3 done (the evaluation runs log 6 params,
-54 metrics and `settings.json`; awaiting the user's commit). A Fable best-practice review of
-C2–C3 led to C3b (four additions, Task C; planned, not built). Next: C3b (Opus).
+and 16 metrics, `settings.json` and `scores.csv`). C3 committed (bb94acc; the evaluation runs
+log 6 params, 54 metrics and `settings.json`). A Fable best-practice review of C2–C3 led to C3b
+(four additions, Task C). C3b done (the tuning runs log `study_seed` as a param, 19 metrics and
+Optuna's two figures; every run the `study_folder` tag; the evaluation runs
+`best.<model>.run_id`, found before the run opens, a missing one a ValueError; awaiting the
+user's commit). Next: C4 (Sonnet).
 
 ## Step 0 — clean start (done 2026-11-19)
 

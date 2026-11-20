@@ -441,8 +441,11 @@ def test_a_tuning_run_is_logged_once_then_skipped(
     # The cold read's T1 and T2: the metrics' values and a dataset input.
     # C1 (TUNING_NOTEBOOK_REVISION_PLAN.md, Task C): the kept parameters and
     # metrics, the rest in settings.json and scores.csv; a Model 2 run's names.
-    # The experiment is created first: MLflow would create it at its default
-    # artifact location, from the repository's root the canonical one.
+    # C3b: the study's seed a parameter, a cohort's validation score under the
+    # objective a metric (its other scores not), Optuna's two figures and the
+    # study_folder tag. The experiment is created first: MLflow would create it
+    # at its default artifact location, from the repository's root the canonical
+    # one.
     mlflow = pytest.importorskip("mlflow")
     environment = _mlflow_environment(tmp_path)
     client = mlflow.MlflowClient(environment["MLFLOW_TRACKING_URI"])
@@ -460,7 +463,7 @@ def test_a_tuning_run_is_logged_once_then_skipped(
     (studies_dir / "a_study.log").write_text("the study's journal\n", encoding="utf-8")
     # Values with no short decimal form: a rounded scores.csv fails the read-back.
     scores = pd.DataFrame(
-        {"score": [1 / 3, 1 / 13, 2 / 7, 2 / 17, 3 / 11]},
+        {"score": [1 / 3, 1 / 13, 2 / 7, 2 / 17, 3 / 11, 4 / 13, 5 / 19]},
         index=pd.MultiIndex.from_tuples(
             [
                 ("train", "composite", "rmse"),
@@ -468,6 +471,8 @@ def test_a_tuning_run_is_logged_once_then_skipped(
                 ("val", "composite", "rmse"),
                 ("val", "composite", "mae"),
                 ("val", "n_kindergarten", "rmse"),
+                ("val", "n_kindergarten", "mae"),
+                ("train", "n_kindergarten", "rmse"),
             ],
             names=["dataset", "cohort", "metric"],
         ),
@@ -548,6 +553,7 @@ def test_a_tuning_run_is_logged_once_then_skipped(
             "objective_metric",
         )
     }
+    kept_settings["study_seed"] = "7"
     model2_run = client.get_run(model2_run_id)
     assert model2_run.info.run_name == (
         "total_times_probability poisson_glm+logistic exposure=False"
@@ -560,6 +566,7 @@ def test_a_tuning_run_is_logged_once_then_skipped(
         "best.total__alpha": str(model2_study.best_params["total__alpha"]),
         "best.probability__C": str(model2_study.best_params["probability__C"]),
     }
+    assert len(model2_run.data.params) == 9 + 2
     runs = client.search_runs([experiment_id], "tags.run_key = 'studies/a_study'")
     assert [run.info.run_id for run in runs] == [run_id]
     run = runs[0]
@@ -571,6 +578,7 @@ def test_a_tuning_run_is_logged_once_then_skipped(
         if not name.startswith("mlflow.")
     } == {
         "run_key": "studies/a_study",
+        "study_folder": "studies",
         "stage": "tuning",
         "model": "independent_cohorts",
         "family": "poisson_glm",
@@ -584,13 +592,16 @@ def test_a_tuning_run_is_logged_once_then_skipped(
         **kept_settings,
         "best.total__alpha": str(study.best_params["total__alpha"]),
     }
-    # The composite's scores only: a cohort's is in scores.csv.
+    assert len(run.data.params) == 10 + 1
+    # The composite's scores and a cohort's validation score under the objective:
+    # the cohort's other scores are in scores.csv.
     assert run.data.metrics == {
         "cv/rmse": study.best_value,
         "train/composite/rmse": 1 / 3,
         "train/composite/mae": 1 / 13,
         "val/composite/rmse": 2 / 7,
         "val/composite/mae": 2 / 17,
+        "val/n_kindergarten/rmse": 3 / 11,
         "seconds": 1.0,
         "n_complete": 2.0,
         "n_failed": 0.0,
@@ -612,6 +623,8 @@ def test_a_tuning_run_is_logged_once_then_skipped(
         "best_params.json",
         "components.json",
         "config.json",
+        "figures/optimization_history.html",
+        "figures/slice.html",
         "scores.csv",
         "search_space.json",
         "settings.json",
@@ -645,6 +658,8 @@ def test_an_evaluation_run_logs_the_composite_and_each_best_runs_files(
     # cold read's T2: a dataset input and a figure. C1
     # (TUNING_NOTEBOOK_REVISION_PLAN.md, Task C): six settings as parameters,
     # all of them in settings.json; the score and its interval as metrics.
+    # C3b: the study_folder tag, and each best run's FINISHED tuning run (found
+    # by its run key, a FAILED one with the same key passed over) as a tag.
     mlflow = pytest.importorskip("mlflow")
     environment = _mlflow_environment(tmp_path)
     client = mlflow.MlflowClient(environment["MLFLOW_TRACKING_URI"])
@@ -652,6 +667,20 @@ def test_an_evaluation_run_logs_the_composite_and_each_best_runs_files(
         environment["MLFLOW_EXPERIMENT_NAME"],
         artifact_location=str((tmp_path / "artifacts").resolve()),
     )
+    tuning_run_ids = {}
+    for model in ("independent_cohorts", "total_times_probability"):
+        tuning_run = client.create_run(
+            experiment_id, tags={"run_key": f"studies/{model}_study"}
+        )
+        client.set_terminated(tuning_run.info.run_id)
+        tuning_run_ids[model] = tuning_run.info.run_id
+    # Started later, so a search without the status filter finds it first.
+    failed_run = client.create_run(
+        experiment_id,
+        start_time=tuning_run.info.start_time + 1000,
+        tags={"run_key": "studies/independent_cohorts_study"},
+    )
+    client.set_terminated(failed_run.info.run_id, status="FAILED")
     best_runs = {}
     for model in ("independent_cohorts", "total_times_probability"):
         study = optuna.create_study(
@@ -723,10 +752,11 @@ def test_an_evaluation_run_logs_the_composite_and_each_best_runs_files(
             {"scores": scores_df},
             {"figures/a_figure.html": go.Figure()},
             best_runs,
+            "studies",
             {"validation": dataset},
         )
     assert n_metrics == 9
-    (run,) = client.search_runs([experiment_id])
+    (run,) = client.search_runs([experiment_id], "tags.stage = 'best_runs'")
     assert run.info.status == "FINISHED"
     assert run.info.run_name == "best runs"
     assert run.data.metrics == {
@@ -746,8 +776,13 @@ def test_an_evaluation_run_logs_the_composite_and_each_best_runs_files(
     } == {
         "run_key": "studies/best_runs",
         "stage": "best_runs",
+        "study_folder": "studies",
         "best.independent_cohorts": "independent_cohorts_study",
         "best.total_times_probability": "total_times_probability_study",
+        "best.independent_cohorts.run_id": tuning_run_ids["independent_cohorts"],
+        "best.total_times_probability.run_id": tuning_run_ids[
+            "total_times_probability"
+        ],
     }
     assert run.data.params == {
         name: str(settings[name])
@@ -784,6 +819,52 @@ def test_an_evaluation_run_logs_the_composite_and_each_best_runs_files(
         ) == {"total": {"family": "poisson_glm"}}
     assert mlflow.active_run() is None
     assert mlflow.get_tracking_uri() != environment["MLFLOW_TRACKING_URI"]
+
+
+def test_an_evaluation_run_without_its_tuning_run_is_refused(
+    notebook_defs: dict, tmp_path: Path
+) -> None:
+    # C3b: a best run whose FINISHED tuning run is not in the store (an
+    # inconsistent store) raises a ValueError naming its run key, before any
+    # evaluation run is opened.
+    mlflow = pytest.importorskip("mlflow")
+    environment = _mlflow_environment(tmp_path)
+    client = mlflow.MlflowClient(environment["MLFLOW_TRACKING_URI"])
+    experiment_id = client.create_experiment(
+        environment["MLFLOW_EXPERIMENT_NAME"],
+        artifact_location=str((tmp_path / "artifacts").resolve()),
+    )
+    tuning_run = client.create_run(
+        experiment_id, tags={"run_key": "studies/independent_cohorts_study"}
+    )
+    client.set_terminated(tuning_run.info.run_id)
+    best_runs = {
+        model: {"study": Bunch(study_name=f"{model}_study"), "components": []}
+        for model in ("independent_cohorts", "total_times_probability")
+    }
+    no_rows = pd.DataFrame(columns=["model", "cohort", "metric", "score"])
+    with pytest.MonkeyPatch.context() as patch:
+        for name, value in environment.items():
+            patch.setenv(name, value)
+        with pytest.raises(ValueError, match="'studies/total_times_probability_study'"):
+            notebook_defs["log_evaluation_run"](
+                "best runs",
+                {"run_key": "studies/best_runs", "stage": "best_runs"},
+                dict(notebook_defs["shared_params"]),
+                "val",
+                no_rows,
+                no_rows,
+                notebook_defs["CI_BOUND_NAMES"],
+                {},
+                {},
+                best_runs,
+                "studies",
+                {},
+            )
+    assert [run.info.run_id for run in client.search_runs([experiment_id])] == [
+        tuning_run.info.run_id
+    ]
+    assert mlflow.active_run() is None
 
 
 SHARING = [(False, False), (True, False), (True, True)]
