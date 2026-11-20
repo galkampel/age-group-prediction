@@ -341,7 +341,7 @@ def test_the_tuning_runs_are_logged_inside_the_two_tune_cells(
 ) -> None:
     # §8's L2 (MLFLOW_RUNS_PLAN.md): each Tune cell logs its runs as their
     # studies finish, behind the Tune button's mo.stop only; no logging button.
-    # A script run builds what each run logs (the shared parameters, the two
+    # A script run builds what each run logs (the shared settings, the two
     # datasets) and opens no run (test_a_script_run_opens_no_mlflow_run).
     source = NOTEBOOK_PATH.read_text(encoding="utf-8")
     cells = [cell for cell in source.split("@app.cell") if "tuner.tune_" in cell]
@@ -435,6 +435,8 @@ def test_a_tuning_run_is_logged_once_then_skipped(
     # 2-trial study and a small tuning run. The first call logs the run; the
     # second finds a FINISHED run with its key and logs nothing (M3's skip).
     # The cold read's T1 and T2: the metrics' values and a dataset input.
+    # C1 (TUNING_NOTEBOOK_REVISION_PLAN.md, Task C): the kept parameters and
+    # metrics, the rest in settings.json and scores.csv; a Model 2 run's names.
     # The experiment is created first: MLflow would create it at its default
     # artifact location, from the repository's root the canonical one.
     mlflow = pytest.importorskip("mlflow")
@@ -452,13 +454,22 @@ def test_a_tuning_run_is_logged_once_then_skipped(
     studies_dir = tmp_path / "studies"
     studies_dir.mkdir()
     (studies_dir / "a_study.log").write_text("the study's journal\n", encoding="utf-8")
+    # Values with no short decimal form: a rounded scores.csv fails the read-back.
     scores = pd.DataFrame(
-        {"score": [1.5, 2.5]},
+        {"score": [1 / 3, 1 / 13, 2 / 7, 2 / 17, 3 / 11]},
         index=pd.MultiIndex.from_tuples(
-            [("train", "composite", "rmse"), ("val", "composite", "rmse")],
+            [
+                ("train", "composite", "rmse"),
+                ("train", "composite", "mae"),
+                ("val", "composite", "rmse"),
+                ("val", "composite", "mae"),
+                ("val", "n_kindergarten", "rmse"),
+            ],
             names=["dataset", "cohort", "metric"],
         ),
     )
+    # The notebook's own settings: five of the 23 are parameters.
+    shared_params = notebook_defs["shared_params"]
     tuning_run = {
         "study": study,
         "study_seed": 7,
@@ -481,13 +492,40 @@ def test_a_tuning_run_is_logged_once_then_skipped(
     arguments = (
         tuning_run,
         "independent_cohorts",
-        {"family": "poisson_glm", "use_exposure": True},
+        {
+            "family": "poisson_glm",
+            "use_exposure": True,
+            "share_hyperparams": True,
+            "share_feature_transformer": False,
+        },
         studies_dir,
         "rmse",
-        {"seed": 42},
+        shared_params,
         {"simulation.n_neighborhoods": 150},
         {"training": dataset},
         code_tags,
+    )
+    # A Model 2 run: its run settings name the two families.
+    model2_study = optuna.create_study(
+        study_name="b_study", sampler=RandomSampler(seed=1)
+    )
+    model2_study.optimize(
+        lambda trial: (
+            trial.suggest_float("total__alpha", 1e-4, 1.0, log=True)
+            + trial.suggest_float("probability__C", 1e-2, 10.0, log=True)
+        ),
+        n_trials=2,
+    )
+    (studies_dir / "b_study.log").write_text("the study's journal\n", encoding="utf-8")
+    model2_arguments = (
+        {**tuning_run, "study": model2_study, "cv_best": model2_study.best_value},
+        "total_times_probability",
+        {
+            "total_family": "poisson_glm",
+            "probability_family": "logistic",
+            "use_exposure": False,
+        },
+        *arguments[3:],
     )
     with pytest.MonkeyPatch.context() as patch:
         for name, value in environment.items():
@@ -495,7 +533,30 @@ def test_a_tuning_run_is_logged_once_then_skipped(
         run_id = notebook_defs["log_tuning_run"](*arguments)
         assert run_id is not None
         assert notebook_defs["log_tuning_run"](*arguments) is None
-    runs = client.search_runs([experiment_id])
+        model2_run_id = notebook_defs["log_tuning_run"](*model2_arguments)
+    kept_settings = {
+        name: str(shared_params[name])
+        for name in (
+            "config_hash",
+            "seed",
+            "split_method",
+            "n_trials",
+            "objective_metric",
+        )
+    }
+    model2_run = client.get_run(model2_run_id)
+    assert model2_run.info.run_name == (
+        "total_times_probability poisson_glm+logistic exposure=False"
+    )
+    assert model2_run.data.params == {
+        "total_family": "poisson_glm",
+        "probability_family": "logistic",
+        "use_exposure": "False",
+        **kept_settings,
+        "best.total__alpha": str(model2_study.best_params["total__alpha"]),
+        "best.probability__C": str(model2_study.best_params["probability__C"]),
+    }
+    runs = client.search_runs([experiment_id], "tags.run_key = 'studies/a_study'")
     assert [run.info.run_id for run in runs] == [run_id]
     run = runs[0]
     assert run.info.status == "FINISHED"
@@ -514,14 +575,18 @@ def test_a_tuning_run_is_logged_once_then_skipped(
     assert run.data.params == {
         "family": "poisson_glm",
         "use_exposure": "True",
-        "seed": "42",
-        "study_seed": "7",
+        "share_hyperparams": "True",
+        "share_feature_transformer": "False",
+        **kept_settings,
         "best.total__alpha": str(study.best_params["total__alpha"]),
     }
+    # The composite's scores only: a cohort's is in scores.csv.
     assert run.data.metrics == {
         "cv/rmse": study.best_value,
-        "train/composite/rmse": 1.5,
-        "val/composite/rmse": 2.5,
+        "train/composite/rmse": 1 / 3,
+        "train/composite/mae": 1 / 13,
+        "val/composite/rmse": 2 / 7,
+        "val/composite/mae": 2 / 17,
         "seconds": 1.0,
         "n_complete": 2.0,
         "n_failed": 0.0,
@@ -543,11 +608,22 @@ def test_a_tuning_run_is_logged_once_then_skipped(
         "best_params.json",
         "components.json",
         "config.json",
+        "scores.csv",
         "search_space.json",
+        "settings.json",
         "study/a_study.log",
         "trials.csv",
     ]
     assert json.loads((artifacts / "best_params.json").read_text()) == study.best_params
+    assert json.loads((artifacts / "settings.json").read_text()) == {
+        **shared_params,
+        "study_seed": 7,
+    }
+    pd.testing.assert_frame_equal(
+        pd.read_csv(artifacts / "scores.csv", float_precision="round_trip"),
+        scores.reset_index(),
+        check_exact=True,
+    )
     assert len(pd.read_csv(artifacts / "trials.csv")) == 2
     # M1's concern: no run is left open and the store is not left as MLflow's
     # tracking URI for the tests that run after.

@@ -1031,9 +1031,11 @@ def _(
     train_age_group,
     val_age_group,
 ):
-    # What every run logs as parameters: the data's version and settings, the
+    # Every run's complete settings: the data's version and settings, the
     # experiment's settings (the selection metric among them), the parts' sizes and
-    # the prediction floor every model is built with (its y_min).
+    # the prediction floor every model is built with (its y_min). A tuning run logs
+    # them as settings.json and five of them as parameters; an evaluation run logs
+    # them all as parameters.
     shared_params = {
         "config_hash": config_hash,
         **DATA_SETTINGS,
@@ -1074,7 +1076,10 @@ def _(json, mlflow, optuna):
         code_tags,
     ):
         """One study's run in the active experiment; its id, or None when a FINISHED run
-        has its key (a FAILED one is logged again)."""
+        has its key (a FAILED one is logged again). Parameters: the run's settings, five
+        of `shared_params` and the best parameters; metrics: the cross-validation score,
+        the composite's scores and the study's counts; `settings.json` and `scores.csv`
+        hold the rest."""
         study = tuning_run["study"]
         run_key = f"{studies_dir.name}/{study.study_name}"
         if mlflow.search_runs(
@@ -1117,12 +1122,22 @@ def _(json, mlflow, optuna):
                     **code_tags,
                 }
             )
-            # The best parameters name each component's feature transformer too.
+            # settings.json holds every setting; the parameters are the few a chart's
+            # axis or a filter uses: the run's settings, five shared ones and the best
+            # parameters (which name each component's feature transformer too).
             mlflow.log_params(
                 {
                     **run_settings,
-                    **shared_params,
-                    "study_seed": tuning_run["study_seed"],
+                    **{
+                        name: shared_params[name]
+                        for name in (
+                            "config_hash",
+                            "seed",
+                            "split_method",
+                            "n_trials",
+                            "objective_metric",
+                        )
+                    },
                     **{
                         f"best.{name}": value
                         for name, value in study.best_params.items()
@@ -1137,6 +1152,7 @@ def _(json, mlflow, optuna):
                         for (dataset_name, cohort, metric), score in tuning_run[
                             "scores"
                         ]["score"].items()
+                        if cohort == "composite"
                     },
                     "seconds": tuning_run["seconds"],
                     "n_complete": tuning_run["n_complete"],
@@ -1154,6 +1170,15 @@ def _(json, mlflow, optuna):
                     for component in tuning_run["components"]
                 },
                 "components.json",
+            )
+            # Every cohort's scores, written in full (no float_format): the exact
+            # record of the scores the metrics leave out.
+            mlflow.log_text(
+                tuning_run["scores"].reset_index().to_csv(index=False), "scores.csv"
+            )
+            mlflow.log_dict(
+                {**shared_params, "study_seed": tuning_run["study_seed"]},
+                "settings.json",
             )
             mlflow.log_dict(study.best_params, "best_params.json")
             mlflow.log_dict(search_space, "search_space.json")

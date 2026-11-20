@@ -37,9 +37,11 @@ with the rest; the legacy search space (`modeling_config.py`, `configs/modeling.
 
 2026-11-20: PR #27 merged as e9ebd69; A1 committed (7524113); B1 committed (9df22d9); B2
 committed (5b3f8d7); B3 done (the docs, the old studies moved to `studies/retired/`, Check C
-re-recorded: the handoff's status of 2026-11-20; committed 9a8910b). Task B complete. C1 done
-(the kept lists per run kind in Task C, the chart view measured on B3's store, C2–C4's prompts
-refined; docs only, awaiting the user's commit). Next: C2 (Opus).
+re-recorded: the handoff's status of 2026-11-20; committed 9a8910b). Task B complete. C1
+committed (bfa070e; the kept lists per run kind in Task C, the chart view measured on B3's
+store, C2–C4's prompts refined). C2 done (the tuning runs log the kept params and 16 metrics,
+`settings.json` and `scores.csv`; the tuning-run test pins a Model 1 and a Model 2 run;
+awaiting the user's commit). Next: C3 (Opus).
 
 ## Step 0 — clean start (done 2026-11-19)
 
