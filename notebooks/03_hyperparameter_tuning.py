@@ -1876,13 +1876,25 @@ def _():
     # The figures' palette, the dataviz skill's reference: the three
     # categorical colors that stay apart for colorblind readers, the
     # sequential blue ramp (steps 250, 400, 550, 700, so the lightest still
-    # shows on the surface), the diverging pair (red raises, blue lowers),
-    # then the surface, the inks, the gridline and the axis line.
+    # shows on the surface), shap's own pair (red raises, blue lowers) and
+    # its blue-to-red scale for the beeswarm (8 stops sampled from
+    # `shap.plots.colors.red_blue` at linspace(0, 1, 8)), then the surface,
+    # the inks, the gridline and the axis line.
     PALETTE = {
         "categorical": ["#2a78d6", "#eb6834", "#1baf7a"],
         "blues": ["#86b6ef", "#3987e5", "#1c5cab", "#0d366b"],
-        "raises": "#e34948",
-        "lowers": "#2a78d6",
+        "shap": [
+            [0.0, "#008bfb"],
+            [1 / 7, "#0076f1"],
+            [2 / 7, "#5d5cdd"],
+            [3 / 7, "#8b3bbf"],
+            [4 / 7, "#b20ca4"],
+            [5 / 7, "#d8008d"],
+            [6 / 7, "#f30070"],
+            [1.0, "#ff0051"],
+        ],
+        "raises": "#ff0051",
+        "lowers": "#008bfb",
         "surface": "#fcfcfb",
         "ink": "#52514e",
         "muted": "#898781",
@@ -2535,8 +2547,9 @@ def _(go, np, pd, style_figure):
         """A beeswarm of `cohort`'s SHAP values in `explanation` (rows,
         columns, cohorts), its rows `X`: a row of dots per column, the columns
         by the cohort's mean |SHAP| (the largest on top), each dot a row at its
-        SHAP value, colored by the column's value, low to high over `X` on
-        `palette`'s blue ramp; a category's levels (unordered) each in its own
+        SHAP value, colored by the column's value, low to high over `X`
+        (clipped to its 5th–95th percentile) on `palette`'s shap scale, blue
+        to red; a category's levels (unordered) each in its own
         row, in the muted gray: a row holds one level, so its value has no low
         or high. `random_state` seeds the dots' vertical jitter."""
         # One jitter, so each row of dots spreads the same way in every figure.
@@ -2568,12 +2581,15 @@ def _(go, np, pd, style_figure):
             column = explanation.feature_names[column_position]
             raw = X[column][mask]
             if not is_level:
-                # The value scaled to the column's range over the rows; a
-                # constant column divides by 1.
-                value_range = (raw.max() - raw.min()) or 1
+                # The value clipped to the column's 5th–95th percentile over
+                # the rows, then scaled to that range, so an outlier does not
+                # wash out the rest; a constant column divides by 1.
+                low, high = np.percentile(raw, [5, 95])
                 marker = {
-                    "color": ((raw - raw.min()) / value_range).to_numpy(),
-                    "colorscale": palette["blues"],
+                    "color": (
+                        (raw.clip(low, high) - low) / ((high - low) or 1)
+                    ).to_numpy(),
+                    "colorscale": palette["shap"],
                     "cmin": 0,
                     "cmax": 1,
                     "showscale": not scale_shown,
@@ -2641,8 +2657,9 @@ def _(PALETTE, beeswarm_figure, best_runs_shap, mo, seed, shap_cohort, shap_rows
                 "(each dot a row: how much the column moves its predicted count "
                 "from the mean prediction over the background; the columns ordered "
                 "by their mean |SHAP| for the cohort, the largest on top; the color "
-                "the column's value, low to high over the explained rows; a "
-                "category a row per level, in gray)"
+                "the column's value, low (blue) to high (red), clipped at its 5th "
+                "and 95th percentiles over the explained rows; a category a row "
+                "per level, in gray)"
             ),
             shap_cohort,
             *_views,
@@ -3371,8 +3388,9 @@ def _(
                 "models; each dot a building: how much the column moves its "
                 "predicted count from the mean prediction over the background; "
                 "the columns ordered by their mean |SHAP| for the cohort, the "
-                "largest on top; the color the column's value, low to high over "
-                "the test buildings; a category a row per level, in gray)"
+                "largest on top; the color the column's value, low (blue) to high "
+                "(red), clipped at its 5th and 95th percentiles over the test "
+                "buildings; a category a row per level, in gray)"
             ),
             test_beeswarm_cohort,
             *_views,

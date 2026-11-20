@@ -35,7 +35,7 @@ with the rest; the legacy search space (`modeling_config.py`, `configs/modeling.
 
 ## Status
 
-2026-11-19: plan approved; Step 0 done except the merge (the user's). Next: A1 (Sonnet).
+2026-11-20: PR #27 merged as e9ebd69; A1 done (the SHAP colours; awaiting the user's commit). Next: B1 (Fable).
 
 ## Step 0 — clean start (done 2026-11-19)
 

@@ -1314,6 +1314,35 @@ def test_the_beeswarm_figure_draws_a_row_per_column_and_per_level(
     ]
 
 
+def test_the_beeswarm_colors_follow_shaps_scale_clipped_at_the_percentiles(
+    notebook_defs: dict,
+) -> None:
+    # A1: shap's blue-to-red (8 stops sampled from shap.plots.colors.red_blue),
+    # the value clipped to its 5th-95th percentile, then min-max.
+    palette = notebook_defs["PALETTE"]
+    positions = [stop[0] for stop in palette["shap"]]
+    assert len(positions) == 8
+    assert positions[0] == 0 and positions[-1] == 1 and positions == sorted(positions)
+    assert palette["shap"][0][1] == "#008bfb" == palette["lowers"]
+    assert palette["shap"][-1][1] == "#ff0051" == palette["raises"]
+    x = np.append(np.arange(20.0), 1000.0)
+    X = pd.DataFrame({"x": x})
+    explanation = shap.Explanation(
+        values=np.zeros((len(x), 1, 1)),
+        base_values=np.zeros((len(x), 1)),
+        feature_names=["x"],
+        output_names=["cohort_a"],
+    )
+    figure = notebook_defs["beeswarm_figure"](explanation, X, "cohort_a", 0, palette)
+    (trace,) = figure.data
+    assert [list(stop) for stop in trace.marker.colorscale] == palette["shap"]
+    low, high = np.percentile(x, [5, 95])
+    color = np.asarray(trace.marker.color)
+    np.testing.assert_allclose(color, (np.clip(x, low, high) - low) / (high - low))
+    assert color.min() == 0 and color.max() == 1 and color[-1] == 1
+    assert 0 < color[10] < 1
+
+
 def test_the_waterfall_figure_steps_from_the_base_to_the_prediction(
     notebook_defs: dict,
 ) -> None:
