@@ -138,10 +138,12 @@ class CountComponent(Component):
         if self.family in ("lgbm_poisson", "lgbm_gaussian"):
             # LightGBM's name for the loss, which the family fixes (D6).
             objective = "poisson" if self.family == "lgbm_poisson" else "regression"
+            # max_depth=-1: no depth cap, num_leaves bounds the leaf-wise tree;
             # subsample_freq=1: LightGBM ignores subsample without it; n_jobs=1: one
             # thread per fit, so the parallel folds do not oversubscribe the cores.
             return LGBMRegressor(
                 objective=objective,
+                max_depth=-1,
                 subsample_freq=1,
                 n_jobs=1,
                 verbosity=-1,
@@ -193,8 +195,10 @@ class ProbabilityComponent(Component):
     def make_estimator(self, *, random_state: int | None = None) -> Classifier:
         estimator_params = dataclasses.asdict(self.estimator_params)
         if self.family == "lgbm":
+            # Fixed as for the regressor above.
             return LGBMClassifier(
                 objective="multiclass",
+                max_depth=-1,
                 subsample_freq=1,
                 n_jobs=1,
                 verbosity=-1,

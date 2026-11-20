@@ -6,6 +6,7 @@ import dataclasses
 
 import optuna
 import pytest
+from optuna.distributions import FloatDistribution, IntDistribution
 from optuna.samplers import RandomSampler
 from optuna.trial import Trial
 
@@ -26,7 +27,6 @@ TRANSFORMERS = {
 }
 NAMES = tuple(TRANSFORMERS)
 LGBM_NAMES = {
-    "max_depth",
     "num_leaves",
     "min_child_samples",
     "learning_rate",
@@ -84,6 +84,43 @@ def test_a_probability_search_space_draws_its_familys_hyperparameters_under_its_
     assert set(trial.params) == {f"probability__{name}" for name in names}
     assert dataclasses.asdict(estimator_params) == {
         name: trial.params[f"probability__{name}"] for name in names
+    }
+
+
+# The decided ranges (TUNING_NOTEBOOK_REVISION_PLAN.md Task B), the regressor's
+# and the classifier's alike.
+LGBM_DISTRIBUTIONS = {
+    "num_leaves": IntDistribution(4, 32, log=True),
+    "min_child_samples": IntDistribution(5, 40, log=True),
+    "learning_rate": FloatDistribution(0.005, 0.2, log=True),
+    "n_estimators": IntDistribution(50, 200),
+    "reg_alpha": FloatDistribution(1e-6, 10.0, log=True),
+    "reg_lambda": FloatDistribution(1e-6, 10.0, log=True),
+    "min_split_gain": FloatDistribution(0.0, 1.0),
+    "subsample": FloatDistribution(0.7, 1.0),
+    "colsample_bytree": FloatDistribution(0.7, 1.0),
+}
+
+
+@pytest.mark.parametrize(
+    "space",
+    [
+        CountSearchSpace(
+            name="total", family="lgbm_poisson", feature_transformer_names=NAMES
+        ),
+        ProbabilitySearchSpace(
+            name="probability", family="lgbm", feature_transformer_names=NAMES
+        ),
+    ],
+)
+def test_lightgbms_hyperparameters_are_drawn_from_the_decided_ranges(
+    space: CountSearchSpace | ProbabilitySearchSpace,
+) -> None:
+    trial = _trial()
+    space.suggest_hyperparameters(trial)
+    assert trial.distributions == {
+        f"{space.prefix}{name}": distribution
+        for name, distribution in LGBM_DISTRIBUTIONS.items()
     }
 
 

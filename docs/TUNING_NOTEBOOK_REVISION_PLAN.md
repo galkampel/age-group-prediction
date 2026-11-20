@@ -35,8 +35,8 @@ with the rest; the legacy search space (`modeling_config.py`, `configs/modeling.
 
 ## Status
 
-2026-11-20: PR #27 merged as e9ebd69; A1 committed (7524113); B1 done (the search space decided
-with measurements; this file awaits the user's commit). Next: B2 (Opus).
+2026-11-20: PR #27 merged as e9ebd69; A1 committed (7524113); B1 committed (9df22d9); B2 done
+(the search space in `src` and the tests; awaiting the user's commit). Next: B3 (Opus).
 
 ## Step 0 — clean start (done 2026-11-19)
 
@@ -113,7 +113,8 @@ The measurement scripts and their outputs are in the B1 session's scratchpad
   need another one; the notebook test's l.807–809 `max_depth` asserts).
   - Verify: the touched unit tests; a mutation per range and per scale.
 - **B3 (Opus).** `docs/HYPERPARAMETER_TUNING.md` §4 table (the final ranges and scales, with the
-  one-line reason per row) and §10 hazard (the `2**max_depth` item goes; the "found by name
+  one-line reason per row), the parameter counts in §2 (l.~198) and §5 (l.~461) (LightGBM draws
+  nine hyperparameters now: 30 / 12 / 10 parameters, not 33 / 13 / 11), and §10 hazard (the `2**max_depth` item goes; the "found by name
   only" item gains the manual retirement step); the handoff's two `2**max_depth` notes marked
   resolved; the old studies moved aside as decided, after asking; the 3-trial baselines
   re-recorded (Check C: 8 + 16 runs).
@@ -229,7 +230,7 @@ B2: build the search space B1 decided (Task B's final table): suggest_lgbm_hyper
 **B3 (Opus)** — the opening, then:
 
 ```text
-B3: docs/HYPERPARAMETER_TUNING.md §4's table (Task B's final ranges and scales, one line of reason per row) and §10's hazards (the 2**max_depth item removed; the "found by name only" item says a changed space needs the studies directory moved aside); the two 2**max_depth notes in docs/EXPERIMENT_NOTEBOOK_HANDOFF.md marked resolved, and the note that the test set gets a second look. Retire the old studies as B1 decided: move studies/data=dd15b240__… to studies/retired/2026-11-20_lgbm-space-v1/ (ask me before moving; nothing is deleted), and check 02_objective_eda.py and 03 then find no stored study. Re-record the 3-trial baselines (Check C, 8 + 16 runs), run once.
+B3: docs/HYPERPARAMETER_TUNING.md §4's table (Task B's final ranges and scales, one line of reason per row), the parameter counts in §2 (l.~198) and §5 (l.~461) (nine LightGBM hyperparameters: 30 / 12 / 10 parameters, not 33 / 13 / 11), and §10's hazards (the 2**max_depth item removed; the "found by name only" item says a changed space needs the studies directory moved aside); the two 2**max_depth notes in docs/EXPERIMENT_NOTEBOOK_HANDOFF.md marked resolved, and the note that the test set gets a second look. Retire the old studies as B1 decided: move studies/data=dd15b240__… to studies/retired/2026-11-20_lgbm-space-v1/ (ask me before moving; nothing is deleted), and check 02_objective_eda.py and 03 then find no stored study. Re-record the 3-trial baselines (Check C, 8 + 16 runs), run once.
 ```
 
 **C1 (Fable; design stop, no code change)** — the opening, then:

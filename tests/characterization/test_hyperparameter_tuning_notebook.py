@@ -703,10 +703,10 @@ def _count_components(notebook_defs: dict, params: dict, **settings) -> tuple:
 def test_a_shared_choice_is_one_draw_in_every_cohorts_component(
     notebook_defs: dict, share_hyperparams: bool, share_feature_transformer: bool
 ) -> None:
-    # Independent: each of the three cohorts draws LightGBM's ten hyperparameters
-    # and its transformer, 33 parameters. Shared hyperparameters: one draw under
+    # Independent: each of the three cohorts draws LightGBM's nine hyperparameters
+    # and its transformer, 30 parameters. Shared hyperparameters: one draw under
     # `shared__` in every component, each cohort still drawing its transformer,
-    # 13. Both shared: 11, one transformer in every component. The package's
+    # 12. Both shared: 10, one transformer in every component. The package's
     # objective draws the components on the notebook's cohorts and candidates;
     # they are read back from the trial's params by the component type, as the
     # best run's are (D25, D26).
@@ -743,11 +743,11 @@ def test_a_shared_choice_is_one_draw_in_every_cohorts_component(
             f"{cohort}__feature_transformer" for cohort in cohorts
         )
     if share_hyperparams:
-        assert len(names) == (11 if share_feature_transformer else 13)
-        assert len(shared_names) == (11 if share_feature_transformer else 10)
+        assert len(names) == (10 if share_feature_transformer else 12)
+        assert len(shared_names) == (10 if share_feature_transformer else 9)
         assert len(estimator_params) == 1
     else:
-        assert len(names) == 33
+        assert len(names) == 30
         assert shared_names == []
         assert all(name.split("__")[0] in cohorts for name in names)
     # The record of a run: plain data, the transformer by its declaration.
@@ -804,9 +804,10 @@ def test_the_best_components_are_read_back_from_the_trials_params(
         feature_transformer_dict=probability_transformers,
     )
     assert (total, probability) == drawn
-    assert total.estimator_params.max_depth == trial.params["total__max_depth"]
+    assert total.estimator_params.num_leaves == trial.params["total__num_leaves"]
     assert (
-        probability.estimator_params.max_depth == trial.params["probability__max_depth"]
+        probability.estimator_params.num_leaves
+        == trial.params["probability__num_leaves"]
     )
 
 
