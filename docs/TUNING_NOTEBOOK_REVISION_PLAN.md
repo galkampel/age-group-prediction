@@ -39,9 +39,10 @@ with the rest; the legacy search space (`modeling_config.py`, `configs/modeling.
 committed (5b3f8d7); B3 done (the docs, the old studies moved to `studies/retired/`, Check C
 re-recorded: the handoff's status of 2026-11-20; committed 9a8910b). Task B complete. C1
 committed (bfa070e; the kept lists per run kind in Task C, the chart view measured on B3's
-store, C2–C4's prompts refined). C2 done (the tuning runs log the kept params and 16 metrics,
-`settings.json` and `scores.csv`; the tuning-run test pins a Model 1 and a Model 2 run;
-awaiting the user's commit). Next: C3 (Opus).
+store, C2–C4's prompts refined). C2 committed (e299d66; the tuning runs log the kept params
+and 16 metrics, `settings.json` and `scores.csv`). C3 done (the evaluation runs log 6 params,
+54 metrics and `settings.json`; awaiting the user's commit). A Fable best-practice review of
+C2–C3 led to C3b (four additions, Task C; planned, not built). Next: C3b (Opus).
 
 ## Step 0 — clean start (done 2026-11-19)
 
@@ -169,6 +170,34 @@ else is an artifact.** A value identical in every run cannot separate runs in a 
 - **Unchanged:** the tags, the dataset inputs, the tuning run's six artifacts, the evaluation
   runs' tables (they keep `mean`, `median`, `sd`), figures and per-model JSON.
 
+**Additions after a best-practice review (C3b, the user's choice, 2026-11-20).** A Fable review
+of C2–C3 against MLflow's documentation (read-only) found the lists in line with it: the run
+settings and `best.*` as params, as in MLflow's Optuna tutorial; the bootstrap mean, median and
+SD rightly not metrics; the formats the documented ones. It found two deliberate deviations,
+kept: no logged model (the "no pickle" decision) and the trials not as child runs (the tuning
+run is the tutorial's parent run, the trials in `trials.csv` and the journal). Of its ranked
+changes the user chose four:
+1. **Optuna's figures per tuning run:** `figures/optimization_history.html`
+   (`optuna.visualization.plot_optimization_history`) and `figures/slice.html` (`plot_slice`),
+   by `log_figure`; 48 small files over the 24 runs.
+2. **The cohorts' validation scores under the objective:** `val/<cohort>/<objective>` for the
+   3 cohorts: 19 metrics (was 16). The objective, not the selection metric (the user's choice):
+   the objective is in the `run_key`, so a skipped run never holds a stale name; with the
+   defaults (both `rmse`) it is the same metric. The other per-cohort scores stay in
+   `scores.csv`.
+3. **Two tags:** `study_folder` (the study folder's name, the `run_key`'s first part) on every
+   run, an exact filter for one setup; and on each evaluation run `best.<model>.run_id`, the
+   best tuning run's id, found by its `run_key` (a FINISHED run; none found raises, the store
+   then being inconsistent).
+4. **`study_seed` a param again** (it differs per run): 10 + `best.*` for Model 1, 9 + `best.*`
+   for Model 2; it stays in `settings.json` too.
+
+Not taken: `mlflow.source.git.commit` set by the notebook. MLflow sets it itself (with the
+branch and the repository's URL) when the notebook runs from the repository: all 26 runs of the
+manual run on `.mlflow-check` carry it; only Check C's copies in a scratchpad lack it (the
+user's choice). Also not taken: a model logged with a signature, trials as child runs, a
+stepped convergence metric (the history figure covers it).
+
 **The chart view, measured (C1; B3's 3-trial store, 26 runs, read with sqlite, read-only).**
 A scatter draws a run only if it holds both the param and the metric. Runs holding the param
 (all hold `val/composite/rmse`):
@@ -234,6 +263,9 @@ Names need not be unique. The current names (`<model> <family> exposure=<bool>`,
   and `best.*`; 16 metrics; `scores.csv`; the tests at l.339 and l.431.
 - **C3 (Opus).** The evaluation runs: `log_evaluation_run` logs the 6 params, `settings.json`
   and the statistics `score`, lower, upper (54 metrics); the test at l.558.
+- **C3b (Opus).** The four additions above: the two Optuna figures and the three cohort
+  metrics in `log_tuning_run`, `study_seed` a param again, the `study_folder` tag on every run,
+  the `best.<model>.run_id` tags on the evaluation runs; the tests that pin them.
 - **C4 (Sonnet).** `docs/MLFLOW_RUNS.md` §4–§5, §7, §9's `prediction_floor` and §10's two
   messages; `check_store.py`'s counts
   and lists (copied into the session's scratchpad; it lives in an old one).
@@ -279,7 +311,7 @@ repo's `mlflow.db`, `mlartifacts/` or `.mlflow-local/`; `find . -flags +dataless
 
 ## Session prompts
 
-One session per sub-task, in the plan's order: A1 → B1 → B2 → B3 → C1 → C2 → C3 → C4 → D1 → D2
+One session per sub-task, in the plan's order: A1 → B1 → B2 → B3 → C1 → C2 → C3 → C3b → C4 → D1 → D2
 → D3 → D4 → D5 → E. At its stop a session prints the **next** sub-task's prompt from this
 section, verbatim, in a copyable block, with the model's name above it. It does not write a new
 prompt. A design stop (B1, C1, D1) may refine the prompts of its own task's build sub-tasks
@@ -333,10 +365,16 @@ C2: the tuning runs as C1 decided (Task C's kept lists), in notebooks/03_hyperpa
 C3: the evaluation runs as C1 decided (Task C's kept lists), in notebooks/03_hyperparameter_tuning.py. log_evaluation_run is given the complete settings (shared_params; the final run's with n_train_val) and logs them as settings.json, and as params only config_hash, seed, split_method, n_trials, objective_metric, selection_metric. Metrics: per model and for the difference, per metric, the statistics score and the two bounds (bound_names) only: 54 in a run; mean, median and sd stay in the tables, which are unchanged, as are the figures, the per-model JSON, the tags and the inputs. The two callers' messages need no change (they print the returned count). Tests: the evaluation-run test (l.558; its n_metrics 18 becomes 9) pins the 6 param names, the metric names and settings.json. Verify: ruff, marimo check, the touched tests, run once; a mutation per kept list.
 ```
 
+**C3b (Opus)** — the opening, then:
+
+```text
+C3b: the four additions in Task C ("Additions after a best-practice review"), in notebooks/03_hyperparameter_tuning.py. log_tuning_run: study_seed back among the params (it stays in settings.json); the metrics gain val/<cohort>/<objective> for the 3 cohorts (19 in a real run; the objective is objective_metric_name, not the selection metric); two figures by mlflow.log_figure, figures/optimization_history.html (optuna.visualization.plot_optimization_history(study)) and figures/slice.html (plot_slice(study)). Every run gets the tag study_folder, the study folder's name (the run_key's first part): the tuning runs from studies_dir, the two evaluation runs from what their callers pass. log_evaluation_run tags each best run's tuning run id as best.<model>.run_id, found by search_runs on tags.run_key = '<folder>/<study name>' and status FINISHED; none found raises a ValueError naming the run_key. Nothing else changes. Tests: the tuning-run test (l.431) pins the 10 / 9 params, the metrics (a cohort's validation score under the objective kept, its other per-cohort scores and every train score of a cohort not), the two figures among the artifacts and the study_folder tag; the evaluation-run test (l.634) logs two tuning runs first (or FINISHED runs with the right run_key) and pins the two run_id tags and study_folder, plus a case where a tuning run is missing and the ValueError is raised. Verify: ruff, marimo check, the touched tests, run once; a mutation per addition.
+```
+
 **C4 (Sonnet)** — the opening, then:
 
 ```text
-C4: the docs and the checker for C2–C3. docs/MLFLOW_RUNS.md: §4 (the params per run kind, settings.json and scores.csv among the artifacts, what settings.json holds), §5 (16 and 54 metrics), §7 (models and families are compared by score: the runs table, a bar chart of val/composite/<selection>, the runs grouped by the family or model tag; a best.* scatter holds only the runs of one component role, Task C's coverage table; a hyperparameter's effect is read within a study), §9's table and recipe (prediction_floor from settings.json for every run kind; the rest unchanged, it reads kept params), §10's two messages (108 metrics becomes 54). check_store.py copied from /private/tmp/claude-501/-Users-galkampel-Desktop-Projects-age-group-prediction/1e116e6f-752d-40d8-bedc-ad034d51e94c/scratchpad/manual/ into this session's scratchpad: the param lists per run kind, 16 and 54 metrics, the two new artifacts. Then a 3-trial run into a scratch store (never the repo's stores), check_store.py with 0 failures, and guide me in the UI's chart view, one step at a time: show all runs (the view may draw only the first 10), the scatter of best.total__num_leaves against val/composite/rmse (8 points expected), and a bar chart of val/composite/rmse over the 24 tuning runs grouped by the family tag. Record in Task C what the look showed for the points C1 could not verify (a param on a scatter axis read as a number, the first-10 default, the bar chart and the grouping).
+C4: the docs and the checker for C2–C3b. docs/MLFLOW_RUNS.md: §4 (the params per run kind with study_seed, the tags study_folder and best.<model>.run_id, settings.json, scores.csv and the two Optuna figures among a tuning run's artifacts, what settings.json holds), §5 (19 and 54 metrics), §6 (study_folder as the exact filter for one setup), §8 (the evaluation run's best.<model>.run_id as the direct link; the run_key search stays as the fallback), §7 (models and families are compared by score: the runs table, a bar chart of val/composite/<selection>, the runs grouped by the family or model tag; a best.* scatter holds only the runs of one component role, Task C's coverage table; a hyperparameter's effect is read within a study, now first in the run's figures/slice.html and figures/optimization_history.html, the journal recipe kept for the other Optuna charts), §9's table and recipe (prediction_floor from settings.json for every run kind; the rest unchanged, it reads kept params), §10's two messages (108 metrics becomes 54). check_store.py copied from /private/tmp/claude-501/-Users-galkampel-Desktop-Projects-age-group-prediction/1e116e6f-752d-40d8-bedc-ad034d51e94c/scratchpad/manual/ into this session's scratchpad: the param lists per run kind, 19 and 54 metrics, the new artifacts and figures, the two tags (each best.<model>.run_id naming a FINISHED tuning run whose study name is the best.<model> tag). Then a 3-trial run into a scratch store (never the repo's stores), check_store.py with 0 failures, and guide me in the UI's chart view, one step at a time: show all runs (the view may draw only the first 10), the scatter of best.total__num_leaves against val/composite/rmse (8 points expected), and a bar chart of val/composite/rmse over the 24 tuning runs grouped by the family tag. Record in Task C what the look showed for the points C1 could not verify (a param on a scatter axis read as a number, the first-10 default, the bar chart and the grouping).
 ```
 
 **D1 (Fable; design stop + read-only probe)** — the opening, then:

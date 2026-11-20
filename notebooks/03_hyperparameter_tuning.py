@@ -1033,9 +1033,9 @@ def _(
 ):
     # Every run's complete settings: the data's version and settings, the
     # experiment's settings (the selection metric among them), the parts' sizes and
-    # the prediction floor every model is built with (its y_min). A tuning run logs
-    # them as settings.json and five of them as parameters; an evaluation run logs
-    # them all as parameters.
+    # the prediction floor every model is built with (its y_min). Every run logs
+    # them as settings.json; a tuning run five of them as parameters, an evaluation
+    # run six.
     shared_params = {
         "config_hash": config_hash,
         **DATA_SETTINGS,
@@ -2768,7 +2768,7 @@ def _(mlflow):
     def log_evaluation_run(
         run_name,
         tags,
-        params,
+        settings,
         dataset_name,
         scores_df,
         difference_df,
@@ -2780,23 +2780,18 @@ def _(mlflow):
     ):
         """One run, in the active experiment, of the two best runs evaluated on
         `dataset_name` ("val" or "test"); its number of metrics. It logs `tags` and each
-        best run's study name as `best.<model>`; `params`; as metrics, the
-        composite's score and bootstrap statistics per model (`scores_df`) and for
+        best run's study name as `best.<model>`; `settings` (the run's complete
+        settings) as `settings.json`, six of them as parameters; as metrics, the
+        composite's score and its interval's bounds per model (`scores_df`) and for
         their paired difference (`difference_df`), named
         `<dataset_name>/<model or difference>/<metric>/<statistic>`, every cohort's rows
-        being in the tables; each of `tables` ({name: df}) as
+        and the other statistics being in the tables; each of `tables` ({name: df}) as
         `tables/<name>.csv` at 6 significant digits (the UI shows it as a table);
         each of `figures` ({artifact path: figure}); per best run its best
         parameters (what `from_params` reads) and its components' declaration;
         each of `dataset_inputs` ({context: MLflow dataset}) as an input."""
-        statistics = [
-            "score",
-            "mean",
-            "median",
-            "sd",
-            bound_names["lower"],
-            bound_names["upper"],
-        ]
+        # The score and its interval: the mean, median and SD are in the tables.
+        statistics = ["score", bound_names["lower"], bound_names["upper"]]
         composite_scores = scores_df[scores_df["cohort"] == "composite"]
         composite_difference = difference_df[difference_df["cohort"] == "composite"]
         metrics = {
@@ -2823,7 +2818,22 @@ def _(mlflow):
                     },
                 }
             )
-            mlflow.log_params(params)
+            # settings.json holds every setting; the parameters are the few a chart's
+            # axis or a filter uses.
+            mlflow.log_params(
+                {
+                    name: settings[name]
+                    for name in (
+                        "config_hash",
+                        "seed",
+                        "split_method",
+                        "n_trials",
+                        "objective_metric",
+                        "selection_metric",
+                    )
+                }
+            )
+            mlflow.log_dict(settings, "settings.json")
             mlflow.log_metrics(metrics)
             for name, df in tables.items():
                 mlflow.log_text(

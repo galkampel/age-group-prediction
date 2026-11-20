@@ -387,6 +387,8 @@ def test_the_best_runs_are_logged_by_the_cell_that_follows_the_inspection(
     assert "\n    importance_df,\n" in cells[0]
     assert "_figures = build_dataset_figures(" in cells[0]
     assert "_n_metrics = log_evaluation_run(" in cells[0]
+    # Its settings.json is the complete record: every shared setting.
+    assert '"stage": "best_runs", **code_tags},\n        shared_params,\n' in cells[0]
     assert "log_best_runs" not in source
     assert callable(notebook_defs["build_dataset_figures"])
     assert callable(notebook_defs["log_evaluation_run"])
@@ -409,6 +411,8 @@ def test_the_final_run_is_logged_by_the_cell_that_follows_the_test_evaluation(
     assert "\n    test_scores_df,\n" in cells[0]
     assert "tags.final = 'true'" in cells[0]
     assert "_n_metrics = log_evaluation_run(" in cells[0]
+    # Its settings.json: every shared setting and the refit's size.
+    assert '{**shared_params, "n_train_val": len(train_val_age_group.X)},' in cells[0]
     assert "log_final_run" not in source
     for name in ("test_scores_df", "test_predictions", "val_against_test_df"):
         assert name not in notebook_defs, name
@@ -638,7 +642,9 @@ def test_an_evaluation_run_logs_the_composite_and_each_best_runs_files(
     # with two best runs and small frames. The composite rows (each model's
     # and the paired difference's) become metrics, a cohort's row does not;
     # each best run's study names a tag and gives its best_params file. The
-    # cold read's T2: a dataset input and a figure.
+    # cold read's T2: a dataset input and a figure. C1
+    # (TUNING_NOTEBOOK_REVISION_PLAN.md, Task C): six settings as parameters,
+    # all of them in settings.json; the score and its interval as metrics.
     mlflow = pytest.importorskip("mlflow")
     environment = _mlflow_environment(tmp_path)
     client = mlflow.MlflowClient(environment["MLFLOW_TRACKING_URI"])
@@ -662,6 +668,7 @@ def test_an_evaluation_run_logs_the_composite_and_each_best_runs_files(
             ],
         }
     bound_names = notebook_defs["CI_BOUND_NAMES"]
+    # The tables' statistics; the metrics keep the score and the two bounds.
     statistics = [
         "score",
         "mean",
@@ -670,6 +677,9 @@ def test_an_evaluation_run_logs_the_composite_and_each_best_runs_files(
         bound_names["lower"],
         bound_names["upper"],
     ]
+    kept_statistics = {"score", bound_names["lower"], bound_names["upper"]}
+    # The final run's settings: the notebook's and its own n_train_val.
+    settings = {**notebook_defs["shared_params"], "n_train_val": 1223}
     scores_df = pd.DataFrame(
         [
             {
@@ -705,7 +715,7 @@ def test_an_evaluation_run_logs_the_composite_and_each_best_runs_files(
         n_metrics = notebook_defs["log_evaluation_run"](
             "best runs",
             {"run_key": "studies/best_runs", "stage": "best_runs"},
-            {"seed": 42},
+            settings,
             "val",
             scores_df,
             difference_df,
@@ -715,7 +725,7 @@ def test_an_evaluation_run_logs_the_composite_and_each_best_runs_files(
             best_runs,
             {"validation": dataset},
         )
-    assert n_metrics == 18
+    assert n_metrics == 9
     (run,) = client.search_runs([experiment_id])
     assert run.info.status == "FINISHED"
     assert run.info.run_name == "best runs"
@@ -727,6 +737,7 @@ def test_an_evaluation_run_logs_the_composite_and_each_best_runs_files(
             ("difference", -0.5),
         )
         for i, statistic in enumerate(statistics)
+        if statistic in kept_statistics
     }
     assert {
         name: value
@@ -738,7 +749,17 @@ def test_an_evaluation_run_logs_the_composite_and_each_best_runs_files(
         "best.independent_cohorts": "independent_cohorts_study",
         "best.total_times_probability": "total_times_probability_study",
     }
-    assert run.data.params == {"seed": "42"}
+    assert run.data.params == {
+        name: str(settings[name])
+        for name in (
+            "config_hash",
+            "seed",
+            "split_method",
+            "n_trials",
+            "objective_metric",
+            "selection_metric",
+        )
+    }
     assert [
         (
             item.dataset.name,
@@ -748,6 +769,7 @@ def test_an_evaluation_run_logs_the_composite_and_each_best_runs_files(
         for item in run.inputs.dataset_inputs
     ] == [("val", "d" * 36, {"mlflow.data.context": "validation"})]
     artifacts = Path(run.info.artifact_uri)
+    assert json.loads((artifacts / "settings.json").read_text()) == settings
     assert (artifacts / "tables" / "scores.csv").read_text() == scores_df.to_csv(
         index=False, float_format="%.6g"
     )
