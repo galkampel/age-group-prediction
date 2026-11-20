@@ -1,5 +1,36 @@
 # Handoff: the experiment notebooks, PR 7 merged (#26); the simplification review done; the MLflow runs plan complete (MLFLOW_RUNS_PLAN.md, M0–M7; the guide MLFLOW_RUNS.md); the cold read done (MLFLOW_RUNS_REVIEW.md §8) and its seven findings built (the guide, the two tests); the PR feat/mlflow-runs into main open, not merged; the logging buttons replaced by logging where each result is produced (MLFLOW_RUNS_PLAN.md §8, L1–L4, complete); the guided manual run logged and checked on a check store (the test part included: E11's look done); next the final run's SHAP values and waterfalls (MLFLOW_RUNS_PLAN.md §9, W1–W2), the check store's re-check, then the merge
 
+**Status (2026-11-20, the tuning notebook revision, Task B: the LightGBM search space):**
+- **The plan:** [TUNING_NOTEBOOK_REVISION_PLAN.md](TUNING_NOTEBOOK_REVISION_PLAN.md) (its Status
+  line is the live one). Branch `feat/tuning-notebook-revision`; A1 `7524113` (the SHAP
+  colours), B1 `9df22d9` (the space decided with measurements: Task B's table), B2 `5b3f8d7`
+  (the space in `src`), B3 (these docs, the studies, Check C).
+- **The space:** `max_depth` not searched (fixed `-1`); `num_leaves` 4–32 log,
+  `min_child_samples` 5–40 log, `learning_rate` 0.005–0.2 log, `n_estimators` 50–200,
+  `reg_alpha`/`reg_lambda` 1e-6–10 log; the other three unchanged
+  ([HYPERPARAMETER_TUNING.md](HYPERPARAMETER_TUNING.md) §4).
+- **The old studies** (50 journals of the old space) moved, unchanged, to
+  `studies/retired/2026-11-20_lgbm-space-v1/`; `02` and `03` tune afresh on the next click.
+- **Check C's baselines, re-recorded** (3 trials, both sharing flags off; the cv RMSE, exposure
+  on / off). The 8 without LightGBM are 7.0's, unchanged; the 16 others:
+  - Model 1: `lgbm_poisson` 4.6190 / 4.5403, `lgbm_gaussian` 4.5087 / 4.6285 (the deviance
+    studies: 2.3571 / 2.2765, 2.2426 / 2.4171);
+  - Model 2: `lgbm_poisson+logistic` 4.4967 / 4.4088, `+lgbm` 4.4000 / 4.4273;
+    `lgbm_gaussian+logistic` 4.3885 / 4.4844, `+lgbm` 4.4038 / 4.6021; `poisson_glm+lgbm`
+    4.5766 / 5.0575; `nb2+lgbm` 4.5455 / 5.0499. Run 0's deviance study 2.2033.
+  - The runs without LightGBM: their rows in the runs and scores tables equal L5's run exactly.
+- **Check C's references for C2–D4**, in `/private/tmp/claude-501/-Users-galkampel-Desktop-Projects-age-group-prediction/25384ce9-321d-4e2d-bfd8-d174714c7fbc/scratchpad/b3`:
+  `check_c_b3_tuning.py` (W1's script with B3's pins and A1's colours; its recording version
+  `check_c_b3_tuning_recording.py`), `run_B3.sh`, `make_copy_tuning_l5.py`,
+  `compare_b3.py`; `check_c_b3_tuning.pkl`, `check_c_b3_beeswarm.json`, the store
+  `mlflow_B3.db` / `mlartifacts_B3` (experiment `check-b3`, 26 runs FINISHED). A fresh
+  `PYTHONPYCACHEPREFIX` needs the packages compiled first (`python -m compileall` on
+  site-packages), or `-W error` fails on a `SyntaxWarning` in `pyro`.
+- **The test set gets a second look:** the check store's test scores (E11, the table below)
+  were made with the old space; the new space gives new best models, so Task E's final run
+  scores the test set again. The change is motivated by LightGBM's documentation and B1's
+  measurements, not by the test scores.
+
 **Status (2026-11-16, the guided manual run: the four clicks logged and checked; §9 planned; the user commits it):**
 - **The state:** branch `feat/mlflow-runs`, HEAD `87ac778` (L5). This change: this status and
   [MLFLOW_RUNS_PLAN.md](MLFLOW_RUNS_PLAN.md) §9 (planned by Fable; its status line and a note
@@ -2219,14 +2250,16 @@ which the two notebooks now hold: 1–5 in the EDA, 1–4 and 6 (as 5) in the tu
 
   The merge: #26, squashed into `main` as `574287e`, identical to `4b279fb`; the branch
   deleted locally and on GitHub. `feat/mlflow-runs` starts from it.
-- **7.0's Check C baselines** (3 trials, both sharing flags off; the cv RMSE) are in the cache
+- **7.0's Check C baselines** (superseded on 2026-11-20 for the 16 with a LightGBM component,
+  and the LightGBM deviance baselines, Model 1's 4 and run 0's: the status of that date at the
+  top) (3 trials, both sharing flags off; the cv RMSE) are in the cache
   plan's 7.0 Done note:
   - Model 1, exposure on / off: `lgbm_poisson` 4.4495 / 4.5284, `lgbm_gaussian` 4.4543 /
     4.5563, `poisson_glm` 4.7888 / 5.0400, `nb2` 4.5570 / 5.0545;
   - Model 2: the 16 joint runs, run 0 4.4258 (the EDA's joint value).
 
   At 3 trials the RMSE studies draw the deviance studies' params, so §2's old deviance baselines
-  still hold for those draws.
+  still hold for those draws (since 2026-11-20 only for the GLM and NB2 ones).
 - **The 100-trial click** is in the cache plan's 7.0 Done note: 898 s resumed, the studies' own
   seconds summed to 271 for Model 1 and 880 for Model 2. The best runs are in the status at the
   top.
@@ -2686,7 +2719,8 @@ and the metrics plan §2 (M1–M9); a later one supersedes an earlier one where 
   `cohorts` not checked (the review's #2); the run settings pinned by a notebook test.
 - **Earlier choices** (2026-10-21 onward): `y_min` stays a build argument, recorded once per run
   with the seed; `Aggregator.aggregate_scores` is a named method; `num_leaves` above
-  `2**max_depth` stays a known inefficiency; `scoring.Metric` keeps `direction` and `__call__`;
+  `2**max_depth` stays a known inefficiency (resolved 2026-11-20 by Task B of
+  TUNING_NOTEBOOK_REVISION_PLAN.md: `max_depth` is no longer searched); `scoring.Metric` keeps `direction` and `__call__`;
   `Metric.__call__` keeps its `cohort is None` branch; no private helpers, shared ones public in
   `utils.py`; `cohort` is a `str`, not a `Literal`.
 - **PR 5 (2026-11-06):** D35 `compute_metrics` (done in 5.1); D36 the evaluator returns its
@@ -3231,8 +3265,9 @@ constructor, data in the call; fitting and evaluating as separate steps; no priv
   - one shared function belongs with 6.1's shared setup, once the two notebooks exist.
   - **Moved to 7.0** (the user's answer in 6.3): the joint loop replaces two of the lookups.
 - **T2.3's F5:** gone with 3.4 (the two arms tables were removed).
-- **T1's F7:** `num_leaves` above `2**max_depth` changes nothing in LightGBM; revisit in a
-  search-space pass.
+- **T1's F7 (resolved 2026-11-20):** `num_leaves` above `2**max_depth` changes nothing in
+  LightGBM; the search-space pass (TUNING_NOTEBOOK_REVISION_PLAN.md Task B) fixed `max_depth`
+  at `-1` and searches `num_leaves` 4–32.
 - **The user's:** two empty cells and the bare `return`s marimo writes; ask before changing.
 - **Stale text in section 4:** its header says "the check below prints it" and "fitted once …
   as a check", but the check cell is gone. The user's text; ask.
@@ -3242,7 +3277,8 @@ constructor, data in the call; fitting and evaluating as separate steps; no priv
   study spent 280 of 400 trials at `max_depth` 4 and 8 at depth 8, where the RMSE study found 15
   totals with a lower deviance (best 2.0601 against 2.0718). Candidates for a search-space pass,
   with T1's F7 below: Optuna's `multivariate=True`, more startup trials, a narrower space; not
-  asked for.
+  asked for. (2026-11-20: the search-space pass narrowed the LightGBM space and dropped
+  `max_depth`; `multivariate=True` and the startup trials were not changed.)
 - **The forest plots (5.3) look bad (the user, 2026-11-07, on the 100-trial runs through the
   viewer app):** to be fixed later (with 5.4's difference plot in PR 7); `forest_figure`'s
   layout is unchanged since 5.3.

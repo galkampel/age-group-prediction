@@ -35,8 +35,10 @@ with the rest; the legacy search space (`modeling_config.py`, `configs/modeling.
 
 ## Status
 
-2026-11-20: PR #27 merged as e9ebd69; A1 committed (7524113); B1 committed (9df22d9); B2 done
-(the search space in `src` and the tests; awaiting the user's commit). Next: B3 (Opus).
+2026-11-20: PR #27 merged as e9ebd69; A1 committed (7524113); B1 committed (9df22d9); B2
+committed (5b3f8d7); B3 done (the docs, the old studies moved to `studies/retired/`, Check C
+re-recorded: the handoff's status of 2026-11-20; awaiting the user's commit). Task B complete.
+Next: C1 (Fable).
 
 ## Step 0 — clean start (done 2026-11-19)
 
@@ -119,6 +121,11 @@ The measurement scripts and their outputs are in the B1 session's scratchpad
   resolved; the old studies moved aside as decided, after asking; the 3-trial baselines
   re-recorded (Check C: 8 + 16 runs).
   - Verify: Check C against the new baselines, run once.
+  - **Done 2026-11-20.** Also the handoff's third `max_depth` note (TPE locking onto depth 4)
+    and a new status block at its top (the user's choice). Check C was re-recorded in full,
+    not only the 24 numbers (the user's choice): W1's script adapted (A1's colours too), the 8
+    baselines without LightGBM unchanged, the 16 others and the references for C2–D4 in the
+    handoff's status.
 
 **Note for you:** the check store's test scores (E11's one look) were produced with the old
 space. A new space gives new best models, so the test set gets a second look. The change is

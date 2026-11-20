@@ -195,8 +195,8 @@ print({name: value for name, value in study_1.best_params.items() if name.endswi
 {'n_kindergarten__feature_transformer': 'tree', 'n_elementary__feature_transformer': 'tree__ses_quadratic', 'n_highschool__feature_transformer': 'tree'}
 ```
 
-With `share_hyperparams=True` the ten LightGBM hyperparameters are drawn once, under
-`shared__`, and each cohort still draws its transformer: 13 parameters instead of 33.
+With `share_hyperparams=True` the nine LightGBM hyperparameters are drawn once, under
+`shared__`, and each cohort still draws its transformer: 12 parameters instead of 30.
 
 ```python
 # The total times probability model: a Poisson GLM total with the exposure,
@@ -423,12 +423,11 @@ D25.1), and `ProbabilitySearchSpace.suggest_calibration_method(trial)` draws fro
 
 | family | parameter | range |
 |---|---|---|
-| LightGBM (both losses, and the classifier) | `max_depth` | 3–8 |
-| | `num_leaves` | 7–63 |
-| | `min_child_samples` | 5–40 |
-| | `learning_rate` | 0.01–0.2, log |
-| | `n_estimators` | 50–400 |
-| | `reg_alpha`, `reg_lambda` | 1e-8–10, log |
+| LightGBM (both losses, and the classifier) | `num_leaves` | 4–32, log (the complexity control: the scores turn at 4–16 leaves, 63 overfits) |
+| | `min_child_samples` | 5–40, log (it caps a regressor's leaves near 570 / value; the regressors score best low) |
+| | `learning_rate` | 0.005–0.2, log (with at most 200 trees a regressor needs rate × trees ≈ 4) |
+| | `n_estimators` | 50–200 (at 0.005–0.2 enough to fit; whole 100-trial studies matched the old space's best within 0.1%) |
+| | `reg_alpha`, `reg_lambda` | 1e-6–10, log (no effect below 1e-3) |
 | | `min_split_gain` | 0–1 |
 | | `subsample`, `colsample_bytree` | 0.7–1 |
 | `poisson_glm` | `alpha` | 1e-4–10, log |
@@ -436,6 +435,11 @@ D25.1), and `ProbabilitySearchSpace.suggest_calibration_method(trial)` draws fro
 | | `alpha` | 1e-3–1, log (from the unpenalized fit to all-zero coefficients) |
 | `logistic` | `C` | 1e-3–100, log |
 | probability, any family | `calibration_method` | `None`, `"temperature"`, `"sigmoid"` |
+
+LightGBM's `max_depth` is not searched: `make_estimator` fixes it at `-1` (no cap), since the
+tree grows leaf-wise and `num_leaves` bounds it; with a searched depth a third of the trials
+had a `num_leaves` the depth made inert. The measurements behind every LightGBM row are in
+[TUNING_NOTEBOOK_REVISION_PLAN.md](TUNING_NOTEBOOK_REVISION_PLAN.md) Task B (2026-11-20).
 
 Isotonic calibration is not a candidate: its lowest score block can hold no child of a
 cohort and then maps a building there to probability 0, an infinite log loss (measured with
@@ -458,10 +462,10 @@ one per study (§6).
 
 The two sharing flags of the independent cohorts model (D23–D24): a shared choice is drawn
 once, before the cohorts, under `shared__`, and every cohort takes it; otherwise each cohort
-draws its own under `<cohort>__`. With LightGBM and three cohorts a trial draws 33
-parameters with neither flag, 13 with `share_hyperparams`, 11 with both. Partial sharing
+draws its own under `<cohort>__`. With LightGBM and three cohorts a trial draws 30
+parameters with neither flag, 12 with `share_hyperparams`, 10 with both. Partial sharing
 keeps the per-cohort feature choice (daycares matter for kindergarten, not for high school)
-while TPE searches ten hyperparameters instead of thirty.
+while TPE searches nine hyperparameters instead of twenty-seven.
 
 **The draw order is part of the result.** A seeded study draws the same values only in the
 same order: the cohorts in the given order, each its hyperparameters then its transformer;
@@ -625,9 +629,11 @@ hyperparameters, the cross-validated objective, trials, seconds) and their score
   every seeded result.
 - **The regression check:** the notebook's runs at 3 trials, both sharing flags off,
   reproduce to the fourth decimal the baselines recorded in the
-  [handoff](EXPERIMENT_NOTEBOOK_HANDOFF.md) §2 (Check C): Model 1's 8 since T1, Model 2's 16
+  [handoff](EXPERIMENT_NOTEBOOK_HANDOFF.md) (Check C): Model 1's 8 since T1, Model 2's 16
   since its coordinate descent (the metrics plan's 2.3). Every change to this package since
-  it was rebuilt has passed it.
+  it was rebuilt has passed it. The LightGBM space of §4 changed the 16 baselines with a
+  LightGBM component; they were re-recorded on 2026-11-20 (the handoff's status of that
+  date), and the 8 without one were unchanged.
 
 ## 10. Hazards
 
@@ -646,15 +652,15 @@ hyperparameters, the cross-validated objective, trials, seconds) and their score
   model and the data, all of which pickle.
 - **pandas turns a `None` calibration into NaN** in the trials table, and `value_counts()`
   drops it: count by label after `fillna("None")` (D16).
-- **`num_leaves` above `2**max_depth` changes nothing in LightGBM**; TPE spends some trials
-  on equivalent settings (T1's F7, left as a known inefficiency).
 - **The logistic model needs scaled inputs**: it does not converge on the `tree`
   declaration, so its candidates are the GLM declarations.
 - **NB2 can fail to converge**: its trial is marked FAIL and counted in the notebook's
   tables; a run whose trials all fail raises in its own cell.
 - **A stored study is found by its name only** (§6): a change to the data, the folds, the
   search space or the code is not detected, and the stored study is loaded as it is. Delete
-  its file, or change the name or the directory.
+  its file, or change the name or the directory. A changed search space affects every study:
+  move the whole directory aside (2026-11-20: the old LightGBM space's studies are in
+  `studies/retired/2026-11-20_lgbm-space-v1/`), and both notebooks tune afresh.
 
 ## 11. What Remains
 
