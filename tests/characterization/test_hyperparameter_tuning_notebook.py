@@ -624,6 +624,7 @@ def test_a_tuning_run_is_logged_once_then_skipped(
         "components.json",
         "config.json",
         "figures/optimization_history.html",
+        "figures/param_importances.html",
         "figures/slice.html",
         "scores.csv",
         "search_space.json",
@@ -646,6 +647,164 @@ def test_a_tuning_run_is_logged_once_then_skipped(
     # tracking URI for the tests that run after.
     assert mlflow.active_run() is None
     assert mlflow.get_tracking_uri() != environment["MLFLOW_TRACKING_URI"]
+
+
+def test_a_tuning_run_that_fails_while_logging_holds_no_metrics(
+    notebook_defs: dict, tmp_path: Path
+) -> None:
+    # C3c (TUNING_NOTEBOOK_REVISION_PLAN.md, Task C, "Second review"): the
+    # metrics are logged last, so a run that fails while logging (here its
+    # journal missing) is FAILED with no metrics and never shows in a chart; it
+    # is logged again once the journal is there. The parameter importances are
+    # seeded with the study's seed, so the two runs' figures equal the one drawn
+    # here with seed 7, but for the div id plotly draws at random. Three
+    # parameters: fANOVA gives a single one an importance of 1 whatever the seed.
+    mlflow = pytest.importorskip("mlflow")
+    environment = _mlflow_environment(tmp_path)
+    client = mlflow.MlflowClient(environment["MLFLOW_TRACKING_URI"])
+    experiment_id = client.create_experiment(
+        environment["MLFLOW_EXPERIMENT_NAME"],
+        artifact_location=str((tmp_path / "artifacts").resolve()),
+    )
+    study = optuna.create_study(study_name="c_study", sampler=RandomSampler(seed=0))
+    study.optimize(
+        lambda trial: (
+            trial.suggest_float("total__alpha", 1e-4, 1.0, log=True)
+            + trial.suggest_float("total__l1_ratio", 0.0, 1.0)
+            + (trial.suggest_categorical("total__transformer", ["a", "b"]) == "a")
+        ),
+        n_trials=5,
+    )
+    studies_dir = tmp_path / "studies"
+    studies_dir.mkdir()
+    tuning_run = {
+        "study": study,
+        "study_seed": 7,
+        "cv_best": study.best_value,
+        "scores": pd.DataFrame(
+            {"score": [0.5]},
+            index=pd.MultiIndex.from_tuples(
+                [("val", "composite", "rmse")], names=["dataset", "cohort", "metric"]
+            ),
+        ),
+        "seconds": 1.0,
+        "n_complete": 5,
+        "n_failed": 0,
+        "components": [],
+    }
+    arguments = (
+        tuning_run,
+        "total_times_probability",
+        {
+            "total_family": "poisson_glm",
+            "probability_family": "logistic",
+            "use_exposure": False,
+        },
+        studies_dir,
+        "rmse",
+        notebook_defs["shared_params"],
+        {},
+        {},
+        {},
+    )
+    with pytest.MonkeyPatch.context() as patch:
+        for name, value in environment.items():
+            patch.setenv(name, value)
+        with pytest.raises(FileNotFoundError):
+            notebook_defs["log_tuning_run"](*arguments)
+        (studies_dir / "c_study.log").write_text(
+            "the study's journal\n", encoding="utf-8"
+        )
+        run_id = notebook_defs["log_tuning_run"](*arguments)
+    (failed_run,) = client.search_runs([experiment_id], "attributes.status = 'FAILED'")
+    finished_run = client.get_run(run_id)
+    assert failed_run.info.run_id != run_id
+    assert failed_run.data.metrics == {}
+    assert finished_run.info.status == "FINISHED"
+    assert finished_run.data.metrics["val/composite/rmse"] == 0.5
+    # As log_figure writes a plotly figure (include_plotlyjs="cdn").
+    expected = optuna.visualization.plot_param_importances(
+        study, evaluator=optuna.importance.FanovaImportanceEvaluator(seed=7)
+    ).to_html(include_plotlyjs="cdn")
+    figures = [
+        re.sub(r"[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}", "<id>", html)
+        for html in (
+            expected,
+            *(
+                (
+                    Path(run.info.artifact_uri) / "figures" / "param_importances.html"
+                ).read_text(encoding="utf-8")
+                for run in (failed_run, finished_run)
+            ),
+        )
+    ]
+    assert "total__l1_ratio" in figures[0]
+    assert figures[1] == figures[0]
+    assert figures[2] == figures[0]
+    assert mlflow.active_run() is None
+
+
+@pytest.mark.parametrize(
+    ("n_trials", "objective"),
+    [
+        (1, lambda trial: trial.suggest_float("total__alpha", 1e-4, 1.0, log=True)),
+        (2, lambda trial: trial.suggest_float("total__alpha", 1e-4, 1.0) * 0 + 1.0),
+    ],
+    ids=["one_complete_trial", "equal_values"],
+)
+def test_a_study_fanova_cannot_rank_is_logged_without_the_importances_figure(
+    notebook_defs: dict, tmp_path: Path, n_trials: int, objective
+) -> None:
+    # C3c, the review's finding: fANOVA raises on a single complete trial or
+    # on equal values, which would fail the run on every rerun (and refuse the
+    # evaluation run). Such a study is logged without the importances figure.
+    mlflow = pytest.importorskip("mlflow")
+    environment = _mlflow_environment(tmp_path)
+    client = mlflow.MlflowClient(environment["MLFLOW_TRACKING_URI"])
+    client.create_experiment(
+        environment["MLFLOW_EXPERIMENT_NAME"],
+        artifact_location=str((tmp_path / "artifacts").resolve()),
+    )
+    study = optuna.create_study(study_name="d_study", sampler=RandomSampler(seed=0))
+    study.optimize(objective, n_trials=n_trials)
+    studies_dir = tmp_path / "studies"
+    studies_dir.mkdir()
+    (studies_dir / "d_study.log").write_text("the study's journal\n", encoding="utf-8")
+    tuning_run = {
+        "study": study,
+        "study_seed": 7,
+        "cv_best": study.best_value,
+        "scores": pd.DataFrame(
+            {"score": [0.5]},
+            index=pd.MultiIndex.from_tuples(
+                [("val", "composite", "rmse")], names=["dataset", "cohort", "metric"]
+            ),
+        ),
+        "seconds": 1.0,
+        "n_complete": n_trials,
+        "n_failed": 0,
+        "components": [],
+    }
+    with pytest.MonkeyPatch.context() as patch:
+        for name, value in environment.items():
+            patch.setenv(name, value)
+        run_id = notebook_defs["log_tuning_run"](
+            tuning_run,
+            "independent_cohorts",
+            {"family": "poisson_glm", "use_exposure": True},
+            studies_dir,
+            "rmse",
+            notebook_defs["shared_params"],
+            {},
+            {},
+            {},
+        )
+    run = client.get_run(run_id)
+    assert run.info.status == "FINISHED"
+    assert sorted(
+        path.name for path in (Path(run.info.artifact_uri) / "figures").iterdir()
+    ) == ["optimization_history.html", "slice.html"]
+    assert mlflow.active_run() is None
 
 
 def test_an_evaluation_run_logs_the_composite_and_each_best_runs_files(
@@ -864,6 +1023,68 @@ def test_an_evaluation_run_without_its_tuning_run_is_refused(
     assert [run.info.run_id for run in client.search_runs([experiment_id])] == [
         tuning_run.info.run_id
     ]
+    assert mlflow.active_run() is None
+
+
+def test_an_evaluation_run_that_fails_while_logging_holds_no_metrics(
+    notebook_defs: dict, tmp_path: Path
+) -> None:
+    # C3c: the metrics are logged last, so an evaluation run that fails while
+    # logging (here a figure log_figure cannot write) is FAILED with no metrics
+    # and never shows in a chart.
+    mlflow = pytest.importorskip("mlflow")
+    environment = _mlflow_environment(tmp_path)
+    client = mlflow.MlflowClient(environment["MLFLOW_TRACKING_URI"])
+    experiment_id = client.create_experiment(
+        environment["MLFLOW_EXPERIMENT_NAME"],
+        artifact_location=str((tmp_path / "artifacts").resolve()),
+    )
+    best_runs = {}
+    for model in ("independent_cohorts", "total_times_probability"):
+        tuning_run = client.create_run(
+            experiment_id, tags={"run_key": f"studies/{model}_study"}
+        )
+        client.set_terminated(tuning_run.info.run_id)
+        best_runs[model] = {
+            "study": Bunch(study_name=f"{model}_study", best_params={}),
+            "components": [],
+        }
+    bound_names = notebook_defs["CI_BOUND_NAMES"]
+    # A composite row per model: six metrics the run would log.
+    scores_df = pd.DataFrame(
+        [
+            {
+                "model": model,
+                "cohort": "composite",
+                "metric": "rmse",
+                "score": 4.0,
+                bound_names["lower"]: 3.5,
+                bound_names["upper"]: 4.5,
+            }
+            for model in best_runs
+        ]
+    )
+    with pytest.MonkeyPatch.context() as patch:
+        for name, value in environment.items():
+            patch.setenv(name, value)
+        with pytest.raises(TypeError, match="Unsupported figure object type"):
+            notebook_defs["log_evaluation_run"](
+                "best runs",
+                {"run_key": "studies/best_runs", "stage": "best_runs"},
+                dict(notebook_defs["shared_params"]),
+                "val",
+                scores_df,
+                scores_df.iloc[:0],
+                bound_names,
+                {},
+                {"figures/a_figure.html": object()},
+                best_runs,
+                "studies",
+                {},
+            )
+    (run,) = client.search_runs([experiment_id], "tags.stage = 'best_runs'")
+    assert run.info.status == "FAILED"
+    assert run.data.metrics == {}
     assert mlflow.active_run() is None
 
 

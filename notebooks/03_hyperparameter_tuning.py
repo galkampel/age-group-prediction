@@ -1081,8 +1081,11 @@ def _(json, mlflow, optuna):
         Parameters: the run's settings, five of `shared_params`, the study's seed and
         the best parameters; metrics: the cross-validation score, the composite's
         scores, each cohort's validation score under the objective and the study's
-        counts; `settings.json` and `scores.csv` hold the rest. Optuna's optimization
-        history and slice plot as figures."""
+        counts, logged last (a run that fails while logging holds none);
+        `settings.json` and `scores.csv` hold the rest. Optuna's optimization history,
+        slice plot and parameter importances (fANOVA, seeded with the study's seed;
+        none when the complete trials hold fewer than two distinct values) as
+        figures."""
         study = tuning_run["study"]
         run_key = f"{studies_dir.name}/{study.study_name}"
         if mlflow.search_runs(
@@ -1150,24 +1153,6 @@ def _(json, mlflow, optuna):
                     },
                 }
             )
-            mlflow.log_metrics(
-                {
-                    f"cv/{objective_metric_name}": tuning_run["cv_best"],
-                    # The composite's scores and each cohort's validation score
-                    # under the objective (in the run key, so never stale).
-                    **{
-                        f"{dataset_name}/{cohort}/{metric}": score
-                        for (dataset_name, cohort, metric), score in tuning_run[
-                            "scores"
-                        ]["score"].items()
-                        if cohort == "composite"
-                        or (dataset_name == "val" and metric == objective_metric_name)
-                    },
-                    "seconds": tuning_run["seconds"],
-                    "n_complete": tuning_run["n_complete"],
-                    "n_failed": tuning_run["n_failed"],
-                }
-            )
             # The trials at 6 significant digits, as CSV (the UI shows it as a table);
             # log_table would round to 10 decimals. The journal keeps the exact values.
             mlflow.log_text(
@@ -1200,11 +1185,50 @@ def _(json, mlflow, optuna):
             mlflow.log_figure(
                 optuna.visualization.plot_slice(study), "figures/slice.html"
             )
+            # fANOVA seeded with the study's seed: a rerun draws the same ranking.
+            # It cannot rank a single complete trial or equal values (it raises),
+            # so such a study logs no importances figure.
+            complete_values = {
+                trial.value
+                for trial in study.get_trials(
+                    deepcopy=False, states=(optuna.trial.TrialState.COMPLETE,)
+                )
+            }
+            if len(complete_values) > 1:
+                mlflow.log_figure(
+                    optuna.visualization.plot_param_importances(
+                        study,
+                        evaluator=optuna.importance.FanovaImportanceEvaluator(
+                            seed=tuning_run["study_seed"]
+                        ),
+                    ),
+                    "figures/param_importances.html",
+                )
             mlflow.log_artifact(
                 str(studies_dir / f"{study.study_name}.log"), artifact_path="study"
             )
             for context, mlflow_dataset in dataset_inputs.items():
                 mlflow.log_input(mlflow_dataset, context=context)
+            # The metrics last: a run that fails while logging holds none, so it
+            # never shows in a chart.
+            mlflow.log_metrics(
+                {
+                    f"cv/{objective_metric_name}": tuning_run["cv_best"],
+                    # The composite's scores and each cohort's validation score
+                    # under the objective (in the run key, so never stale).
+                    **{
+                        f"{dataset_name}/{cohort}/{metric}": score
+                        for (dataset_name, cohort, metric), score in tuning_run[
+                            "scores"
+                        ]["score"].items()
+                        if cohort == "composite"
+                        or (dataset_name == "val" and metric == objective_metric_name)
+                    },
+                    "seconds": tuning_run["seconds"],
+                    "n_complete": tuning_run["n_complete"],
+                    "n_failed": tuning_run["n_failed"],
+                }
+            )
         return mlflow_run.info.run_id
 
     return (log_tuning_run,)
@@ -2806,7 +2830,8 @@ def _(mlflow):
         composite's score and its interval's bounds per model (`scores_df`) and for
         their paired difference (`difference_df`), named
         `<dataset_name>/<model or difference>/<metric>/<statistic>`, every cohort's rows
-        and the other statistics being in the tables; each of `tables` ({name: df}) as
+        and the other statistics being in the tables, logged last (a run that fails
+        while logging holds none); each of `tables` ({name: df}) as
         `tables/<name>.csv` at 6 significant digits (the UI shows it as a table);
         each of `figures` ({artifact path: figure}); per best run its best
         parameters (what `from_params` reads) and its components' declaration;
@@ -2872,7 +2897,6 @@ def _(mlflow):
                 }
             )
             mlflow.log_dict(settings, "settings.json")
-            mlflow.log_metrics(metrics)
             for name, df in tables.items():
                 mlflow.log_text(
                     df.to_csv(index=False, float_format="%.6g"), f"tables/{name}.csv"
@@ -2893,6 +2917,9 @@ def _(mlflow):
                 )
             for context, mlflow_dataset in dataset_inputs.items():
                 mlflow.log_input(mlflow_dataset, context=context)
+            # The metrics last: a run that fails while logging holds none, so it
+            # never shows in a chart.
+            mlflow.log_metrics(metrics)
         return len(metrics)
 
     return (log_evaluation_run,)

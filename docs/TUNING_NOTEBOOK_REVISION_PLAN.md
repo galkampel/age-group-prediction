@@ -47,7 +47,11 @@ Optuna's two figures; every run the `study_folder` tag; the evaluation runs
 `best.<model>.run_id`, found before the run opens, a missing one a ValueError; committed
 c09a18f). A second Fable review, of the whole MLflow content (the user's request), found the
 design sound and led to C3c (the metrics logged last, a param-importances figure) and a query
-cheat-sheet in C4 (Task C, "Second review"). Next: C3c (Opus).
+cheat-sheet in C4 (Task C, "Second review"). C3c done (both loggers log the metrics last, so a
+run that fails while logging holds none; a tuning run logs `figures/param_importances.html`,
+fANOVA seeded with the study's seed, and none when the complete trials hold fewer than two
+distinct values, where fANOVA raises: the review's finding, the user's choice; awaiting the
+user's commit). Next: C4 (Sonnet).
 
 ## Step 0 — clean start (done 2026-11-19)
 
@@ -227,7 +231,11 @@ findings, none blocking:
   `figures/param_importances.html` by `plot_param_importances` with
   `FanovaImportanceEvaluator(seed=study_seed)` (unseeded, a rerun would give other numbers;
   checked: it takes a seed and runs on a 2-trial study under `-W error`). 72 small files over
-  the 24 runs.
+  the 24 runs. C3c's review found that fANOVA raises on a single complete trial
+  (`ValueError`) and on equal values (`RuntimeError`), which would fail the run on every rerun
+  and refuse the evaluation run; such a study logs no importances figure (the user's choice: an
+  explicit check, no exception caught). On a 100-trial, 30-parameter study with conditional
+  parameters and failed trials it runs in ~3 s with no warning.
 - **Kept as they are:** the figures load plotly from a CDN (`log_figure`'s
   `include_plotlyjs="cdn"`), so they are blank offline (embedding costs ~3.5 MB a figure); the
   lookup takes the newest of two FINISHED runs with one key (the skip prevents a second);
@@ -304,7 +312,7 @@ Names need not be unique. The current names (`<model> <family> exposure=<bool>`,
   the `best.<model>.run_id` tags on the evaluation runs; the tests that pin them. **Done,
   committed c09a18f.**
 - **C3c (Opus).** The second review's two code changes: `log_metrics` last in both loggers,
-  the param-importances figure in `log_tuning_run`; the tests that pin them.
+  the param-importances figure in `log_tuning_run`; the tests that pin them. **Done.**
 - **C4 (Sonnet).** `docs/MLFLOW_RUNS.md` §4–§5, §7, §9's `prediction_floor` and §10's two
   messages; `check_store.py`'s counts
   and lists (copied into the session's scratchpad; it lives in an old one).
