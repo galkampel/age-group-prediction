@@ -50,8 +50,15 @@ design sound and led to C3c (the metrics logged last, a param-importances figure
 cheat-sheet in C4 (Task C, "Second review"). C3c done (both loggers log the metrics last, so a
 run that fails while logging holds none; a tuning run logs `figures/param_importances.html`,
 fANOVA seeded with the study's seed, and none when the complete trials hold fewer than two
-distinct values, where fANOVA raises: the review's finding, the user's choice; awaiting the
-user's commit). Next: C4 (Sonnet).
+distinct values, where fANOVA raises: the review's finding, the user's choice; committed
+7d586cd). C4 done 2026-11-21, awaiting the user's commit: `docs/MLFLOW_RUNS.md` §1, §4–§10 rewritten for
+C2–C3c (the query cheat-sheet in §6; §8's recipe by `best.<model>.run_id`; §9's
+`prediction_floor` from `settings.json`); `checks/check_store.py` adapted (the scratch store in
+`~/age-group-prediction-scratch/c4/`), 0 failures on the 3-trial store (26 runs), and §8's and
+§9's recipes ran from the doc on it. The user's look in the MLflow UI is recorded in Task C and
+§7 (eye menu 10/20/all, the scatter reads a param as a number and draws 8 points, 24 bars, 12
+mean bars grouped by `family`). An independent review of the doc against the notebook found no
+factual discrepancy and six wording points, all applied. Next: D1 (Fable).
 
 ## Step 0 — clean start (done 2026-11-19)
 
@@ -273,10 +280,16 @@ A scatter draws a run only if it holds both the param and the metric. Runs holdi
   `val/composite/<selection>` with the `family` tag (in all 24 runs) and `use_exposure` as
   columns; a bar chart of that metric, one bar per run; the runs grouped by the `family` or
   `model` tag.
-- **Not verified in C1** (it needs the UI on a copy of the store): that MLflow 3.16's scatter
-  takes a param on an axis and reads its text as a number; that the chart view draws only the
-  first 10 visible runs until all runs are shown; the bar chart and the grouping. C4's guided
-  look confirms them.
+- **Verified in C4's guided look** (MLflow 3.16 UI, chart view, on a copy of the 3-trial
+  store, 26 runs): the eye icon in the runs list's header has a menu "first 10 / first 20 / all
+  runs", so the limit exists; the default was not observed (the user thinks all runs), and
+  "all runs" shows 26. The scatter of `best.total__num_leaves` against `val/composite/rmse`
+  takes the param on an axis, reads it as a number (numeric ticks 5, 10, 15, 20) and draws 8
+  points (two nearly coincide at 5). The bar chart of `val/composite/rmse` draws 24 bars, one per
+  tuning run; grouped by the `family` tag it draws 12 bars, one per family value, each the
+  mean of its 2 runs (checked against the store: 4.66 for lgbm_poisson, 5.16 for poisson_glm,
+  4.56 for lgbm_gaussian+logistic). The bars carry no axis labels, only a colour and a legend that
+  lists 5 of the 12 names, and colours repeat; hovering was not tried.
 
 **Checked against Task D's read:**
 
@@ -428,6 +441,12 @@ C3c: the second review's two code changes (Task C, "Second review"), in notebook
 
 ```text
 C4: the docs and the checker for C2–C3c. docs/MLFLOW_RUNS.md: §4 (the params per run kind with study_seed, the tags study_folder and best.<model>.run_id, settings.json, scores.csv and the three Optuna figures among a tuning run's artifacts, what settings.json holds, the metrics logged last so a FAILED run holds none), §5 (19 and 54 metrics), §6 (study_folder as the exact filter for one setup, and the query cheat-sheet of Task C's "Second review": backticks for a slash name in filter_string and order_by, params as strings with pd.to_numeric, booleans as 'True', the FINISHED filter, validation against test from the final run's val_against_test table or a pandas join with the prefix stripped), §8 (the evaluation run's best.<model>.run_id as the direct link; the run_key search stays as the fallback), §7 (models and families are compared by score: the runs table, a bar chart of val/composite/<selection>, the runs grouped by the family or model tag; a best.* scatter holds only the runs of one component role, Task C's coverage table; a hyperparameter's effect is read within a study, now first in the run's figures/slice.html, figures/param_importances.html and figures/optimization_history.html, the journal recipe kept for the other Optuna charts), §9's table and recipe (prediction_floor from settings.json for every run kind; the rest unchanged, it reads kept params), §10's two messages (108 metrics becomes 54). check_store.py copied from /private/tmp/claude-501/-Users-galkampel-Desktop-Projects-age-group-prediction/1e116e6f-752d-40d8-bedc-ad034d51e94c/scratchpad/manual/ into this session's scratchpad: the param lists per run kind, 19 and 54 metrics, the new artifacts and figures, the two tags (each best.<model>.run_id naming a FINISHED tuning run whose study name is the best.<model> tag). Then a 3-trial run into a scratch store (never the repo's stores), check_store.py with 0 failures, and guide me in the UI's chart view, one step at a time: show all runs (the view may draw only the first 10), the scatter of best.total__num_leaves against val/composite/rmse (8 points expected), and a bar chart of val/composite/rmse over the 24 tuning runs grouped by the family tag. Record in Task C what the look showed for the points C1 could not verify (a param on a scatter axis read as a number, the first-10 default, the bar chart and the grouping).
+```
+
+**C4, resume (Sonnet)** — the validation of the UI look; the build is done and uncommitted:
+
+```text
+Read docs/TUNING_NOTEBOOK_REVISION_PLAN.md: the Status line, Task C (the chart-view measurements and "Not verified in C1"), sub-task C4, the standing rules. Continue C4 from its validation: its build is done and uncommitted (git status: docs/MLFLOW_RUNS.md modified; HEAD 7d586cd). Confirm the branch is feat/tuning-notebook-revision and that only docs/MLFLOW_RUNS.md differs from HEAD; no source file offloaded (find . -flags +dataless, caches aside). The checker is checks/check_store.py (in the repo, uncommitted; C2–C3c's counts and lists; usage in its docstring). The 3-trial scratch store is in ~/age-group-prediction-scratch/c4/ (outside /tmp and iCloud): mlflow_C4.db and mlartifacts_C4 (26 FINISHED runs, experiment check-c4, artifact paths already pointing there; check_store.py reports 0 failures on a copy of it), recipe_s8.py and recipe_s9.py (§8's and §9's code blocks run from the doc), check_c4.log, and run_C4.sh with make_copy.py and run_c4.py, which rebuild the store in about 2 minutes if it is ever lost (never into the repo's stores). Work on a COPY of mlflow_C4.db for the UI and the checks. Then: (1) start the MLflow UI on a copy of the store (mlflow ui --backend-store-uri sqlite:///<copy> --artifacts-destination <mlartifacts_C4> --port 5001) and guide me in the chart view, one step at a time, waiting for my answer: show all runs (the view may draw only the first 10), the scatter of best.total__num_leaves against val/composite/rmse (8 points expected; is a param read as a number on an axis?), a bar chart of val/composite/rmse over the 24 tuning runs grouped by the family tag. (2) Record what I see in Task C (the points C1 could not verify) and in the closing paragraph of MLFLOW_RUNS.md §7 (§7 already refers to "the UI check"; fix any sentence the look shows wrong, e.g. the scatter's 8 points or the first-10 default). (3) An independent review of MLFLOW_RUNS.md against notebooks/03_hyperparameter_tuning.py (an agent given the diff, not my conclusion). (4) Rerun check_store.py once only if the docs' numbers changed. At the stop: a file-by-file summary, the check results, the commit message in a copyable block (no Co-Authored-By, no "Generated with" line), the Status line updated (C4 done, awaiting commit), and D1's prompt printed verbatim from the plan with its model named.
 ```
 
 **D1 (Fable; design stop + read-only probe)** — the opening, then:
