@@ -79,7 +79,27 @@ the run-time guard catches a changed floor only where it binds), the metrics pin
 both dataset contexts tampered, NaN scores equal. 15 passed; 31 mutations caught (2 more, a
 floor of 0, are refused by `CountModel` itself); on a copy of C4's store `04` reads 8 + 16 runs
 and both best runs equal the best runs' run's `best.<model>.run_id` with its 6 validation
-scores exactly. Next: D3 (Opus).
+scores exactly; committed 04565cc. D3 done 2026-11-21, awaiting the user's commit: the whole
+inspection moved from `03` to `04` (03's l.964–1018 and l.1805 to the end, pasted after `04`'s
+read in order; `03` ends after the Model 2 tables, 1,733 lines; `04` 3,846). Adapted to `04`'s
+record: the validation bootstrap and the test refit loop over `best_runs` with the record's
+`family` (Model 2's tag is already `total+probability`); `log_evaluation_run` reads
+`study_name`, `run_id` and `best_params` from each best run, its `run_key` search and
+ValueError gone; the best runs' run logs 3 tables, keyed by `study_folder` and
+`OBJECTIVE_METRIC.name`; the final run's `run_key` by `study_folder`. Imports: `04` gains
+`functools`, `go`, `make_subplots`, `gaussian_kde` and the three inspection classes; `03` loses
+them. Tests: 17 moved to `test_model_inspection_notebook.py` (the two "logged by the cell that
+follows", the two evaluation-run tests building the record, their tuning runs gone with the
+search, and the 13 tables / figures / menus / buttons); "without its tuning run is refused"
+deleted; D2's read-cell test finds the read by its `tags.stage = 'tuning'` clause (the two
+evaluation cells search the store too). ruff (the notebooks' findings the marimo cell style,
+as at HEAD), `marimo check` both, 57 passed; 3 mutations caught (each adapted line of
+`log_evaluation_run`). A Fable review (does the task, simple, readable, best practice) found
+no defect; its points applied: the read-cell test also checks the validation bootstrap's rows
+(model, family, exposure from the record; a mutated family caught) and that only the tuning
+runs are in the store; four stale comments and texts left by the move reworded (the dropped
+tables, the removed search, the bootstrap's text repeating the read's), a test comment naming a
+test of 03's file. Next: D4 (Opus).
 
 ## Step 0 — clean start (done 2026-11-19)
 
