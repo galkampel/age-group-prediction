@@ -62,8 +62,24 @@ factual discrepancy and six wording points, all applied. D1 done 2026-11-21, awa
 user's commit (docs only): the MLflow read probed on a copy of C4's store (all 24 runs rebuilt
 from `components.json` + `best_params.json` reproduce their logged scores exactly), the
 decisions in Task D (four of them the user's answers), the sub-tasks re-cut (D3 moves the whole
-inspection in one step, D4 slims `03` and runs the 3-trial check) and D2–D5's prompts written.
-Next: D2 (Opus).
+inspection in one step, D4 slims `03` and runs the 3-trial check) and D2–D5's prompts written;
+committed 9d8a24f. D2 done 2026-11-21, awaiting the user's commit: `notebooks/04_model_inspection.py`
+up to `best_runs` (03's setup copied verbatim, the MLflow cell's `notebook` tag aside; its own
+imports, 14 settings, metrics and `study_folder` / `N_TUNING_RUNS` cells; the read stops on the
+counts; `select_best_runs`, `read_tuning_run`, `rebuild_best_run`, `check_best_run`; no
+bootstrap) and `tests/characterization/test_model_inspection_notebook.py` (15 tests: the
+empty-store run, the read cell's source, the 03/04 pin, the selection and its tie rule, the
+rebuild, the three guards, a name the notebook lacks, and the read cell run on a copy expecting
+the store's 4 + 1 runs (the record) or 3 + 1 (the stop), on five real tuning runs logged by
+`03`'s `log_tuning_run`); 03 untouched. A Fable review found no correctness bug; its six points
+applied: a `from_params` `KeyError` (a transformer renamed or removed) becomes a `ValueError`
+naming the run, the read cell's record is tested past its stop, the floor and the seed pinned on
+the rebuilt model (no run's prediction falls below a floor of 1e-3, so the scores cannot pin it;
+the run-time guard catches a changed floor only where it binds), the metrics pinned as objects,
+both dataset contexts tampered, NaN scores equal. 15 passed; 31 mutations caught (2 more, a
+floor of 0, are refused by `CountModel` itself); on a copy of C4's store `04` reads 8 + 16 runs
+and both best runs equal the best runs' run's `best.<model>.run_id` with its 6 validation
+scores exactly. Next: D3 (Opus).
 
 ## Step 0 — clean start (done 2026-11-19)
 
