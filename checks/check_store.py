@@ -1,4 +1,7 @@
-"""C4: the check store against docs/MLFLOW_RUNS.md (§1, §4-§8) after C2-C3c, read-only.
+"""D4: the check store against docs/MLFLOW_RUNS.md (§1, §4-§8) after C2-C3c and the split, read-only.
+
+03_hyperparameter_tuning.py logs the 24 tuning runs (17 settings + study_seed in settings.json);
+04_model_inspection.py the best runs' run (3 tables) and the final run, both with 23 settings (the final + n_train_val).
 
 Usage: python checks/check_store.py <db copy> <experiment> <stage...>   (stages: empty, tuning, best_runs, final)
 Run it on a COPY of the store; set MLFLOW_ENABLE_ARTIFACTS_PROGRESS_BAR=false to silence the progress bars.
@@ -8,7 +11,6 @@ Every failed expectation is printed as FAIL; the exit code is the number of fail
 
 import collections
 import io
-import json
 import subprocess
 import sys
 
@@ -25,12 +27,17 @@ MODELS = ("independent_cohorts", "total_times_probability")
 METRICS = 6
 COHORTS = ("n_kindergarten", "n_elementary", "n_high_school")  # replaced below by what the store holds
 STATISTICS = {"score", "ci95_lower", "ci95_upper"}
-SETTINGS = {
+TUNING_SETTINGS = {
     "config_hash", "config_path", "n_neighborhoods", "buildings_per_neighborhood_rate",
     "simulation_seed", "seed", "split_method", "test_size", "val_size", "n_splits",
-    "n_trials", "n_startup_trials", "objective_metric", "selection_metric", "n_resamples",
-    "alpha", "n_repeats", "n_shap_rows", "n_shap_background", "n_train", "n_val", "n_test",
+    "n_trials", "n_startup_trials", "objective_metric", "n_train", "n_val", "n_test",
     "prediction_floor",
+}
+INSPECTION_SETTINGS = {"selection_metric", "n_resamples", "alpha", "n_repeats", "n_shap_rows", "n_shap_background"}
+NOTEBOOKS = {
+    "tuning": "notebooks/03_hyperparameter_tuning.py",
+    "best_runs": "notebooks/04_model_inspection.py",
+    "final": "notebooks/04_model_inspection.py",
 }
 KEPT = {"config_hash", "seed", "split_method", "n_trials", "objective_metric"}
 RUN_SETTINGS = {
@@ -78,16 +85,18 @@ def settings_seed(run):
 def check_common(run):
     tags = own_tags(run)
     expect(CODE_TAGS <= set(tags), f"{run.info.run_name}: code tags {sorted(tags)}")
-    expect(tags.get("notebook") == "notebooks/03_hyperparameter_tuning.py", f"{run.info.run_name}: notebook tag")
+    expect(tags.get("notebook") == NOTEBOOKS.get(tags.get("stage")), f"{run.info.run_name}: notebook tag {tags.get('notebook')}")
     expect(tags.get("git_commit") == HEAD, f"{run.info.run_name}: git_commit {tags.get('git_commit')} != HEAD {HEAD}")
-    if tags.get("git_dirty") != "false":  # a note, not a failure: C4's own edits are uncommitted while it checks
+    if tags.get("git_dirty") != "false":  # a note, not a failure: a sub-task's own edits are uncommitted while it checks
         print("NOTE", f"{run.info.run_name}: git_dirty {tags.get('git_dirty')}")
     expect(KEPT <= set(run.data.params), f"{run.info.run_name}: missing kept params {sorted(KEPT - set(run.data.params))}")
     expect(run.info.status == "FINISHED", f"{run.info.run_name}: status {run.info.status}")
     expect(tags.get("study_folder") == tags.get("run_key", "").split("/")[0], f"{run.info.run_name}: study_folder tag")
     settings = mlflow.artifacts.load_dict(f"{run.info.artifact_uri}/settings.json")
-    extra = {"tuning": {"study_seed"}, "final": {"n_train_val"}}.get(tags.get("stage"), set())
-    expect(set(settings) == SETTINGS | extra, f"{run.info.run_name}: settings.json {sorted(set(settings) ^ (SETTINGS | extra))}")
+    wanted = TUNING_SETTINGS | {
+        "tuning": {"study_seed"}, "best_runs": INSPECTION_SETTINGS, "final": INSPECTION_SETTINGS | {"n_train_val"},
+    }.get(tags.get("stage"), set())
+    expect(set(settings) == wanted, f"{run.info.run_name}: settings.json {sorted(set(settings) ^ wanted)}")
     expect(all(str(settings[name]) == run.data.params[name] for name in KEPT if name in run.data.params), f"{run.info.run_name}: params differ from settings.json")
 
 
@@ -99,7 +108,7 @@ by_stage = collections.defaultdict(list)
 for run in runs:
     by_stage[(run.data.tags.get("stage"), run.info.status, run.info.lifecycle_stage)].append(run)
 print("runs by (stage, status, lifecycle):", {k: len(v) for k, v in by_stage.items()})
-finished = lambda stage: by_stage[(stage, "FINISHED", "active")]  # noqa: E731
+finished = lambda stage: by_stage[(stage, "FINISHED", "active")]
 
 if "empty" in stages:
     expect(len(runs) == 0, f"{len(runs)} runs in a new store")
@@ -156,7 +165,7 @@ if "tuning" in stages:
 if "best_runs" in stages or "final" in stages:
     tuning_keys = {r.data.tags["run_key"] for r in finished("tuning")}
     for stage, part, n_tables, n_figures, contexts in (
-        ("best_runs", "val", 7, 18, [("training", "train", 36), ("validation", "val", 36)]),
+        ("best_runs", "val", 3, 18, [("training", "train", 36), ("validation", "val", 36)]),
         ("final", "test", 7, 33, [("testing", "test", 36), ("training", "train_val", 36)]),  # W2: §9's table and 10 waterfalls
     ):
         if stage not in stages:
@@ -217,7 +226,11 @@ if "best_runs" in stages or "final" in stages:
         if stage == "best_runs":
             selection = run.data.params["selection_metric"]
             for model in MODELS:
-                ranked = sorted((r for r in finished("tuning") if r.data.tags["model"] == model), key=lambda r: r.data.metrics[f"val/composite/{selection}"])
+                # 04's rule: the lowest score, a tie to the lower study seed.
+                ranked = sorted(
+                    (r for r in finished("tuning") if r.data.tags["model"] == model),
+                    key=lambda r: (r.data.metrics[f"val/composite/{selection}"], int(r.data.params["study_seed"])),
+                )
                 expect(ranked[0].data.tags["run_key"] == f"{folder}/{tags[f'best.{model}']}", f"§7: {model}'s best by {selection} is not best.{model}")
         if stage == "final":
             scores = {k: v for k, v in metrics.items() if k.endswith("/score")}

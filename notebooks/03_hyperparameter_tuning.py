@@ -23,6 +23,11 @@ def _():
 def _(mo):
     mo.md(r"""
     # Age Group Prediction: hyperparameter tuning
+
+    The 24 tuning runs: one Optuna study per model family and exposure, its
+    best model refit, scored and logged to MLflow. `04_model_inspection.py`
+    reads them, selects each model's best run, bootstraps and inspects it,
+    and evaluates it on the test part.
     """)
     return
 
@@ -322,9 +327,9 @@ def _(mo):
     mo.md(r"""
     ## 2) Experiment settings
 
-    The objective EDA's settings (described in `02_objective_eda.py`) and the
-    tuning's own: the selection metric, the bootstrap and the inspection;
-    every run logs them (a test pins the shared ones equal).
+    The objective EDA's settings, described in `02_objective_eda.py` (a test
+    pins them equal); every tuning run logs them. `04_model_inspection.py`
+    adds the settings of the selection, the bootstrap and the inspection.
     """)
     return
 
@@ -343,17 +348,6 @@ def _(mo, pd):
     # The tuner's objective, the composite's cross-validated score every study
     # minimizes: "rmse" or "poisson_deviance" (D42).
     objective_metric = "rmse"
-    # The metric that picks each model's best run, by its composite score on
-    # validation: "rmse" or "poisson_deviance" (D34, D42).
-    selection_metric = "rmse"
-    n_resamples = 1000
-    # The bootstrap interval's level is 1 - alpha: 95%.
-    alpha = 0.05
-    # The inspection of the best runs: permutation repeats per column, and the
-    # validation rows SHAP explains against the training rows it averages over.
-    n_repeats = 10
-    n_shap_rows = 100
-    n_shap_background = 50
 
     # What every run logs.
     EXPERIMENT_SETTINGS = {
@@ -365,12 +359,6 @@ def _(mo, pd):
         "n_trials": n_trials,
         "n_startup_trials": n_startup_trials,
         "objective_metric": objective_metric,
-        "selection_metric": selection_metric,
-        "n_resamples": n_resamples,
-        "alpha": alpha,
-        "n_repeats": n_repeats,
-        "n_shap_rows": n_shap_rows,
-        "n_shap_background": n_shap_background,
     }
     print(
         "experiment_settings "
@@ -379,17 +367,11 @@ def _(mo, pd):
     mo.md(f"```text\n{pd.DataFrame([EXPERIMENT_SETTINGS]).to_string(index=False)}\n```")
     return (
         EXPERIMENT_SETTINGS,
-        alpha,
-        n_repeats,
-        n_resamples,
-        n_shap_background,
-        n_shap_rows,
         n_splits,
         n_startup_trials,
         n_trials,
         objective_metric,
         seed,
-        selection_metric,
         split_method,
         test_size,
         val_size,
@@ -731,15 +713,11 @@ def _(mo):
     cross-validated `objective_metric` (RMSE; D42); the total times
     probability model's family is a pair, both components drawn in each trial
     (the joint method, D40; the objective EDA compares it with coordinate
-    descent). Each run's best model is refit on the
-    training part and scored on validation; each model's best run is the
-    lowest validation score by `selection_metric`, bootstrapped over whole
-    neighborhoods and inspected behind its button (the permutation importance
-    and the SHAP values per cohort). The two best runs' paired
-    difference, per bootstrap replicate, shows whether one is better; a
-    "Metric" menu chooses the metric of each plot (`selection_metric` by
-    default); the permutation importance always scores `selection_metric`.
-    The objective EDA
+    descent). Each run's best model is refit on the training part, scored on
+    training and validation, and logged to MLflow as its study finishes.
+    `04_model_inspection.py` reads the 24 runs and selects each model's best
+    run by its validation score, then bootstraps it over whole neighborhoods,
+    inspects it and evaluates it on the test part. The objective EDA
     (`02_objective_eda.py`) describes the studies' storage and their trials.
     """)
     return
@@ -801,7 +779,6 @@ def _(
     multinomial_log_loss,
     objective_metric,
     root_mean_squared_error_loss,
-    selection_metric,
     wmape_loss,
 ):
     # Each metric with the direction Optuna is given; a loss, so "minimize".
@@ -811,11 +788,10 @@ def _(
     LOG_LOSS = Metric("log_loss", multinomial_log_loss, direction="minimize")
     RMSE = Metric("rmse", root_mean_squared_error_loss, direction="minimize")
 
-    # Every metric: what every trial records, each run's score table (each
-    # cohort through `cohort=`, then the composite) and the bootstrap of the
-    # best runs. The count metrics pool the (building, cohort) cells. Bias is
-    # signed, so its direction is nominal: only the permutation importance
-    # reads one.
+    # Every metric: what every trial records and each run's score table (each
+    # cohort through `cohort=`, then the composite). The count metrics pool the
+    # (building, cohort) cells. Bias is signed, so its direction is nominal;
+    # nothing in this notebook reads it.
     METRICS = (
         POISSON_DEVIANCE,
         LOG_LOSS,
@@ -832,15 +808,7 @@ def _(
         OBJECTIVE_METRIC = POISSON_DEVIANCE
     else:
         raise ValueError(f"unknown objective_metric {objective_metric!r}")
-    # The selection metric: it picks each model's best run (the composite's
-    # point score on validation) and is the forest plots' metric.
-    if selection_metric == "rmse":
-        SELECTION_METRIC = RMSE
-    elif selection_metric == "poisson_deviance":
-        SELECTION_METRIC = POISSON_DEVIANCE
-    else:
-        raise ValueError(f"unknown selection_metric {selection_metric!r}")
-    return METRICS, OBJECTIVE_METRIC, SELECTION_METRIC
+    return METRICS, OBJECTIVE_METRIC
 
 
 @app.cell
@@ -959,10 +927,10 @@ def _(
     val_age_group,
 ):
     # Every run's complete settings: the data's version and settings, the
-    # experiment's settings (the selection metric among them), the parts' sizes and
-    # the prediction floor every model is built with (its y_min). Every run logs
-    # them as settings.json; a tuning run five of them as parameters, an evaluation
-    # run six.
+    # notebook's experiment settings (04's are 03's and its own: the selection, the
+    # bootstrap and the inspection), the parts' sizes and the prediction floor every
+    # model is built with (its y_min). Every run logs them as settings.json, and some
+    # of them as parameters (its logger names which).
     shared_params = {
         "config_hash": config_hash,
         **DATA_SETTINGS,
@@ -1413,7 +1381,8 @@ def _(mo, model1_runs_df, model1_scores_df):
             mo.ui.table(model1_runs_df.round(4)),
             mo.md(
                 "**Its scores, per dataset, cohort and for the composite** (the "
-                "point score; each model's best run is bootstrapped below)"
+                "point score; `04_model_inspection.py` bootstraps each model's "
+                "best run)"
             ),
             mo.ui.table(model1_scores_df.round(4)),
         ]
@@ -1721,7 +1690,8 @@ def _(mo, model2_runs_df, model2_scores_df):
             mo.ui.table(model2_runs_df.round(4)),
             mo.md(
                 "**Its scores, per dataset, cohort and for the composite** (the "
-                "point score; each model's best run is bootstrapped below)"
+                "point score; `04_model_inspection.py` bootstraps each model's "
+                "best run)"
             ),
             mo.ui.table(model2_scores_df.round(4)),
         ]

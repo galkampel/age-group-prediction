@@ -79,7 +79,7 @@ the run-time guard catches a changed floor only where it binds), the metrics pin
 both dataset contexts tampered, NaN scores equal. 15 passed; 31 mutations caught (2 more, a
 floor of 0, are refused by `CountModel` itself); on a copy of C4's store `04` reads 8 + 16 runs
 and both best runs equal the best runs' run's `best.<model>.run_id` with its 6 validation
-scores exactly; committed 04565cc. D3 done 2026-11-21, awaiting the user's commit: the whole
+scores exactly; committed 04565cc. D3 done 2026-11-21: the whole
 inspection moved from `03` to `04` (03's l.964–1018 and l.1805 to the end, pasted after `04`'s
 read in order; `03` ends after the Model 2 tables, 1,733 lines; `04` 3,846). Adapted to `04`'s
 record: the validation bootstrap and the test refit loop over `best_runs` with the record's
@@ -99,7 +99,28 @@ no defect; its points applied: the read-cell test also checks the validation boo
 (model, family, exposure from the record; a mutated family caught) and that only the tuning
 runs are in the store; four stale comments and texts left by the move reworded (the dropped
 tables, the removed search, the bootstrap's text repeating the read's), a test comment naming a
-test of 03's file. Next: D4 (Opus).
+test of 03's file; committed 9e15926. D4 done 2026-11-21, awaiting the user's commit: `03`
+slimmed (8 experiment settings, no `SELECTION_METRIC`; the title, section 2, section 5's
+introduction and the two captions point to `04`; no import left unused), the `shared_params`
+comment reworded identically in `03` and `04`; a tuning run's `settings.json` 17 settings +
+`study_seed`. Tests: 03's settings pin (8 printed, `shared_params` 17), the tuning-run test's
+`settings.json` (`shared_params` + `study_seed`); 57 passed; 2 mutations caught (a kept inspection setting, the
+comment reworded in `03` only). `checks/check_store.py`: the `notebook` tag per stage, 17 +
+`study_seed` / 23 (+ `n_train_val`) settings, 3 tables in the best runs' run, the best run by
+04's tie rule, the docstring (its two old lint findings fixed); on C4's store it fails exactly on
+the split's differences (53: 26 `git_commit`, 2 `notebook` tags, 24 `settings.json`, 7 tables).
+The 3-trial run (`~/age-group-prediction-scratch/d4/`: `run_D4.sh`, `make_copy.py`, `run_d4.py`,
+`compare_c4.py`; store `mlflow_D4.db` + `mlartifacts_D4`, experiment `check-d4`; `03` 39 s, then
+`04` 96 s, every button clicked; the repo's stores and studies unchanged): `check_store.py` 0
+failures (26 FINISHED runs); against C4's store by `run_key` 0 differences (26 runs, 598 params,
+540 metrics, 335 files, 120 of them masked: the seconds, the journals, the figures' div ids;
+the expected differences excepted; a metric moved by 1e-12 is caught). A first review found
+no defect; its four wording points applied. A Fable review (the user's request: the task's
+requirements, not overcomplicated, easy to read) found no defect and four minor points, all
+applied: a redundant assert in the tuning-run test removed, the shared comment without its
+counts, the bias comment, a consistent stage lookup in the checker; the touched checks rerun
+(ruff, `marimo check`, the 03/04 pin and the tuning-run test, `check_store.py` 0 failures).
+Next: D5 (Sonnet).
 
 ## Step 0 — clean start (done 2026-11-19)
 

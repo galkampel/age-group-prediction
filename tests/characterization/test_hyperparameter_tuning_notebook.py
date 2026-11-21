@@ -160,12 +160,6 @@ def test_a_setting_missing_or_changed_in_a_settings_mapping_is_caught(
         "n_trials": "100",
         "n_startup_trials": "10",
         "objective_metric": "rmse",
-        "selection_metric": "rmse",
-        "n_resamples": "1000",
-        "alpha": "0.05",
-        "n_repeats": "10",
-        "n_shap_rows": "100",
-        "n_shap_background": "50",
     }
 
 
@@ -358,7 +352,7 @@ def test_the_tuning_runs_are_logged_inside_the_two_tune_cells(
         "n_test": 306,
         "prediction_floor": notebook_defs["PREDICTION_FLOOR"],
     }
-    assert len(notebook_defs["shared_params"]) == 23
+    assert len(notebook_defs["shared_params"]) == 17
     dataset_inputs = notebook_defs["tuning_dataset_inputs"]
     assert {context: dataset.name for context, dataset in dataset_inputs.items()} == {
         "training": "train",
@@ -412,7 +406,7 @@ def test_a_tuning_run_is_logged_once_then_skipped(
             names=["dataset", "cohort", "metric"],
         ),
     )
-    # The notebook's own settings: five of the 23 are parameters.
+    # The notebook's own settings: five of the 17 are parameters.
     shared_params = notebook_defs["shared_params"]
     tuning_run = {
         "study": study,

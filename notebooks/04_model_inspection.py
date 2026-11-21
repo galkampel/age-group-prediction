@@ -840,10 +840,10 @@ def _(
     val_age_group,
 ):
     # Every run's complete settings: the data's version and settings, the
-    # experiment's settings (the selection metric among them), the parts' sizes and
-    # the prediction floor every model is built with (its y_min). Every run logs
-    # them as settings.json; a tuning run five of them as parameters, an evaluation
-    # run six.
+    # notebook's experiment settings (04's are 03's and its own: the selection, the
+    # bootstrap and the inspection), the parts' sizes and the prediction floor every
+    # model is built with (its y_min). Every run logs them as settings.json, and some
+    # of them as parameters (its logger names which).
     shared_params = {
         "config_hash": config_hash,
         **DATA_SETTINGS,
