@@ -51,14 +51,19 @@ cheat-sheet in C4 (Task C, "Second review"). C3c done (both loggers log the metr
 run that fails while logging holds none; a tuning run logs `figures/param_importances.html`,
 fANOVA seeded with the study's seed, and none when the complete trials hold fewer than two
 distinct values, where fANOVA raises: the review's finding, the user's choice; committed
-7d586cd). C4 done 2026-11-21, awaiting the user's commit: `docs/MLFLOW_RUNS.md` §1, §4–§10 rewritten for
+7d586cd). C4 done 2026-11-21 (committed d09cc89): `docs/MLFLOW_RUNS.md` §1, §4–§10 rewritten for
 C2–C3c (the query cheat-sheet in §6; §8's recipe by `best.<model>.run_id`; §9's
 `prediction_floor` from `settings.json`); `checks/check_store.py` adapted (the scratch store in
 `~/age-group-prediction-scratch/c4/`), 0 failures on the 3-trial store (26 runs), and §8's and
 §9's recipes ran from the doc on it. The user's look in the MLflow UI is recorded in Task C and
 §7 (eye menu 10/20/all, the scatter reads a param as a number and draws 8 points, 24 bars, 12
 mean bars grouped by `family`). An independent review of the doc against the notebook found no
-factual discrepancy and six wording points, all applied. Next: D1 (Fable).
+factual discrepancy and six wording points, all applied. D1 done 2026-11-21, awaiting the
+user's commit (docs only): the MLflow read probed on a copy of C4's store (all 24 runs rebuilt
+from `components.json` + `best_params.json` reproduce their logged scores exactly), the
+decisions in Task D (four of them the user's answers), the sub-tasks re-cut (D3 moves the whole
+inspection in one step, D4 slims `03` and runs the 3-trial check) and D2–D5's prompts written.
+Next: D2 (Opus).
 
 ## Step 0 — clean start (done 2026-11-19)
 
@@ -334,28 +339,113 @@ Names need not be unique. The current names (`<model> <family> exposure=<bool>`,
 
 ## Task D — split into tuning and inspection notebooks
 
-Cut: after the Model 2 tables (l.1736). `03_hyperparameter_tuning.py` keeps sections 1–5
-(setup, studies, refits, point scores, the 24 tuning runs). New `04_model_inspection.py` gets
-best-run selection, the validation bootstrap, permutation importance, SHAP, all figures, the
-test evaluation, and the two evaluation runs' logging.
+Cut: after the Model 2 tables (l.1802 at D1). `03_hyperparameter_tuning.py` keeps sections 1–4
+and section 5 up to the Model 2 tables (setup, studies, refits, point scores, the 24 tuning
+runs). New `04_model_inspection.py` reads
+the tuning runs from MLflow, rebuilds each model's best run and gets the validation bootstrap,
+permutation importance, SHAP, all figures, the test evaluation, and the two evaluation runs'
+logging.
 
-- **D1 (Fable) — design stop + probe.** Read-only probe on a scratch store: select each model's
-  best run with `mlflow.search_runs` (`stage=tuning`, order by `val/composite/<selection>`),
-  rebuild with `from_params`, refit, and show the scores equal the tuning run's logged ones.
-  Decide: what `04` repeats from `03` (data, split, feature variants, metrics — duplicated and
-  pinned equal by a test, the D41 precedent from the `02`/`03` split); what `04` does when the
-  store has fewer than 24 finished runs; whether the `model1_runs`/`model2_runs` tables are
-  still logged by the best runs' run or dropped (the tuning runs now hold them); the `notebook`
-  tag of the evaluation runs.
-- **D2 (Opus).** `04`: setup + the MLflow read + selection + refit, up to `best_runs`. `03`
-  unchanged yet. Verify: `best_runs` in `04` equals `03`'s on the same store.
-- **D3 (Opus).** Move the validation inspection cells and the best runs' logging to `04`;
-  delete them from `03`. Tests re-pointed (they find cells by file).
-- **D4 (Opus).** Move the test evaluation and the final run's logging. `03` ends at l.~1736.
-- **D5 (Sonnet).** Docs: `MLFLOW_RUNS.md` (which notebook logs what, §10's steps),
-  `HYPERPARAMETER_TUNING.md`, the handoff; the three-notebook setup pin.
-  - Verify (D3–D4): logged content of the two evaluation runs equal to C's by `run_key`
-    (`checks/compare_stores.py`), wall times masked.
+**The probe (D1, 2026-11-21; read-only, on a copy of C4's 3-trial store, 26 runs; the names of
+a 3-trial copy of `03` run by importlib, every button unclicked).** The script was in the D1
+session's scratchpad (`…/67fb3bbd-f443-40f7-9a36-537addd22e11/scratchpad/d1/probe.py`,
+temporary); the numbers are the record.
+
+| Step | Result |
+|---|---|
+| The read: one `mlflow.search_runs` (`tags.stage = 'tuning'`, `tags.study_folder`, `params.objective_metric`, FINISHED) | 24 runs (8 + 16) in 0.06 s; the metric column is float64, `params.study_seed` a string |
+| All 24 runs rebuilt from `components.json` (each component's family, a count component's `use_exposure`) + `best_params.json` with `from_params`, refit on the training part | 0 mismatches: the rebuilt components' `to_dict()` (through JSON) equal `components.json`; all 48 scores equal `scores.csv` exactly; the 19 metrics exactly; the run's dataset input digests equal the setup's; refit and scoring 0.14 s a run (median), 0.80 s at most |
+| The selection per model (the frame sorted by `metrics.val/composite/rmse`, ties by `study_seed`) | the same run as `order_by` with `max_results=1`, and as `03`'s choice (the best runs' run's `best.<model>.run_id` and `best.<model>` tags) |
+| The validation bootstrap of the two rebuilt models | the best runs' run's 36 model metrics (score and the two bounds) exactly; 13 s for both |
+| The rebuilt components refit on the training and validation parts, the test scores and bootstrap | the final run's 36 model metrics exactly; 14 s |
+| `best_params.json`'s types | ints, floats, strings and `null` come back as written |
+
+So `04` needs no study object, no journal and no tuner: the store is enough.
+
+**The decisions (D1; ★ the user's answer, 2026-11-21):**
+
+1. **Fewer than 24 runs ★: `04` stops and shows the counts.** The read cell counts the FINISHED
+   tuning runs of its setup per model against `N_TUNING_RUNS = {"independent_cohorts": 8,
+   "total_times_probability": 16}`; the count per model and the number of distinct `run_key`s must
+   both equal 8 / 16 (so a duplicate cannot stand in for a missing run); otherwise a `mo.stop`
+   with the counts, no error. Nothing is selected, inspected or logged, so a partial
+   selection is never kept as the best runs' run (logged once per setup, then skipped) and
+   never spends the test set. The read has no button (0.06 s; `04` stays two clicks); a script
+   run on an empty store stops there.
+2. **The four runs tables ★: dropped.** The best runs' run logs 3 tables
+   (`best_runs_val_scores`, `best_difference`, `importance`); `model1_runs`, `model1_scores`,
+   `model2_runs` and `model2_scores` go (each tuning run holds its own content since C2). `03`
+   still displays its runs and scores tables. `04` displays, and does not log, one table of
+   the 24 runs read from MLflow.
+3. **`03` drops the six inspection settings ★** (`selection_metric`, `n_resamples`, `alpha`,
+   `n_repeats`, `n_shap_rows`, `n_shap_background`) and `SELECTION_METRIC`: 8 experiment
+   settings, and a tuning run's `settings.json` holds 17 settings + `study_seed` (was 23 +
+   `study_seed`; a tuning run can no longer hold a stale inspection value). `04` defines all
+   14; the evaluation runs' `settings.json` keeps the 23 (+ `n_train_val` in the final run).
+4. **The copies are pinned by a test and by a run-time guard ★.**
+   - The test: the cells `04` copies verbatim equal `03`'s as text (the notebook's name
+     aside); the values of the cells that differ are compared as objects (the 8 shared
+     settings, the metric names, the objective, `04`'s `study_folder` against `03`'s
+     `tuner.storage_dir.name`, `N_TUNING_RUNS` against the lengths of `03`'s two run-settings
+     lists).
+   - The guard, in `04`, for the two selected runs, a `ValueError` naming the run and what
+     differed: the run's dataset input digests against `04`'s (the data and the split); the
+     rebuilt components' `to_dict()` against `components.json` (the feature transformers);
+     the 48 refit scores against `scores.csv`, exactly (the floor, the seed, the libraries).
+     It compares `04` with the setup that tuned the store, which a test of today's `03`
+     cannot. The settings are not asserted one by one (Task C's table planned `seed` and
+     `prediction_floor`): the folder filter holds the seed, the scores show the rest.
+5. **What `04` repeats from `03`** (D41: duplicated). Verbatim: the `sys.path` cell, the
+   config, data, exposure and config-hash cells, the MLflow cell (its `notebook` tag aside),
+   the split cell, the two feature-variant cells, the `COHORTS` / `PREDICTION_FLOOR` cell, the
+   `shared_params` + `build_mlflow_dataset` cell (its comment names the selection metric and
+   the parameter counts: D4 rewords it the same way in both notebooks, so the text pin
+   holds). Its own: the imports, the settings cell
+   (14), the metrics cell (with `SELECTION_METRIC`), a `study_folder` cell (the folder's name
+   by `03`'s formula; no tuner, no `cv`). **Moved, not copied:** the bootstrap evaluator,
+   `summarize_replicates` / `build_paired_difference`, and everything from the best-runs cell
+   (l.1805) on; that cell's own selection from `MODEL1_RUNS` / `MODEL2_RUNS` and its
+   `best_runs` (l.1821–1840) are deleted, `04`'s read defining `best_runs`.
+6. **The best-run record in `04`:** `run_id`, `study_name` (the `run_key`'s second part),
+   `family` (the run's `family` tag, for both models), `use_exposure` (a bool, from
+   `components.json`'s count component: the cohorts' common value, or the total's; the
+   MLflow param is a string), `best_params`, `components`, `model`, `scores`. `log_evaluation_run` reads `study_name`, `best_params` and
+   `run_id` from it; its own `run_key` search and its ValueError go (the read already holds
+   the FINISHED run). The logged names and values do not change.
+7. **The selection:** the 24 runs as one frame; per model the lowest
+   `metrics.val/composite/<selection>`, ties by `study_seed` as an integer (`03`'s `min` takes
+   the first in the list's order, the lowest seed).
+8. **The `notebook` tag** names the notebook that logged the run: `03` on the 24 tuning runs,
+   `04` on the best runs' run and the final run.
+9. **The tests:** a new `tests/characterization/test_model_inspection_notebook.py` (its
+   helpers copied, as `02`'s test file does). Staying with `03`: the settings, data, split
+   and seed tests, the MLflow cell's refusals and "a script run opens no MLflow run", the Tune-cell tests, the three tuning-run
+   logging tests, the components, study-name and run-settings tests, the `02`/`03` pin.
+   Moving to `04`: the two "logged by the cell that follows" tests, the evaluation-run tests
+   ("an evaluation run without its tuning run is refused" is replaced by the guard's tests),
+   and the 13 table, figure, menu and button tests (l.1418–1870). New: the script run on an
+   empty store, the `03`/`04` pin, the read (the selection and its tie rule, the rebuild, each
+   guard raising). The selection, the rebuild and the guard are functions, tested on a few
+   real runs (the tuning-run test's one-parameter study and stand-in component cannot be
+   rebuilt); the stop on the counts is the cell's.
+10. **The sub-tasks re-cut, so every commit leaves both notebooks working:** the test section
+    reads the validation section's names, so moving the validation alone would break `03`.
+
+- **D1 (Fable) — design stop + probe. Done 2026-11-21.** The table and the decisions above.
+- **D2 (Opus).** `04` up to `best_runs`: the copied setup, the MLflow read with its stop, the
+  selection, the rebuild and refit, the guard; the new test file with the script run, the
+  `03`/`04` pin and the read's tests. `03` untouched. Verify: on a copy of C4's store, `04`'s
+  `best_runs` are the runs the best runs' run names, with its validation scores exactly.
+- **D3 (Opus).** The whole inspection moves from `03` to `04` in one step, validation and
+  test: the bootstrap cells, the tables, the figures, the inspection, `log_evaluation_run`
+  (adapted to the record; 3 tables), the test evaluation and the final run's logging. `03`
+  ends after the Model 2 tables. The tests move with their cells.
+- **D4 (Opus).** `03` slimmed (8 settings, no `SELECTION_METRIC`, its texts);
+  `checks/check_store.py` adapted (the `notebook` tag per stage, 17 / 23 settings, 3 tables);
+  one 3-trial run of `03` then `04` into a fresh scratch store: `check_store.py` 0 failures,
+  and the logged content equal to C4's by `run_key` except the decided differences.
+- **D5 (Sonnet).** Docs: `MLFLOW_RUNS.md` (which notebook logs what, §4, §8–§10),
+  `HYPERPARAMETER_TUNING.md`, `README.md`, the handoff.
 
 ## Task E — the one full run (you click; Opus guides)
 
@@ -455,8 +545,29 @@ Read docs/TUNING_NOTEBOOK_REVISION_PLAN.md: the Status line, Task C (the chart-v
 D1: design the split into 03 (tuning) and a new 04_model_inspection.py. Probe on a scratch store: select each model's best run with mlflow.search_runs, rebuild it from components.json + best_params.json with from_params, refit, and show the scores equal the tuning run's logged ones. Decide: what 04 repeats from 03 and how the copies are pinned equal (the D41 precedent); what 04 does when the store has fewer than 24 finished runs; whether the model1_runs / model2_runs tables stay in the best runs' run; the evaluation runs' notebook tag; which tests move. Output: the decisions written into Task D, open choices asked with the question tool, and D2–D5's prompts refined below.
 ```
 
-**D2, D3, D4 (Opus), D5 (Sonnet)** — the opening, then the sub-task's lines from Task D as D1
-left them.
+**D2 (Opus)** — the opening, then:
+
+```text
+D2: create notebooks/04_model_inspection.py up to best_runs; 03 is not touched. Task D's decisions 1, 2 (the displayed table), 4–8 are the spec. Cells: the setup copied verbatim from 03 (the sys.path cell, config, data, exposure, config hash, the MLflow cell with the notebook tag notebooks/04_model_inspection.py, the split, the two feature-variant cells, COHORTS / PREDICTION_FLOOR, shared_params + build_mlflow_dataset); its own imports, settings cell (all 14 experiment settings), metrics cell (METRICS, OBJECTIVE_METRIC, SELECTION_METRIC) and a study_folder cell (the folder's name by 03's formula; no tuner, no cv). Then the read: one mlflow.search_runs (tags.stage = 'tuning', tags.study_folder, params.objective_metric, FINISHED) into a frame; N_TUNING_RUNS = {"independent_cohorts": 8, "total_times_probability": 16}; the count per model and the number of distinct run_keys must both equal them, otherwise a mo.stop showing the counts; a displayed table of the 24 runs (model, family, exposure, the validation composite scores). Selection per model: the lowest metrics.val/composite/<selection>, ties by study_seed as an integer. Rebuild: components.json (each component's family, a count component's use_exposure) + best_params.json through CountComponent.from_params / ProbabilityComponent.from_params and the two builders (y_min=PREDICTION_FLOOR, random_state=seed), fit on the training part, the 48 train/val scores. The guard, a ValueError naming the run and what differed: the run's dataset input digests against tuning_dataset_inputs', the rebuilt components' to_dict() (through JSON) against components.json, the scores against scores.csv exactly (float_precision="round_trip"). best_runs = {model: {run_id, study_name, family (the run's family tag), use_exposure (a bool, from components.json's count component), best_params, components, model, scores}}. The selection, the rebuild and the guard are functions the read cell calls, so the tests call them without 24 runs. No bootstrap yet (D3 moves it). New tests/characterization/test_model_inspection_notebook.py (helpers copied, as 02's test file does): a script run on an empty store stops at the read, opens no run and tags notebook 04; the 03/04 pin (the verbatim cells equal as text, the name aside; the 8 shared settings, the metric names, the objective, study_folder == 03's tuner.storage_dir.name, N_TUNING_RUNS == the lengths of 03's two run-settings lists); the read's functions on a store holding a few real tuning runs logged by 03's log_tuning_run (not the tuning-run test's one-parameter study and stand-in component, which from_params cannot read: 2-trial studies whose components are drawn by the package's suggest_independent_cohorts_components / suggest_total_times_probability_components, the best model really fitted and scored on the notebook's training and validation parts, tuning_dataset_inputs as the inputs): the selection and its tie rule (two runs with one score, the lower study_seed wins), the rebuilt scores equal the logged ones, each of the three guards raising; the stop on the counts by the empty-store script run and a check of the cell's source. Verify: ruff, marimo check, the new tests, run once; a mutation per guard and per pinned value; then 04 run by importlib (a copy with n_trials = 3) on a copy of ~/age-group-prediction-scratch/c4/mlflow_C4.db: each best_runs run_id equals the best runs' run's best.<model>.run_id tag and the validation scores equal that run's val/<model>/<metric>/score metrics exactly. The probe to start from: Task D's table.
+```
+
+**D3 (Opus)** — the opening, then:
+
+```text
+D3: move the whole inspection from 03 to 04, validation and test in one step (the test section reads the validation section's names). Cut from 03 and paste into 04, in order: the bootstrap evaluator cell and summarize_replicates / build_paired_difference (l.964–1018), then everything from the best-runs cell (l.1805) to the end: the validation bootstrap (now reading 04's best_runs; the cell's own selection from MODEL1_RUNS / MODEL2_RUNS and its best_runs, l.1821–1840, are deleted, and best_runs leaves its returns), the tables and menus, PALETTE and every figure function, the inspection behind its button, log_evaluation_run and the best runs' logging, section "The test evaluation" and the final run's logging. 03 ends after the Model 2 tables; its settings are not slimmed yet (D4). 04's imports cell gains what the moved cells read (BootstrapEvaluator, PermutationImportance, ShapExplainer, compute_metrics, functools, json, gaussian_kde, go, make_subplots), and 03's loses what only they read. Adapt to 04's record (Task D, decision 6): family read from the record for both models; log_evaluation_run reads study_name, best_params and run_id from each best run, and its own run_key search and ValueError go; the best runs' run logs 3 tables (model1_runs, model1_scores, model2_runs, model2_scores dropped); tuner.storage_dir.name becomes study_folder, tuner.objective_metric.name the objective's name. Nothing else logged changes: the names, counts and values of the params, metrics, figures and the other artifacts. Tests: the two "logged by the cell that follows" tests, the evaluation-run tests and the 13 table / figure / menu / button tests (l.1418–1870) move to test_model_inspection_notebook.py and read 04; "an evaluation run without its tuning run is refused" is deleted (D2's guard tests cover the store's consistency); the two evaluation-run tests kept build the record (study_name, best_params, run_id, components) in place of a study, and the first one's FINISHED / FAILED runs made for the run_key search go with the search; 03's tests no longer expect the moved names. Verify: ruff, marimo check on both notebooks, both test files, run once; a mutation per adapted line of log_evaluation_run. No long run here (D4 runs the 3-trial check).
+```
+
+**D4 (Opus)** — the opening, then:
+
+```text
+D4: slim 03 and check the split end to end on 3 trials. 03: the settings cell keeps 8 experiment settings (selection_metric, n_resamples, alpha, n_repeats, n_shap_rows, n_shap_background go), the metrics cell loses SELECTION_METRIC, the unused imports go, the title and section texts say what 03 now does and point to 04 (section 2's "the selection metric, the bootstrap and the inspection; every run logs them", l.326–327; section 5's introduction, l.734–741; the two "each model's best run is bootstrapped below" captions, l.1489 and l.1797); the shared_params cell's comment (it names the selection metric and "five … six" parameters) is reworded the same way in 03 and 04, so the text pin holds; a tuning run's settings.json then holds 17 settings + study_seed (log_tuning_run itself is unchanged). Tests: 03's settings pin (8 printed, shared_params 17), the tuning-run test's settings.json and its "five of the 23" comment (l.480), the 03/04 pin still green (it compares the 8 shared settings). checks/check_store.py: the notebook tag per stage (03 on tuning, 04 on best_runs and final), 17 + study_seed settings in a tuning run and 23 (+ n_train_val) in the evaluation runs, 3 tables in the best runs' run, the best-run check by 04's tie rule (the lower study_seed; it ranks by the metric alone now), the docstring. Then one 3-trial run into a fresh scratch store under ~/age-group-prediction-scratch/d4/ (never the repo's stores; the c4 scripts adapted: a copy of each notebook with n_trials = 3, Model 1's share_hyperparams False in 03, every button clicked; 03 first, then 04): check_store.py 0 failures; and against the C4 store by run_key (a compare script in the scratch folder): the 24 tuning runs' params, metrics and artifacts equal except settings.json's six keys; the two evaluation runs' params, 54 metrics, figures' names and tables equal except the four dropped tables, the notebook tag, git_commit and the best.<model>.run_id tags (new ids; each must name the run with the same run_key); masked in both stores: wall times (the seconds metric, trials.csv's seconds column), the journal under study/, the plotly figures' random div ids. Static checks before the run; the run once.
+```
+
+**D5 (Sonnet)** — the opening, then:
+
+```text
+D5: the docs for the split. docs/MLFLOW_RUNS.md: which notebook logs what (03 the 24 tuning runs, 04 the best runs' run and the final run; §1's lines on which click logs what), §4 (the notebook tag per stage; a tuning run's settings.json 17 settings + study_seed; the best runs' run's 3 tables), §8–§9's recipes loading 04's names where they need the selection metric or the inspection, §8's sentence on the evaluation run's ValueError (gone: 04's read holds the run), §10's message "7 tables, 18 figures" (3 tables), §10's steps (03 two clicks, then 04 two clicks; 04's stop when the store has other than 8 + 16 tuning runs; the guard's three ValueErrors and what each means). docs/HYPERPARAMETER_TUNING.md and README.md: the four notebooks and how to run 04; docs/MODULE_REFERENCE.md (l.~221, what 03 is) and docs/MLFLOW_EXPERIMENTS_GUIDE.md (l.~72–77, which notebook to open). docs/EXPERIMENT_NOTEBOOK_HANDOFF.md: a status block (the split, Task D's decisions, D4's check numbers). The plan's Verification section: both test files. Verify: every command and recipe in the changed sections run once from the doc on D4's scratch store; an independent review of the docs against the two notebooks.
+```
 
 **E (Opus guides, the user clicks)** — the opening, then: `E: guide me through the full run on a fresh check store (03 two clicks, 04 two clicks), one step at a time, and remind me to note each message before closing marimo; then check_store.py, the test scores into the handoff, and the PR's title and description.`
 
