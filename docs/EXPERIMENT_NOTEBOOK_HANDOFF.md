@@ -1,5 +1,78 @@
 # Handoff: the experiment notebooks, PR 7 merged (#26); the simplification review done; the MLflow runs plan complete (MLFLOW_RUNS_PLAN.md, M0–M7; the guide MLFLOW_RUNS.md); the cold read done (MLFLOW_RUNS_REVIEW.md §8) and its seven findings built (the guide, the two tests); the PR feat/mlflow-runs into main open, not merged; the logging buttons replaced by logging where each result is produced (MLFLOW_RUNS_PLAN.md §8, L1–L4, complete); the guided manual run logged and checked on a check store (the test part included: E11's look done); next the final run's SHAP values and waterfalls (MLFLOW_RUNS_PLAN.md §9, W1–W2), the check store's re-check, then the merge
 
+**Status (2026-11-22, the tuning notebook revision, Task E: the one full run; paused before the UI look):**
+- **The state:** branch `feat/tuning-notebook-revision`; every run names HEAD `da6afc9` (D5).
+  The notebooks' md5 at HEAD: `03_hyperparameter_tuning.py` `ddee49f37337f3004896a13048587864`,
+  `04_model_inspection.py` `d49ef014c566c922b8789f01a8120f3a`.
+- **The check store:** the old `.mlflow-check/` (2026-11-16's 26 runs, the old search space)
+  deleted by the user's choice; a fresh one in the repo (`.env` unchanged: absolute paths,
+  experiment `age-group-check`), with its own `.gitignore` of `*`, so the folder and the
+  copies and scripts in `.mlflow-check/e/` are ignored and `git_dirty` stays `false`.
+  Everything runs inside the project (the user's rule, 2026-11-22).
+- **The four clicks** (the user, `marimo edit`, every study tuned afresh: `studies/` held only
+  `retired/`):
+  - `03` "Tune the independent cohorts model": "Logged 8 tuning runs, skipped 0 (already
+    logged)." (10:33:57–10:37:59; the studies' `seconds` sum 4.4 min);
+  - `03` "Tune the total times probability model": "Logged 16 tuning runs, skipped 0 (already
+    logged)." (10:39:47–10:54:27; 14.7 min; 15 min 11 s by the user's clock);
+  - `04`'s read: the 24 runs' table, no stop, no guard error; best runs independent cohorts
+    `lgbm_gaussian` exposure=True (`study_seed` 44, val composite RMSE 4.5858) and total times
+    probability `lgbm_poisson+logistic` exposure=True (`study_seed` 42, 4.4941); the same
+    families as 2026-11-16, new scores;
+  - `04` "Inspect the best runs": "Logged the best runs' run: 54 metrics, 3 tables, 18
+    figures."; a validation beeswarm looked at: shap's blue-to-red, categories gray (A1);
+  - `04` "Evaluate on the test part": "Logged the final run: 54 metrics, 7 tables, 33 figures."
+- **marimo re-saved both notebooks** (its own format, as 2026-11-16: `__generated_with` 0.24.0,
+  trimmed returns, `@app.function`, an empty cell; no logic). `03`'s re-save (10:59) came
+  before `04` was opened, so the first best runs' run and final run were logged with
+  `git_dirty` `true`. **Redone (the user's choice):** both notebooks restored from HEAD, the two
+  evaluation runs deleted permanently (`delete_run` + `mlflow gc`; their store and 72 files
+  kept in `.mlflow-check/e/first_eval/`), `04` reopened on the clean tree and its two buttons
+  clicked again (the same two messages; 11:36:49 and 11:40:09). The redo's 108 metrics equal the
+  first evaluation's exactly (to 17 digits), and its `best.<model>` / `best.<model>.run_id`
+  tags are the same: the inspection and the test evaluation are reproducible. The notebooks are
+  restored from HEAD after every close. **Lesson:** restore the notebooks from HEAD before
+  opening a notebook that logs (marimo re-saves on close).
+- **No double logging** (§10 step 7, all recorded this time): in `04`, the best runs' logging
+  cell re-run: "The best runs' run is logged: skipped."; the last cell re-run: "A final run
+  exists in the experiment: nothing logged."; `03` reopened, both Tune buttons clicked (the
+  stored studies loaded): "Logged 0 tuning runs, skipped 8 (already logged)." and "Logged 0
+  tuning runs, skipped 16 (already logged)."
+- **The store:** 26 runs, all FINISHED and active, 26 distinct `run_key`s, one study folder
+  (`data=dd15b240__…__n_trials=100__n_startup_trials=10`), 0 failed trials; every run
+  `git_commit` `da6afc9…`, `git_dirty` `false`.
+- **`checks/check_store.py`** on a copy (`.mlflow-check/e/mlflow.db`), stages `tuning best_runs
+  final`: **0 failures** (log `.mlflow-check/e/check_store.log`): 8 + 16 tuning runs, each
+  `trials.csv` 100 COMPLETE; the best runs' run 3 tables, 18 figures; the final run 7 tables, 33
+  figures, `test_shap_values` (1836, 13), the 10 waterfalls (independent cohorts B_001453,
+  B_001396, B_001023, B_001443, B_000562; total times probability B_001453, B_001396,
+  B_001443, B_001023, B_000945).
+- **§9's recipe** (MLFLOW_RUNS.md l.416–559, extracted verbatim to `.mlflow-check/e/recipe_s9.py`)
+  on the copy: exit 0, no "skipped" line, no `AssertionError`: the best tuning run, the best
+  runs' two models and the final run's two models rebuilt, each equal to its run's metrics.
+- **The final run's test scores (E11's second look, the new search space), the composite**
+  (score; the difference is total times probability minus independent cohorts, with its 95%
+  bootstrap interval):
+
+  | metric | independent_cohorts | total_times_probability | difference | difference 95% CI |
+  |---|---|---|---|---|
+  | rmse | 4.211824624782206 | 4.160262421861526 | -0.05156220292068081 | [-0.1304858234251477, 0.02725493639225536] |
+  | mae | 3.1309614363773832 | 3.07968817564347 | -0.05127326073391325 | [-0.1135219488175907, 0.008955340943872368] |
+  | poisson_deviance | 2.0294524109409116 | 1.9740824443007101 | -0.05536996664020144 | [-0.1190665178262966, 0.006122063696739258] |
+  | log_loss | 1.0836619483296177 | 1.078938128514191 | -0.004723819815426689 | [-0.007387914481881796, -0.002130871546568909] |
+  | wmape | 0.3884609539930312 | 0.38209943847015887 | -0.006361515522872341 | [-0.01401135222875865, 0.001068747463628878] |
+  | bias | -0.3668129439275854 | -0.3870348117936885 | -0.020221867866103083 | [-0.09522290913853088, 0.05207707818958323] |
+
+  Against 2026-11-16's table (the old space, below): RMSE 4.2263 → 4.2118 and 4.1973 → 4.1603;
+  the difference -0.0290 → -0.0516. Only log-loss's interval excludes 0.
+- **Not done yet (the resume session):** the UI look (MLFLOW_RUNS.md §3, §7: the chart view
+  with all runs, the scatter of `best.total__num_leaves` against `val/composite/rmse`, 8 points
+  expected: num_leaves 23, 5, 21, 23, 6, 26, 5, 8 at RMSE 4.4941, 4.4993, 4.5386, 4.5832,
+  4.5945, 4.5980, 4.6290, 4.7444), recording it here and in the plan, an independent review of
+  this block and the plan's Status against the store copy, the PR's title and description.
+  **Do not rerun `check_store.py` after a commit:** it compares `git_commit` with HEAD, and the
+  runs name `da6afc9`; its 0 failures above are the record.
+
 **Status (2026-11-21, the tuning notebook revision, Task D: the split into `03` and `04`):**
 - **The split:** [TUNING_NOTEBOOK_REVISION_PLAN.md](TUNING_NOTEBOOK_REVISION_PLAN.md) Task D;
   commits D1 `9d8a24f` (design, the MLflow read probed), D2 `04565cc` (`04` up to `best_runs`),
