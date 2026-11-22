@@ -1,21 +1,23 @@
-# MLflow runs of the tuning notebook
+# MLflow runs of the tuning and inspection notebooks
 
-How `notebooks/03_hyperparameter_tuning.py` logs its results to MLflow, how to open them, and
-how to rebuild a model from a run. To check the logging yourself, follow §10's steps. The
+How `notebooks/03_hyperparameter_tuning.py` (the 24 tuning runs) and
+`notebooks/04_model_inspection.py` (the best runs' run and the final run) log their results to
+MLflow, how to open them, and how to rebuild a model from a run. To check the logging yourself, follow §10's steps. The
 decisions behind it are in [MLFLOW_RUNS_PLAN.md](MLFLOW_RUNS_PLAN.md) (§1; §8 for the logging
 without buttons) and its three reviews,
 [MLFLOW_RUNS_REVIEW.md](MLFLOW_RUNS_REVIEW.md).
 
 The old stack's guide, [MLFLOW_EXPERIMENTS_GUIDE.md](MLFLOW_EXPERIMENTS_GUIDE.md), and its
-`age_group_prediction.tracking` package are not used here: the notebook logs from its own
-cells (decision 5).
+`age_group_prediction.tracking` package are not used here: the notebooks log from their own
+cells (decision 5). `03` and `04` keep the same code for their setup, so both see the same data,
+split and feature variants.
 
 ## 1. What is logged, and when
 
 MLflow's terms, as this guide uses them:
 - **the store:** a sqlite file for the runs' values (its address is the *tracking URI*) and a
   folder for their files (the *artifact location*);
-- **an experiment:** a named group of runs; the notebook logs to one;
+- **an experiment:** a named group of runs; the notebooks log to one;
 - **a run:** one logged result, here a study or an evaluation;
 - **a parameter:** a setting, kept as text;
 - **a metric:** a number, which the UI sorts by and charts;
@@ -24,14 +26,18 @@ MLflow's terms, as this guide uses them:
 - **a dataset input:** the data a run used, by its name and hash (not the data itself).
 
 Each run is logged by the click that produces its result, all in the one experiment that
-`MLFLOW_EXPERIMENT_NAME` names: four clicks, no logging button. Nothing is logged without a
-click, and a script run of the notebook logs nothing.
+`MLFLOW_EXPERIMENT_NAME` names: four clicks in two notebooks (`03` two, then `04` two), no
+logging button. Nothing is logged without a click, and a script run of either notebook logs
+nothing.
 
-| Run kind | Runs | Logged by the click | `stage` tag | Run name |
+| Run kind | Runs | Notebook and click | `stage` tag | Run name |
 |---|---|---|---|---|
-| a tuning run | 24, one per study | "Tune the independent cohorts model" (8) and "Tune the total times probability model" (16), each run as its study finishes | `tuning` | `<model> <family> exposure=<True or False>` |
-| the best runs' run | 1 | "Inspect the best runs", once the inspection is done | `best_runs` | `best runs` |
-| the final run | 1 | "Evaluate on the test part", once the test evaluation is done | `final` | `final` |
+| a tuning run | 24, one per study | `03`: "Tune the independent cohorts model" (8) and "Tune the total times probability model" (16), each run as its study finishes | `tuning` | `<model> <family> exposure=<True or False>` |
+| the best runs' run | 1 | `04`: "Inspect the best runs", once the inspection is done | `best_runs` | `best runs` |
+| the final run | 1 | `04`: "Evaluate on the test part", once the test evaluation is done | `final` | `final` |
+
+`04` reads the 24 tuning runs back from the store (no button, no logging) and selects each
+model's best run from them (§6, §8), so `03`'s two clicks come first.
 
 A study loaded from the cache (a Tune click that finds its study stored) is logged like a
 study just tuned.
@@ -42,7 +48,7 @@ study just tuned.
   distinct values, §4).
 - **The best runs' run** holds the comparison of each model's best run on the validation
   part: the bootstrap statistics, the paired difference, the permutation importance and
-  SHAP figures, and the 24 runs' tables.
+  SHAP figures, and 3 tables.
 - **The final run** holds the same evaluation on the test part (E11), with each test
   building's SHAP values and the waterfalls of each model's 5 worst test buildings. It is the
   only run with test metrics.
@@ -51,7 +57,7 @@ No fitted model is logged (decision 4): a run holds what rebuilds its models (§
 
 ## 2. The store
 
-The notebook reads the store from three variables, set in `.env` (from `.env.example`) beside
+The notebooks read the store from three variables, set in `.env` (from `.env.example`) beside
 a fourth that MLflow reads itself:
 
 | Variable | Meaning |
@@ -62,7 +68,7 @@ a fourth that MLflow reads itself:
 | `MLFLOW_DISABLE_AGENT_HINT` | `1`: silences MLflow's agent hint |
 
 The repository root's `mlflow.db` and `mlartifacts/` are the old stack's canonical store,
-which must not change. The notebook's MLflow cell (after the data cell) refuses to run, with
+which must not change. Each notebook's MLflow cell (after the data cell) refuses to run, with
 a `ValueError` naming the variable, when:
 - `MLFLOW_TRACKING_URI` is unset (MLflow's default is `sqlite:///mlflow.db` in the working
   directory, the canonical store), is not a `sqlite:///` URI, or names the root's `mlflow.db`;
@@ -84,7 +90,11 @@ uv run --env-file .env --group notebook --group tracking \
   python notebooks/03_hyperparameter_tuning.py
 ```
 
-To open the notebook and click the buttons, follow the root
+`notebooks/04_model_inspection.py` runs the same way. It also reads the store's tuning runs:
+on a store that does not hold exactly the 24 (§10, step 4) the script stops at that read and prints
+the counts.
+
+To open a notebook and click the buttons, follow the root
 [README](../README.md#run-the-modeling-notebook), step 3.
 
 ## 3. The MLflow UI
@@ -125,16 +135,18 @@ exception (identical across one store, logged as a filter or a grouping across s
 
 **Every run:**
 - **tags:** `run_key` and `study_folder` (§6), `stage`, and the code's version: `notebook`
-  (`notebooks/03_hyperparameter_tuning.py`), `git_commit` (HEAD) and `git_dirty` (`true` when
-  a tracked file differs from HEAD);
-- **`settings.json`, the complete record of the run's settings (23):** `config_hash` and the
+  (the notebook that logged the run: `notebooks/03_hyperparameter_tuning.py` on a tuning run,
+  `notebooks/04_model_inspection.py` on the best runs' run and the final run), `git_commit`
+  (HEAD) and `git_dirty` (`true` when a tracked file differs from HEAD);
+- **`settings.json`, the complete record of the run's settings:** `config_hash` and the
   data settings (`config_path`, `n_neighborhoods`, `buildings_per_neighborhood_rate`,
-  `simulation_seed`); the experiment settings (`seed`, `split_method`, `test_size`,
-  `val_size`, `n_splits`, `n_trials`, `n_startup_trials`, `objective_metric`,
-  `selection_metric`, `n_resamples`, `alpha`, `n_repeats`, `n_shap_rows`,
-  `n_shap_background`); `n_train`, `n_val`, `n_test`; and `prediction_floor` (every model's
-  `y_min`). A tuning run's adds `study_seed`, the final run's `n_train_val`. The parameters
-  are a subset of it;
+  `simulation_seed`); `n_train`, `n_val`, `n_test`; `prediction_floor` (every model's `y_min`);
+  and the experiment settings. `03` has 8 of them (`seed`, `split_method`, `test_size`,
+  `val_size`, `n_splits`, `n_trials`, `n_startup_trials`, `objective_metric`), so **a tuning
+  run's holds 17 settings, plus `study_seed`**. `04` has all 14, adding `selection_metric`,
+  `n_resamples`, `alpha`, `n_repeats`, `n_shap_rows` and `n_shap_background`, so **an
+  evaluation run's holds 23 settings** (the final run's also `n_train_val`). The parameters are
+  a subset of it;
 - **at least these five as parameters in every run (the evaluation runs add `selection_metric`):** `config_hash`, `seed`, `split_method`,
   `n_trials`, `objective_metric`;
 - **two dataset inputs,** each the part's X and Y side by side. Its digest is the first 36
@@ -146,7 +158,7 @@ exception (identical across one store, logged as a filter or a grouping across s
 | more tags | `model`, `family` (`<total>+<probability>` for Model 2) | `best.<model>`: each best run's study name; `best.<model>.run_id`: its tuning run's id | the same; `final=true` |
 | more parameters | the run's settings (`family` or `total_family` and `probability_family`, `use_exposure`, Model 1's sharing flags), `study_seed`, `best.<name>` per best parameter: 10 + `best.*` (Model 1), 9 + `best.*` (Model 2) | `selection_metric`: 6 in all | the same 6 |
 | metrics | 19 (§5) | 54 (§5) | 54 (§5) |
-| artifacts | `trials.csv`, `best_params.json`, `components.json`, `search_space.json`, `config.json`, `settings.json`, `scores.csv`, `study/<study name>.log`, `figures/optimization_history.html`, `figures/slice.html`, `figures/param_importances.html` | `settings.json`, 7 tables in `tables/`, 18 figures in `figures/`, `best_params/<model>.json`, `components/<model>.json` | the same, with 7 tables and 33 figures |
+| artifacts | `trials.csv`, `best_params.json`, `components.json`, `search_space.json`, `config.json`, `settings.json`, `scores.csv`, `study/<study name>.log`, `figures/optimization_history.html`, `figures/slice.html`, `figures/param_importances.html` | `settings.json`, 3 tables in `tables/`, 18 figures in `figures/`, `best_params/<model>.json`, `components/<model>.json` | the same, with 7 tables and 33 figures |
 | inputs (context: name) | `training`: `train`, `validation`: `val` | the same | `training`: `train_val`, `testing`: `test` |
 
 - **The metrics are logged last,** after every artifact and input: a run that fails while
@@ -168,9 +180,9 @@ exception (identical across one store, logged as a filter or a grouping across s
     (`config_hash` stands for it as a parameter);
   - `study/<study name>.log` is the study's Optuna journal (§7 reads it);
   - `components.json` and `components/<model>.json` hold the components' `to_dict()`.
-- **The best runs' tables:** `best_runs_val_scores`, `best_difference`, `importance`,
-  `model1_runs`, `model1_scores`, `model2_runs`, `model2_scores`. A runs table's
-  `feature_transformers` and `hyperparameters` cells are JSON text.
+- **The best runs' tables:** `best_runs_val_scores`, `best_difference`, `importance`. The
+  24 tuning runs' own tables are not repeated: each tuning run holds its `trials.csv`,
+  `scores.csv` and `components.json`.
 - **The final run's tables:** `test_scores`, `test_difference`, `val_against_test`,
   `test_importance`, `test_buildings`, `test_building_scores`, `test_shap_values`.
   `test_shap_values` has a row per model, test building and cohort: `model`, `building_id`,
@@ -189,7 +201,7 @@ exception (identical across one store, logged as a filter or a grouping across s
     other building's or cohort's waterfall is rebuilt from `test_shap_values`: the cohort's
     row, or the three cohorts' rows summed for the total.
 - **The tables are CSV at 6 significant digits,** for reading in the UI. The exact values are
-  in the journal, `best_params` and the `best.*` parameters.
+  in the journal, `best_params`, the `best.*` parameters and a tuning run's `scores.csv`.
 
 ## 5. The metric names
 
@@ -235,6 +247,9 @@ for the runs of one setup.
   decision.
 - **Commit before logging:** a run's `git_commit` is the code that ran only when `git_dirty`
   is `false`.
+- **`04`'s selection:** each model's best run is its tuning run with the lowest
+  `val/composite/<selection metric>`; a tie goes to the lower `study_seed`, compared as an
+  integer (a parameter is text, below).
 - **`mlflow.source.name`** is the notebook's absolute path under `marimo edit`, and the
   script's path when a script runs the notebook (a check script): read the `notebook` tag,
   the repository-relative path in both.
@@ -246,8 +261,8 @@ for the runs of one setup.
   (`params.n_trials > 3` raises); a `search_runs` DataFrame holds its column as strings, so
   `pd.to_numeric` before sorting or plotting. A metric is a number: filter and sort it.
 - **A boolean parameter is `'True'` or `'False'`** (`params.use_exposure = 'True'`; `'true'`
-  matches nothing). The tags the notebook sets as flags are lower case (`tags.final = 'true'`).
-- **Add `attributes.status = 'FINISHED'`** to a query, as the notebook's own skips do: a FAILED
+  matches nothing). The tags the notebooks set as flags are lower case (`tags.final = 'true'`).
+- **Add `attributes.status = 'FINISHED'`** to a query, as the notebooks' own skips do: a FAILED
   run stays in the store with the same `run_key` until it is deleted.
 - **One quantity, two names.** A model's validation score is `val/composite/<metric>` in its
   tuning run and `val/<model>/<metric>/score` in the best runs' run; validation and test scores
@@ -334,9 +349,9 @@ colours repeat (hovering was not tried).
 An evaluation run holds, per model, two tags: `best.<model>.run_id`, the id of its best
 tuning run (the direct link: `client.get_run(id)`; in the UI it is text, not a link), and
 `best.<model>`, that run's study name. Behind its own key's folder, the study name is the
-tuning run's `run_key`, the fallback when only the name is at hand. The evaluation run is
-logged only when each best run's FINISHED tuning run exists (else a `ValueError` names the
-`run_key`). The block starts from the latest best runs' run, so it needs one logged:
+tuning run's `run_key`, the fallback when only the name is at hand. `04` takes both from the
+FINISHED tuning run its read selected, so the run exists whenever an evaluation run does. The
+block starts from the latest best runs' run, so it needs one logged:
 
 ```python
 import os
@@ -385,8 +400,12 @@ notebook's builders, as the notebook builds them:
 components' `to_dict()` equals it. The candidates and the data are the notebook's, so check
 out the run's `git_commit` and keep its data settings (`config_hash` must match).
 
-The recipe below loads the notebook's names from a run with every button unclicked (nothing is
-tuned or logged), rebuilds both models of the latest best runs' run and of the final run and
+The recipe below loads `04`'s names (the setup it shares with `03`, and `SELECTION_METRIC`,
+which `03` no longer has) from a run with every button unclicked (nothing is tuned or logged).
+`04` also reads the store while it loads, and rebuilds and checks its two best runs (§10, step
+4) when the store holds the 24 tuning runs of its setup; on another store it stops at that read.
+Every name the recipe uses is defined before the read, so the recipe runs either way. It
+rebuilds both models of the latest best runs' run and of the final run and
 the best tuning run by the selection metric, refits each, and asserts its composite scores
 equal the run's metrics. It rebuilds the run kinds it finds and prints the ones it skips (the
 final run before E11). Run on a 3-trial store, it was exact for all three run kinds. Save it
@@ -402,7 +421,7 @@ import pandas as pd
 
 # The notebook's names (the candidates, the builders, the data): every button unclicked.
 spec = importlib.util.spec_from_file_location(
-    "tuning_notebook", "notebooks/03_hyperparameter_tuning.py"
+    "inspection_notebook", "notebooks/04_model_inspection.py"
 )
 notebook = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(notebook)
@@ -546,9 +565,9 @@ A complete run on a store of its own, to see that every run kind is logged as th
 says. Run every command from the repository root.
 
 **Before you start:**
-- **The test part.** Step 5 evaluates the test part, which is meant to be looked at once
-  (E11). Stop after step 4 if this is not that look.
-- **The studies.** A Tune click loads a study stored in `studies/` and tunes one that is not
+- **The test part.** Step 6 evaluates the test part, which is meant to be looked at once
+  (E11). Stop after step 5 if this is not that look.
+- **The studies.** `03`'s Tune click loads a study stored in `studies/` and tunes one that is not
   stored. Loading takes minutes; tuning takes far longer.
 - **Commit first** (§6): a run then names the code that produced it (`git_dirty` `false`).
 
@@ -563,7 +582,7 @@ says. Run every command from the repository root.
    `.mlflow-check/` is git-ignored (the patterns `mlflow.db` and `mlartifacts/`). Any folder
    works, except the root's `mlflow.db` and `mlartifacts/` (§2).
 
-2. **Open the notebook:**
+2. **Open the tuning notebook:**
 
    ```bash
    uv run --env-file .env --group notebook --group tracking \
@@ -581,20 +600,55 @@ says. Run every command from the repository root.
    | "Tune the independent cohorts model" | "Logged 8 tuning runs, skipped 0 (already logged)." |
    | "Tune the total times probability model" | "Logged 16 tuning runs, skipped 0 (already logged)." |
 
-4. **Click "Inspect the best runs"** (the bootstrap, the permutation importance and SHAP:
-   a few minutes). Under the section's last cell: "Logged the best runs' run: 54 metrics,
-   7 tables, 18 figures."
+   Close `03` (note the messages first); step 7 reopens it.
 
-5. **Click "Evaluate on the test part"** (the one look; a few minutes). Under the
+4. **Open the inspection notebook** on the same store:
+
+   ```bash
+   uv run --env-file .env --group notebook --group tracking \
+     marimo edit notebooks/04_model_inspection.py
+   ```
+
+   Its setup cells run by themselves, and its read (section 5) needs no click: it finds the
+   24 FINISHED tuning runs of its setup, shows them in a table and selects, rebuilds and checks
+   each model's best run. Nothing is logged yet. Two outcomes other than success:
+   - **A stop, no error:** the store holds other than 8 + 16 tuning runs of this setup (FINISHED,
+     the same study folder and objective, each `run_key` once). The cell shows the counts per
+     model (`expected`, `finished_runs`, `distinct_run_keys`) and nothing after it runs, so a
+     partial store is never selected from and no run is logged. Tune the missing runs in `03`
+     (a changed `n_trials`, split or seed changes the study folder, so the runs of `03`'s other
+     setting do not count).
+   - **A `ValueError` naming a tuning run,** from the guard that checks the selected run's
+     rebuild against what the run logged:
+     - *its dataset inputs differ from this notebook's:* the data or the split changed since the
+       run (the run's training or validation digest is not `04`'s);
+     - *its components differ from their rebuild:* the feature transformers of `04` are not the
+       ones the run declared in `components.json`;
+     - *its scores differ from its rebuild's:* the refit does not reproduce `scores.csv`
+       exactly: the prediction floor, the seed or a library changed (or the `scores.csv` rows
+       differ).
+
+     A fourth `ValueError` names a run whose `components.json` or `best_params.json` holds a
+     name `04` lacks, or lacks a hyperparameter `04` has (a transformer renamed or removed, a
+     cohort or hyperparameter added). Each means the run belongs to other
+     code or data than `04`'s: check out the run's `git_commit`, or tune again.
+
+5. **Click "Inspect the best runs"** (the bootstrap, the permutation importance and SHAP:
+   a few minutes). Under the section's last cell: "Logged the best runs' run: 54 metrics,
+   3 tables, 18 figures."
+
+6. **Click "Evaluate on the test part"** (the one look; a few minutes). Under the
    notebook's last cell: "Logged the final run: 54 metrics, 7 tables, 33 figures."
 
-6. **Check that nothing is logged twice:**
-   - click a Tune button again: "Logged 0 tuning runs, skipped 8 (already logged)." (or 16);
-   - re-run the cell under step 4's message (its ▶ button): "The best runs' run is logged:
-     skipped.";
-   - re-run the notebook's last cell: "A final run exists in the experiment: nothing logged."
+7. **Check that nothing is logged twice:**
+   - reopen `03` (step 2's command; its setup cells run by themselves) and click a Tune button
+     again (it loads the stored studies, which takes minutes): "Logged 0 tuning runs, skipped 8
+     (already logged)." (or 16);
+   - in `04`, re-run the cell under step 5's message (its ▶ button): "The best runs' run is
+     logged: skipped.";
+   - re-run `04`'s last cell: "A final run exists in the experiment: nothing logged."
 
-7. **Open the MLflow UI** (§3: the command, then **Model training**). In the experiment
+8. **Open the MLflow UI** (§3: the command, then **Model training**). In the experiment
    `age-group-check` you should find:
 
    | Search | Runs | Open first |
@@ -606,9 +660,9 @@ says. Run every command from the repository root.
    Every run's status is FINISHED (a run that failed while logging is FAILED and holds no
    metrics). §4 and §5 list what each run holds; §7 compares the 24 tuning runs.
 
-8. **Rebuild the models from the runs** (§9's recipe, saved as a script). It must print the
+9. **Rebuild the models from the runs** (§9's recipe, saved as a script). It must print the
    tuning run, the best runs' two models and the final run's two models, with no "skipped"
    line and no `AssertionError`: each rebuilt model's scores equal its run's metrics.
 
-9. **Clean up.** Close the notebook and the UI, delete the store (`rm -rf .mlflow-check`),
+10. **Clean up.** Close the notebooks and the UI, delete the store (`rm -rf .mlflow-check`),
    and put `.env`'s three lines back (`.env.example` has them).

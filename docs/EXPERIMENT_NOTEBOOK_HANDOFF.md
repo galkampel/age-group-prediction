@@ -1,5 +1,32 @@
 # Handoff: the experiment notebooks, PR 7 merged (#26); the simplification review done; the MLflow runs plan complete (MLFLOW_RUNS_PLAN.md, M0–M7; the guide MLFLOW_RUNS.md); the cold read done (MLFLOW_RUNS_REVIEW.md §8) and its seven findings built (the guide, the two tests); the PR feat/mlflow-runs into main open, not merged; the logging buttons replaced by logging where each result is produced (MLFLOW_RUNS_PLAN.md §8, L1–L4, complete); the guided manual run logged and checked on a check store (the test part included: E11's look done); next the final run's SHAP values and waterfalls (MLFLOW_RUNS_PLAN.md §9, W1–W2), the check store's re-check, then the merge
 
+**Status (2026-11-21, the tuning notebook revision, Task D: the split into `03` and `04`):**
+- **The split:** [TUNING_NOTEBOOK_REVISION_PLAN.md](TUNING_NOTEBOOK_REVISION_PLAN.md) Task D;
+  commits D1 `9d8a24f` (design, the MLflow read probed), D2 `04565cc` (`04` up to `best_runs`),
+  D3 `9e15926` (the inspection moved from `03` to `04`), D4 `eee88d9` (`03` slimmed, the checker,
+  the 3-trial check), D5 (these docs).
+- **`03`** (1,703 lines) tunes and logs the 24 tuning runs (two clicks); 8 experiment settings
+  (a tuning run's `settings.json`: 17 settings + `study_seed`). **`04`** (3,846 lines) reads the
+  24 runs from MLflow, selects each model's best run (lowest `val/composite/<selection>`, a tie to
+  the lower `study_seed`), rebuilds it from `components.json` + `best_params.json`, checks it,
+  then the validation inspection, the test evaluation and the two evaluation runs (two clicks);
+  14 settings (an evaluation run's `settings.json`: 23).
+- **The decisions:** fewer or more than 8 + 16 FINISHED tuning runs of `04`'s setup is a stop
+  with the counts, not an error; the best runs' run logs 3 tables (the four runs tables dropped);
+  `03` has no inspection settings; `04`'s copies of `03`'s setup are pinned by a test, and its
+  guard raises a `ValueError` naming the run when the dataset inputs, the components'
+  declaration or the scores (exactly) differ from the rebuild; the `notebook` tag names the
+  notebook that logged the run; tests: `test_model_inspection_notebook.py` holds what moved.
+- **D4's check numbers** (3 trials, scratch store `~/age-group-prediction-scratch/d4/`:
+  `mlflow_D4.db`, `mlartifacts_D4`, experiment `check-d4`; `03` 39 s, `04` 96 s): `check_store.py`
+  0 failures (26 FINISHED runs); against C4's store by `run_key`: 0 differences (26 runs, 598
+  params, 540 metrics, 335 files, 120 of them masked: seconds, journals, figure div ids; the
+  decided differences excepted); the checker on C4's store fails exactly 53, the split's
+  differences (26 `git_commit`, 2 `notebook` tags, 24 `settings.json`, 1 table count: 7, not 3).
+- **The docs:** `MLFLOW_RUNS.md` (§1–§4, §6, §8–§10), `HYPERPARAMETER_TUNING.md`, `README.md`,
+  `MODULE_REFERENCE.md`, `MLFLOW_EXPERIMENTS_GUIDE.md`. Next: Task E, the one full run (03 two
+  clicks, then 04 two), on a fresh check store.
+
 **Status (2026-11-20, the tuning notebook revision, Task B: the LightGBM search space):**
 - **The plan:** [TUNING_NOTEBOOK_REVISION_PLAN.md](TUNING_NOTEBOOK_REVISION_PLAN.md) (its Status
   line is the live one). Branch `feat/tuning-notebook-revision`; A1 `7524113` (the SHAP

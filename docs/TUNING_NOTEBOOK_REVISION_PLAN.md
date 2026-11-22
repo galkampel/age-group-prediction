@@ -108,7 +108,7 @@ comment reworded identically in `03` and `04`; a tuning run's `settings.json` 17
 comment reworded in `03` only). `checks/check_store.py`: the `notebook` tag per stage, 17 +
 `study_seed` / 23 (+ `n_train_val`) settings, 3 tables in the best runs' run, the best run by
 04's tie rule, the docstring (its two old lint findings fixed); on C4's store it fails exactly on
-the split's differences (53: 26 `git_commit`, 2 `notebook` tags, 24 `settings.json`, 7 tables).
+the split's differences (53: 26 `git_commit`, 2 `notebook` tags, 24 `settings.json`, 1 table count: 7, not 3).
 The 3-trial run (`~/age-group-prediction-scratch/d4/`: `run_D4.sh`, `make_copy.py`, `run_d4.py`,
 `compare_c4.py`; store `mlflow_D4.db` + `mlartifacts_D4`, experiment `check-d4`; `03` 39 s, then
 `04` 96 s, every button clicked; the repo's stores and studies unchanged): `check_store.py` 0
@@ -120,7 +120,8 @@ requirements, not overcomplicated, easy to read) found no defect and four minor 
 applied: a redundant assert in the tuning-run test removed, the shared comment without its
 counts, the bias comment, a consistent stage lookup in the checker; the touched checks rerun
 (ruff, `marimo check`, the 03/04 pin and the tuning-run test, `check_store.py` 0 failures).
-Next: D5 (Sonnet).
+D5 done 2026-11-21, awaiting the user's commit (docs only): `MLFLOW_RUNS.md` (§1–§4, §6, §8–§10: which notebook logs what, the `notebook` tag per stage, 17 / 23 settings, 3 tables, §10's 03 then 04 steps, 04's stop on the counts and the guard's ValueErrors), `HYPERPARAMETER_TUNING.md`, `README.md`, `MODULE_REFERENCE.md`, `MLFLOW_EXPERIMENTS_GUIDE.md`, the handoff's status block, the Verification section's two test files. Run once from the docs on a copy of D4's store: §8's and §9's recipes (all asserts pass, three run kinds rebuilt), both script runs, the UI (HTTP 200); an independent review found two factual points and some stale "the notebook" wording, all applied.
+Next: E (Opus guides).
 
 ## Step 0 — clean start (done 2026-11-19)
 
@@ -630,8 +631,9 @@ D5: the docs for the split. docs/MLFLOW_RUNS.md: which notebook logs what (03 th
 
 ## Verification (end to end)
 
-1. `pytest tests/unit -k hyperparameter_tuning` and
-   `tests/characterization/test_hyperparameter_tuning_notebook.py` green after each sub-task.
+1. `pytest tests/unit -k hyperparameter_tuning`,
+   `tests/characterization/test_hyperparameter_tuning_notebook.py` and
+   `tests/characterization/test_model_inspection_notebook.py` green after each sub-task.
 2. Check C (3-trial runs) against the baselines re-recorded in B3.
 3. Task E's full run: 26 FINISHED runs, `check_store.py` 0 failures, the chart view showing a
    hyperparameter against a validation metric across runs, the beeswarm blue-to-red.

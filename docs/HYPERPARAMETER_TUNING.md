@@ -7,7 +7,8 @@
 > built from them with constructor calls: there are no `set_params` paths. The code was
 > rebuilt from the tuning section of the experiment notebook (then section 5 of
 > `notebooks/02_experiments.py`; now `notebooks/03_hyperparameter_tuning.py`, with
-> `notebooks/02_objective_eda.py`), which
+> `notebooks/02_objective_eda.py`; `notebooks/04_model_inspection.py` reads the tuning
+> runs back and inspects each model's best), which
 > is its first client. The decisions and their measured evidence are D1–D26 of the
 > [notebook tuning plan](NOTEBOOK_TUNING_PLAN.md), above all D21 (what lives in the package),
 > D25 (components read back from `best_params`) and D26 (the tuner), and those of the
@@ -38,7 +39,7 @@ the predictions with `scoring.compute_metrics` (§8).
 What lives here is the mechanism: records a test can pin down and another notebook could
 reuse. What stays in the notebook is the reading of one experiment (D21): the candidate
 feature transformers of each family, the metrics, the run settings and their loops, the
-tables and the inspection. The package holds no runner over runs, no results table, no MLflow and
+tables (the inspection is `notebooks/04_model_inspection.py`'s). The package holds no runner over runs, no results table, no MLflow and
 no transformer registry; the candidates are injected, as scikit-learn's
 `GridSearchCV(param_grid=...)` takes its grid.
 
@@ -609,10 +610,10 @@ kept. A notebook run keeps its best model only (the trials are studied in the no
 objective EDA, section 5): its settings, `feature_transformers` (each component's candidate
 name), the fitted `model`, its `components` (`to_dict()` writes each one's transformer
 declaration), `cv_best`, `n_complete`, `n_failed`, the seconds, and `scores`: per dataset
-(`train`, `val`), cohort and metric, `scoring.compute_metrics`'s `score` beside
-the mean, median, SD and percentile bounds of `BootstrapEvaluator.evaluate`'s replicates, the
-bounds named after their level (`ci95_lower`, `ci95_upper` at its setting `alpha = 0.05`); one
-evaluator resamples every model with one seed, so their intervals compare. Model 2's run, one
+(`train`, `val`), cohort and metric, `scoring.compute_metrics`'s `score` (the point
+score; `notebooks/04_model_inspection.py` bootstraps each model's best run with
+`BootstrapEvaluator.evaluate`, one evaluator and one seed for both models, the bounds named after
+their level, `ci95_lower` and `ci95_upper` at `alpha = 0.05`). Model 2's run, one
 joint study per family pair and exposure (7.0), keeps the same fields as Model 1's, its settings
 `total_family`, `probability_family` and `use_exposure`. The notebook shows two
 tables per model: the kept models (settings, each component's transformer and
@@ -662,10 +663,22 @@ hyperparameters, the cross-validated objective, trials, seconds) and their score
   move the whole directory aside (2026-11-20: the old LightGBM space's studies are in
   `studies/retired/2026-11-20_lgbm-space-v1/`), and both notebooks tune afresh.
 
+## The notebooks
+
+Four marimo notebooks, in the order they are run: `01_eda.py` (the EDA), `02_objective_eda.py`
+(the objective EDA, sharing the studies directory), `03_hyperparameter_tuning.py` (the 24
+studies, each logged as a tuning run) and `04_model_inspection.py` (reads the 24 tuning runs
+from MLflow, rebuilds and checks each model's best run, bootstraps and inspects them, evaluates
+them once on the test part). Open `04` after `03`'s runs are logged to the same store:
+`uv run --env-file .env --group notebook --group tracking marimo edit
+notebooks/04_model_inspection.py` (steps in [MLFLOW_RUNS.md](MLFLOW_RUNS.md) §10).
+
 ## 11. What Remains
 
-- MLflow runs from the notebook's run records.
+- MLflow runs from the notebook's run records: done (`03` logs the 24 tuning runs, `04` the best
+  runs' run and the final run; see [MLFLOW_RUNS.md](MLFLOW_RUNS.md)).
 - The final evaluation on the test part, after the refit on training + validation
-  ([experiment notebook plan](EXPERIMENT_NOTEBOOK_PLAN.md) E11).
+  ([experiment notebook plan](EXPERIMENT_NOTEBOOK_PLAN.md) E11): done, in
+  `notebooks/04_model_inspection.py`.
 - Measured and rejected, not planned: pruning, LightGBM threads, the cohort fits in
   threads (D19).
