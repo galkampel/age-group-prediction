@@ -1,6 +1,6 @@
 # Handoff: the experiment notebooks, PR 7 merged (#26); the simplification review done; the MLflow runs plan complete (MLFLOW_RUNS_PLAN.md, M0–M7; the guide MLFLOW_RUNS.md); the cold read done (MLFLOW_RUNS_REVIEW.md §8) and its seven findings built (the guide, the two tests); the PR feat/mlflow-runs into main open, not merged; the logging buttons replaced by logging where each result is produced (MLFLOW_RUNS_PLAN.md §8, L1–L4, complete); the guided manual run logged and checked on a check store (the test part included: E11's look done); next the final run's SHAP values and waterfalls (MLFLOW_RUNS_PLAN.md §9, W1–W2), the check store's re-check, then the merge
 
-**Status (2026-11-22, the tuning notebook revision, Task E: the one full run; paused before the UI look):**
+**Status (2026-11-22, the tuning notebook revision, Task E: the one full run, checked and looked at in the UI; E done):**
 - **The state:** branch `feat/tuning-notebook-revision`; every run names HEAD `da6afc9` (D5).
   The notebooks' md5 at HEAD: `03_hyperparameter_tuning.py` `ddee49f37337f3004896a13048587864`,
   `04_model_inspection.py` `d49ef014c566c922b8789f01a8120f3a`.
@@ -26,10 +26,10 @@
   trimmed returns, `@app.function`, an empty cell; no logic). `03`'s re-save (10:59) came
   before `04` was opened, so the first best runs' run and final run were logged with
   `git_dirty` `true`. **Redone (the user's choice):** both notebooks restored from HEAD, the two
-  evaluation runs deleted permanently (`delete_run` + `mlflow gc`; their store and 72 files
+  evaluation runs deleted permanently (`delete_run` + `mlflow gc`; their store and 71 artifact files
   kept in `.mlflow-check/e/first_eval/`), `04` reopened on the clean tree and its two buttons
-  clicked again (the same two messages; 11:36:49 and 11:40:09). The redo's 108 metrics equal the
-  first evaluation's exactly (to 17 digits), and its `best.<model>` / `best.<model>.run_id`
+  clicked again (the same two messages; the runs end 11:36:49 and 11:40:09). The redo's 108 metrics equal the
+  first evaluation's exactly (the two stores compared bit for bit), and its `best.<model>` / `best.<model>.run_id`
   tags are the same: the inspection and the test evaluation are reproducible. The notebooks are
   restored from HEAD after every close. **Lesson:** restore the notebooks from HEAD before
   opening a notebook that logs (marimo re-saves on close).
@@ -56,21 +56,34 @@
 
   | metric | independent_cohorts | total_times_probability | difference | difference 95% CI |
   |---|---|---|---|---|
-  | rmse | 4.211824624782206 | 4.160262421861526 | -0.05156220292068081 | [-0.1304858234251477, 0.02725493639225536] |
+  | rmse | 4.211824624782206 | 4.160262421861526 | -0.05156220292068081 | [-0.1304858234251477, 0.027254936392255364] |
   | mae | 3.1309614363773832 | 3.07968817564347 | -0.05127326073391325 | [-0.1135219488175907, 0.008955340943872368] |
-  | poisson_deviance | 2.0294524109409116 | 1.9740824443007101 | -0.05536996664020144 | [-0.1190665178262966, 0.006122063696739258] |
-  | log_loss | 1.0836619483296177 | 1.078938128514191 | -0.004723819815426689 | [-0.007387914481881796, -0.002130871546568909] |
-  | wmape | 0.3884609539930312 | 0.38209943847015887 | -0.006361515522872341 | [-0.01401135222875865, 0.001068747463628878] |
+  | poisson_deviance | 2.0294524109409116 | 1.9740824443007101 | -0.05536996664020144 | [-0.11906651782629657, 0.006122063696739258] |
+  | log_loss | 1.0836619483296177 | 1.078938128514191 | -0.004723819815426689 | [-0.007387914481881796, -0.0021308715465689094] |
+  | wmape | 0.3884609539930312 | 0.38209943847015887 | -0.006361515522872341 | [-0.014011352228758645, 0.001068747463628878] |
   | bias | -0.3668129439275854 | -0.3870348117936885 | -0.020221867866103083 | [-0.09522290913853088, 0.05207707818958323] |
 
   Against 2026-11-16's table (the old space, below): RMSE 4.2263 → 4.2118 and 4.1973 → 4.1603;
-  the difference -0.0290 → -0.0516. Only log-loss's interval excludes 0.
-- **Not done yet (the resume session):** the UI look (MLFLOW_RUNS.md §3, §7: the chart view
-  with all runs, the scatter of `best.total__num_leaves` against `val/composite/rmse`, 8 points
-  expected: num_leaves 23, 5, 21, 23, 6, 26, 5, 8 at RMSE 4.4941, 4.4993, 4.5386, 4.5832,
-  4.5945, 4.5980, 4.6290, 4.7444), recording it here and in the plan, an independent review of
-  this block and the plan's Status against the store copy, the PR's title and description.
-  **Do not rerun `check_store.py` after a commit:** it compares `git_commit` with HEAD, and the
+  the difference -0.0290 → -0.0516. Of the composite intervals only log-loss's excludes 0.
+- **The UI look** (the resume session; MLFLOW_RUNS.md §3, §7; the UI on the copy,
+  `--artifacts-destination .mlflow-check/mlartifacts`, port 5001, stopped after): Model
+  training, the experiment `age-group-check`; the chart view with the eye menu's all: 26 runs
+  listed; a scatter of the param `best.total__num_leaves` against `val/composite/rmse`: 8 points
+  (the runs whose total component is a LightGBM), the two at num_leaves 5 near 4.50 and 4.63 as
+  expected, the x-axis a numeric scale (5, 6, 8 together on the left, a gap to 21, 23, 26). The
+  store's 8 points (`sqlite3 -readonly` on the copy): num_leaves 23, 5, 21, 23, 6, 26, 5, 8 at
+  RMSE 4.4941, 4.4993, 4.5386, 4.5832, 4.5945, 4.5980, 4.6290, 4.7444. After the look the copy
+  still holds 26 FINISHED runs.
+- **An independent review** of this block and the plan's Status line against the copy (read
+  only; its scripts in `.mlflow-check/e/review/`) confirmed every checkable number: the counts,
+  times, best runs, tags, the 108 metrics equal bit for bit (the first evaluation's
+  `first_eval/mlflow.db` against the copy; the tables, JSON and `settings.json` byte-equal, the
+  51 figures equal once plotly's random div ids are masked), the scatter's 8 points. It found two
+  errors, fixed: four CI bounds in the test table written to 16 digits (now the stored doubles:
+  rmse upper, poisson_deviance lower, log_loss upper, wmape lower), and `first_eval/`'s 72 files
+  counting the store (71 artifact files). It also noted that in `test_difference.csv` every
+  cohort's log-loss interval and n_elementary's Poisson-deviance interval exclude 0 as well.
+- **Do not rerun `check_store.py` after a commit:** it compares `git_commit` with HEAD, and the
   runs name `da6afc9`; its 0 failures above are the record.
 
 **Status (2026-11-21, the tuning notebook revision, Task D: the split into `03` and `04`):**
