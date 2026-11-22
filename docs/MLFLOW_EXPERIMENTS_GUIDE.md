@@ -69,18 +69,25 @@ if 5000 is occupied.
 
 ### From The Notebook
 
-Open [notebooks/03_hyperparameter_tuning.py](../notebooks/03_hyperparameter_tuning.py) with the
-scratch environment configured before starting the kernel:
+Open [notebooks/03_hyperparameter_tuning.py](../notebooks/03_hyperparameter_tuning.py) (the
+tuning) and then [notebooks/04_model_inspection.py](../notebooks/04_model_inspection.py) (the
+inspection and the test evaluation, which read `03`'s runs) with the scratch environment
+configured before starting the kernel:
 
 ```bash
 PYTHONPATH=src uv run --group notebook --group tracking \
   marimo edit notebooks/03_hyperparameter_tuning.py
+PYTHONPATH=src uv run --group notebook --group tracking \
+  marimo edit notebooks/04_model_inspection.py
 ```
+
+(The second after the first's runs are logged; the runs are described in
+[MLFLOW_RUNS.md](MLFLOW_RUNS.md).)
 
 Step-by-step instructions are in the
 [README](../README.md#run-the-modeling-notebook). The setup cells build the
-population, the split and the feature variants without fitting; every run cell
-is behind a button. The notebook refuses to start on the canonical store.
+population, the split and the feature variants without fitting (`04`'s read also refits its two best runs); every run cell
+is behind a button. Both notebooks refuse to start on the canonical store.
 
 ### From Python: Bounded Scratch Example
 

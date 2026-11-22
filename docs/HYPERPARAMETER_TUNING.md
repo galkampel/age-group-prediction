@@ -7,7 +7,8 @@
 > built from them with constructor calls: there are no `set_params` paths. The code was
 > rebuilt from the tuning section of the experiment notebook (then section 5 of
 > `notebooks/02_experiments.py`; now `notebooks/03_hyperparameter_tuning.py`, with
-> `notebooks/02_objective_eda.py`), which
+> `notebooks/02_objective_eda.py`; `notebooks/04_model_inspection.py` reads the tuning
+> runs back and inspects each model's best), which
 > is its first client. The decisions and their measured evidence are D1–D26 of the
 > [notebook tuning plan](NOTEBOOK_TUNING_PLAN.md), above all D21 (what lives in the package),
 > D25 (components read back from `best_params`) and D26 (the tuner), and those of the
@@ -38,7 +39,7 @@ the predictions with `scoring.compute_metrics` (§8).
 What lives here is the mechanism: records a test can pin down and another notebook could
 reuse. What stays in the notebook is the reading of one experiment (D21): the candidate
 feature transformers of each family, the metrics, the run settings and their loops, the
-tables and the inspection. The package holds no runner over runs, no results table, no MLflow and
+tables (the inspection is `notebooks/04_model_inspection.py`'s). The package holds no runner over runs, no results table, no MLflow and
 no transformer registry; the candidates are injected, as scikit-learn's
 `GridSearchCV(param_grid=...)` takes its grid.
 
@@ -195,8 +196,8 @@ print({name: value for name, value in study_1.best_params.items() if name.endswi
 {'n_kindergarten__feature_transformer': 'tree', 'n_elementary__feature_transformer': 'tree__ses_quadratic', 'n_highschool__feature_transformer': 'tree'}
 ```
 
-With `share_hyperparams=True` the ten LightGBM hyperparameters are drawn once, under
-`shared__`, and each cohort still draws its transformer: 13 parameters instead of 33.
+With `share_hyperparams=True` the nine LightGBM hyperparameters are drawn once, under
+`shared__`, and each cohort still draws its transformer: 12 parameters instead of 30.
 
 ```python
 # The total times probability model: a Poisson GLM total with the exposure,
@@ -423,12 +424,11 @@ D25.1), and `ProbabilitySearchSpace.suggest_calibration_method(trial)` draws fro
 
 | family | parameter | range |
 |---|---|---|
-| LightGBM (both losses, and the classifier) | `max_depth` | 3–8 |
-| | `num_leaves` | 7–63 |
-| | `min_child_samples` | 5–40 |
-| | `learning_rate` | 0.01–0.2, log |
-| | `n_estimators` | 50–400 |
-| | `reg_alpha`, `reg_lambda` | 1e-8–10, log |
+| LightGBM (both losses, and the classifier) | `num_leaves` | 4–32, log (the complexity control: the scores turn at 4–16 leaves, 63 overfits) |
+| | `min_child_samples` | 5–40, log (it caps a regressor's leaves near 570 / value; the regressors score best low) |
+| | `learning_rate` | 0.005–0.2, log (with at most 200 trees a regressor needs rate × trees ≈ 4) |
+| | `n_estimators` | 50–200 (at 0.005–0.2 enough to fit; whole 100-trial studies matched the old space's best within 0.1%) |
+| | `reg_alpha`, `reg_lambda` | 1e-6–10, log (no effect below 1e-3) |
 | | `min_split_gain` | 0–1 |
 | | `subsample`, `colsample_bytree` | 0.7–1 |
 | `poisson_glm` | `alpha` | 1e-4–10, log |
@@ -436,6 +436,11 @@ D25.1), and `ProbabilitySearchSpace.suggest_calibration_method(trial)` draws fro
 | | `alpha` | 1e-3–1, log (from the unpenalized fit to all-zero coefficients) |
 | `logistic` | `C` | 1e-3–100, log |
 | probability, any family | `calibration_method` | `None`, `"temperature"`, `"sigmoid"` |
+
+LightGBM's `max_depth` is not searched: `make_estimator` fixes it at `-1` (no cap), since the
+tree grows leaf-wise and `num_leaves` bounds it; with a searched depth a third of the trials
+had a `num_leaves` the depth made inert. The measurements behind every LightGBM row are in
+[TUNING_NOTEBOOK_REVISION_PLAN.md](TUNING_NOTEBOOK_REVISION_PLAN.md) Task B (2026-11-20).
 
 Isotonic calibration is not a candidate: its lowest score block can hold no child of a
 cohort and then maps a building there to probability 0, an infinite log loss (measured with
@@ -458,10 +463,10 @@ one per study (§6).
 
 The two sharing flags of the independent cohorts model (D23–D24): a shared choice is drawn
 once, before the cohorts, under `shared__`, and every cohort takes it; otherwise each cohort
-draws its own under `<cohort>__`. With LightGBM and three cohorts a trial draws 33
-parameters with neither flag, 13 with `share_hyperparams`, 11 with both. Partial sharing
+draws its own under `<cohort>__`. With LightGBM and three cohorts a trial draws 30
+parameters with neither flag, 12 with `share_hyperparams`, 10 with both. Partial sharing
 keeps the per-cohort feature choice (daycares matter for kindergarten, not for high school)
-while TPE searches ten hyperparameters instead of thirty.
+while TPE searches nine hyperparameters instead of twenty-seven.
 
 **The draw order is part of the result.** A seeded study draws the same values only in the
 same order: the cohorts in the given order, each its hyperparameters then its transformer;
@@ -605,10 +610,10 @@ kept. A notebook run keeps its best model only (the trials are studied in the no
 objective EDA, section 5): its settings, `feature_transformers` (each component's candidate
 name), the fitted `model`, its `components` (`to_dict()` writes each one's transformer
 declaration), `cv_best`, `n_complete`, `n_failed`, the seconds, and `scores`: per dataset
-(`train`, `val`), cohort and metric, `scoring.compute_metrics`'s `score` beside
-the mean, median, SD and percentile bounds of `BootstrapEvaluator.evaluate`'s replicates, the
-bounds named after their level (`ci95_lower`, `ci95_upper` at its setting `alpha = 0.05`); one
-evaluator resamples every model with one seed, so their intervals compare. Model 2's run, one
+(`train`, `val`), cohort and metric, `scoring.compute_metrics`'s `score` (the point
+score; `notebooks/04_model_inspection.py` bootstraps each model's best run with
+`BootstrapEvaluator.evaluate`, one evaluator and one seed for both models, the bounds named after
+their level, `ci95_lower` and `ci95_upper` at `alpha = 0.05`). Model 2's run, one
 joint study per family pair and exposure (7.0), keeps the same fields as Model 1's, its settings
 `total_family`, `probability_family` and `use_exposure`. The notebook shows two
 tables per model: the kept models (settings, each component's transformer and
@@ -625,9 +630,11 @@ hyperparameters, the cross-validated objective, trials, seconds) and their score
   every seeded result.
 - **The regression check:** the notebook's runs at 3 trials, both sharing flags off,
   reproduce to the fourth decimal the baselines recorded in the
-  [handoff](EXPERIMENT_NOTEBOOK_HANDOFF.md) §2 (Check C): Model 1's 8 since T1, Model 2's 16
+  [handoff](EXPERIMENT_NOTEBOOK_HANDOFF.md) (Check C): Model 1's 8 since T1, Model 2's 16
   since its coordinate descent (the metrics plan's 2.3). Every change to this package since
-  it was rebuilt has passed it.
+  it was rebuilt has passed it. The LightGBM space of §4 changed the 16 baselines with a
+  LightGBM component; they were re-recorded on 2026-11-20 (the handoff's status of that
+  date), and the 8 without one were unchanged.
 
 ## 10. Hazards
 
@@ -646,20 +653,32 @@ hyperparameters, the cross-validated objective, trials, seconds) and their score
   model and the data, all of which pickle.
 - **pandas turns a `None` calibration into NaN** in the trials table, and `value_counts()`
   drops it: count by label after `fillna("None")` (D16).
-- **`num_leaves` above `2**max_depth` changes nothing in LightGBM**; TPE spends some trials
-  on equivalent settings (T1's F7, left as a known inefficiency).
 - **The logistic model needs scaled inputs**: it does not converge on the `tree`
   declaration, so its candidates are the GLM declarations.
 - **NB2 can fail to converge**: its trial is marked FAIL and counted in the notebook's
   tables; a run whose trials all fail raises in its own cell.
 - **A stored study is found by its name only** (§6): a change to the data, the folds, the
   search space or the code is not detected, and the stored study is loaded as it is. Delete
-  its file, or change the name or the directory.
+  its file, or change the name or the directory. A changed search space affects every study:
+  move the whole directory aside (2026-11-20: the old LightGBM space's studies are in
+  `studies/retired/2026-11-20_lgbm-space-v1/`), and both notebooks tune afresh.
+
+## The notebooks
+
+Four marimo notebooks, in the order they are run: `01_eda.py` (the EDA), `02_objective_eda.py`
+(the objective EDA, sharing the studies directory), `03_hyperparameter_tuning.py` (the 24
+studies, each logged as a tuning run) and `04_model_inspection.py` (reads the 24 tuning runs
+from MLflow, rebuilds and checks each model's best run, bootstraps and inspects them, evaluates
+them once on the test part). Open `04` after `03`'s runs are logged to the same store:
+`uv run --env-file .env --group notebook --group tracking marimo edit
+notebooks/04_model_inspection.py` (steps in [MLFLOW_RUNS.md](MLFLOW_RUNS.md) §10).
 
 ## 11. What Remains
 
-- MLflow runs from the notebook's run records.
+- MLflow runs from the notebook's run records: done (`03` logs the 24 tuning runs, `04` the best
+  runs' run and the final run; see [MLFLOW_RUNS.md](MLFLOW_RUNS.md)).
 - The final evaluation on the test part, after the refit on training + validation
-  ([experiment notebook plan](EXPERIMENT_NOTEBOOK_PLAN.md) E11).
+  ([experiment notebook plan](EXPERIMENT_NOTEBOOK_PLAN.md) E11): done, in
+  `notebooks/04_model_inspection.py`.
 - Measured and rejected, not planned: pruning, LightGBM threads, the cohort fits in
   threads (D19).

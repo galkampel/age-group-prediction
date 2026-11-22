@@ -113,7 +113,9 @@ multinomial likelihood, and a different estimator (coefficients differ by 0.059)
 
 **Why two replications.** For a weighted-likelihood estimator (LR, HGB, LightGBM) they
 are the same fit. For an estimator that counts or resamples **rows** they are different
-procedures: `min_samples_leaf` / `min_child_samples` count rows, not weights, and a
+procedures: `min_samples_leaf` counts rows, not weights; LightGBM's `min_child_samples`
+estimates a leaf's rows from its hessian share, so it scales with the number of rows (2,161
+weighted against 17,366 per child in a fold; TUNING_NOTEBOOK_REVISION_PLAN.md Task B); and a
 bootstrap draws rows (§3.3). Measured on the simulator (five populations, held-out
 `multinomial_log_loss`, per child / weighted; the per-seed difference; fit seconds): LR 1.0783
 / 1.0783 (0; 0.005 / 0.003 s); HGB 1.0899 / 1.0869 (−0.001 to +0.010; 3.7 / 1.3); LightGBM

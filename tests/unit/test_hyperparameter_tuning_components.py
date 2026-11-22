@@ -30,7 +30,6 @@ TRANSFORMERS = {
     ),
 }
 LGBM = LGBMParams(
-    max_depth=3,
     num_leaves=7,
     min_child_samples=5,
     learning_rate=0.1,
@@ -41,8 +40,15 @@ LGBM = LGBMParams(
     subsample=0.8,
     colsample_bytree=0.9,
 )
-# LightGBM's fixed settings: subsample needs subsample_freq; one thread per fit.
-LGBM_FIXED = {"subsample_freq": 1, "n_jobs": 1, "verbosity": -1, "random_state": 7}
+# LightGBM's fixed settings: no depth cap; subsample needs subsample_freq; one
+# thread per fit.
+LGBM_FIXED = {
+    "max_depth": -1,
+    "subsample_freq": 1,
+    "n_jobs": 1,
+    "verbosity": -1,
+    "random_state": 7,
+}
 
 
 def _count(family: Any, estimator_params: Any, **overrides: Any) -> CountComponent:
@@ -209,7 +215,7 @@ def test_the_probability_component_reads_its_calibration_and_not_the_totals_para
     # The total and the probabilities share LightGBM's parameter names.
     lgbm_entries = dataclasses.asdict(LGBM)
     best_params = {f"total__{name}": value for name, value in lgbm_entries.items()}
-    best_params["total__max_depth"] = 8
+    best_params["total__num_leaves"] = 32
     best_params |= {
         f"probability__{name}": value for name, value in lgbm_entries.items()
     }

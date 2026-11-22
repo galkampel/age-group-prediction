@@ -14,7 +14,6 @@ from age_group_prediction.hyperparameter_tuning import (
 )
 
 LGBM_VALUES = {
-    "max_depth": 3,
     "num_leaves": 7,
     "min_child_samples": 5,
     "learning_rate": 0.1,
@@ -28,11 +27,11 @@ LGBM_VALUES = {
 
 
 def test_a_typo_in_a_hyperparameter_name_is_caught_when_the_record_is_built() -> None:
-    # LightGBM accepts and fits `max_dept=3` silently (NOTEBOOK_TUNING_PLAN.md
+    # LightGBM accepts and fits `num_leave=7` silently (NOTEBOOK_TUNING_PLAN.md
     # D11), so the record is where the name is checked.
     values = dict(LGBM_VALUES)
-    values["max_dept"] = values.pop("max_depth")
-    with pytest.raises(TypeError, match="max_dept"):
+    values["num_leave"] = values.pop("num_leaves")
+    with pytest.raises(TypeError, match="unexpected keyword argument 'num_leave'"):
         LGBMParams(**values)
 
 

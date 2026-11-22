@@ -19,14 +19,10 @@ import subprocess
 import sys
 from pathlib import Path
 
-import numpy as np
 import optuna
 import pandas as pd
-import plotly.graph_objects as go
 import pytest
-import shap
 from optuna.samplers import RandomSampler
-from scipy.stats import gaussian_kde
 from sklearn.utils import Bunch
 
 from age_group_prediction.hyperparameter_tuning import (
@@ -164,12 +160,6 @@ def test_a_setting_missing_or_changed_in_a_settings_mapping_is_caught(
         "n_trials": "100",
         "n_startup_trials": "10",
         "objective_metric": "rmse",
-        "selection_metric": "rmse",
-        "n_resamples": "1000",
-        "alpha": "0.05",
-        "n_repeats": "10",
-        "n_shap_rows": "100",
-        "n_shap_background": "50",
     }
 
 
@@ -341,7 +331,7 @@ def test_the_tuning_runs_are_logged_inside_the_two_tune_cells(
 ) -> None:
     # §8's L2 (MLFLOW_RUNS_PLAN.md): each Tune cell logs its runs as their
     # studies finish, behind the Tune button's mo.stop only; no logging button.
-    # A script run builds what each run logs (the shared parameters, the two
+    # A script run builds what each run logs (the shared settings, the two
     # datasets) and opens no run (test_a_script_run_opens_no_mlflow_run).
     source = NOTEBOOK_PATH.read_text(encoding="utf-8")
     cells = [cell for cell in source.split("@app.cell") if "tuner.tune_" in cell]
@@ -362,70 +352,13 @@ def test_the_tuning_runs_are_logged_inside_the_two_tune_cells(
         "n_test": 306,
         "prediction_floor": notebook_defs["PREDICTION_FLOOR"],
     }
-    assert len(notebook_defs["shared_params"]) == 23
+    assert len(notebook_defs["shared_params"]) == 17
     dataset_inputs = notebook_defs["tuning_dataset_inputs"]
     assert {context: dataset.name for context, dataset in dataset_inputs.items()} == {
         "training": "train",
         "validation": "val",
     }
     assert all(len(dataset.digest) == 36 for dataset in dataset_inputs.values())
-
-
-def test_the_best_runs_are_logged_by_the_cell_that_follows_the_inspection(
-    notebook_defs: dict,
-) -> None:
-    # §8's L3: the best runs' run is logged by the cell that reads the
-    # inspection's results, with no button: it runs once "Inspect the best
-    # runs" has produced them. A script run defines the functions and opens no
-    # run (test_a_script_run_opens_no_mlflow_run).
-    source = NOTEBOOK_PATH.read_text(encoding="utf-8")
-    cells = [
-        cell for cell in source.split("@app.cell") if '"stage": "best_runs"' in cell
-    ]
-    assert len(cells) == 1
-    assert ".value" not in cells[0]
-    assert "\n    importance_df,\n" in cells[0]
-    assert "_figures = build_dataset_figures(" in cells[0]
-    assert "_n_metrics = log_evaluation_run(" in cells[0]
-    assert "log_best_runs" not in source
-    assert callable(notebook_defs["build_dataset_figures"])
-    assert callable(notebook_defs["log_evaluation_run"])
-    assert "best_runs_permutation" not in notebook_defs
-    assert "importance_df" not in notebook_defs
-
-
-def test_the_final_run_is_logged_by_the_cell_that_follows_the_test_evaluation(
-    notebook_defs: dict,
-) -> None:
-    # §8's L3: the final run is logged by the cell that reads the test
-    # evaluation's results, with no button: it runs once "Evaluate on the test
-    # part" has produced them, and its guard refuses a second final run. A
-    # script run evaluates nothing on test.
-    source = NOTEBOOK_PATH.read_text(encoding="utf-8")
-    cells = [cell for cell in source.split("@app.cell") if '"stage": "final"' in cell]
-    assert len(cells) == 1
-    # No menu's or button's `.value` (§9: the SHAP arrays' `.values` are read).
-    assert re.search(r"\.value\b", cells[0]) is None
-    assert "\n    test_scores_df,\n" in cells[0]
-    assert "tags.final = 'true'" in cells[0]
-    assert "_n_metrics = log_evaluation_run(" in cells[0]
-    assert "log_final_run" not in source
-    for name in ("test_scores_df", "test_predictions", "val_against_test_df"):
-        assert name not in notebook_defs, name
-    # §9's W1: the final run also logs the test SHAP values and, at a fixed
-    # rule, the waterfalls the display draws with the same function.
-    assert '"test_shap_values": pd.concat(' in cells[0]
-    assert "_n_worst_buildings = 5" in cells[0]
-    assert "] = waterfall_figure(" in cells[0]
-    displays = [
-        cell
-        for cell in source.split("@app.cell")
-        if "    test_waterfall_figures = {" in cell
-    ]
-    assert len(displays) == 1
-    assert "waterfall_figure(" in displays[0]
-    assert "go.Waterfall(" not in displays[0]
-    assert callable(notebook_defs["waterfall_figure"])
 
 
 def test_a_tuning_run_is_logged_once_then_skipped(
@@ -435,8 +368,13 @@ def test_a_tuning_run_is_logged_once_then_skipped(
     # 2-trial study and a small tuning run. The first call logs the run; the
     # second finds a FINISHED run with its key and logs nothing (M3's skip).
     # The cold read's T1 and T2: the metrics' values and a dataset input.
-    # The experiment is created first: MLflow would create it at its default
-    # artifact location, from the repository's root the canonical one.
+    # C1 (TUNING_NOTEBOOK_REVISION_PLAN.md, Task C): the kept parameters and
+    # metrics, the rest in settings.json and scores.csv; a Model 2 run's names.
+    # C3b: the study's seed a parameter, a cohort's validation score under the
+    # objective a metric (its other scores not), Optuna's two figures and the
+    # study_folder tag. The experiment is created first: MLflow would create it
+    # at its default artifact location, from the repository's root the canonical
+    # one.
     mlflow = pytest.importorskip("mlflow")
     environment = _mlflow_environment(tmp_path)
     client = mlflow.MlflowClient(environment["MLFLOW_TRACKING_URI"])
@@ -452,13 +390,24 @@ def test_a_tuning_run_is_logged_once_then_skipped(
     studies_dir = tmp_path / "studies"
     studies_dir.mkdir()
     (studies_dir / "a_study.log").write_text("the study's journal\n", encoding="utf-8")
+    # Values with no short decimal form: a rounded scores.csv fails the read-back.
     scores = pd.DataFrame(
-        {"score": [1.5, 2.5]},
+        {"score": [1 / 3, 1 / 13, 2 / 7, 2 / 17, 3 / 11, 4 / 13, 5 / 19]},
         index=pd.MultiIndex.from_tuples(
-            [("train", "composite", "rmse"), ("val", "composite", "rmse")],
+            [
+                ("train", "composite", "rmse"),
+                ("train", "composite", "mae"),
+                ("val", "composite", "rmse"),
+                ("val", "composite", "mae"),
+                ("val", "n_kindergarten", "rmse"),
+                ("val", "n_kindergarten", "mae"),
+                ("train", "n_kindergarten", "rmse"),
+            ],
             names=["dataset", "cohort", "metric"],
         ),
     )
+    # The notebook's own settings: five of the 17 are parameters.
+    shared_params = notebook_defs["shared_params"]
     tuning_run = {
         "study": study,
         "study_seed": 7,
@@ -481,13 +430,40 @@ def test_a_tuning_run_is_logged_once_then_skipped(
     arguments = (
         tuning_run,
         "independent_cohorts",
-        {"family": "poisson_glm", "use_exposure": True},
+        {
+            "family": "poisson_glm",
+            "use_exposure": True,
+            "share_hyperparams": True,
+            "share_feature_transformer": False,
+        },
         studies_dir,
         "rmse",
-        {"seed": 42},
+        shared_params,
         {"simulation.n_neighborhoods": 150},
         {"training": dataset},
         code_tags,
+    )
+    # A Model 2 run: its run settings name the two families.
+    model2_study = optuna.create_study(
+        study_name="b_study", sampler=RandomSampler(seed=1)
+    )
+    model2_study.optimize(
+        lambda trial: (
+            trial.suggest_float("total__alpha", 1e-4, 1.0, log=True)
+            + trial.suggest_float("probability__C", 1e-2, 10.0, log=True)
+        ),
+        n_trials=2,
+    )
+    (studies_dir / "b_study.log").write_text("the study's journal\n", encoding="utf-8")
+    model2_arguments = (
+        {**tuning_run, "study": model2_study, "cv_best": model2_study.best_value},
+        "total_times_probability",
+        {
+            "total_family": "poisson_glm",
+            "probability_family": "logistic",
+            "use_exposure": False,
+        },
+        *arguments[3:],
     )
     with pytest.MonkeyPatch.context() as patch:
         for name, value in environment.items():
@@ -495,7 +471,32 @@ def test_a_tuning_run_is_logged_once_then_skipped(
         run_id = notebook_defs["log_tuning_run"](*arguments)
         assert run_id is not None
         assert notebook_defs["log_tuning_run"](*arguments) is None
-    runs = client.search_runs([experiment_id])
+        model2_run_id = notebook_defs["log_tuning_run"](*model2_arguments)
+    kept_settings = {
+        name: str(shared_params[name])
+        for name in (
+            "config_hash",
+            "seed",
+            "split_method",
+            "n_trials",
+            "objective_metric",
+        )
+    }
+    kept_settings["study_seed"] = "7"
+    model2_run = client.get_run(model2_run_id)
+    assert model2_run.info.run_name == (
+        "total_times_probability poisson_glm+logistic exposure=False"
+    )
+    assert model2_run.data.params == {
+        "total_family": "poisson_glm",
+        "probability_family": "logistic",
+        "use_exposure": "False",
+        **kept_settings,
+        "best.total__alpha": str(model2_study.best_params["total__alpha"]),
+        "best.probability__C": str(model2_study.best_params["probability__C"]),
+    }
+    assert len(model2_run.data.params) == 9 + 2
+    runs = client.search_runs([experiment_id], "tags.run_key = 'studies/a_study'")
     assert [run.info.run_id for run in runs] == [run_id]
     run = runs[0]
     assert run.info.status == "FINISHED"
@@ -506,6 +507,7 @@ def test_a_tuning_run_is_logged_once_then_skipped(
         if not name.startswith("mlflow.")
     } == {
         "run_key": "studies/a_study",
+        "study_folder": "studies",
         "stage": "tuning",
         "model": "independent_cohorts",
         "family": "poisson_glm",
@@ -514,14 +516,21 @@ def test_a_tuning_run_is_logged_once_then_skipped(
     assert run.data.params == {
         "family": "poisson_glm",
         "use_exposure": "True",
-        "seed": "42",
-        "study_seed": "7",
+        "share_hyperparams": "True",
+        "share_feature_transformer": "False",
+        **kept_settings,
         "best.total__alpha": str(study.best_params["total__alpha"]),
     }
+    assert len(run.data.params) == 10 + 1
+    # The composite's scores and a cohort's validation score under the objective:
+    # the cohort's other scores are in scores.csv.
     assert run.data.metrics == {
         "cv/rmse": study.best_value,
-        "train/composite/rmse": 1.5,
-        "val/composite/rmse": 2.5,
+        "train/composite/rmse": 1 / 3,
+        "train/composite/mae": 1 / 13,
+        "val/composite/rmse": 2 / 7,
+        "val/composite/mae": 2 / 17,
+        "val/n_kindergarten/rmse": 3 / 11,
         "seconds": 1.0,
         "n_complete": 2.0,
         "n_failed": 0.0,
@@ -543,11 +552,25 @@ def test_a_tuning_run_is_logged_once_then_skipped(
         "best_params.json",
         "components.json",
         "config.json",
+        "figures/optimization_history.html",
+        "figures/param_importances.html",
+        "figures/slice.html",
+        "scores.csv",
         "search_space.json",
+        "settings.json",
         "study/a_study.log",
         "trials.csv",
     ]
     assert json.loads((artifacts / "best_params.json").read_text()) == study.best_params
+    assert json.loads((artifacts / "settings.json").read_text()) == {
+        **shared_params,
+        "study_seed": 7,
+    }
+    pd.testing.assert_frame_equal(
+        pd.read_csv(artifacts / "scores.csv", float_precision="round_trip"),
+        scores.reset_index(),
+        check_exact=True,
+    )
     assert len(pd.read_csv(artifacts / "trials.csv")) == 2
     # M1's concern: no run is left open and the store is not left as MLflow's
     # tracking URI for the tests that run after.
@@ -555,14 +578,16 @@ def test_a_tuning_run_is_logged_once_then_skipped(
     assert mlflow.get_tracking_uri() != environment["MLFLOW_TRACKING_URI"]
 
 
-def test_an_evaluation_run_logs_the_composite_and_each_best_runs_files(
+def test_a_tuning_run_that_fails_while_logging_holds_no_metrics(
     notebook_defs: dict, tmp_path: Path
 ) -> None:
-    # The second review's G3: log_evaluation_run called on a scratch store
-    # with two best runs and small frames. The composite rows (each model's
-    # and the paired difference's) become metrics, a cohort's row does not;
-    # each best run's study names a tag and gives its best_params file. The
-    # cold read's T2: a dataset input and a figure.
+    # C3c (TUNING_NOTEBOOK_REVISION_PLAN.md, Task C, "Second review"): the
+    # metrics are logged last, so a run that fails while logging (here its
+    # journal missing) is FAILED with no metrics and never shows in a chart; it
+    # is logged again once the journal is there. The parameter importances are
+    # seeded with the study's seed, so the two runs' figures equal the one drawn
+    # here with seed 7, but for the div id plotly draws at random. Three
+    # parameters: fANOVA gives a single one an importance of 1 whatever the seed.
     mlflow = pytest.importorskip("mlflow")
     environment = _mlflow_environment(tmp_path)
     client = mlflow.MlflowClient(environment["MLFLOW_TRACKING_URI"])
@@ -570,122 +595,145 @@ def test_an_evaluation_run_logs_the_composite_and_each_best_runs_files(
         environment["MLFLOW_EXPERIMENT_NAME"],
         artifact_location=str((tmp_path / "artifacts").resolve()),
     )
-    best_runs = {}
-    for model in ("independent_cohorts", "total_times_probability"):
-        study = optuna.create_study(
-            study_name=f"{model}_study", sampler=RandomSampler(seed=0)
-        )
-        study.optimize(
-            lambda trial: trial.suggest_float("total__alpha", 1e-4, 1.0, log=True),
-            n_trials=1,
-        )
-        best_runs[model] = {
-            "study": study,
-            "components": [
-                Bunch(name="total", to_dict=lambda: {"family": "poisson_glm"})
-            ],
-        }
-    bound_names = notebook_defs["CI_BOUND_NAMES"]
-    statistics = [
-        "score",
-        "mean",
-        "median",
-        "sd",
-        bound_names["lower"],
-        bound_names["upper"],
-    ]
-    scores_df = pd.DataFrame(
-        [
-            {
-                "model": model,
-                "cohort": cohort,
-                "metric": "rmse",
-                **{statistic: value + i for i, statistic in enumerate(statistics)},
-            }
-            for model, cohort, value in (
-                ("independent_cohorts", "composite", 4.0),
-                ("total_times_probability", "composite", 4.5),
-                ("independent_cohorts", "n_elementary", 3.0),
-            )
-        ]
+    study = optuna.create_study(study_name="c_study", sampler=RandomSampler(seed=0))
+    study.optimize(
+        lambda trial: (
+            trial.suggest_float("total__alpha", 1e-4, 1.0, log=True)
+            + trial.suggest_float("total__l1_ratio", 0.0, 1.0)
+            + (trial.suggest_categorical("total__transformer", ["a", "b"]) == "a")
+        ),
+        n_trials=5,
     )
-    difference_df = pd.DataFrame(
-        [
-            {
-                "model": "independent_cohorts - total_times_probability",
-                "cohort": "composite",
-                "metric": "rmse",
-                **{statistic: -0.5 + i for i, statistic in enumerate(statistics)},
-            }
-        ]
-    )
-    # Floats: an integer column makes MLflow's schema inference warn.
-    dataset = mlflow.data.from_pandas(
-        pd.DataFrame({"x": [0.5, 1.5], "y": [2.0, 3.0]}), name="val", digest="d" * 36
+    studies_dir = tmp_path / "studies"
+    studies_dir.mkdir()
+    tuning_run = {
+        "study": study,
+        "study_seed": 7,
+        "cv_best": study.best_value,
+        "scores": pd.DataFrame(
+            {"score": [0.5]},
+            index=pd.MultiIndex.from_tuples(
+                [("val", "composite", "rmse")], names=["dataset", "cohort", "metric"]
+            ),
+        ),
+        "seconds": 1.0,
+        "n_complete": 5,
+        "n_failed": 0,
+        "components": [],
+    }
+    arguments = (
+        tuning_run,
+        "total_times_probability",
+        {
+            "total_family": "poisson_glm",
+            "probability_family": "logistic",
+            "use_exposure": False,
+        },
+        studies_dir,
+        "rmse",
+        notebook_defs["shared_params"],
+        {},
+        {},
+        {},
     )
     with pytest.MonkeyPatch.context() as patch:
         for name, value in environment.items():
             patch.setenv(name, value)
-        n_metrics = notebook_defs["log_evaluation_run"](
-            "best runs",
-            {"run_key": "studies/best_runs", "stage": "best_runs"},
-            {"seed": 42},
-            "val",
-            scores_df,
-            difference_df,
-            bound_names,
-            {"scores": scores_df},
-            {"figures/a_figure.html": go.Figure()},
-            best_runs,
-            {"validation": dataset},
+        with pytest.raises(FileNotFoundError):
+            notebook_defs["log_tuning_run"](*arguments)
+        (studies_dir / "c_study.log").write_text(
+            "the study's journal\n", encoding="utf-8"
         )
-    assert n_metrics == 18
-    (run,) = client.search_runs([experiment_id])
-    assert run.info.status == "FINISHED"
-    assert run.info.run_name == "best runs"
-    assert run.data.metrics == {
-        f"val/{name}/rmse/{statistic}": value + i
-        for name, value in (
-            ("independent_cohorts", 4.0),
-            ("total_times_probability", 4.5),
-            ("difference", -0.5),
+        run_id = notebook_defs["log_tuning_run"](*arguments)
+    (failed_run,) = client.search_runs([experiment_id], "attributes.status = 'FAILED'")
+    finished_run = client.get_run(run_id)
+    assert failed_run.info.run_id != run_id
+    assert failed_run.data.metrics == {}
+    assert finished_run.info.status == "FINISHED"
+    assert finished_run.data.metrics["val/composite/rmse"] == 0.5
+    # As log_figure writes a plotly figure (include_plotlyjs="cdn").
+    expected = optuna.visualization.plot_param_importances(
+        study, evaluator=optuna.importance.FanovaImportanceEvaluator(seed=7)
+    ).to_html(include_plotlyjs="cdn")
+    figures = [
+        re.sub(r"[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}", "<id>", html)
+        for html in (
+            expected,
+            *(
+                (
+                    Path(run.info.artifact_uri) / "figures" / "param_importances.html"
+                ).read_text(encoding="utf-8")
+                for run in (failed_run, finished_run)
+            ),
         )
-        for i, statistic in enumerate(statistics)
-    }
-    assert {
-        name: value
-        for name, value in run.data.tags.items()
-        if not name.startswith("mlflow.")
-    } == {
-        "run_key": "studies/best_runs",
-        "stage": "best_runs",
-        "best.independent_cohorts": "independent_cohorts_study",
-        "best.total_times_probability": "total_times_probability_study",
-    }
-    assert run.data.params == {"seed": "42"}
-    assert [
-        (
-            item.dataset.name,
-            item.dataset.digest,
-            {tag.key: tag.value for tag in item.tags},
-        )
-        for item in run.inputs.dataset_inputs
-    ] == [("val", "d" * 36, {"mlflow.data.context": "validation"})]
-    artifacts = Path(run.info.artifact_uri)
-    assert (artifacts / "tables" / "scores.csv").read_text() == scores_df.to_csv(
-        index=False, float_format="%.6g"
-    )
-    assert (artifacts / "figures" / "a_figure.html").is_file()
-    for model_name, best_run in best_runs.items():
-        assert (
-            json.loads((artifacts / "best_params" / f"{model_name}.json").read_text())
-            == best_run["study"].best_params
-        )
-        assert json.loads(
-            (artifacts / "components" / f"{model_name}.json").read_text()
-        ) == {"total": {"family": "poisson_glm"}}
+    ]
+    assert "total__l1_ratio" in figures[0]
+    assert figures[1] == figures[0]
+    assert figures[2] == figures[0]
     assert mlflow.active_run() is None
-    assert mlflow.get_tracking_uri() != environment["MLFLOW_TRACKING_URI"]
+
+
+@pytest.mark.parametrize(
+    ("n_trials", "objective"),
+    [
+        (1, lambda trial: trial.suggest_float("total__alpha", 1e-4, 1.0, log=True)),
+        (2, lambda trial: trial.suggest_float("total__alpha", 1e-4, 1.0) * 0 + 1.0),
+    ],
+    ids=["one_complete_trial", "equal_values"],
+)
+def test_a_study_fanova_cannot_rank_is_logged_without_the_importances_figure(
+    notebook_defs: dict, tmp_path: Path, n_trials: int, objective
+) -> None:
+    # C3c, the review's finding: fANOVA raises on a single complete trial or
+    # on equal values, which would fail the run on every rerun (and refuse the
+    # evaluation run). Such a study is logged without the importances figure.
+    mlflow = pytest.importorskip("mlflow")
+    environment = _mlflow_environment(tmp_path)
+    client = mlflow.MlflowClient(environment["MLFLOW_TRACKING_URI"])
+    client.create_experiment(
+        environment["MLFLOW_EXPERIMENT_NAME"],
+        artifact_location=str((tmp_path / "artifacts").resolve()),
+    )
+    study = optuna.create_study(study_name="d_study", sampler=RandomSampler(seed=0))
+    study.optimize(objective, n_trials=n_trials)
+    studies_dir = tmp_path / "studies"
+    studies_dir.mkdir()
+    (studies_dir / "d_study.log").write_text("the study's journal\n", encoding="utf-8")
+    tuning_run = {
+        "study": study,
+        "study_seed": 7,
+        "cv_best": study.best_value,
+        "scores": pd.DataFrame(
+            {"score": [0.5]},
+            index=pd.MultiIndex.from_tuples(
+                [("val", "composite", "rmse")], names=["dataset", "cohort", "metric"]
+            ),
+        ),
+        "seconds": 1.0,
+        "n_complete": n_trials,
+        "n_failed": 0,
+        "components": [],
+    }
+    with pytest.MonkeyPatch.context() as patch:
+        for name, value in environment.items():
+            patch.setenv(name, value)
+        run_id = notebook_defs["log_tuning_run"](
+            tuning_run,
+            "independent_cohorts",
+            {"family": "poisson_glm", "use_exposure": True},
+            studies_dir,
+            "rmse",
+            notebook_defs["shared_params"],
+            {},
+            {},
+            {},
+        )
+    run = client.get_run(run_id)
+    assert run.info.status == "FINISHED"
+    assert sorted(
+        path.name for path in (Path(run.info.artifact_uri) / "figures").iterdir()
+    ) == ["optimization_history.html", "slice.html"]
+    assert mlflow.active_run() is None
 
 
 SHARING = [(False, False), (True, False), (True, True)]
@@ -703,10 +751,10 @@ def _count_components(notebook_defs: dict, params: dict, **settings) -> tuple:
 def test_a_shared_choice_is_one_draw_in_every_cohorts_component(
     notebook_defs: dict, share_hyperparams: bool, share_feature_transformer: bool
 ) -> None:
-    # Independent: each of the three cohorts draws LightGBM's ten hyperparameters
-    # and its transformer, 33 parameters. Shared hyperparameters: one draw under
+    # Independent: each of the three cohorts draws LightGBM's nine hyperparameters
+    # and its transformer, 30 parameters. Shared hyperparameters: one draw under
     # `shared__` in every component, each cohort still drawing its transformer,
-    # 13. Both shared: 11, one transformer in every component. The package's
+    # 12. Both shared: 10, one transformer in every component. The package's
     # objective draws the components on the notebook's cohorts and candidates;
     # they are read back from the trial's params by the component type, as the
     # best run's are (D25, D26).
@@ -743,11 +791,11 @@ def test_a_shared_choice_is_one_draw_in_every_cohorts_component(
             f"{cohort}__feature_transformer" for cohort in cohorts
         )
     if share_hyperparams:
-        assert len(names) == (11 if share_feature_transformer else 13)
-        assert len(shared_names) == (11 if share_feature_transformer else 10)
+        assert len(names) == (10 if share_feature_transformer else 12)
+        assert len(shared_names) == (10 if share_feature_transformer else 9)
         assert len(estimator_params) == 1
     else:
-        assert len(names) == 33
+        assert len(names) == 30
         assert shared_names == []
         assert all(name.split("__")[0] in cohorts for name in names)
     # The record of a run: plain data, the transformer by its declaration.
@@ -804,9 +852,10 @@ def test_the_best_components_are_read_back_from_the_trials_params(
         feature_transformer_dict=probability_transformers,
     )
     assert (total, probability) == drawn
-    assert total.estimator_params.max_depth == trial.params["total__max_depth"]
+    assert total.estimator_params.num_leaves == trial.params["total__num_leaves"]
     assert (
-        probability.estimator_params.max_depth == trial.params["probability__max_depth"]
+        probability.estimator_params.num_leaves
+        == trial.params["probability__num_leaves"]
     )
 
 
@@ -1012,429 +1061,3 @@ def test_the_two_notebooks_share_one_setup(
             component
         )
     assert "calibration_method" in tuning["read_hyperparameters"](components[1])
-
-
-def test_the_best_runs_tables_show_the_composite_and_every_metric_by_default(
-    notebook_defs: dict,
-) -> None:
-    # 7.0b: one cohort and one metric choice filter both models' best-run
-    # tables; a click must open on the composite with every metric shown.
-    cohort = notebook_defs["best_runs_cohort"]
-    metrics = notebook_defs["best_runs_metrics"]
-    metric_names = [metric.name for metric in notebook_defs["METRICS"]]
-    assert list(cohort.options) == [*notebook_defs["COHORTS"], "composite"]
-    assert cohort.value == "composite"
-    assert list(metrics.options) == metric_names
-    assert list(metrics.value) == metric_names
-
-
-def test_the_forest_figure_draws_a_row_per_cohort_and_a_trace_per_model(
-    notebook_defs: dict,
-) -> None:
-    # 5.4a: a row per cohort, the composite first; in each row a dot per model
-    # at its score, the bar its interval; one legend entry per model; the
-    # rule in every row. The rows of another metric are not drawn.
-    forest_figure = notebook_defs["forest_figure"]
-    palette = notebook_defs["PALETTE"]
-    scores = pd.DataFrame(
-        [
-            {"model": model, "cohort": cohort, "metric": metric}
-            for metric in ("rmse", "mae")
-            for model in ("model_a", "model_b")
-            for cohort in ("cohort_x", "cohort_y", "composite")
-        ]
-    )
-    scores["score"] = range(len(scores))
-    scores["lower"] = scores["score"] - 0.5
-    scores["upper"] = scores["score"] + 1.0
-    figure = forest_figure(scores, "rmse", "lower", "upper", palette)
-    cohorts = ["composite", "cohort_x", "cohort_y"]
-    assert [annotation.text for annotation in figure.layout.annotations] == cohorts
-    assert [trace.name for trace in figure.data if trace.showlegend] == [
-        "model_a",
-        "model_b",
-    ]
-    assert figure.layout.showlegend
-    rmse = scores[scores["metric"] == "rmse"].set_index(["cohort", "model"])
-    traces = iter(figure.data)
-    for row, cohort in enumerate(cohorts, start=1):
-        for position, model in enumerate(["model_a", "model_b"]):
-            trace = next(traces)
-            axis = "" if row == 1 else str(row)
-            assert (trace.name, trace.xaxis, trace.yaxis) == (
-                model,
-                f"x{axis}",
-                f"y{axis}",
-            )
-            assert list(trace.y) == [position]
-            assert list(trace.x) == [rmse.loc[(cohort, model), "score"]]
-            assert list(trace.error_x.array) == [1.0]
-            assert list(trace.error_x.arrayminus) == [0.5]
-    assert next(traces, None) is None
-    assert not figure.layout.shapes
-    ruled = forest_figure(
-        scores, "rmse", "lower", "upper", palette, share_x_axis=True, rule_at=0
-    )
-    assert len(ruled.layout.shapes) == 3
-    assert all(shape.x0 == shape.x1 == 0 for shape in ruled.layout.shapes)
-    one_model = forest_figure(
-        scores[scores["model"] == "model_a"], "rmse", "lower", "upper", palette
-    )
-    assert not one_model.layout.showlegend
-
-
-def test_the_ridge_draws_a_density_per_model_in_a_row_per_cohort(
-    notebook_defs: dict,
-) -> None:
-    # 5.4a: a row per cohort, the composite first; in each row each model's
-    # replicates as a density (a Gaussian KDE between their extremes), the
-    # row's highest density 1; no dots or bars; one legend entry per model;
-    # the rule in every row. The columns of another metric are not drawn.
-    ridge_figure = notebook_defs["ridge_figure"]
-    palette = notebook_defs["PALETTE"]
-    models = ["model_a", "model_b"]
-    columns = pd.MultiIndex.from_product(
-        [["cohort_x", "cohort_y", "composite"], ["rmse", "mae"]],
-        names=["cohort", "metric"],
-    )
-    rng = np.random.default_rng(0)
-    replicate_scores = {
-        model: pd.DataFrame(rng.normal(4.5, 0.3, (200, len(columns))), columns=columns)
-        for model in models
-    }
-    figure = ridge_figure(replicate_scores, "rmse", palette)
-    cohorts = ["composite", "cohort_x", "cohort_y"]
-    assert [annotation.text for annotation in figure.layout.annotations] == cohorts
-    assert len(figure.data) == 6 and all(trace.mode == "lines" for trace in figure.data)
-    assert [trace.name for trace in figure.data if trace.showlegend] == models
-    for row, cohort in enumerate(cohorts):
-        curves = figure.data[2 * row : 2 * row + 2]
-        densities = {}
-        for model in models:
-            replicates = replicate_scores[model][(cohort, "rmse")]
-            x_values = np.linspace(replicates.min(), replicates.max(), 200)
-            densities[model] = (x_values, gaussian_kde(replicates)(x_values))
-        highest = max(density.max() for _, density in densities.values())
-        for model, curve in zip(models, curves, strict=True):
-            x_values, density = densities[model]
-            axis = "" if row == 0 else str(row + 1)
-            assert (curve.name, curve.xaxis) == (model, f"x{axis}")
-            np.testing.assert_array_equal(curve.x, x_values)
-            np.testing.assert_allclose(curve.y, density / highest)
-        assert max(max(curve.y) for curve in curves) == pytest.approx(1.0)
-    assert not figure.layout.shapes
-    ruled = ridge_figure(
-        replicate_scores, "rmse", palette, share_x_axis=True, rule_at=0
-    )
-    assert len(ruled.layout.shapes) == 3
-    assert all(shape.x0 == shape.x1 == 0 for shape in ruled.layout.shapes)
-
-
-def test_the_plots_open_on_their_forms_and_the_selection_metric(
-    notebook_defs: dict,
-) -> None:
-    # 5.4b: the best runs' plot opens on the forest, the paired difference's
-    # on the ridge; both metric menus on the selection metric. S4: both offer
-    # all six metrics; the runs' menu only draws (the permutation importance
-    # scores the selection metric).
-    assert notebook_defs["best_runs_plot"].value == "forest"
-    assert notebook_defs["best_difference_plot"].value == "ridge"
-    selection = notebook_defs["SELECTION_METRIC"].name
-    metric_names = [metric.name for metric in notebook_defs["METRICS"]]
-    runs_metric = notebook_defs["best_runs_metric"]
-    assert list(runs_metric.options) == metric_names
-    difference_metric = notebook_defs["best_difference_metric"]
-    assert list(difference_metric.options) == metric_names
-    assert runs_metric.value == difference_metric.value == selection == "rmse"
-
-
-def test_the_shap_beeswarm_opens_on_the_first_cohort(
-    notebook_defs: dict,
-) -> None:
-    # 7.1b: the beeswarm's menu needs no click and offers the cohorts (SHAP
-    # explains each cohort's count; no composite); its figures exist only
-    # after the inspection's click. 7.1e: the permutation figure's menu, the
-    # composite first, then each cohort.
-    cohort = notebook_defs["shap_cohort"]
-    assert list(cohort.options) == notebook_defs["COHORTS"]
-    assert cohort.value == notebook_defs["COHORTS"][0]
-    permutation_cohort = notebook_defs["permutation_cohort"]
-    assert list(permutation_cohort.options) == ["composite", *notebook_defs["COHORTS"]]
-    assert permutation_cohort.value == "composite"
-    for name in (
-        "shap_beeswarm_figures",
-        "importance_df",
-        "best_runs_permutation",
-        "best_runs_shap",
-        "permutation_figures",
-    ):
-        assert name not in notebook_defs, name
-
-
-def test_the_test_evaluation_is_behind_its_button_and_opens_on_the_forest(
-    notebook_defs: dict,
-) -> None:
-    # 7.2 (E11): the test part is scored once, on a click; a script run
-    # evaluates nothing. The test section's plot opens on the forest and the
-    # selection metric, any of the six offered.
-    source = NOTEBOOK_PATH.read_text(encoding="utf-8")
-    cells = [
-        cell for cell in source.split("@app.cell") if "train_val_age_group = " in cell
-    ]
-    assert len(cells) == 1
-    assert "mo.stop(\n        not run_test_evaluation.value" in cells[0]
-    assert "test_scores_df" not in notebook_defs
-    assert notebook_defs["test_plot"].value == "forest"
-    metric_names = [metric.name for metric in notebook_defs["METRICS"]]
-    assert list(notebook_defs["test_metric"].options) == metric_names
-    assert notebook_defs["test_metric"].value == notebook_defs["SELECTION_METRIC"].name
-
-
-def test_the_test_reading_opens_on_its_defaults(
-    notebook_defs: dict,
-) -> None:
-    # 7.3: the reading of the test predictions needs no click for its menus;
-    # its frames and figures exist only after the test evaluation's click. The
-    # tables show each model's worst 5 by a count loss finite on every
-    # building; the figures have their own model and cohort; the statistics
-    # cover all the test buildings or one neighborhood.
-    assert notebook_defs["RANKING_METRIC_NAMES"] == ["rmse", "mae", "poisson_deviance"]
-    end = notebook_defs["test_reading_end"]
-    assert list(end.options) == ["best", "worst"]
-    assert end.value == "worst"
-    cohort = notebook_defs["test_reading_cohort"]
-    assert list(cohort.options) == [*notebook_defs["COHORTS"], "composite"]
-    assert cohort.value == "composite"
-    metric = notebook_defs["test_reading_metric"]
-    assert list(metric.options) == notebook_defs["RANKING_METRIC_NAMES"]
-    assert metric.value == notebook_defs["SELECTION_METRIC"].name == "rmse"
-    k = notebook_defs["test_reading_k"]
-    assert (k.start, k.stop, k.value) == (1, 50, 5)
-    model = notebook_defs["test_reading_model"]
-    assert list(model.options) == ["independent_cohorts", "total_times_probability"]
-    assert model.value == "independent_cohorts"
-    figures_cohort = notebook_defs["test_figures_cohort"]
-    assert list(figures_cohort.options) == list(cohort.options)
-    assert figures_cohort.value == "composite"
-    neighborhood = notebook_defs["test_neighborhood"]
-    test_neighborhoods = sorted(notebook_defs["test_age_group"].groups.unique())
-    assert list(neighborhood.options) == ["all", *test_neighborhoods]
-    assert neighborhood.value == "all"
-    assert "test_figures_level" not in notebook_defs
-    for name in (
-        "test_buildings_df",
-        "test_building_scores_df",
-        "test_ranked_buildings",
-        "test_counts_histogram",
-        "test_selection_counts_df",
-    ):
-        assert name not in notebook_defs, name
-
-
-def test_the_test_explanation_is_behind_its_button(
-    notebook_defs: dict,
-) -> None:
-    # 7.1c (E11): the test evaluation's click also explains the refit models;
-    # a script run explains nothing. The test beeswarm's cohort and the
-    # waterfalls' end and cohort need no click: the waterfalls open on each
-    # model's worst buildings for the first cohort (the composite optional);
-    # their building menus exist only after the click.
-    source = NOTEBOOK_PATH.read_text(encoding="utf-8")
-    cells = [
-        cell
-        for cell in source.split("@app.cell")
-        if "test_shap, test_permutation = " in cell
-    ]
-    assert len(cells) == 1
-    assert "mo.stop(not run_test_evaluation.value)" in cells[0]
-    cohorts = notebook_defs["COHORTS"]
-    beeswarm_cohort = notebook_defs["test_beeswarm_cohort"]
-    assert list(beeswarm_cohort.options) == cohorts
-    assert beeswarm_cohort.value == cohorts[0]
-    permutation_cohort = notebook_defs["test_permutation_cohort"]
-    assert list(permutation_cohort.options) == ["composite", *cohorts]
-    assert permutation_cohort.value == "composite"
-    end = notebook_defs["test_waterfall_end"]
-    assert list(end.options) == ["best", "worst"]
-    assert end.value == "worst"
-    waterfall_cohort = notebook_defs["test_waterfall_cohort"]
-    assert list(waterfall_cohort.options) == [*cohorts, "composite"]
-    assert waterfall_cohort.value == cohorts[0]
-    for name in (
-        "test_models",
-        "test_shap",
-        "test_permutation",
-        "test_importance_df",
-        "test_permutation_figures",
-        "test_beeswarm_figures",
-        "test_waterfall_buildings",
-        "test_waterfall_figures",
-    ):
-        assert name not in notebook_defs, name
-
-
-def test_the_beeswarm_figure_draws_a_row_per_column_and_per_level(
-    notebook_defs: dict,
-) -> None:
-    # 7.1b, a function since 7.1c (section 5's and the test part's): the
-    # columns by the cohort's mean |SHAP|, the largest on top; a category a
-    # row per sorted level, kept at its place, in gray; one colorbar for the
-    # numeric rows; the dots' jitter seeded.
-    beeswarm_figure = notebook_defs["beeswarm_figure"]
-    palette = notebook_defs["PALETTE"]
-    X = pd.DataFrame(
-        {"x": [1.0, 2.0, 3.0, 4.0], "s": ["b", "a", "b", "a"], "z": [5.0] * 4}
-    )
-    values = np.empty((4, 3, 2))
-    values[:, :, 0] = [0.1, -0.5, 1.0]
-    values[:, :, 1] = [-1.0, 0.5, 0.1]
-    explanation = shap.Explanation(
-        values=values,
-        base_values=np.zeros((4, 2)),
-        feature_names=list(X.columns),
-        output_names=["cohort_a", "cohort_b"],
-    )
-    figure = beeswarm_figure(explanation, X, "cohort_a", 0, palette)
-    labels = ["z", "s = a", "s = b", "x"]
-    assert [trace.name for trace in figure.data] == labels
-    assert list(figure.layout.yaxis.ticktext) == labels
-    level_rows = [trace for trace in figure.data if " = " in trace.name]
-    assert [trace.marker.color for trace in level_rows] == ["#898781"] * 2
-    assert [list(trace.customdata) for trace in level_rows] == [["a", "a"], ["b", "b"]]
-    assert sum(bool(trace.marker.showscale) for trace in figure.data) == 1
-    jitter = np.random.default_rng(0).uniform(-0.3, 0.3, len(X))
-    np.testing.assert_array_equal(figure.data[0].y, 3 + jitter)
-    np.testing.assert_array_equal(figure.data[3].x, [0.1] * 4)
-    other_cohort = beeswarm_figure(explanation, X, "cohort_b", 0, palette)
-    assert [trace.name for trace in other_cohort.data] == [
-        "x",
-        "s = a",
-        "s = b",
-        "z",
-    ]
-
-
-def test_the_waterfall_figure_steps_from_the_base_to_the_prediction(
-    notebook_defs: dict,
-) -> None:
-    # §9's W1 (the display's waterfall as a function, also logged by the final
-    # run): the building found by its id; from its base a step per column, the
-    # largest |SHAP| on top, to its prediction; the composite the cohorts'
-    # values and bases summed (the total).
-    waterfall_figure = notebook_defs["waterfall_figure"]
-    palette = notebook_defs["PALETTE"]
-    dataset = notebook_defs["AgeGroupDataset"](
-        X=pd.DataFrame({"x": [1.0, 2.5], "s": ["a", "b"]}),
-        Y=pd.DataFrame({"cohort_a": [2, 4], "cohort_b": [1, 3]}),
-        exposure=pd.Series([10.0, 20.0]),
-        groups=pd.Series(["n0", "n1"]),
-        ids=pd.Series(["b0", "b1"]),
-    )
-    values = np.zeros((2, 2, 2))
-    values[1, :, 0] = [0.5, -1.5]
-    values[1, :, 1] = [1.0, 0.25]
-    explanation = shap.Explanation(
-        values=values,
-        base_values=np.array([[1.0, 2.0], [3.0, 1.5]]),
-        feature_names=["x", "s"],
-        output_names=["cohort_a", "cohort_b"],
-    )
-    predictions = pd.DataFrame({"cohort_a": [1.0, 2.0], "cohort_b": [2.0, 2.75]})
-    for cohort, labels, steps, base, prediction, title in (
-        ("cohort_a", ["s = b", "x = 2.5"], [-1.5, 0.5], 3.0, 2.0, "cohort_a: true 4"),
-        (
-            "composite",
-            ["x = 2.5", "s = b"],
-            [1.5, -1.25],
-            4.5,
-            4.75,
-            "the total: true 7",
-        ),
-    ):
-        figure = waterfall_figure(
-            explanation, dataset, predictions, "b1", cohort, palette
-        )
-        (trace,) = figure.data
-        assert trace.type == "waterfall" and trace.base == base
-        assert list(trace.y) == labels
-        np.testing.assert_array_equal(trace.x, steps)
-        assert [shape.x0 for shape in figure.layout.shapes] == [base, prediction]
-        assert (
-            figure.layout.title.text == f"b1 (n1), {title}, predicted {prediction:.2f}"
-        )
-
-
-def test_the_permutation_figure_draws_a_box_per_split_ordered_by_the_last(
-    notebook_defs: dict,
-) -> None:
-    # 7.1d: per split a box of each column's drops over the repeats, the
-    # columns by the last split's mean (the largest on top: a category axis
-    # draws its first category at the bottom), the last split in blue, an
-    # earlier one in gray, a dotted rule at 0.
-    permutation_figure = notebook_defs["permutation_figure"]
-    palette = notebook_defs["PALETTE"]
-    train = Bunch(
-        importances=np.array([[0.9, 1.1], [0.0, 0.2], [0.4, 0.6]]),
-        importances_mean=np.array([1.0, 0.1, 0.5]),
-    )
-    val = Bunch(
-        importances=np.array([[0.1, 0.3], [-0.1, 0.1], [0.5, 0.7]]),
-        importances_mean=np.array([0.2, 0.0, 0.6]),
-    )
-    figure = permutation_figure(
-        {"train": train, "val": val}, ["a", "b", "c"], "composite rmse", palette
-    )
-    assert [trace.name for trace in figure.data] == ["train", "val"]
-    assert [trace.marker.color for trace in figure.data] == ["#898781", "#2a78d6"]
-    assert list(figure.layout.yaxis.categoryarray) == ["b", "a", "c"]
-    assert list(figure.data[1].y) == ["b", "b", "a", "a", "c", "c"]
-    np.testing.assert_array_equal(figure.data[1].x, [-0.1, 0.1, 0.1, 0.3, 0.5, 0.7])
-    np.testing.assert_array_equal(figure.data[0].x, [0.0, 0.2, 0.9, 1.1, 0.4, 0.6])
-    assert [(shape.x0, shape.line.dash) for shape in figure.layout.shapes] == [
-        (0, "dot")
-    ]
-    assert figure.layout.xaxis.title.text == "drop in the composite rmse when shuffled"
-    test_only = permutation_figure(
-        {"test": train}, ["a", "b", "c"], "n_x rmse", palette
-    )
-    assert list(test_only.layout.yaxis.categoryarray) == ["b", "c", "a"]
-    assert test_only.layout.xaxis.title.text == "drop in the n_x rmse when shuffled"
-    assert [trace.marker.color for trace in test_only.data] == ["#2a78d6"]
-
-
-def test_the_count_figures_and_the_shares_bars_are_built_by_functions(
-    notebook_defs: dict,
-) -> None:
-    # M5: the test reading's figures are functions, so the final run logs them
-    # at a fixed state; a script run defines them without the test click.
-    palette, model_colors = notebook_defs["PALETTE"], notebook_defs["MODEL_COLORS"]
-    buildings = pd.DataFrame(
-        {
-            "building_id": ["b0", "b1", "b2"],
-            "neighborhood_id": ["n0", "n0", "n1"],
-            "total_true": [3, 5, 8],
-            "total_predicted": [2.5, 5.5, 7.0],
-        }
-    )
-    histogram = notebook_defs["counts_histogram_figure"](
-        buildings, "total", "#123456", palette
-    )
-    assert [trace.name for trace in histogram.data] == ["true", "predicted"]
-    assert list(histogram.data[0].x) == [3, 5, 8]
-    assert list(histogram.data[1].x) == [2.5, 5.5, 7.0]
-    assert histogram.data[1].marker.color == "#123456"
-    scatter = notebook_defs["counts_scatter_figure"](buildings, "total", palette)
-    # The markers: x the true counts, y the predictions (the first trace is the
-    # dotted line of equality).
-    assert list(scatter.data[1].x) == [3, 5, 8]
-    assert list(scatter.data[1].y) == [2.5, 5.5, 7.0]
-    assert scatter.layout.xaxis.title.text == "true total"
-    true_counts = pd.DataFrame({"a": [1, 3], "b": [2, 2]})
-    predicted_counts = {model: true_counts * 1.0 for model in model_colors}
-    bars = notebook_defs["selection_shares_bars_figure"](
-        true_counts, predicted_counts, model_colors, palette
-    )
-    assert [trace.name for trace in bars.data] == ["true", *model_colors]
-    assert list(bars.data[0].x) == ["a", "b"] and list(bars.data[0].y) == [0.5, 0.5]
-    assert bars.data[0].error_y.array is not None
-    assert all(trace.error_y.array is None for trace in bars.data[1:])

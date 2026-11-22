@@ -47,7 +47,6 @@ COHORTS = ("n_kindergarten", "n_elementary", "n_highschool")
 Y_MIN = 1e-9
 SHARING = [(False, False), (True, False), (True, True)]
 LGBM = LGBMParams(
-    max_depth=3,
     num_leaves=7,
     min_child_samples=5,
     learning_rate=0.1,
@@ -84,10 +83,10 @@ def _count_components(
 def test_a_shared_choice_is_one_draw_in_every_cohorts_component(
     share_hyperparams: bool, share_feature_transformer: bool
 ) -> None:
-    # Independent: each of the three cohorts draws LightGBM's ten
-    # hyperparameters and its transformer, 33 parameters. Shared
+    # Independent: each of the three cohorts draws LightGBM's nine
+    # hyperparameters and its transformer, 30 parameters. Shared
     # hyperparameters: one draw under `shared__`, each cohort still drawing its
-    # transformer, 13. Both shared: 11, one transformer in every component.
+    # transformer, 12. Both shared: 10, one transformer in every component.
     trial = _trial(0)
     components = suggest_independent_cohorts_components(
         trial,
@@ -112,11 +111,11 @@ def test_a_shared_choice_is_one_draw_in_every_cohorts_component(
             f"{cohort}__feature_transformer" for cohort in COHORTS
         )
     if share_hyperparams:
-        assert len(names) == (11 if share_feature_transformer else 13)
-        assert len(shared_names) == (11 if share_feature_transformer else 10)
+        assert len(names) == (10 if share_feature_transformer else 12)
+        assert len(shared_names) == (10 if share_feature_transformer else 9)
         assert len({c.estimator_params for c in components}) == 1
     else:
-        assert len(names) == 33
+        assert len(names) == 30
         assert shared_names == []
         assert all(name.split("__")[0] in COHORTS for name in names)
 
@@ -147,7 +146,7 @@ def test_a_shared_choice_reaches_every_fitted_cohort_model_an_unshared_one_only_
     share_hyperparams: bool, share_feature_transformer: bool
 ) -> None:
     # The wiring, not chance (independent draws can coincide): a trial's
-    # params with max_depth and the transformer changed, read back, built and
+    # params with num_leaves and the transformer changed, read back, built and
     # fitted, against the same with the params as drawn.
     rng = np.random.default_rng(0)
     exposure = pd.Series(rng.integers(5, 40, 100).astype(float))
@@ -163,13 +162,13 @@ def test_a_shared_choice_reaches_every_fitted_cohort_model_an_unshared_one_only_
         share_hyperparams=share_hyperparams,
         share_feature_transformer=share_feature_transformer,
     )
-    max_depth = ("shared" if share_hyperparams else "n_kindergarten") + "__max_depth"
+    num_leaves = ("shared" if share_hyperparams else "n_kindergarten") + "__num_leaves"
     feature_transformer = (
         "shared" if share_feature_transformer else "n_kindergarten"
     ) + "__feature_transformer"
     changed_params = {
         **trial.params,
-        max_depth: trial.params[max_depth] + 1,
+        num_leaves: trial.params[num_leaves] + 1,
         feature_transformer: next(
             name for name in TRANSFORMERS if name != trial.params[feature_transformer]
         ),
@@ -205,7 +204,7 @@ def test_a_shared_choice_reaches_every_fitted_cohort_model_an_unshared_one_only_
     # A shared choice has no cohort's own key beside it.
     for cohort in COHORTS:
         if share_hyperparams:
-            assert f"{cohort}__max_depth" not in trial.params
+            assert f"{cohort}__num_leaves" not in trial.params
         if share_feature_transformer:
             assert f"{cohort}__feature_transformer" not in trial.params
 

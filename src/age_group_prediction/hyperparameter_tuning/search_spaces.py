@@ -56,16 +56,19 @@ class ComponentSearchSpace(abc.ABC):
 
     def suggest_lgbm_hyperparams(self, trial: BaseTrial) -> LGBMParams:
         prefix = self.prefix
+        # No max_depth: the tree grows leaf-wise and num_leaves bounds it. The
+        # ranges and their reasons: docs/HYPERPARAMETER_TUNING.md §4.
         return LGBMParams(
-            max_depth=trial.suggest_int(f"{prefix}max_depth", 3, 8),
-            num_leaves=trial.suggest_int(f"{prefix}num_leaves", 7, 63),
-            min_child_samples=trial.suggest_int(f"{prefix}min_child_samples", 5, 40),
-            learning_rate=trial.suggest_float(
-                f"{prefix}learning_rate", 0.01, 0.2, log=True
+            num_leaves=trial.suggest_int(f"{prefix}num_leaves", 4, 32, log=True),
+            min_child_samples=trial.suggest_int(
+                f"{prefix}min_child_samples", 5, 40, log=True
             ),
-            n_estimators=trial.suggest_int(f"{prefix}n_estimators", 50, 400),
-            reg_alpha=trial.suggest_float(f"{prefix}reg_alpha", 1e-8, 10.0, log=True),
-            reg_lambda=trial.suggest_float(f"{prefix}reg_lambda", 1e-8, 10.0, log=True),
+            learning_rate=trial.suggest_float(
+                f"{prefix}learning_rate", 0.005, 0.2, log=True
+            ),
+            n_estimators=trial.suggest_int(f"{prefix}n_estimators", 50, 200),
+            reg_alpha=trial.suggest_float(f"{prefix}reg_alpha", 1e-6, 10.0, log=True),
+            reg_lambda=trial.suggest_float(f"{prefix}reg_lambda", 1e-6, 10.0, log=True),
             min_split_gain=trial.suggest_float(f"{prefix}min_split_gain", 0.0, 1.0),
             subsample=trial.suggest_float(f"{prefix}subsample", 0.7, 1.0),
             colsample_bytree=trial.suggest_float(f"{prefix}colsample_bytree", 0.7, 1.0),

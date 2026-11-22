@@ -15,9 +15,9 @@ building-level DataFrame:
 - [MLflow experiments guide](docs/MLFLOW_EXPERIMENTS_GUIDE.md) covers the old
   stack's `tracking` package: scratch setup, run layout, searching, final-run
   semantics, and model loading.
-- [MLflow runs](docs/MLFLOW_RUNS.md): the tuning notebook's runs (24 tuning
-  runs, the best runs' run, the guarded final run), the store, the UI, and how
-  to rebuild a model from a run.
+- [MLflow runs](docs/MLFLOW_RUNS.md): the tuning and inspection notebooks'
+  runs (24 tuning runs from `03`, the best runs' run and the guarded final run
+  from `04`), the store, the UI, and how to rebuild a model from a run.
 - [Feature engineering](docs/FEATURE_ENGINEERING.md) explains feature specs,
   fitted transformations, and how each model uses them.
 - [Feature transformations](docs/FEATURE_TRANSFORMATIONS.md): the typed
@@ -41,7 +41,8 @@ building-level DataFrame:
   the `hyperparameter_tuning` package, plain Optuna over both rebuilt models:
   components drawn per trial, the composite built from them, a
   `CrossValidationTuner`; `notebooks/02_objective_eda.py` (the objective EDA)
-  and `notebooks/03_hyperparameter_tuning.py` (the tuning) run it
+  and `notebooks/03_hyperparameter_tuning.py` (the tuning; its runs are read
+  by `notebooks/04_model_inspection.py`) run it
   (decisions in the
   [plan](docs/NOTEBOOK_TUNING_PLAN.md)).
 - [Model inspection](docs/MODEL_INSPECTION.md): the `inspection` package for
@@ -128,7 +129,7 @@ through all of them end to end.
 
 ## Research Workflow
 
-The research source is a pair of version-controlled marimo notebooks:
+The research source is four version-controlled marimo notebooks:
 
 - `notebooks/01_eda.py` implements the complete EDA checklist and findings
 	handoff;
@@ -138,10 +139,14 @@ The research source is a pair of version-controlled marimo notebooks:
   both;
 - `notebooks/03_hyperparameter_tuning.py` runs the experiments: 24 runs (model
   × estimator family × exposure), each tuned by cross-validation on the training
-  part; each model's best run compared on the validation part; then the test
-  part evaluated once. Each step logs its result to MLflow as it is produced: a
-  run per study, the best runs' comparison, and one final run (see
-  [docs/MLFLOW_RUNS.md](docs/MLFLOW_RUNS.md)).
+  part and logged to MLflow as a run per study;
+- `notebooks/04_model_inspection.py` reads those 24 runs back from MLflow,
+  rebuilds each model's best run from what it logged (and checks the rebuild
+  against it), compares the two best runs on the validation part (bootstrap,
+  permutation importance, SHAP), then evaluates them once on the test part.
+  It logs the best runs' comparison and one final run (see
+  [docs/MLFLOW_RUNS.md](docs/MLFLOW_RUNS.md)). Run `03` first: `04` stops at
+  its read, without error, unless the store holds exactly the 24 runs.
 
 The Jupyter-to-marimo cutover is complete. `research.ipynb` has been removed;
 marimo `.py` notebooks are the sole research source.
@@ -177,7 +182,9 @@ marimo `.py` notebooks are the sole research source.
    marimo prints a local URL and opens it. Add `--headless` to skip opening a
    browser or `--port <n>` to choose the port. The EDA notebook opens the same
    way with `marimo edit notebooks/01_eda.py`, and the objective EDA with
-   `marimo edit notebooks/02_objective_eda.py`. `uv run` reads `.env` only when
+   `marimo edit notebooks/02_objective_eda.py`. The inspection notebook opens
+   with `marimo edit notebooks/04_model_inspection.py`, after `03`'s runs are
+   logged to the same store. `uv run` reads `.env` only when
    given `--env-file`. For a one-off throwaway store instead, export the
    Section 2 variables from the MLflow guide and prefix the command with
    `PYTHONPATH=src` in place of `--env-file .env`. To use the VS Code marimo
@@ -186,18 +193,22 @@ marimo `.py` notebooks are the sole research source.
 
 4. Read the setup cells: the synthetic population (150 neighborhoods, 1529
    buildings), the train/validation/test split, the feature variants and the
-   MLflow experiment from `.env`. Nothing is fitted. The buttons that tune and
-   evaluate (each logs its runs), and how to open the runs in the MLflow UI, are
-   in [the MLflow runs guide](docs/MLFLOW_RUNS.md).
+   MLflow experiment from `.env`. `03`'s setup fits nothing; `04`'s read refits
+   the two best runs when the 24 tuning runs are logged. The buttons that tune and
+   evaluate (each logs its runs: `03` two buttons, then `04` two), and how to
+   open the runs in the MLflow UI, are in
+   [the MLflow runs guide](docs/MLFLOW_RUNS.md).
 
 5. Each run cell sits behind its own **Run** button (added from D2 on).
 
-6. The final cell evaluates the test part once; it refuses to run twice in one
-   experiment (D4).
+6. `04`'s final cell evaluates the test part once; it refuses to run twice in
+   one experiment (D4).
 
 `uv run --env-file .env notebooks/03_hyperparameter_tuning.py` runs the notebook as a
 script: setup only, no run is opened; it refuses to start when
 `MLFLOW_TRACKING_URI` is unset or points at the repo root's `mlflow.db`.
+`04_model_inspection.py` runs the same way (it also reads the store, and stops
+there unless the 24 tuning runs are logged).
 marimo's runtime configuration also loads `.env` by default when it finds
 `pyproject.toml`, so never put canonical MLflow settings in `.env`.
 

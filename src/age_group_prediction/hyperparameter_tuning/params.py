@@ -23,7 +23,6 @@ __all__ = [
 class LGBMParams:
     """LightGBM's searched hyperparameters, for the regressor and the classifier alike."""
 
-    max_depth: int
     num_leaves: int
     min_child_samples: int
     learning_rate: float
