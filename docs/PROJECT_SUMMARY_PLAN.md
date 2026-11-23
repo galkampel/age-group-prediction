@@ -1,7 +1,7 @@
 # Project summary document: the plan
 
 > **Status (2026-11-23):** plan approved; S0 done (branch `docs/project-summary`, this document,
-> the environment checks). Next: **S1a** (Sonnet 5.5). The implementation record is §9.
+> the environment checks). S1a done. Next: **S1b** (Opus 5.5). The implementation record is §9.
 
 The project is documented in 62 files under `docs/`, most of them plans and work records. No
 single document tells a new reader what the task is, how the data is generated, how it is
@@ -21,6 +21,7 @@ produces that document, `docs/PROJECT_SUMMARY.md`, in its own PR.
 | P7 | Small sub-tasks, one stop each, so each can be verified alone. |
 | P8 | Each sub-task names its implementing model. Sonnet 5.5 or Opus 5.5 by default; Fable 5.2 only for the hard ones (S5d, S7a, S7b, the S8b review). |
 | P9 | The PNGs are drawn with matplotlib (and shap's own matplotlib plots). `kaleido` is not installed and is not added. The PNGs therefore differ in look from notebook 04's Plotly figures. |
+| P10 | Depth where it matters (user, 2026-11-23): sections 2 (data generation), 3 (preprocessing) and 4 (models) are specific and in LaTeX: every generated variable, every transform and every model has its formula, with its symbols defined, in the order the code applies them. Section 1 stays lean (no seeds, config defaults or overrides there). Cross-validation belongs to section 5 (tuning), not section 1. |
 
 The summary describes **the path the notebooks run**: the `student_simulator` package and the
 new `preprocessing.py`, `feature_engineering`, `modeling`, `hyperparameter_tuning` and
@@ -164,7 +165,7 @@ not have. In `test_shap_values.csv` the `base_value` correlates 1.0 with `n_apar
 | # | Sub-task | Model | Review | Done |
 |---|---|---|---|---|
 | S0 | Setup: branch, plan doc, environment checks | Sonnet 5.5 (done by the planning session) | no | ✅ |
-| S1a | Skeleton + section 1 (task and settings) | Sonnet 5.5 | no | |
+| S1a | Skeleton + section 1 (task and settings) | Sonnet 5.5 | no | ✅ |
 | S1b | Section 2 (data generation process) | Opus 5.5 | yes | |
 | S2 | Section 3 (preprocessing) | Opus 5.5 | yes | |
 | S3a | Section 4.1–4.2 (exposure treatment, Model 1) | Opus 5.5 | yes | |
@@ -201,17 +202,18 @@ Done when:
 Create `docs/PROJECT_SUMMARY.md` with the 7 headings and their sub-headings (§2), a short "what
 this document covers" note (the notebooks' path; results from the run at `da6afc9`), and section 1.
 Done when:
-- [ ] `check_s1a.py` runs the simulator with the notebooks' overrides and the notebooks' split,
+- [x] `check_s1a.py` runs the simulator with the notebooks' overrides and the notebooks' split,
       and prints the building, neighborhood and apartment counts, the column list and the split
       sizes.
-- [ ] The setup table matches that output (expected 1,529 / 150 / 61,317 and 917 / 306 / 306).
-- [ ] Sections 2–7 hold headings only.
+- [x] The setup table matches that output (expected 1,529 / 150 / 61,317 and 917 / 306 / 306).
+- [x] Sections 2–7 hold headings only.
 
 ### S1b. Section 2, data generation (Opus 5.5, review)
 Neighborhood; building (count, apartments, room mix: tilt → Dirichlet → multinomial); apartment;
 total children (the NB2 log-linear mean with random effects); cohort split (lifecycle score,
 softmax, multinomial); aggregation to the building. A notation table, a parameter table, the
 dataset's column table. Adapt `docs/SIMPLIFIED_MODEL_PLAN.md` §6; follow the code where they differ.
+LaTeX per P10: no variable, transform or model is described in words only.
 Done when:
 - [ ] Every generated variable has its formula, in draw order.
 - [ ] `check_s1b.py` parses the doc's parameter table and compares every value with
@@ -224,6 +226,7 @@ Done when:
 transform vocabulary in use; the feature × family table (trees, count GLMs, logistic) with formula
 and motivation per feature; the candidate variants per family; where statistics are learned (the
 training fold only); the validation checks.
+LaTeX per P10: no variable, transform or model is described in words only.
 Done when:
 - [ ] `check_s2.py` builds each candidate transformer from the notebook's declarations, fits it on
       the training part and prints its output columns; the doc's tables agree row by row.
@@ -235,6 +238,7 @@ Done when:
 4.1 `CountModel`: $\hat\mu_b = E_b \hat f(x_b)$; the weighted-rate form and its Poisson
 equivalence to the log offset (the derivation); the Gaussian case; NB2 taking the raw exposure.
 4.2 Model 1: the formulation, the four families (loss, link, penalty), motivation, trade-offs.
+LaTeX per P10: no variable, transform or model is described in words only.
 Done when:
 - [ ] `check_s3a.py` fits a Poisson GLM on the training part both ways (rate with weights, and
       offset) and prints the largest prediction difference.
@@ -246,6 +250,7 @@ Done when:
 logistic and LightGBM classifiers; calibration on building folds; exact reconciliation;
 motivation and trade-offs. 4.4 Model 3: the planned NB2 × Dirichlet-multinomial formulation from
 the old stack, marked not implemented in the new stack, with a "to be added" note.
+LaTeX per P10: no variable, transform or model is described in words only.
 Done when:
 - [ ] `check_s3b.py` rebuilds Model 2's best run and prints the largest
       $|\sum_k \hat C_{b,k} - \hat\mu_b|$ on the validation part.
@@ -429,3 +434,13 @@ select.
 - Env: `kaleido` not installed; `plotly` 7.1.0, `matplotlib` 3.11.1, `shap` 0.53.0. Decision P9.
 - This session ran on Fable 5.2, not Sonnet 5.5: it held the exploration's findings that §3 and
   §4 record.
+
+### S1a (2026-11-23)
+- Created `docs/PROJECT_SUMMARY.md`: title, scope note, section 1, headings only for sections 2-7
+  (4.1-4.4, 7.1-7.4).
+- `.mlflow-check/summary/check_s1a.py` (output in `check_s1a.out`) mirrors notebook 03's overrides
+  (150 neighborhoods, rate 9.0), simulator, `ShareTransformer` and `Splitter("random")`. Output: 1,529
+  buildings, 150 neighborhoods, 61,317 apartments, seed 42, split 917 / 306 / 306; raw columns
+  `building_id, neighborhood_id, ses, avg_household_size, median_age, n_daycares_500m,
+  school_status, 3_rooms..6_rooms, n_apartments, n_kindergarten, n_elementary, n_highschool`; after
+  shares `4_rooms_share, 5_rooms_share, 6_rooms_share` replace the room counts. All as §4 expected.
