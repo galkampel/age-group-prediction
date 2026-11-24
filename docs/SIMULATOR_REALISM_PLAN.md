@@ -1225,7 +1225,7 @@ model:
 | C0 | This plan committed on `feat/realistic-children` | user | no | |
 | C1 | The two building SDs (12.4), the ICC threshold (12.5), a check script against 12.2's building table | Sonnet 5.5 | no | x |
 | C2 | The children model: the config and validation (12.4), the transform, the design, the cap (12.1), the unit, config and statistical tests (12.5), a check script against 12.2 | Opus 5.5 | yes | x |
-| C3 | The intercept on 31 seeds (12.3), a full run on seeds 42 / 7 / 11, the calibration ranges, the invariants, the recovery check | Opus 5.5 | yes | |
+| C3 | The intercept on 31 seeds (12.3), a full run on seeds 42 / 7 / 11, the calibration ranges, the invariants, the recovery check | Opus 5.5 | yes | x |
 | C4 | Regenerate the characterization fixtures; the full test suite; update the docs that describe the changed terms | Sonnet 5.5 | no | |
 | C5 | An independent review of the whole step against §12, with a mutation check of the new tests (B4's form), then the PR description | Fable 5.2 | is the review | |
 
@@ -1243,12 +1243,12 @@ model:
 - [x] Review findings reproduced and fixed.
 
 **C3. Done when:**
-- [ ] The 31-seed mean is printed; the intercept changes only by 12.3's rule.
-- [ ] A full run (150 neighborhoods, rate 9, seeds 42, 7, 11) prints children per apartment and
+- [x] The 31-seed mean is printed; the intercept changes only by 12.3's rule.
+- [x] A full run (150 neighborhoods, rate 9, seeds 42, 7, 11) prints children per apartment and
       per building, the zero share, the maximum, the cohort shares and both invariants.
-- [ ] The calibration ranges, the invariants and the recovery test pass, or the failure is shown
+- [x] The calibration ranges, the invariants and the recovery test pass, or the failure is shown
       with its numbers.
-- [ ] Review findings reproduced and fixed.
+- [x] Review findings reproduced and fixed.
 
 **C4. Done when:**
 - [ ] The characterization fixtures are regenerated, and each diff is explained in 12.10.
@@ -1403,3 +1403,59 @@ After the PR is merged: merge `main` into `docs/project-summary` and start the s
     non-finite error).
 - **Not run:** the calibration, invariant and recovery tests, and the 31-seed intercept check
   (C3); the characterization fixtures (C4).
+
+#### C3 (2026-11-24, Opus 5.5; review Fable 5.2)
+- **No file changed but this plan:** the intercept stays **−0.89**.
+- **The intercept on 31 seeds** (`.mlflow-check/realism/c3_intercept_seeds.py`, output
+  `c3_intercept_seeds.out`; 150 neighborhoods, rate 9, seeds 42 and 0–29):
+  - The mean averages **0.8788** (SD 0.0429, range 0.820–0.991). Seeds 42 / 7 / 11 give
+    0.845 / 0.958 / 0.868. All equal 12.2.
+  - The centring intercept is −0.8943, which rounds to −0.89. The average is inside 0.865–0.885,
+    so 12.3's rule keeps the value.
+  - The review reran the 31 seeds at −0.894 and got 0.8742; the cap does not disturb the
+    centring.
+- **The canonical config on the same 31 seeds:**
+  - Mean 0.777–0.961 and zero share 0.490–0.547, none outside the ranges.
+  - Oracle recovery's maximum error 0.021–0.172 (average 0.086). Seeds 11 and 24 are above 0.15,
+    none above 0.20. Seed 42 is 0.033 (12.2 said 0.05, from the plan-mode replay).
+  - The worst case is `log_household_size_excess` at seed 11 (0.172): the margin across seeds is
+    thin, but the test runs seed 42 only (for C5).
+- **Full run** (`c3_full_run_check.py`, output `c3_full_run_output.txt`; 150 neighborhoods,
+  rate 9):
+
+  | Run | Per apartment, mean / SD | Zero share | Max | Per building, mean / SD / max | Kindergarten / elementary / high school | Invariant share | $H > 4.5$ |
+  |---|---|---|---|---|---|---|---|
+  | B2, seed 42 (−0.88) | 0.872 / 1.229 | .507 | 19 | 35.3 / 28.0 / 250 | .398 / .336 / .266 | 0.973 | 1.64 |
+  | seed 42 | 0.845 / 1.211 | .524 | 10 | 34.1 / 30.0 / 265 | .398 / .337 / .266 | 0.993 | 1.77 |
+  | seed 7 | 0.958 / 1.297 | .481 | 10 | 37.5 / 31.8 / 305 | .409 / .338 / .253 | 1.000 | 1.47 |
+  | seed 11 | 0.868 / 1.222 | .513 | 10 | 36.8 / 30.9 / 276 | .395 / .334 / .271 | 0.993 | 1.92 |
+
+  - **Building totals:** they equal 12.6 (mean 34–38, SD 30–32, maximum 265–305). Over 31 seeds
+    (the review): mean 32.9–38.8, SD 26.8–34.2, maximum averaging 309 with a worst of 571 (B2:
+    284 and 525).
+  - **Cohort shares** (not run in the planning): over 31 seeds the review measured .400 / .336 /
+    .264, with kindergarten .388–.413 (B2 averaged .395). A small upward drift, the lead for
+    step 4.
+  - **The tail invariant on its test's setup** (1,000 neighborhoods, rate 3): seeds 42 / 7 / 11
+    have 38 / 40 / 39 tail neighborhoods averaging 2.11 / 1.98 / 1.98 children. The pass share is
+    0.974 / 1.000 / 0.974 against the threshold of 0.80. Over all neighborhoods it is 0.989–0.991.
+    (12.2's 0.995–1.00 and 1.00 were measured at rate 9; one neighborhood fails at rate 3.)
+  - **Apartments at the cap** (the review): 0.046% / 0.072% / 0.043%.
+- **Canonical config at seed 42:** mean 0.849, zero share 0.506, oracle recovery 0.033; all
+  pass.
+- **Tests:**
+  - `tests/unit` and `tests/validation -m "not slow"` (the calibration ranges, both invariants,
+    the three statistical files): 1445 passed, 1 skipped, 1 xfailed, 19 deselected, in 1 min 42 s
+    (`c3_pytest_output.txt`). The 6 warnings come from mlflow in `test_gate8_tracking.py`.
+  - `tests/validation/test_recovery.py` (slow): 1 passed (`c3_pytest_recovery.txt`).
+  - Not run: the characterization and notebook tests (C4).
+- **Static checks:** no source or test file changed. Ruff shows 5 style findings on the two
+  git-ignored scripts: implicit string concatenation copied from B2's script, and unused `noqa`.
+  They were left as they are.
+- **Review** (independent, Fable 5.2):
+  - It reproduced the numbers with its own code through the public pipeline: the 31-seed block,
+    the centring, seed 42's full row, both invariants and the canonical block.
+  - It found no bug, no gap, and no pin of −0.88 or of the old level or maximum. Tracked files in
+    `src/`, `tests/` (without characterization), `checks/` and `configs/` were searched.
+  - Its observations are recorded above: the invariants at rate 3, the recovery margin, the
+    cohort drift, and the 31-seed building totals.
