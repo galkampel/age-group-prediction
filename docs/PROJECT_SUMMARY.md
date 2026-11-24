@@ -30,8 +30,10 @@ children are housed: children live in apartments, apartments are in buildings, a
 neighborhoods. Each level has its own role.
 
 - **Neighborhood: the context.** Socioeconomic status (SES), median age, average household size,
-  nearby daycares and school status describe the area. Every building in a neighborhood shares
-  them. They shape both the apartments built there and the families who live in them.
+  nearby daycares and school status describe the area. They are linked as in real neighborhoods:
+  SES shapes the population's age and household size, the daycares follow the population and its
+  purchasing power, and the schools follow the population. Every building in a neighborhood shares them. They shape both the apartments built
+  there and the families who live in them.
 - **Building: the level we predict.** Each neighborhood has a random number of buildings. Each
   building has a random number of apartments and a mix of apartment sizes (3 to 6 rooms). The mix
   leans toward larger apartments where households are larger or SES is higher. A building's count
@@ -48,52 +50,114 @@ Throughout, $j$ indexes neighborhoods, $b$ buildings and $i$ apartments.
 
 ### 2.1 Neighborhoods: the context
 
-There are 150 neighborhoods. For each one, five values are drawn, in this order.
+There are 150 neighborhoods, and their model is calibrated to urban neighborhoods in Israel. Five
+values describe each neighborhood. The population comes first (who lives there), and the
+facilities come last (what was built for them), because supply follows demand. The formulas of this
+section are centered on a **reference neighborhood**: SES 0, median age 31 and household size 3.0.
 
-**SES**, standardized: 0 is the population average, and one unit is one standard deviation.
+**SES** is the neighborhood's socioeconomic level: how its residents' income, education and
+employment compare with the rest of the country. It is a national index, so it places the
+neighborhood against the whole population and not against its own city. 0 is the national average,
+one unit is one standard deviation, and negative values are poorer neighborhoods.
 
 $$
 S_j = \mathrm{clip}\big(\mathcal N(\mu=0,\ \sigma^2=1^2),\ \min=-2.5,\ \max=2.5\big)
 $$
 
-$\mathrm{clip}$ caps a draw outside the bounds at the bound, which removes implausible extremes.
+SES is drawn first because nothing else in the model explains it. The other four values depend on
+it, directly or through each other.
 
-**Median age**, in years, around a typical family-age neighborhood:
-
-$$
-M_j = \mathrm{clip}\big(\mathcal N(\mu=37,\ \sigma^2=5^2),\ \min=25,\ \max=52\big)
-$$
-
-**Average household size**, in people. It is 2.6 at median age 37 and falls by 0.02 people per year
-of median age, so older areas have smaller households. The noise $\varepsilon_j$ lets
-neighborhoods of the same age differ.
+**Median age** is the median age, in years, of all the residents of neighborhood $j$, children
+included. A neighborhood with many children therefore has a low median age.
 
 $$
-H_j = \mathrm{clip}\big(2.6 - 0.02\,(M_j - 37) + \varepsilon_j,\ \min=1.8,\ \max=4.2\big),
+M_j = \mathrm{clip}\big(31 + 3.5\,S_j + \varepsilon^{M}_j,\ \min=16,\ \max=50\big),
 \qquad
-\varepsilon_j \sim \mathcal N(\mu=0,\ \sigma^2=0.25^2)
+\varepsilon^{M}_j \sim \mathcal N(\mu=0,\ \sigma^2=4.5^2)
 $$
 
-**Daycares within 500 m**, a count. At average SES and median age 37 the expected count is
-$e^{1.0} \approx 2.7$. Each SES unit multiplies it by $e^{0.15} \approx 1.16$. Ten more years of
-median age multiply it by $e^{-0.3} \approx 0.74$.
+The median age is 31 at the national-average SES and rises by 3.5 years per SES unit. In Israel
+the lowest-SES neighborhoods are largely Haredi and Arab communities, where families have many
+children, so the population is very young. Well-off neighborhoods have fewer children per family
+and more older residents. The noise $\varepsilon^{M}_j$ lets neighborhoods of the same SES differ:
+a new development full of young families and a long-established neighborhood can share an SES.
+
+**Average household size** is the mean number of people who live in one home in the neighborhood,
+adults and children together.
 
 $$
-D_j \sim \mathrm{Poisson}\Big(\lambda = \exp\big[1.0 + 0.15\,S_j - 0.03\,(M_j - 37)\big]\Big)
-$$
-
-**School status**, one of three categories:
-
-$$
-P(Z_j = \text{existing}) = 0.55,
+H_j = \mathrm{clip}\big(3.0 - 0.06\,(M_j - 31) - 0.20\,S_j + 0.18\,S_j^2 + \varepsilon^{H}_j,\ \min=1.8,\ \max=6.5\big),
 \qquad
-P(Z_j = \text{planned}) = 0.20,
-\qquad
-P(Z_j = \text{none}) = 0.25
+\varepsilon^{H}_j \sim \mathcal N(\mu=0,\ \sigma^2=0.30^2)
 $$
 
-Household size depends on age, and daycares on SES and age. Apart from these links, the features
-are drawn independently.
+Two relations enter:
+
+- **Median age.** Each year of median age above 31 removes 0.06 people from the average household.
+  Children both lower the median age and enlarge the households, so a young neighborhood is a
+  neighborhood of families. An old one holds couples whose children have left and people who live
+  alone.
+- **SES.** Among neighborhoods of the same median age, the linear and the squared SES terms make
+  households largest at the lowest SES and smallest a little above the average, near SES 0.6.
+  From there they grow again toward the top.
+
+SES also acts through the median age: a higher SES means an older neighborhood, and an older
+neighborhood has smaller households. Together, SES shifts the average household size by
+$-0.41\,S_j + 0.18\,S_j^2$, which is lowest near SES 1.1. This is a reverse-J: a steep arm at
+the bottom and a slight rise at the top. The steep arm is the large families of the Haredi and
+Arab communities. The slight rise is well-off family neighborhoods, against mid-SES neighborhoods
+with more singles and couples. The noise $\varepsilon^{H}_j$ lets neighborhoods of the same age
+and SES differ.
+
+**Daycares within 500 m** is the number of daycare centers within walking distance of the
+neighborhood's homes.
+
+$$
+D_j \sim \mathrm{Poisson}\Big(\lambda = \exp\big[1.02 + 0.30\,(H_j - 3.0) + 0.35\,S_j - 0.03\,(M_j - 31)\big]\Big)
+$$
+
+The reference neighborhood expects $e^{1.02} \approx 2.8$ daycares. The Poisson draw gives a whole
+number around the expected count, and zero is possible. Daycares open where there are small
+children and where parents can pay. Each multiplier below holds with the other two values fixed:
+
+- **Demand.** Larger households mean more small children: each additional person of household
+  size multiplies the expected count by $e^{0.30} \approx 1.35$. Older neighborhoods have fewer
+  toddlers: ten more years of median age multiply it by $e^{-0.3} \approx 0.74$.
+- **Purchasing power.** Parents pay for daycare, and in well-off neighborhoods both parents more
+  often work: each SES unit multiplies the expected count by $e^{0.35} \approx 1.42$.
+
+The two forces work against each other at the bottom of the SES scale. Those neighborhoods have
+the largest households and the least purchasing power, and on average the two roughly cancel
+there.
+
+**School status** says whether the neighborhood has a school: one exists, one is planned, or
+there is none. Each status $z$ gets a weight, and its probability is its share of the three
+weights:
+
+$$
+P(Z_j = z) = \frac{\psi_{jz}}{\psi_{j,\text{existing}} + \psi_{j,\text{planned}} + \psi_{j,\text{none}}}
+$$
+
+$$
+\psi_{j,\text{existing}} = 0.55\,e^{0.8\,(H_j - 3.0)},
+\qquad
+\psi_{j,\text{planned}} = 0.20\,e^{-0.08\,(M_j - 31)},
+\qquad
+\psi_{j,\text{none}} = 0.25
+$$
+
+In the reference neighborhood the probabilities are exactly 55%, 20% and 25%. Schools are built
+where the children are: each additional person of household size multiplies the odds of an
+existing school, against none, by $e^{0.8} \approx 2.23$. A planned school answers growth.
+Young neighborhoods are often new ones that are still filling up, so a median age ten years
+younger multiplies the odds of a planned school, against none, by the same
+$e^{0.8} \approx 2.23$. SES does not enter: schools are public and are built by need, not by
+what parents can pay.
+
+The five values are therefore linked, as they are in real neighborhoods. Low-SES neighborhoods
+are younger and have larger households, the daycares follow the population and its purchasing
+power, and the schools follow the population. A model sees SES, median age and household size
+move together, so their separate effects are harder to estimate than if they were independent.
 
 ### 2.2 Buildings: count, size and room mix
 

@@ -4,7 +4,9 @@
 > the environment checks). S1a, S1b done. Paused (2026-11-24) for the simulator revision (P12);
 > its step 1 (neighborhoods) is merged (PR #29) and `main` is merged into this branch.
 > **The order is now P13: section 2 part by part, S1c.1–S1c.5, each part analyzed for realism
-> before it is written. Next: S1c.1.** The implementation record is §9.
+> before it is written.** S1c.1 done (2.1 written; 2.2 gets a simulator step: the room mix and
+> the building size). **Next: the simulator's step 2 (planned from `main`), then S1c.2.** The
+> implementation record is §9.
 
 The project is documented in 62 files under `docs/`, most of them plans and work records. No
 single document tells a new reader what the task is, how the data is generated, how it is
@@ -183,7 +185,7 @@ not have. In `test_shap_values.csv` the `base_value` correlates 1.0 with `n_apar
 | S0 | Setup: branch, plan doc, environment checks | Sonnet 5.5 (done by the planning session) | no | ✅ |
 | S1a | Skeleton + section 1 (task and settings) | Sonnet 5.5 | no | ✅ |
 | S1b | Section 2 (data generation process) | Opus 5.5 | yes | ✅ |
-| S1c.1 | Section 2.1 (neighborhoods, the step-1 model); then the analysis of 2.2 (buildings per neighborhood, apartments per building, the room mix) | **Fable 5.2** | yes | |
+| S1c.1 | Section 2.1 (neighborhoods, the step-1 model); then the analysis of 2.2 (buildings per neighborhood, apartments per building, the room mix) | **Fable 5.2** | yes |✅ |
 | S1c.2 | Section 2.2 (buildings); then the analysis of 2.3's first half (the hidden effects, the children count per apartment) | **Fable 5.2** | yes | |
 | S1c.3 | Section 2.3, first half (the scaled values, the hidden effects, total children); then the analysis of the cohort split | **Fable 5.2** | yes | |
 | S1c.4 | Section 2.3, second half (the cohort split); no analysis follows | Opus 5.5 | yes | |
@@ -282,10 +284,10 @@ this part:
 Leads for the analysis of 2.2: large-household, low-SES areas get larger apartments, where in
 Israel they are crowded; building size may depend on the area.
 Done when:
-- [ ] Each of the five draws has its formula with its values inline and its motivation.
-- [ ] `check_s1c.py` passes on 2.1.
-- [ ] Review findings reproduced and fixed.
-- [ ] The analysis of 2.2 is shown, and the user's decision is recorded in §9.
+- [x] Each of the five draws has its formula with its values inline and its motivation.
+- [x] `check_s1c.py` passes on 2.1.
+- [x] Review findings reproduced and fixed.
+- [x] The analysis of 2.2 is shown, and the user's decision is recorded in §9.
 
 ### S1c.2. Section 2.2, buildings; then the analysis of the children count (Fable 5.2, review)
 Starts after 2.2's decision has taken effect (if a step: its PR merged into this branch). Write
@@ -690,3 +692,53 @@ S1c sub-task with its prompt above.
   planning session (§8). The loop is in §5.
 - `docs/SIMULATOR_REALISM_PLAN.md`: its status line and a note above its §7 now point to P13.
 - No summary text was written.
+
+### S1c.1 (2026-11-24, Fable 5.2; review Opus 5.5)
+- **Section 2.1 written** for the step-1 model, and the neighborhood bullet of section 2's
+  opening. The five draws in order, each with what it represents, its formula with the values
+  inline and its motivation. The reference neighborhood (SES 0, median age 31, household size
+  3.0) is introduced there.
+- **The user's choices** (asked before writing):
+  - formulas only: no population statistics (means, bands, correlations) in 2.1;
+  - Israel named, and the lowest-SES areas as largely Haredi and Arab communities;
+  - no real-world figures.
+- **Symbols:** the noises are $\varepsilon^{M}_j$ and $\varepsilon^{H}_j$; the school weights
+  are $\psi_{jz}$ ($\omega$ is taken by the room shares of 2.2).
+- **Each formula's code:** $S_j$ `neighborhood.py:93-108`; $M_j$ `:110-126`; $H_j$ `:128-150`;
+  $D_j$ `:152-169`; $Z_j$ `:171-204`.
+- **`.mlflow-check/summary/check_s1c.py`** (output `check_s1c.out`), covering the opening and 2.1:
+  - 35 numbers in 10 formulas against the config plus notebook 03's overrides: 0 mismatches;
+    25 of 25 `neighborhood` keys covered.
+  - Derived numbers: the six $e^x$ multipliers; the combined SES effect on household size
+    ($-0.41$, $0.18$, minimum 1.139, written 1.1); the direct minimum (0.556, written 0.6); the
+    daycare log-rate shift at SES −2.5 over all paths (+0.033, "roughly cancel"). 0 problems.
+  - 0 implementation-detail hits, no backticked token, no explanation of clipping.
+  - It ran twice: the review's fixes changed checked sentences and added two derived numbers.
+- **Review (independent subagent, Opus 5.5):** no error in a formula, a value or the draw order.
+  - Reproduced and fixed (3):
+    - "it cannot fully separate their effects" overreached: the three features are correlated
+      (about 0.6–0.75), not collinear. Now "harder to estimate than if they were independent".
+    - "grow slightly again at the top" was said of the direct SES terms, where the rise is 40% of
+      the fall. The direct minimum (0.6) and the combined reverse-J (minimum 1.1) are now stated
+      separately.
+    - "the daycares follow the population" ignored purchasing power, which at the lowest SES
+      cancels the demand. The bullet, the daycare paragraph and the closing say so now.
+  - Clarity points applied (4): the multipliers hold with the other values fixed; why a young
+    neighborhood gets a planned school; why school status has no SES term; "the formulas of this
+    section".
+  - Expected, left for S1c.2–S1c.3: 2.2 and 2.3 still center on 2.6 and 37.
+- **The analysis of 2.2** (`s1c1_analysis_2_2.py`, 400,000 neighborhoods; real-world figures from
+  Fable's memory, not looked up):
+
+  | Component | The simulator | Israel (confidence) |
+  |---|---|---|
+  | Buildings per neighborhood | $1 + \mathrm{Poisson}(9)$ | a sample-size setting, not a model |
+  | Apartments per building | normal, mean 40.0, SD 11.9, skew 0.06, the same everywhere | right-skewed: many buildings of 8–24 apartments, few towers (medium); alike within a neighborhood (high); larger in younger, newer neighborhoods (low) |
+  | Room mix | mean rooms 4.27 / 4.16 / 4.13 / 4.17 / 4.28 over five SES bands; correlation with household size 0.73, with SES 0.04; people per room 1.04 / 0.85 / 0.73 / 0.67 / 0.67 | apartment size rises with SES, and the poorest areas do not have the largest apartments (medium); about 1.3 people per room in Haredi and Arab areas (medium) |
+  | Base shares | 30 / 38 / 22 / 10% for 3–6 rooms | 10–13% of homes have 1–2 rooms; 6 rooms nearer 3–5% in apartment buildings (medium) |
+  | Between buildings | a share's SD 0.05–0.09 | probably larger (low) |
+
+- **The user's decision (2026-11-24): a simulator step for 2.2**, covering the room mix and the
+  building size. The room categories stay 3–6, with a lower 6-room share. Buildings per
+  neighborhood and the between-building variation are kept. S1c.2 waits for that step's PR to be
+  merged into this branch.
