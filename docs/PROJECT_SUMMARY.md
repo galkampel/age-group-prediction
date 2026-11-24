@@ -34,15 +34,19 @@ neighborhoods. Each level has its own role.
   SES shapes the population's age and household size, the daycares follow the population and its
   purchasing power, and the schools follow the population. Every building in a neighborhood shares them. They shape both the apartments built
   there and the families who live in them.
-- **Building: the level we predict.** Each neighborhood has a random number of buildings. Each
-  building has a random number of apartments and a mix of apartment sizes (3 to 6 rooms). The mix
-  leans toward larger apartments where households are larger or SES is higher. A building's count
-  per cohort is the sum over its apartments.
+- **Building: the level we predict.** Each neighborhood has a random number of buildings. A
+  building either keeps its neighborhood's usual mid-rise form or is a tower, and that sets its
+  typical number of apartments. Its mix of apartment sizes (3 to 6 rooms) leans toward larger
+  apartments where SES is higher, slightly toward larger ones where households are larger, and
+  toward smaller ones in larger buildings. A building's count per cohort is the sum over its
+  apartments.
 - **Apartment: where the children are generated.** An apartment's rooms and its neighborhood set
   how many children live there and how old they are. Larger apartments hold more children, and
   older ones.
 
-Hidden effects, two per building and one per neighborhood, make apartments in the same building or
+Hidden values act at two places, and none of them is in the dataset. A building's type and two
+values per neighborhood shape the building sizes (section 2.2). Two effects per building and one
+per neighborhood shape the children (section 2.3): they make apartments in the same building or
 neighborhood more alike than their features explain, as unmeasured local factors do in real data.
 
 The whole draw is reproducible from one seed (42). The steps below follow the order of the draws.
@@ -161,59 +165,152 @@ move together, so their separate effects are harder to estimate than if they wer
 
 ### 2.2 Buildings: count, size and room mix
 
-**Buildings per neighborhood**: at least one and ten on average, 1,529 in total.
+A building is described by two things: how many apartments it has, and how they split over
+apartment sizes. Both follow the neighborhood. Three hidden values take part: two belong to the
+neighborhood and one is the building's type. None of them is a column of the dataset, so a model
+sees only their result, the building's apartment and room counts.
+
+**Buildings per neighborhood** is the number of buildings sampled from neighborhood $j$: at least
+one, and ten on average.
 
 $$
 B_j = 1 + \mathrm{Poisson}(\lambda=9)
 $$
 
-**Apartments per building**, rounded to a whole number and then clipped, mostly between 20 and 60:
+This count models nothing about the neighborhood. It only sets how much data each neighborhood
+contributes, so it depends on no feature.
+
+**Two hidden neighborhood values** come next. The tower propensity $\rho_j$ is how far the
+neighborhood leans toward high-rise building, beyond what its features explain. The texture
+$\tau_j$ shifts the typical size of the neighborhood's buildings on the log scale: every building
+there is $e^{\tau_j}$ times larger, and one standard deviation is a factor of
+$e^{0.20} \approx 1.22$.
 
 $$
-A_b = \mathrm{clip}\big(\mathrm{round}(\mathcal N(\mu=40,\ \sigma^2=12^2)),\ \min=12,\ \max=80\big)
-$$
-
-$A_b$ is drawn independently of every neighborhood feature: a building's size says nothing about
-its neighborhood. This matters for the models' exposure (section 4) and for the importance of
-`n_apartments` (section 7.3).
-
-**Room mix.** Each building splits its apartments over 3, 4, 5 and 6 rooms. The neighborhood sets
-an expected mix, and each building draws its own mix around it. First, household size is put on a
-scale of half-persons above 2.6 and combined with SES into one tilt. Section 2.3 uses the same
-scale.
-
-$$
-\tilde H_j = \frac{H_j - 2.6}{0.5},
+\rho_j \sim \mathcal N(\mu=0,\ \sigma^2=1.0^2),
 \qquad
-q_j = 0.35\,\tilde H_j + 0.20\,S_j
+\tau_j \sim \mathcal N(\mu=0,\ \sigma^2=0.20^2)
 $$
 
-The tilt rotates the base shares of 30%, 38%, 22% and 10% for 3, 4, 5 and 6 rooms:
+Towers are built by plan: a neighborhood has an urban-renewal or a new-construction plan, or it
+does not. Towers therefore cluster in some neighborhoods and are absent from others that look the
+same, and $\rho_j$ produces that. The buildings of one neighborhood were also mostly built in the
+same period and under the same rules, so they are alike in size, and $\tau_j$ shifts all of them
+together.
+
+**Building type** says whether building $b$ is a tower ($T_b = 1$) or keeps the neighborhood's
+usual mid-rise form, a texture building ($T_b = 0$). The median age enters in decades above the
+reference neighborhood's 31, a scale that section 2.3 uses too:
 
 $$
-\tilde\omega_{jr} = \pi_r \exp\Big(q_j\,\frac{r - 4}{2}\Big),
+\tilde M_j = \frac{M_j - 31}{10}
+$$
+
+$$
+P(T_b = 1) = \mathrm{logistic}\big(-2.35 + 0.7\,S_j + 0.3\,\tilde M_j
++ 0.7\,\mathbb 1\lbrace Z_j = \text{planned}\rbrace + \rho_j\big),
 \qquad
-(\pi_3, \pi_4, \pi_5, \pi_6) = (0.30,\ 0.38,\ 0.22,\ 0.10),
+\mathrm{logistic}(x) = \frac{1}{1 + e^{-x}}
+$$
+
+The indicator $\mathbb 1\lbrace\cdot\rbrace$ is 1 when its condition holds and 0 otherwise. In the
+reference neighborhood, with no planned school and $\rho_j = 0$, a building is a tower with
+probability $\mathrm{logistic}(-2.35) \approx 9\%$. Each term multiplies the odds of a tower:
+
+- **SES.** A tower pays off only where land is expensive, and land is expensive where residents
+  are well off: each SES unit multiplies the odds by $e^{0.7} \approx 2.01$.
+- **Median age.** Urban renewal replaces old low buildings with towers, and it happens in
+  established neighborhoods, whose residents are older: ten more years of median age multiply
+  the odds by $e^{0.3} \approx 1.35$.
+- **A planned school.** A planned school marks a new neighborhood that is still growing
+  (section 2.1), and new neighborhoods are built high: it multiplies the odds by the same
+  $e^{0.7} \approx 2.01$, against both other school statuses.
+- **The hidden propensity.** One standard deviation of $\rho_j$ multiplies the odds by
+  $e^{1.0} \approx 2.72$, more than one SES unit or a planned school does.
+
+**Apartments per building** is the number of apartments in building $b$, a whole number. The type
+sets the typical size $m_b$. The neighborhood's texture scales it, and so does the building's own
+deviation $\varepsilon^{A}_b$, of which one standard deviation is a factor of
+$e^{0.22} \approx 1.25$:
+
+$$
+A_b = \mathrm{clip}\Big(\mathrm{round}\big(m_b\,e^{\tau_j + \varepsilon^{A}_b}\big),\ \min=8,\ \max=160\Big),
 \qquad
-\omega_{jr} = \frac{\tilde\omega_{jr}}{\sum_{r'=3}^{6} \tilde\omega_{jr'}}
+m_b = \begin{cases} 30 & \text{if } T_b = 0 \\ 90 & \text{if } T_b = 1 \end{cases},
+\qquad
+\varepsilon^{A}_b \sim \mathcal N(\mu=0,\ \sigma^2=0.22^2)
 $$
 
-Here $r$ is the number of rooms. Four rooms is the pivot: its multiplier is always 1. A positive
-tilt (larger households, higher SES) moves weight from 3 and 4 rooms toward 5 and 6 rooms.
-Dividing by 2 keeps the shift gradual. In the data the tilt runs from about −0.6 to 0.6. At
-$q_j = 0.5$ the multipliers are 0.78, 1, 1.28 and 1.65, and the shares become 22%, 36%, 27% and
-16%. Then, building by building, a Dirichlet draw gives the building its own mix around its
-neighborhood's shares $\omega_{jr}$. A multinomial draw turns that mix into room counts that sum
-exactly to $A_b$:
+A texture building has a median of 30 apartments, a mid-rise of about 6 to 10 floors, and a tower
+has three times as many. The deviations multiply the size instead of adding to it, because
+building sizes are right-skewed: most buildings are modest and a few are very large. The result is
+many buildings near 30 apartments and a smaller group of towers around 90.
+
+The size of a building therefore says something about its neighborhood. Large buildings are more
+common where SES is high, where the residents are older and where a school is planned, and one
+neighborhood's buildings resemble each other. The building's size is the models' exposure
+(section 4), and section 7.3 returns to its importance as a feature.
+
+**Room mix.** Each building splits its apartments over 3, 4, 5 and 6 rooms. Household size enters
+on a scale of three quarters of a person above the reference neighborhood's 3.0, which section
+2.3 uses too. One number, the tilt $q_b$, says how far the building leans toward large
+apartments:
 
 $$
-\mathbf g_b \sim \mathrm{Dirichlet}\big(30\,\boldsymbol\omega_j\big),
+\tilde H_j = \frac{H_j - 3.0}{0.75},
+\qquad
+q_b = 0.35\,S_j + 0.10\,\tilde H_j - 0.32\,\log\frac{A_b}{30}
+$$
+
+The tilt is zero for a building of 30 apartments in the reference neighborhood. Three relations
+enter:
+
+- **SES.** Apartment size is bought: well-off neighborhoods have larger apartments. Each SES unit
+  adds 0.35 to the tilt, so over the SES scale this term runs from $-0.875$ to $0.875$, the
+  widest range of the three.
+- **Household size.** Larger households need more rooms, but the term is weak: 0.10 per three
+  quarters of a person, so a household size of 4.5 adds only 0.20. In Israel the largest
+  households live in the poorest neighborhoods (section 2.1), and there the negative SES term
+  outweighs it. Neighborhoods of large, poor households therefore get smaller apartments, which
+  is crowding, not a match of home to family.
+- **Building size.** Large buildings are planned with many small units. $\log$ is the natural
+  logarithm, so a building twice as large as the texture median lowers the tilt by
+  $0.32 \log 2 \approx 0.22$, and a typical tower, three times as large, lowers it by
+  $0.32 \log 3 \approx 0.35$: as much as one SES unit adds. Towers are more common at high SES,
+  so there this term takes back a part of the SES term.
+
+The tilt rotates the base shares of 30%, 41%, 24% and 5% for 3, 4, 5 and 6 rooms. Six-room
+apartments are rare in apartment buildings.
+
+$$
+\tilde\omega_{br} = \pi_r \exp\Big(q_b\,\frac{r - 4}{2}\Big),
+\qquad
+(\pi_3, \pi_4, \pi_5, \pi_6) = (0.30,\ 0.41,\ 0.24,\ 0.05),
+\qquad
+\omega_{br} = \frac{\tilde\omega_{br}}{\sum_{r'=3}^{6} \tilde\omega_{br'}}
+$$
+
+Here $r$ is the number of rooms, and $\omega_{br}$ is the expected share of $r$-room apartments
+in building $b$. Four rooms is the pivot: its multiplier is always 1. A positive tilt moves weight
+from 3 rooms toward 5 and 6 rooms, and a negative tilt moves it back. With the division by 2,
+$e^{q_b}$ is the multiplier of 6 rooms and $e^{-q_b/2}$ that of 3 rooms. At $q_b = 0.35$, a
+building of 30 apartments at SES 1 and household size 3.0, the multipliers are 0.84, 1, 1.19 and
+1.42, and the shares become 25%, 40%, 28% and 7%.
+
+Buildings with the same expected shares still differ, as real buildings do. A Dirichlet draw
+gives the building its own mix $\mathbf g_b$ around the expected shares
+$\boldsymbol\omega_b = (\omega_{b3}, \omega_{b4}, \omega_{b5}, \omega_{b6})$, and a multinomial
+draw turns that mix into room counts that sum exactly to $A_b$:
+
+$$
+\mathbf g_b \sim \mathrm{Dirichlet}\big(30\,\boldsymbol\omega_b\big),
 \qquad
 (A_{b3},\ A_{b4},\ A_{b5},\ A_{b6}) \sim \mathrm{Multinomial}(A_b,\ \mathbf g_b)
 $$
 
-A concentration of 30 keeps buildings near their neighborhood's mix while letting them differ. A
-larger value would make them more alike.
+$A_{br}$ is the number of $r$-room apartments in building $b$. A concentration of 30 keeps a
+building near its expected shares while letting it differ; a larger value would make buildings
+with the same expected shares more alike.
 
 ### 2.3 Apartments: children and their ages
 

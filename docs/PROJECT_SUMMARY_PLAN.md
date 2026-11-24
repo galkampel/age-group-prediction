@@ -4,9 +4,11 @@
 > the environment checks). S1a, S1b done. Paused (2026-11-24) for the simulator revision (P12);
 > its step 1 (neighborhoods) is merged (PR #29) and `main` is merged into this branch.
 > **The order is now P13: section 2 part by part, S1c.1–S1c.5, each part analyzed for realism
-> before it is written.** S1c.1 done (2.1 written; 2.2 gets a simulator step: the room mix and
-> the building size). **Next: the simulator's step 2 (planned from `main`), then S1c.2.** The
-> implementation record is §9.
+> before it is written.** S1c.1 done (2.1 written). The simulator's step 2 (buildings and the room
+> mix) is merged (PR #30) and `main` is merged into this branch. S1c.2 done (2.2 written; the
+> children count gets a simulator step: a stronger household-size relation and a cap).
+> **Next: the simulator's step 3 (planned from `main`), then S1c.3.** The implementation record
+> is §9.
 
 The project is documented in 62 files under `docs/`, most of them plans and work records. No
 single document tells a new reader what the task is, how the data is generated, how it is
@@ -186,7 +188,7 @@ not have. In `test_shap_values.csv` the `base_value` correlates 1.0 with `n_apar
 | S1a | Skeleton + section 1 (task and settings) | Sonnet 5.5 | no | ✅ |
 | S1b | Section 2 (data generation process) | Opus 5.5 | yes | ✅ |
 | S1c.1 | Section 2.1 (neighborhoods, the step-1 model); then the analysis of 2.2 (buildings per neighborhood, apartments per building, the room mix) | **Fable 5.2** | yes |✅ |
-| S1c.2 | Section 2.2 (buildings); then the analysis of 2.3's first half (the hidden effects, the children count per apartment) | **Fable 5.2** | yes | |
+| S1c.2 | Section 2.2 (buildings); then the analysis of 2.3's first half (the hidden effects, the children count per apartment) | **Fable 5.2** | yes | ✅ |
 | S1c.3 | Section 2.3, first half (the scaled values, the hidden effects, total children); then the analysis of the cohort split | **Fable 5.2** | yes | |
 | S1c.4 | Section 2.3, second half (the cohort split); no analysis follows | Opus 5.5 | yes | |
 | S1c.5 | Sections 2.4–2.6, the section's opening, section 1's counts, every seed-42 number | Opus 5.5 | yes | |
@@ -296,10 +298,10 @@ room mix.
 Leads for the analysis of 2.3's first half: the negative binomial's tail, the zero share (0.52
 against about 0.60 real), the count too flat at small households.
 Done when:
-- [ ] Each draw of 2.2 has its formula with its values inline and its motivation.
-- [ ] `check_s1c.py` passes on 2.1–2.2.
-- [ ] Review findings reproduced and fixed.
-- [ ] The analysis of the children count is shown, and the user's decision is recorded in §9.
+- [x] Each draw of 2.2 has its formula with its values inline and its motivation.
+- [x] `check_s1c.py` passes on 2.1–2.2.
+- [x] Review findings reproduced and fixed.
+- [x] The analysis of the children count is shown, and the user's decision is recorded in §9.
 
 ### S1c.3. Section 2.3, total children; then the analysis of the cohort split (Fable 5.2, review)
 Starts after the children count's decision has taken effect. Write the first half of 2.3: the
@@ -742,3 +744,94 @@ S1c sub-task with its prompt above.
   building size. The room categories stay 3–6, with a lower 6-room share. Buildings per
   neighborhood and the between-building variation are kept. S1c.2 waits for that step's PR to be
   merged into this branch.
+
+### S1c.2 (2026-11-24, Fable 5.2; review Opus 5.5)
+- **Before the start:** the merge of `main` (`4a818da`, PR #30) was open, with one conflict in
+  the status line of `docs/SIMULATOR_REALISM_PLAN.md`. It was resolved with `main`'s line (the P13
+  pointer stays in the note above that plan's §7) and committed as `5c1cde1`.
+- **Section 2.2 written** for the step-2 model, with the building bullet and the hidden-values
+  paragraph of section 2's opening. In draw order: buildings per neighborhood, the two hidden
+  neighborhood values, the hidden building type, apartments per building, the room tilt, the
+  expected shares, the Dirichlet and the multinomial.
+- **The user's choices** (asked before writing): the same as 2.1 (formulas only, Israel named, no
+  real-world figures).
+- **Symbols:** $\rho_j$ the tower propensity, $\tau_j$ the texture, $T_b$ the type, $m_b$ the
+  type's median, $\varepsilon^{A}_b$ the building's deviation, $q_b$ the tilt (now per building),
+  $\omega_{br}$ the expected shares (now per building). $\tilde M_j$ and $\tilde H_j$ are defined
+  here on the new references (31 and 10; 3.0 and 0.75).
+- **Each formula's code:** $B_j$ `building.py:109-128`; $\rho_j$, $\tau_j$ `:185-194`; $T_b$
+  `:195-208`; $A_b$ `:209-224`; $q_b$ `:241-259` and `features.py:113-117`; $\omega_{br}$
+  `features.py:118-120`; the Dirichlet and the multinomial `building.py:265-275`.
+- **`check_s1c.py`** extended to 2.2 and run once, after the review's fixes (output
+  `check_s1c.out`):
+  - 62 numbers in 22 formulas against the config plus notebook 03's overrides: 0 mismatches; 50
+    of 50 `neighborhood` and `building` keys covered (the two override lists asserted empty).
+  - Derived numbers: 12 $e^x$ statements; the reference tower chance (0.0871, written 9%); the
+    tilt change of a doubled building (0.2218, written 0.22) and of a tower (0.35); 12 statements
+    in words; the worked example at SES 1 (multipliers 0.84 / 1 / 1.19 / 1.42, shares
+    25 / 40 / 28 / 7%, computed with the simulator's own function). 0 problems.
+  - 0 implementation-detail hits, no backticked token, no explanation of clipping.
+  - New part 4: the 12 qualitative claims of 2.2 as signs on a large draw (20,000 neighborhoods,
+    199,155 buildings): all hold. Size mean 40.7, median 32, skew 2.19; correlation with SES
+    +0.19, with median age +0.14; intraclass correlation of log size 0.28; mean rooms 3.87 where
+    SES is under −1.5 against 4.04 elsewhere. None of these numbers is in the text.
+- **Review (independent subagent, Opus 5.5; its script in `review_s1c2/`):** no error in a
+  formula, a value, a symbol or the draw order.
+  - Reproduced and fixed (9):
+    - "the strongest term, 0.35 per SES unit" compared coefficients in different units. Now the
+      term's range over the SES scale (−0.875 to 0.875), and a tower's size term (0.35) against it.
+    - "more than any single feature does" (the propensity) fails over SES's whole range. Now
+      "more than one SES unit or a planned school does".
+    - "Large poor households live in small apartments" claimed a household-level match that the
+      model does not make. Now a statement about neighborhoods.
+    - The worked example's tilt of 0.35 needs household size 3.0, which SES 1 does not give on
+      average (2.77). The example now states both values.
+    - $\tau_j$ was called a size; it is a log shift. Its factor per standard deviation (1.22) and
+      the building deviation's (1.25) were added.
+    - "Dividing by 2 keeps the shift gradual" replaced by the reading of $e^{q_b}$ and
+      $e^{-q_b/2}$; the size term got a motivation.
+    - The size term takes back part of the SES term at high SES: one sentence added.
+    - The opening's bullet: the type sets the typical size, not the size; household size added.
+    - "a long tail" is now "a smaller group of towers around 90".
+  - Kept by choice (2): "6 to 10 floors" is the user's definition of a texture building (realism
+    plan R12), not a statistic; `\mathbb 1` as in S1b.
+  - Left for S1c.3: section 2.3 still defines $\tilde M_j$ on 37 and says $\tilde H_j$ uses 2.6,
+    which now contradicts 2.2.
+- **The analysis of 2.3's first half** (`s1c2_analysis_2_3.py`, the full simulator on 1,000
+  neighborhoods at rate 9, seed 42: 410,300 apartments; it ran twice, the first output had a
+  truncated table; real-world figures from Fable's memory, not looked up):
+
+  | Component | The simulator | Israel (confidence) |
+  |---|---|---|
+  | Level | 0.89 children aged 3–18 per apartment | about 0.9–0.95 per household (medium) |
+  | Zero share | 0.50 | about 0.60 (medium) |
+  | Family size | 1.79 per apartment with children; 57% of them hold one child | about 2.4; one-child households nearer a third (medium) |
+  | Tail | maximum 40; 1.0% hold 6 or more, 0.3% 8 or more, 0.11% 10 or more | 6 or more at about 1% is plausible (low); above 10–12 does not occur (high) |
+  | Household size | 0.45 / 0.61 / 0.72 / 0.89 / 1.09 / 1.39 / 2.09 children at household size 2.05 / 2.43 / 2.82 / 3.23 / 3.70 / 4.21 / 4.98; slope 0.51 per person | size minus the adults: about 0.1–0.2 at 2.05, 1.0 at 3.2, 2.5–2.7 at 5.0; slope about 0.8–0.9 (high for the direction, medium for the levels) |
+  | Rooms | 0.54 / 0.87 / 1.27 / 1.54 at 3 / 4 / 5 / 6 rooms | a 2–3 times gap is plausible (low to medium) |
+  | Rooms × household size | where household size is over 4.5: 0.97 at 3 rooms, 5.78 at 6 rooms | an average near 6 is not plausible (medium) |
+  | Hidden effects | SD 0.25 and 0.20; 35% of the variance of the log expected count; a building's total against its expectation: relative RMSE 0.40 from the features alone, 0.23 with the effects known | they exist (medium); their size cannot be calibrated from memory (low) |
+  | Daycares, school status, median age | each at most a factor of 1.11–1.12 across its range | plausible as small associations (low) |
+
+  - With the same expected counts, a larger dispersion lowers the zero share (0.48 at $\phi = 6$,
+    0.46 for a Poisson draw), so the tail and the zero share need different fixes.
+- **The user's decision (2026-11-24): a simulator step for the children count**, kept at the
+  apartment level (the user asked whether to model the building directly; children belong to
+  households, the room effect is an apartment's, and the sums give the building's behaviour).
+  Its scope, kept simple at the user's request: **a stronger household-size relation** (children
+  follow household size minus the adults; the rooms × household-size interaction is dropped if
+  the stronger term makes it unnecessary) **and a cap on the count**. Not in the step: the zero
+  share and family size (invisible in building sums; a two-part draw would be one more model
+  part), the hidden effects' sizes, the main room effects, the daycare, school-status and
+  median-age terms. S1c.3 waits for that step's PR to be merged into this branch.
+- **A second decision, on 2.2's building size (the user's note, 2026-11-24):** the texture shift
+  (SD 0.20, the neighborhood) and the building's deviation (SD 0.22) have about the same scale,
+  so only 45% of the size variation of texture buildings is between neighborhoods, and texture
+  buildings inside one neighborhood range from about 21 to 43 apartments. The building's
+  deviation should be the smaller one: a neighborhood's buildings share an era, a plan and plot
+  sizes, and the towers already give the contrast inside a neighborhood. **Decided: changed
+  inside step 3**, to about 0.25 (neighborhood) and 0.15 (building), which keeps the combined
+  log spread (0.29 against 0.30) and puts 74% of it between neighborhoods (a range of 23–38
+  inside one). The figures are from the formula; the step's consult confirms the values on a
+  draw. Section 2.2 is committed for the simulator as it is (0.20 with 1.22, 0.22 with 1.25);
+  S1c.3's check fails on those two values and corrects them.
