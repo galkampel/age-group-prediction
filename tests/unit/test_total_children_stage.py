@@ -120,13 +120,14 @@ def test_room_effect_log_mean_differences_match_coefficients() -> None:
     cfg, _ = _state_for_log_mu_checks()
     simulator = make_total_children_simulator(cfg)
 
-    # Keep contextual terms fixed so room effects can be read directly.
+    # Keep contextual terms fixed so room effects can be read directly; at the
+    # reference household size the rooms x household interaction is zero.
     neighborhoods = pd.DataFrame(
         {
             "neighborhood_id": ["N_001"],
             "ses": [0.0],
-            "avg_household_size": [2.6],
-            "median_age": [37.0],
+            "avg_household_size": [3.0],
+            "median_age": [31.0],
             "n_daycares_500m": [0],
             "school_status": ["none"],
         }

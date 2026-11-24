@@ -7,11 +7,6 @@ import pandas as pd
 
 from student_simulator import ApartmentSimulator
 from student_simulator.config import load_simulation_config
-from student_simulator.outcomes import (
-    CohortCompositionSimulator,
-    TotalChildrenSimulator,
-)
-
 from tests.unit.helpers import make_cohort_simulator, make_total_children_simulator
 
 
@@ -24,8 +19,9 @@ def _sample_tables() -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
         {
             "neighborhood_id": ["N_001", "N_002"],
             "ses": [0.3, -0.8],
-            "avg_household_size": [2.6, 3.1],
-            "median_age": [37.0, 42.0],
+            # Row 0 sits at the reference neighborhood (H 3.0, age 31).
+            "avg_household_size": [3.0, 3.1],
+            "median_age": [31.0, 42.0],
             "n_daycares_500m": [0, 5],
             "school_status": ["existing", "planned"],
             # Proxy truth must never leak into observed design matrices.
@@ -122,7 +118,7 @@ def test_cohort_positive_interaction_active_only_in_positive_quadrant() -> None:
             "neighborhood_id": ["N_001", "N_002", "N_003", "N_004"],
             "ses": [0.0, 0.0, 0.0, 0.0],
             "avg_household_size": [2.6, 2.6, 2.6, 2.6],
-            "median_age": [30.0, 45.0, 30.0, 45.0],
+            "median_age": [25.0, 45.0, 25.0, 45.0],
             "n_daycares_500m": [1, 1, 1, 1],
             "school_status": ["none", "none", "none", "none"],
         }

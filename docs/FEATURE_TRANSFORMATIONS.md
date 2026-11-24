@@ -170,14 +170,15 @@ than the mean, and here one is named:
 **The hypothesis, and what the simulator does.** The motivating hypothesis is
 that strong- and weak-SES populations have larger households than the middle:
 an effect in both tails, which is why the distance from average SES is the
-quantity to model. The simulator does not generate that. There, the SES
-U-shape is in the **number of children**: the total-children log-mean has a
-$0.05\,\text{ses}^2$ term with its vertex at 0 and no linear SES term
-(`ses_quadratic_coef` in `configs/simulation.yml`). `avg_household_size` is
-drawn from median age plus noise, independently of SES, so the r = −0.13 in the
-table above is sampling variation, not an effect. In this data, then, the
-squared deviation can pick up a U-shape in child counts; it says nothing about
-household size.
+quantity to model. The simulator now generates a version of it: the household
+size of a neighborhood depends on its median age and on SES through a linear
+and a squared term, so the lowest-SES areas have the largest households and
+the size rises a little again at the top (the model is in
+`docs/SIMULATOR_REALISM_PLAN.md` §2). The total-children log-mean has no direct
+SES term (`ses_quadratic_coef` is 0 in `configs/simulation.yml`), so household
+size is where an SES U-shape enters the child counts. In this data, then, the
+squared deviation can pick up part of that U-shape, but the effect reaches the
+counts through household size, not as a separate SES effect.
 
 The GLMs use the same reference for their squared term (Section 4.2), where the
 center also changes what the coefficients mean.
@@ -1298,7 +1299,7 @@ open user-named `Interaction`s. **The rest still stand:**
    0.01); each new range reaches a decade past that edge. `alpha` is in the
    estimator's own units, scaled by `mean(exposure)` under the weighted rate
    (40.1 apartments per building in the notebook's table: 150 neighborhoods,
-   `buildings_per_neighborhood_rate = 9.0`, 1529 buildings).*
+   `buildings_per_neighborhood_rate = 9.0`, 1523 buildings).*
 
 ## 9. Related Documents
 

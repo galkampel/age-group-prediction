@@ -6,45 +6,58 @@ simulation:
 
 # Shared centering/scaling used by both apartment outcome models.
 features:
-  # Reference neighborhood household size.
-  household_size_reference: 2.6
-  # A one-unit feature change means 0.5 people.
-  household_size_scale: 0.5
-  # Reference neighborhood median age in years.
-  median_age_reference: 37.0
+  # Reference neighborhood household size; must equal neighborhood.household_size_baseline.
+  household_size_reference: 3.0
+  # A one-unit feature change means 0.75 people.
+  household_size_scale: 0.75
+  # Reference neighborhood median age in years; must equal neighborhood.median_age_baseline.
+  median_age_reference: 31.0
   # A one-unit feature change means 10 years.
   median_age_scale: 10.0
   # Reference apartment size for centered room effects.
   room_reference: 4.0
 
 neighborhood:
-  # SES is centered at the population average.
+  # SES is a national standardized index: 0 is the national average.
   ses_mean: 0.0
   # SES units represent standard-deviation differences.
   ses_sd: 1.0
   ses_min: -2.5
   ses_max: 2.5
-  # Typical family-age neighborhood baseline.
-  median_age_mean: 37.0
-  median_age_sd: 5.0
-  median_age_min: 25.0
-  median_age_max: 52.0
-  household_size_baseline: 2.6
-  # Older areas tend to have smaller households.
-  household_size_age_slope: -0.02
-  household_size_noise_sd: 0.25
+  # Median age at SES 0; the lowest-SES areas are the youngest.
+  median_age_baseline: 31.0
+  # Years per SES SD.
+  median_age_ses_slope: 3.5
+  median_age_noise_sd: 4.5
+  median_age_min: 16.0
+  median_age_max: 50.0
+  # Household size at SES 0 and the baseline age.
+  household_size_baseline: 3.0
+  # Persons per year: older areas are empty nesters.
+  household_size_age_slope: -0.06
+  # Reverse-J in SES: large households at the bottom, a small rise at the top.
+  household_size_ses_slope: -0.20
+  household_size_ses_quadratic_coef: 0.18
+  household_size_noise_sd: 0.30
   household_size_min: 1.8
-  household_size_max: 4.2
-  # Baseline Poisson log-rate: exp(1) ~= 2.7.
-  daycare_log_intercept: 1.0
-  # Higher-SES areas have mildly more daycares.
-  daycare_ses_coef: 0.15
-  # Older areas have mildly fewer daycares.
+  household_size_max: 6.5
+  # Poisson log-rate at the reference neighborhood: exp(1.02) ~= 2.8.
+  daycare_log_intercept: 1.02
+  # Demand: per person of household size.
+  daycare_household_size_coef: 0.30
+  # Purchasing power: per SES SD.
+  daycare_ses_coef: 0.35
+  # Young areas have more daycares: per year.
   daycare_age_coef: -0.03
-  school_status_probs:
+  # Exact school-status shares at the reference neighborhood (H = 3.0, age 31).
+  school_status_reference_shares:
     existing: 0.55
     planned: 0.20
     none: 0.25
+  # Log-odds of existing vs none, per person of household size.
+  school_existing_household_size_coef: 0.8
+  # Log-odds of planned vs none, per year of median age.
+  school_planned_age_coef: -0.08
 
 building:
   buildings_per_neighborhood_min: 1
@@ -84,8 +97,9 @@ apartment: {}
 # NB2 log-mean model for total children per apartment.
 total_children:
   # Reference 3-room apartment log expected count.
-  intercept: -1.30
-  ses_quadratic_coef: 0.05
+  intercept: -1.00
+  # The SES U-shape comes through household size; a direct term would double count it.
+  ses_quadratic_coef: 0.0
   # Larger local households imply more children.
   household_size_coef: 0.30
   # Positive but diminishing daycare association.

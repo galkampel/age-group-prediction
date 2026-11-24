@@ -1,9 +1,10 @@
 # Project summary document: the plan
 
 > **Status (2026-11-23):** plan approved; S0 done (branch `docs/project-summary`, this document,
-> the environment checks). S1a, S1b done. **Paused (2026-11-24) for the simulator revision (P12,
-> `docs/SIMULATOR_REALISM_PLAN.md`, its own PR from `main`).** After it merges: **S1c** (section 2
-> for the revised simulator), then S2. The implementation record is §9.
+> the environment checks). S1a, S1b done. Paused (2026-11-24) for the simulator revision (P12);
+> its step 1 (neighborhoods) is merged (PR #29) and `main` is merged into this branch.
+> **The order is now P13: section 2 part by part, S1c.1–S1c.5, each part analyzed for realism
+> before it is written. Next: S1c.1.** The implementation record is §9.
 
 The project is documented in 62 files under `docs/`, most of them plans and work records. No
 single document tells a new reader what the task is, how the data is generated, how it is
@@ -24,8 +25,9 @@ produces that document, `docs/PROJECT_SUMMARY.md`, in its own PR.
 | P8 | Each sub-task names its implementing model. Sonnet 5.5 or Opus 5.5 by default; Fable 5.2 only for the hard ones (S5d, S7a, S7b, the S8b review). |
 | P9 | The PNGs are drawn with matplotlib (and shap's own matplotlib plots). `kaleido` is not installed and is not added. The PNGs therefore differ in look from notebook 04's Plotly figures. |
 | P10 | Depth where it matters (user, 2026-11-23): sections 2 (data generation), 3 (preprocessing) and 4 (models) are specific and in LaTeX: every generated variable, every transform and every model has its formula, with its symbols defined, in the order the code applies them. Section 1 stays lean (no seeds, config defaults or overrides there). Cross-validation belongs to section 5 (tuning), not section 1. |
-| P12 | The realistic simulator first (user, 2026-11-24). Section 2 questioned the neighborhood model; the user chose to make the simulator realistic, calibrated to Israel, step by step (neighborhoods first), in separate PRs from `main` (`docs/SIMULATOR_REALISM_PLAN.md`). This branch merges `main` after each simulator PR. The order becomes: simulator step(s) → S1c and S2–S4b (the documentation) → the reruns (notebooks 03 and 04 on the new data) → S5a onward. The results of the run at `da6afc9` (§3) are superseded then. |
+| P12 | The realistic simulator first (user, 2026-11-24). Section 2 questioned the neighborhood model; the user chose to make the simulator realistic, calibrated to Israel, step by step (neighborhoods first), in separate PRs from `main` (`docs/SIMULATOR_REALISM_PLAN.md`). This branch merges `main` after each simulator PR. The order becomes: simulator step(s) → S1c and S2–S4b (the documentation) → the reruns (notebooks 03 and 04 on the new data) → S5a onward. The results of the run at `da6afc9` (§3) are superseded then. **The order of the simulator steps and S1c is replaced by P13;** the rest holds. |
 | P11 | The reader's view (user, 2026-11-24), for the whole summary: no implementation details (no Python names or calls, file paths, line numbers, config keys or notebook names; dataset column names and links to the detailed docs stay). Formulas carry their actual values inline, with no notation or parameter tables: distributions labeled, e.g. $\mathcal N(\mu=0, \sigma^2=1^2)$, linear formulas with plain coefficients explained in words. Each section opens by describing and motivating its subject. Code lines go only into §9, the record. |
+| P13 | Section 2 part by part (user, 2026-11-24); replaces P12's order. Section 2 is written one part at a time, in draw order: 2.1 neighborhoods, 2.2 buildings, 2.3 total children, 2.3 the cohort split, then 2.4–2.6 and section 1's counts (S1c.1–S1c.5). Each part is written for the simulator as it stands when its sub-task starts. Before a part is written it is analyzed with the user: is this model realistic for Israel? The user decides: **keep**, or **a simulator step** (planned in `docs/SIMULATOR_REALISM_PLAN.md`, its own PR from `main`; this branch merges `main` after it). A part is written only after its decision has taken effect, so no part is written twice. 2.1 needs no analysis: step 1 was its step. After section 2: S2–S4b, the reruns, S5a onward, as in P12. |
 
 The summary describes **the path the notebooks run**: the `student_simulator` package and the
 new `preprocessing.py`, `feature_engineering`, `modeling`, `hyperparameter_tuning` and
@@ -90,6 +92,9 @@ run's tables: `test_scores`, `test_difference`, `val_against_test`, `test_import
 Each session re-verifies what it uses; these are leads, not sources.
 
 **Simulator** (`src/student_simulator/`, parameters in `configs/simulation.yml`, seed 42).
+These facts predate the simulator's step 1 (PR #29). The neighborhood model and five downstream
+values have changed since (`docs/SIMULATOR_REALISM_PLAN.md` §2–§3), and the counts are now 1,523
+buildings and a 913 / 305 / 305 split. Later steps may change more.
 - Notebooks override to 150 neighborhoods and a building rate of 9: 1,529 buildings, 61,317
   apartments. Targets `n_kindergarten`, `n_elementary`, `n_highschool`; no total column.
 - Neighborhood: SES, median age, household size (depends on age), daycares (Poisson, log-linear
@@ -162,7 +167,14 @@ not have. In `test_shap_values.csv` the `base_value` correlates 1.0 with `n_apar
 - Scripts and their outputs live in `.mlflow-check/summary/` (git-ignored), run with
   `~/.venvs/age-group-prediction/bin/python`. One script per sub-task. Each check runs once.
 - If a plan assumption breaks, the session stops and reports with the evidence.
-- No file under `src/` or `notebooks/` changes in S0–S8b, so the test suite is not rerun.
+- No file under `src/` or `notebooks/` changes in S0–S8b, so the test suite is not rerun. A
+  simulator step is never done on this branch.
+- **The section 2 loop (P13), per sub-task S1c.k:** write part k, run the check, run the review,
+  then analyze part k+1 with the user. The user decides: keep, or a simulator step.
+  - **Keep:** the decision is recorded in §9, and the session prints S1c.k+1's prompt.
+  - **A step:** the findings are recorded in §9, and the session prints the step's planning
+    prompt (§8) with the findings in it. The step is planned and built from `main`, in its own
+    PR. After it merges, the user merges `main` into this branch, and S1c.k+1 starts.
 
 ## 6. Sub-tasks
 
@@ -171,8 +183,12 @@ not have. In `test_shap_values.csv` the `base_value` correlates 1.0 with `n_apar
 | S0 | Setup: branch, plan doc, environment checks | Sonnet 5.5 (done by the planning session) | no | ✅ |
 | S1a | Skeleton + section 1 (task and settings) | Sonnet 5.5 | no | ✅ |
 | S1b | Section 2 (data generation process) | Opus 5.5 | yes | ✅ |
-| S1c | Section 2 rewritten for the revised simulator (after P12's PR merges into this branch) | Opus 5.5 | yes | |
-| S2 | Section 3 (preprocessing) | Opus 5.5 | yes | |
+| S1c.1 | Section 2.1 (neighborhoods, the step-1 model); then the analysis of 2.2 (buildings per neighborhood, apartments per building, the room mix) | **Fable 5.2** | yes | |
+| S1c.2 | Section 2.2 (buildings); then the analysis of 2.3's first half (the hidden effects, the children count per apartment) | **Fable 5.2** | yes | |
+| S1c.3 | Section 2.3, first half (the scaled values, the hidden effects, total children); then the analysis of the cohort split | **Fable 5.2** | yes | |
+| S1c.4 | Section 2.3, second half (the cohort split); no analysis follows | Opus 5.5 | yes | |
+| S1c.5 | Sections 2.4–2.6, the section's opening, section 1's counts, every seed-42 number | Opus 5.5 | yes | |
+| S2 | Section 3 (preprocessing); starts after S1c.5 | Opus 5.5 | yes | |
 | S3a | Section 4.1–4.2 (exposure treatment, Model 1) | Opus 5.5 | yes | |
 | S3b | Section 4.3–4.4 (Model 2, Model 3 placeholder) | Opus 5.5 | yes | |
 | S4a | Section 5, part 1 (split, CV, tuner, objective, studies, search space) | Sonnet 5.5 | no | |
@@ -193,6 +209,12 @@ not have. In `test_shap_values.csv` the `base_value` correlates 1.0 with `n_apar
 Why Fable on four: S5d derives expected building counts from the simulator's formulas, and a
 mistake there silently misstates what is achievable; S7a and S7b are the interpretation, where a
 wrong causal claim is the main risk; S8b is the one read not anchored on an implementing session.
+
+Why Fable on S1c.1–S1c.3 (P13): each holds a realism analysis, which is the Fable consult the
+realism plan requires per step (its R2), with real-world targets from Fable's memory (its R10). A
+wrong verdict costs a whole simulator PR, or leaves an unrealistic model in. One Fable session
+also avoids relaying the discussion with the user through a subagent. S1c.4 and S1c.5 only write
+against the code, with a check and a review. The review subagent is Opus 5.5 in all five.
 
 ## 7. The sub-tasks in detail
 
@@ -226,21 +248,89 @@ Done when:
 - [x] The section states what is hidden from the models (the random effects, apartment-level rows).
 - [x] Review findings reproduced and fixed.
 
-### S1c. Section 2 for the revised simulator (Opus 5.5, review)
-Starts after the simulator PR (P12) merges into `main` and `main` is merged into this branch.
-Rewrite sections 2.1–2.6 for the new model in `docs/SIMULATOR_REALISM_PLAN.md`, keeping the
-opening as revised in S1b. The user's notes (2026-11-24):
-- The explanations must be better throughout; each variable says what it represents.
+### S1c. Section 2, part by part (P13)
+Five sub-tasks, S1c.1–S1c.5, in the loop of §5. The rules common to all five:
+- **The user's notes (2026-11-24)** apply to every part:
+  - The explanations must be better throughout; each variable says what it represents.
+  - Each relation is motivated.
+  - No explanation of what clipping does.
+  - P10 and P11 hold.
+- **One check script, `check_s1c.py`,** adapted from `check_s1b.py`. It grows by one part per
+  sub-task and always checks every part written so far: each inline value against the config plus
+  the notebooks' overrides, and no implementation detail. A later simulator step that changes an
+  earlier part's value (as step 1 changed five downstream values) therefore fails the check, and
+  that part is corrected in the same sub-task.
+- **Population statements** (a mean, a correlation, a profile over bins) are checked on a large
+  draw. **Numbers that depend on the seed-42 dataset** (building and apartment totals, realized
+  ranges) are not written before S1c.5, when the simulator is final.
+- Each sub-task updates its level's bullet in section 2's opening.
+- **The analysis of the next part** reads that part's code and its current section text, and
+  takes its row in `docs/SIMULATOR_REALISM_PLAN.md` §7 as leads. Per component it shows what the
+  simulator does, what Israel looks like (with a confidence), what a change would do to the
+  benchmark, and a recommended verdict. The user decides.
+- One commit per sub-task, after the decision is recorded in §9.
+
+### S1c.1. Section 2.1, neighborhoods; then the analysis of 2.2 (Fable 5.2, review)
+Write 2.1 for the step-1 model: the five draws in the order of the realism plan's §2. Notes for
+this part:
 - SES: the neighborhood's low or high socioeconomic class, on a national index (relative to the
   whole population, not to the city: a global feature).
 - Median age: the median age of the residents of neighborhood $j$.
-- No explanation of what clipping does.
-- Each relation is motivated (why household size falls with median age, why daycares follow
-  demand and purchasing power, why school status follows the demographics).
+- Why household size falls with median age and follows a reverse-J in SES, why daycares follow
+  demand and purchasing power, why school status follows the demographics.
+
+Leads for the analysis of 2.2: large-household, low-SES areas get larger apartments, where in
+Israel they are crowded; building size may depend on the area.
 Done when:
-- [ ] `check_s1c.py` (adapted from `check_s1b.py`) matches every inline value with the new config
-      plus the notebooks' overrides, the columns with the dataset, and finds no implementation
-      detail; section 1's counts are re-checked (they change with the new draws).
+- [ ] Each of the five draws has its formula with its values inline and its motivation.
+- [ ] `check_s1c.py` passes on 2.1.
+- [ ] Review findings reproduced and fixed.
+- [ ] The analysis of 2.2 is shown, and the user's decision is recorded in §9.
+
+### S1c.2. Section 2.2, buildings; then the analysis of the children count (Fable 5.2, review)
+Starts after 2.2's decision has taken effect (if a step: its PR merged into this branch). Write
+2.2 for the simulator as it then is: buildings per neighborhood, apartments per building, the
+room mix.
+Leads for the analysis of 2.3's first half: the negative binomial's tail, the zero share (0.52
+against about 0.60 real), the count too flat at small households.
+Done when:
+- [ ] Each draw of 2.2 has its formula with its values inline and its motivation.
+- [ ] `check_s1c.py` passes on 2.1–2.2.
+- [ ] Review findings reproduced and fixed.
+- [ ] The analysis of the children count is shown, and the user's decision is recorded in §9.
+
+### S1c.3. Section 2.3, total children; then the analysis of the cohort split (Fable 5.2, review)
+Starts after the children count's decision has taken effect. Write the first half of 2.3: the
+scaled values, the hidden effects of the building and the neighborhood, the expected count and
+its draw.
+Leads for the analysis of the cohort split: reference shares 40/35/25% against a real 27/38/35%
+for ages 3–6 / 7–12 / 13–18; the household-size coefficient pushes large-household areas toward
+high school, the opposite of Israel.
+Done when:
+- [ ] Each term of the expected count is explained and motivated.
+- [ ] `check_s1c.py` passes on 2.1 through the first half of 2.3.
+- [ ] Review findings reproduced and fixed.
+- [ ] The analysis of the cohort split is shown, and the user's decision is recorded in §9.
+
+### S1c.4. Section 2.3, the cohort split (Opus 5.5, review)
+Starts after the cohort split's decision has taken effect. Write the second half of 2.3: the
+building's second hidden effect, the lifecycle score, the cohort probabilities and their draw. No
+analysis follows: 2.4–2.6 are derived from the parts above, not modelled.
+Done when:
+- [ ] Each term of the score is explained and motivated.
+- [ ] `check_s1c.py` passes on 2.1–2.3.
+- [ ] Review findings reproduced and fixed.
+
+### S1c.5. Sections 2.4–2.6, the opening, section 1's counts (Opus 5.5, review)
+Rewrite 2.4 (the sums and the expectations, their constants re-derived), 2.5 (what is hidden) and
+2.6 (the columns). Re-read section 2's opening against the finished parts. Add the seed-42
+numbers left out of S1c.1–S1c.4, and correct section 1's counts and split sizes (stale at
+1,529 / 61,317 and 917 / 306 / 306).
+Done when:
+- [ ] `check_s1c.py` passes on all of section 2, and now also checks: the column table against
+      the dataset, that every config key is covered, section 1's counts and split sizes, and
+      every seed-42 number.
+- [ ] 2.4's closed form is checked against the sum over the apartments' expected counts.
 - [ ] Review findings reproduced and fixed.
 
 ### S2. Section 3, preprocessing (Opus 5.5, review)
@@ -431,7 +521,11 @@ select.
 |---|---|
 | S1a | `Implement S1a: the skeleton and section 1 (task and settings), with check_s1a.py.` |
 | S1b | `Implement S1b: section 2 (the data generation process), with check_s1b.py comparing the parameter table with configs/simulation.yml. Run an independent review subagent before the stop.` |
-| S1c | `Implement S1c: section 2 rewritten for the revised simulator (docs/SIMULATOR_REALISM_PLAN.md), with check_s1c.py. Run an independent review subagent before the stop.` |
+| S1c.1 | `Implement S1c.1: write section 2.1 (neighborhoods) for the step-1 model in docs/SIMULATOR_REALISM_PLAN.md §2–§3, with check_s1c.py (adapted from check_s1b.py) covering 2.1. Read §7 "S1c" first for the rules common to S1c.1–S1c.5. Run an independent review subagent (Opus 5.5). Then analyze section 2.2 with me (buildings per neighborhood, apartments per building, the room mix): is it realistic for Israel? Record my decision in §9 and print the prompt it leads to.` |
+| S1c.2 | `Implement S1c.2: write section 2.2 (buildings) for the simulator as it now is, with check_s1c.py extended to 2.2. Read §7 "S1c" first for the common rules and §9 for 2.2's decision. Run an independent review subagent (Opus 5.5). Then analyze the first half of section 2.3 with me (the hidden effects, the children count per apartment): is it realistic for Israel? Record my decision in §9 and print the prompt it leads to.` |
+| S1c.3 | `Implement S1c.3: write the first half of section 2.3 (the scaled values, the hidden effects, total children per apartment) for the simulator as it now is, with check_s1c.py extended to it. Read §7 "S1c" first for the common rules and §9 for the decision. Run an independent review subagent (Opus 5.5). Then analyze the cohort split with me: is it realistic for Israel? Record my decision in §9 and print the prompt it leads to.` |
+| S1c.4 | `Implement S1c.4: write the second half of section 2.3 (the cohort split) for the simulator as it now is, with check_s1c.py extended to it. Read §7 "S1c" first for the common rules and §9 for the decision. Run an independent review subagent before the stop.` |
+| S1c.5 | `Implement S1c.5: rewrite sections 2.4–2.6, re-read section 2's opening, add the seed-42 numbers and correct section 1's counts, with check_s1c.py extended to the columns, the config-key coverage and the counts. Read §7 "S1c" first for the common rules. Run an independent review subagent before the stop.` |
 | S2 | `Implement S2: section 3 (preprocessing), with check_s2.py printing each candidate transformer's output columns. Run an independent review subagent before the stop.` |
 | S3a | `Implement S3a: sections 4.1–4.2 (the exposure treatment and Model 1), with check_s3a.py for the Poisson rate/offset equivalence. Run an independent review subagent before the stop.` |
 | S3b | `Implement S3b: sections 4.3–4.4 (Model 2 and the Model 3 placeholder), with check_s3b.py for the reconciliation. Run an independent review subagent before the stop.` |
@@ -448,6 +542,23 @@ select.
 | S7b | `Implement S7b: sections 7.3–7.4 (n_apartments, future steps). Every claim cites a number. Run an independent review subagent before the stop.` |
 | S8a | `Implement S8a: the README entries, the link check (check_s8a.py) and the render check.` |
 | S8b | `Implement S8b: review the whole summary against the code as a new reader; reproduce each finding before fixing it; then write the PR description.` |
+
+**A simulator step's planning session (P13).** Printed by an S1c session when the user decides a
+part needs a step. It is a prompt of its own, without the opening above. Model: Fable 5.2. The
+session fills in the three bracketed fields.
+
+```text
+Plan step <n> of the realistic simulator (<component>) in docs/SIMULATOR_REALISM_PLAN.md, on a
+new branch from main (R9). Read its §1 (decisions), §7 (this step's known issues) and §8–§10
+(how step 1 was split, prompted and recorded). The analysis that decided this step, from the
+project summary's session: <findings>. Run a Fable design consult on the design and its values,
+then write the step's plan in step 1's form: the model, the downstream consistency, the config,
+the tests, the sub-tasks with a model each, the session prompts and a record entry. Do not
+implement and do not commit; stop for my review of the plan.
+```
+
+After the step's PR is merged: merge `main` into `docs/project-summary`, then start the next
+S1c sub-task with its prompt above.
 
 ## 9. Implementation record
 
@@ -569,3 +680,13 @@ select.
   - The user chose a realistic, Israel-calibrated simulator first (P12). The design, the values
     and the sub-tasks are in `docs/SIMULATOR_REALISM_PLAN.md`. Sections 2.1–2.6 are rewritten in
     S1c; the notes are in §7 S1c.
+
+### Re-plan (2026-11-24, Fable 5.2; decision P13)
+- The simulator's step 1 (neighborhoods) is merged as PR #29 (`876f045`), and `main` is merged
+  into this branch.
+- The user changed the order: section 2 is written part by part, and each part is analyzed for
+  realism in Israel before it is written (P13). P12's "all simulator steps, then S1c" is replaced.
+- S1c is split into S1c.1–S1c.5 (§6, §7), with a prompt each and a prompt for a simulator step's
+  planning session (§8). The loop is in §5.
+- `docs/SIMULATOR_REALISM_PLAN.md`: its status line and a note above its §7 now point to P13.
+- No summary text was written.
