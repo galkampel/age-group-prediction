@@ -1,14 +1,17 @@
 # Simulator realism: the plan
 
-> **Status (2026-11-24):** step 1 complete: N0–N3 committed, **N4 done** (the review and the PR
-> description), awaiting the user's commit and the PR. Next: step 2 of §7, starting with its own
-> Fable consult. The record is §10.
+> **Status (2026-11-24):** step 1 complete and merged (PR #29). The record is §10.
 
 The simulator's neighborhood model is stylized: household size ignores SES, daycares ignore
 demand, school status is independent of everything, and the levels (household size 2.6, median
 age 37) are European rather than Israeli. The project summary (`docs/PROJECT_SUMMARY.md`, branch
 `docs/project-summary`, paused under its decision P12) will describe a realistic simulator
 instead. This plan revises the simulator **step by step, one PR per step, neighborhoods first**.
+
+> **Step 2 (2026-11-24):** buildings and the room mix, planned in §11 on
+> `feat/realistic-buildings`; decisions R11–R17. B0–B3 committed (the intercept is −0.88, not
+> −0.95); **B4 done** (the review and the PR description), awaiting the user's commit and the PR.
+> Next: step 3 of §7, after the project summary's S1c.2. The record is 11.9.
 
 ## 1. Decisions
 
@@ -24,6 +27,13 @@ instead. This plan revises the simulator **step by step, one PR per step, neighb
 | R8 | The reference neighborhood of the outcome model equals the neighborhood baselines. A cross-section config check enforces it. |
 | R9 | One PR per step, from `main`: step 1 on `feat/realistic-neighborhoods`. The runs (notebooks 03 and 04, the MLflow store) are redone only after the documentation is written (summary P12). |
 | R10 | The real-world targets come from memory (Fable's), not from a lookup; each carries a confidence. The tests assert shapes and signs, not exact numbers. |
+| R11 | Step 2, building size: the typical size stays about 40 apartments (user, 2026-11-24), so the targets keep their scale. It reads as newer, larger residential buildings, not the whole national stock. |
+| R12 | Step 2: two building types (user). A **texture** building keeps the neighborhood's texture (6–10 floors); a **tower** is higher. The type is hidden in step 2: it shapes `n_apartments` and the room mix and is not a dataset column. It becomes a column only if step 3's analysis finds that the type should affect the children directly. |
+| R13 | Step 2: the chance of a tower rises with SES, with an older median age and with a planned school (user's suggestion, adjusted). The daycares are left out: they follow the population and mostly repeat SES. |
+| R14 | Step 2: a hidden neighborhood effect on the tower log-odds, so towers cluster within neighborhoods, and a hidden neighborhood texture in the size, so buildings of one neighborhood are alike. |
+| R15 | Step 2: larger buildings hold smaller apartments (user): the room tilt gets a term in the building's own size. |
+| R16 | Step 2, room mix: apartment size rises with SES and depends only weakly on household size, so large poor households are crowded. The room categories stay 3–6 (no new dataset column), with a lower 6-room share (user). |
+| R17 | Step 2 changes downstream only the children intercept (R6). The fall of the children count in large-household neighborhoods is left to step 3 (user). |
 
 ## 2. Step 1: the neighborhood model
 
@@ -514,3 +524,489 @@ The whole step (`git diff main..HEAD`, 17 files) read against §1–§5.
   transforms and does not read the config.
 - **Tests:** `tests/validation/test_calibration.py`: 3 passed. The full suite was not rerun:
   N4 changed no source or config, and N3's run gave 1494 passed.
+
+## 11. Step 2: buildings and the room mix
+
+Decided on 2026-11-24 in the project summary's session (its decision P13): the analysis of the
+summary's section 2.2 found two problems, and the user chose a step for both.
+
+- **Room mix.** The poorest neighborhoods got apartments as large as the richest (mean rooms 4.26
+  against 4.28), and the room mix followed household size (correlation 0.73) and not SES (0.04).
+- **Building size.** A symmetric normal around 40 apartments, the same in every neighborhood.
+
+Decisions R11–R17 (§1) hold the user's choices. Buildings per neighborhood and the Dirichlet
+concentration are kept as they are.
+
+### 11.1 The model
+
+In draw order. $j$ is a neighborhood, $b$ a building; $S$, $M$, $H$, $Z$ are SES, median age,
+household size and school status. $\tilde M = (M - 31)/10$ and $\tilde H = (H - 3.0)/0.75$ are the
+existing scaled features.
+
+| # | Variable | Formula | Why |
+|---|---|---|---|
+| 1 | Buildings per neighborhood | $1 + \mathrm{Poisson}(\text{rate})$ (unchanged) | a sample-size setting |
+| 2 | Tower propensity (hidden) | $r_j \sim \mathcal N(0, 1.0^2)$ | towers come by plan, so they cluster: a neighborhood has a renewal or a new-construction plan, or it does not |
+| 3 | Texture (hidden) | $t_j \sim \mathcal N(0, 0.20^2)$ | buildings of one neighborhood were built in one era and are alike |
+| 4 | Building type (hidden) | $P(\text{tower}) = \mathrm{logistic}(-2.35 + 0.7\,S_j + 0.3\,\tilde M_j + 0.7\,\mathbb 1\lbrace Z_j = \text{planned}\rbrace + r_j)$ | SES: towers need high land value. Older age: the established neighborhoods that renewal targets. Planned school: new, growing neighborhoods |
+| 5 | Apartments | $A_b = \mathrm{clip}(\mathrm{round}(m \cdot e^{t_j + e_b}),\ 8,\ 160)$, $e_b \sim \mathcal N(0, 0.22^2)$, $m = 30$ (texture) or $90$ (tower) | a texture building is mid-rise (6–10 floors); a tower is about three times larger; lognormal, so sizes are right-skewed |
+| 6 | Room tilt | $q_b = 0.35\,S_j + 0.10\,\tilde H_j - 0.32\,\log(A_b / 30)$ | apartment size rises with SES; large households weigh little, so large poor households are crowded; larger buildings hold smaller apartments |
+| 7 | Room mix | base shares $(0.30, 0.41, 0.24, 0.05)$ for 3–6 rooms; the tilt, the Dirichlet (30) and the multinomial as today | 6-room apartments are rare in apartment buildings |
+
+- **RNG order:** the building counts (unchanged, first), then $r_j$ and $t_j$ (one normal each per
+  neighborhood), then one uniform per building for the type, then one normal per building for
+  $e_b$, then the Dirichlet and multinomial loop as today.
+- **The number of buildings does not change** for a given seed: the count draw is still the first
+  draw after the neighborhoods (1,523 at 150 neighborhoods, rate 9, seed 42). B1 verifies it.
+- **The size reference of the tilt is the texture median (30):** a typical texture building has no
+  size term. A building twice that size has about 0.10 fewer rooms per apartment.
+- **The type, $r_j$ and $t_j$ are not returned** in any frame in this step (R12). The tests read the
+  types through the sizes.
+- **The per-building override** (`apartments_per_building`) stays: it replaces draws 2–5.
+- **`rooms - 4.0` stays a literal** in the tilt, as today.
+
+### 11.2 Calibration (20,000 neighborhoods × 10 buildings, seed 2026)
+
+Scripts: `.mlflow-check/realism/s2_design_grid.py`, `s2_design_types.py`,
+`s2_design_types_cluster.out`. The real-world targets are from Fable's memory (R10).
+
+**Building size.**
+
+| Quantity | Value | Target (confidence) |
+|---|---|---|
+| Tower share | 15.3% | a minority of buildings (low) |
+| Tower share by SES band (below −1.5, −1.5…−0.5, −0.5…0.5, 0.5…1.5, above 1.5) | 3.6 / 7.8 / 13.8 / 22.9 / 35.4% | few towers in the poorest areas, which are low-rise (medium) |
+| Tower share by median age (under 24 to over 40, six bands) | 6.7 / 10.0 / 13.8 / 17.8 / 22.6 / 29.4% | renewal in established neighborhoods (low to medium) |
+| Tower share with a planned school / without | 21.4% / 13.9% | new neighborhoods (low to medium) |
+| Neighborhoods with no tower among 10 buildings | 38% | towers cluster (medium) |
+| Texture buildings: mean, 5th–95th percentile | 31.3, 18–49 | 6–10 floors, about 24–40 apartments (the user) |
+| Towers: mean, 5th–95th percentile | 93.0, 55–146 | |
+| All buildings: mean, SD, skew | 40.7, 26.1, 2.17 | the mean stays about 40 (R11); today's SD is 11.9, skew 0.06 |
+| Percentiles 5 / 25 / 50 / 75 / 95 / 99 | 19 / 25 / 32 / 43 / 102 / 140 | |
+| Clipped at 8 / at 160 | 0.00% / 0.39% | |
+| Intraclass correlation of log size | 0.28 | alike within a neighborhood (high) |
+| Mean size by SES band | 33.4 / 36.0 / 39.9 / 45.4 / 52.7 | |
+| Correlation of size with SES / median age / household size | +0.19 / +0.14 / −0.13 | |
+
+**Room mix** (apartment-weighted, with the size term).
+
+| Quantity | Today | New | Target (confidence) |
+|---|---|---|---|
+| Mean rooms by SES band | 4.26 / 4.15 / 4.12 / 4.16 / 4.28 | 3.85 / 3.92 / 3.99 / 4.08 / 4.20 | rises with SES (medium) |
+| Mean rooms, all | 4.16 | 4.01 | about 4 (medium) |
+| People per room where $H > 4.5$ | 1.12 | 1.26 | about 1.3 in Haredi and Arab areas (medium) |
+| 6-room share | 10.9% | 4.8% | 3–5% in apartment buildings (medium) |
+| Mean rooms, texture / tower | — | 4.03 / 3.97 | larger buildings hold smaller apartments (the user) |
+| Correlation of the expected mean rooms with SES / household size, without the size term | +0.04 / +0.73 | +0.97 / −0.47 | |
+
+The expected mix is now close to a function of SES. The building's own Dirichlet and multinomial
+draws keep the observed shares noisy (a share's SD between buildings is 0.05–0.09).
+
+### 11.3 Downstream consistency
+
+| Field | Now | New | Why |
+|---|---|---|---|
+| `total_children.intercept` | −1.00 | −0.95 | smaller apartments lower the children count through the room effects; the target stays 0.85–0.90 children per apartment (step 1, §3) |
+
+Full runs with the room-mix values only (150 neighborhoods, rate 9;
+`.mlflow-check/realism/s2_design_full_run.py`):
+
+| Run | Per apartment, seed 42 / 7 / 11 | Zero share | Kindergarten share | Neighborhoods with $H > 4.5$, seed 42 |
+|---|---|---|---|---|
+| Today | 0.888 / 0.871 / 0.842 | .509–.516 | .371–.373 | 2.02 |
+| New room mix, intercept −1.00 | 0.828 / 0.811 / 0.794 | .523–.527 | .387–.396 | 1.57 |
+| New room mix, intercept −0.95 | 0.873 / 0.855 / 0.833 | .506–.514 | .388–.398 | 1.63 |
+
+- **B2 re-verifies with the final model** (the types and the size term were not in these runs). The
+  intercept is changed from −0.95 only if seed 42's mean leaves 0.85–0.90.
+  **B2's outcome: −0.88** (seed 42 gave 0.818 at −0.95; 11.9).
+- **Nothing else downstream changes in this step (R6).** Two effects are recorded as leads for the
+  later steps, not fixed here (R17):
+  - **Step 3:** children per apartment in the large-household neighborhoods fall from about 2.0 to
+    about 1.6; the realistic level is about 2.7. The children count leans on rooms more than on
+    household size. **B2's measure:** those two numbers rest on 3 neighborhoods; on 1000
+    neighborhoods the fall is about 11% (2.27 / 2.21 / 1.96 to 2.02 / 1.89 / 1.80 at seeds 42 /
+    7 / 11; 11.9).
+  - **Step 4:** the kindergarten share rises from .37 to about .39, because rooms push the cohort
+    score toward the older cohorts.
+
+### 11.4 The config schema (`building` section)
+
+```yaml
+building:
+  buildings_per_neighborhood_min: 1
+  buildings_per_neighborhood_rate: 3.0
+  tower_log_odds_intercept: -2.35       # at the reference neighborhood, no planned school (new)
+  tower_ses_coef: 0.7                   # per SES SD (new)
+  tower_median_age_coef: 0.3            # per scaled decade of median age (new)
+  tower_planned_school_coef: 0.7        # log-odds, planned against the other two (new)
+  tower_propensity_sd: 1.0              # hidden neighborhood effect on the log-odds (new)
+  texture_apartments_median: 30         # replaces apartments_per_building_mean
+  tower_apartments_median: 90           # new
+  apartments_neighborhood_log_sd: 0.20  # the hidden texture (new)
+  apartments_building_log_sd: 0.22      # replaces apartments_per_building_sd
+  apartments_per_building_min: 8        # was 12
+  apartments_per_building_max: 160      # was 80
+  buildings_per_neighborhood: []
+  apartments_per_building: []
+  room_mix:
+    supported_rooms: [3, 4, 5, 6]
+    household_size_tilt: 0.10           # was 0.35
+    ses_tilt: 0.35                      # was 0.20
+    building_size_tilt: -0.32           # per log of size over the texture median (new)
+    room_distance_divisor: 2.0
+    dirichlet_concentration: 30.0
+    base_shares: {"3": 0.30, "4": 0.41, "5": 0.24, "6": 0.05}
+```
+
+- **Removed:** `apartments_per_building_mean`, `apartments_per_building_sd`.
+- **The median age is scaled** with the existing `features.median_age_reference` and
+  `features.median_age_scale`; no new reference.
+- **Validation added:** both medians inside the bounds; `apartments_per_building_min` above 0
+  (the tilt takes the log of each size); the three SDs above 0. No ordering rule between the two
+  medians: nothing fails when they are swapped, and the statistical tests catch it (B1, the
+  user's decision).
+- **Validation kept:** min ≤ max; the overrides inside the bounds; the base shares as an exact-key
+  probability map.
+- **No sign constraints** on the coefficients; the signs belong to the statistical tests.
+
+### 11.5 The tests
+
+**New statistical tests** (a large draw, a fixed seed; shapes and signs only). A building counts as
+tower-sized at 52 apartments or more (between the texture's 95th percentile and the tower's 5th).
+
+- **Size:**
+  - all sizes are whole numbers inside the bounds; under 2% are clipped;
+  - the skew is above 1; the mean is in 36–45; the median is in 28–36;
+  - the intraclass correlation of log size is above 0.15.
+- **Towers:**
+  - the tower-sized share is in 8–22%;
+  - it rises across the SES terciles, and across the median-age terciles inside the middle SES
+    tercile (median age rises with SES, so a plain age split misses a flipped age sign);
+  - it is higher with a planned school than without, inside the middle SES tercile;
+  - **moved to a unit test (B1):** with the hidden effects and the size noise near zero, sizes are
+    exactly 30 or 90, and the tower share of four kinds of neighborhood (the reference, a planned
+    school, SES +1, age +10) matches the logistic formula. The propensity's own effect is pinned
+    by the oracle test.
+- **Room mix:**
+  - mean rooms rise across the SES quintiles;
+  - people per room in the neighborhoods with $H > 4.5$ is above 1.15;
+  - the 6-room share is under 8%;
+  - inside each SES tercile, tower-sized buildings have fewer mean rooms than the others;
+- **The draw order:** an oracle unit test replays 11.1 with numpy and equals the simulator
+  exactly; it also covers the building counts (drawn first) and the room-count sums. The building
+  counts at 150 neighborhoods, rate 9, seeds 42 and 7 equal the previous model's (the check
+  script).
+- **Unchanged and still required:** the calibration ranges (mean children 0.75–1.00, zero share
+  0.45–0.60) and both consistency invariants of §5.
+
+**Config tests:** a removed field is rejected; a median outside the bounds is rejected; a zero SD
+is rejected; a zero apartment minimum is rejected.
+
+**Existing tests to update:** `tests/unit/test_building.py`, `tests/unit/test_config.py`,
+`tests/unit/helpers.py`, `tests/unit/test_transforms.py` (the room function's new argument),
+`tests/characterization/` (fixtures and pins, regenerated in B3). The pinned row counts and split
+sizes should not change; B3 measures them. `tests/unit/helpers.py` needed no change: it names no
+building field (B4).
+
+### 11.6 Effects on the benchmark
+
+- **`n_apartments` is no longer independent of the features:** its correlation with SES is about
+  +0.19 and with median age +0.14. Given the features, the children rate still does not depend
+  on it, so it remains the exposure. Tree models, which see it as a feature, will share some
+  importance between it, SES and median age.
+- **Targets:** the spread of the building counts grows with the size spread (size SD 26 against
+  12), and a tower in a large-household neighborhood can hold several hundred children. A few
+  towers will weigh heavily in RMSE.
+- **Room shares** now carry SES information (the expected mix is close to a function of SES), so
+  the importance of SES and of the room shares will be shared.
+- **The 6-room share** halves, so `6_rooms_share` becomes a noisier feature.
+- **Room shares now move with building size.** `notebooks/01_eda.py` states as a fixed finding
+  that mean room shares vary little across the building-size bins. The range is 0.054 (0.039
+  without the size term), and the 3-room share now rises with size, from .286 to .328 (B4,
+  11.9). The sentence is to be checked at the reruns (R9).
+
+### 11.7 Step 2 sub-tasks
+
+| # | Sub-task | Model | Review | Done |
+|---|---|---|---|---|
+| B0 | This plan committed on `feat/realistic-buildings` | user | no | 2026-11-24 |
+| B1 | The config schema and validation (11.4), the type and size draws and the room tilt's size term (11.1), with their unit and statistical tests (11.5) and a check script against 11.2 | Opus 5.5 | yes | 2026-11-24 |
+| B2 | The intercept (11.3), a full run on three seeds next to 11.3's table, the calibration ranges and the invariants | Opus 5.5 | yes | 2026-11-24 |
+| B3 | Regenerate the characterization fixtures; the full test suite; update the docs that name the removed fields | Sonnet 5.5 | no | 2026-11-24 |
+| B4 | An independent review of the whole step against this section, then the PR description | Fable 5.2 | is the review | 2026-11-24 |
+
+**B1. Done when:**
+- [x] The `building` section and its settings classes follow 11.4, with the validation rules.
+- [x] The building component draws 11.1 in its RNG order; the building counts for seeds 42 and 7
+      equal the previous model's.
+- [x] The unit tests and the statistical tests of 11.5 pass.
+- [x] A check script prints 11.2's quantities on a large draw, next to 11.2's numbers.
+- [x] Review findings reproduced and fixed.
+
+**B2. Done when:**
+- [x] The intercept is in the config.
+- [x] A full run (150 neighborhoods, rate 9, seeds 42, 7, 11) prints children per apartment and per
+      building, the zero share, the maximum, the cohort shares and the children in the
+      neighborhoods with $H > 4.5$, next to 11.3's table. The intercept is recalibrated only if
+      seed 42's mean leaves 0.85–0.90.
+- [x] The calibration ranges and both invariants pass, or the failure is shown with its numbers.
+- [x] Review findings reproduced and fixed.
+
+**B3. Done when:**
+- [x] The characterization fixtures are regenerated, and the diff of each is explained in 11.9.
+- [x] The full test suite passes (output shown).
+- [x] Every doc naming a removed field is updated; `docs/archive/` stays as it is.
+
+**B4. Done when:**
+- [x] The step is reviewed against 11.1–11.5 as a new reader; each finding is reproduced, then
+      fixed.
+- [x] The PR description is printed in the chat.
+
+### 11.8 Session prompts
+
+**The opening:**
+
+```text
+We are making the simulator realistic, step 2 (buildings and the room mix), on branch
+feat/realistic-buildings. Read docs/SIMULATOR_REALISM_PLAN.md first: §1 decisions (R11–R17 are
+this step's), §11 the step (11.1 the model, 11.3 downstream, 11.4 the config, 11.5 the tests,
+11.7 your sub-task, 11.9 the record), and §10 for how step 1's sub-tasks were recorded. Rules: do
+only this sub-task; the plan's values are decided (do not re-derive them; if one fails a check,
+stop and show the evidence); scripts and their outputs go in .mlflow-check/realism/ (git-ignored)
+and run with ~/.venvs/age-group-prediction/bin/python; static checks (ruff, mypy with
+--cache-dir in that folder) before the tests; run each check once; do not commit. At the stop:
+show the diff and the test output, tick the sub-task's "done when" boxes and add its entry to
+11.9, write the commit message in a text block (no Co-Authored-By line), and print the next
+sub-task's prompt (this opening, a blank line, its text) in one code block, naming the model to
+select.
+```
+
+| Sub-task | Text after the opening |
+|---|---|
+| B1 | `Implement B1: the building config schema and validation (11.4), the type and size draws and the room tilt's size term (11.1), with their unit and statistical tests (11.5) and a check script against 11.2's numbers. Run an independent review subagent before the stop.` |
+| B2 | `Implement B2: the children intercept (11.3), a full run on three seeds against 11.3's table, the calibration ranges and the invariants. Run an independent review subagent before the stop.` |
+| B3 | `Implement B3: regenerate the characterization fixtures, run the full test suite, and update the docs that name the removed fields.` |
+| B4 | `Implement B4: review the whole step against §11 as a new reader; reproduce each finding before fixing it; then write the PR description.` |
+
+After the PR is merged: merge `main` into `docs/project-summary` and start the summary's S1c.2.
+
+### 11.9 Record
+
+#### Planning (2026-11-24, Fable 5.2, in the project summary's session)
+- **The analysis** (`.mlflow-check/summary/s1c1_analysis_2_2.py`, recorded in
+  `docs/PROJECT_SUMMARY_PLAN.md` §9 on `docs/project-summary`) found the room mix and the
+  building size unrealistic; the user chose a step for both.
+- **The user's choices,** each asked with options:
+  - the typical size stays about 40 (R11);
+  - two building types, hidden in this step and revisited at step 3 (R12);
+  - towers follow SES, an older median age and a planned school; the user's own suggestion also
+    had the daycares, which were dropped because they follow the population and repeat SES (R13);
+  - larger buildings hold smaller apartments (R15);
+  - the room categories stay 3–6, with a lower 6-room share (R16);
+  - the fall in children in large-household neighborhoods is left to step 3 (R17).
+- **Design choices made in the session:**
+  - the room tilt's values (0.35 on SES, 0.10 on household size), from eight candidates;
+  - the hidden tower propensity (R14): without it the intraclass correlation of log size was 0.22
+    and 30% of neighborhoods had no tower; with an SD of 1.0 it is 0.28 and 38%;
+  - the bounds 8 and 160: 0.4% of sizes are clipped at the top.
+- **Not run:** a full simulator run with the types and the size term; they need the code. B2 does
+  it.
+
+#### B1 (2026-11-24, Opus 5.5; reviews Opus 5.5 and Fable 5.2)
+- **Config:** `building` follows 11.4. Removed `apartments_per_building_mean` and
+  `apartments_per_building_sd` (`extra="forbid"` rejects them); bounds 8 and 160; the room tilt's
+  new values and `building_size_tilt`.
+- **Draws** (`BuildingSimulator`): 11.1 in its order. All the neighborhoods' propensities, then
+  all their textures; one uniform per building for the type; one normal per building for the
+  size; then the unchanged Dirichlet and multinomial loop.
+  - The neighborhood draws are aligned to the buildings by repeating each by its building count:
+    the rows run neighborhood by neighborhood.
+  - The tower probability uses `scipy.special.expit` (scipy is already a dependency).
+  - `expected_room_probabilities` takes `building_size_tilt` and the log of the size over the
+    texture median, as a required argument.
+  - The building context (SES, household size, median age, school status) is merged once and used
+    by both stages.
+- **Check script:** `.mlflow-check/realism/b1_building_check.py`, 20,000 neighborhoods, rate 9.
+  The type is read exactly by replaying the draws; the replayed sizes equal the simulator's.
+  - Every 11.2 quantity matches to sampling noise: tower share 0.151 (plan 0.153); by SES band
+    0.035–0.355; texture 31.4 (18–49), towers 93.3 (55–147); mean 40.7, SD 26.0, skew 2.19; ICC
+    0.29; mean rooms by SES band 3.85–4.20, exactly as planned; 1.27 people per room where
+    $H > 4.5$; 6-room share 0.048; texture / tower rooms 4.03 / 3.97.
+  - The building counts at 150 neighborhoods, rate 9: 1,523 (seed 42) and 1,564 (seed 7), equal
+    to the previous model's.
+  - It ran before the reviews' cleanup and was not rerun: the oracle test, which replays the
+    draws with a hand-written logistic, still passes, so the draws are unchanged.
+- **Tests:** `tests/unit` plus both statistical files: 1429 passed before the reviews, 1426 passed
+  after (three duplicate tests removed), 1 skipped, 1 xfailed. Not run, expected to fail until
+  B2/B3: `tests/validation/test_calibration.py` and the characterization and notebook tests.
+  - Static checks: the 8 ruff and 4 mypy findings in the touched files are on untouched lines and
+    exist at HEAD.
+- **Correctness review (Opus 5.5):** no deviation from 11.1 or 11.4; the RNG order is pinned
+  (mutations of the order fail the oracle); the statistical tests pass at five seeds with stable
+  margins.
+  - Fixed:
+    - **A building with zero apartments now crashed** (`log 0` in the tilt; reproduced: numpy's
+      "pvals contains NaNs"). `apartments_per_building_min` must now be above 0, with a test.
+    - **The age half of the tower test could not catch a flipped age sign** (median age rises
+      with SES). Now taken inside the middle SES tercile; a mutation with the age coefficient
+      at −0.3 now fails it.
+    - Four stale comments (the draw order's wording, the room tilt's comments, the base shares'
+      comment).
+  - Kept: the exact-type test switches the propensity off, so the propensity's marginal effect is
+    pinned by the oracle only. The household tilt's sign is too weak to test statistically.
+- **Simplicity review (Fable 5.2):**
+  - Fixed: the neighborhood-to-building lookup replaced by the repeat (one argument fewer); the
+    hand-written logistic replaced by `expit`; `cfg` renamed `settings`; two needless
+    conversions removed; the method docstring cut to what the public one lacks; the room
+    function's docstring cut to its one constraint; the `gt=0` on the medians removed (implied by
+    the bounds once the minimum is above 0).
+  - Tests: the building-count test and the same-seed test removed (the oracle and the existing
+    RNG test cover them); the bounds test reduced to its one new assertion; the replay calls the
+    room function instead of re-deriving it; short names replaced; the exact-type helper inlined.
+  - **The user's decisions:** the median-order rule dropped (nothing fails without it; it forbade
+    equal medians, the way to switch towers off); the SDs keep `gt=0`, the file's convention, so
+    the exact-type test uses 1e-9 with a comment.
+
+#### B2 (2026-11-24, Opus 5.5; review Opus 5.5)
+- **Config:** `total_children.intercept` −1.00 → **−0.88**, not the planned −0.95.
+- **Full run** (`.mlflow-check/realism/b2_full_run_check.py`; 150 neighborhoods, rate 9, the
+  final model; output `b2_full_run_output.txt`, and `b2_full_run_output_at_-0.95.txt` for the
+  first run):
+
+  | Run | Per apartment, mean / SD | Zero share | Max | Per building, mean / SD / max | Kindergarten / elementary / high school | Invariant share | $H > 4.5$ |
+  |---|---|---|---|---|---|---|---|
+  | seed 42, −0.95 | 0.818 / 1.171 | .524 | 17 | 33.1 / 26.3 / 233 | .397 / .335 / .268 | 0.973 | 1.53 |
+  | seed 42, −0.88 | 0.872 / 1.229 | .507 | 19 | 35.3 / 28.0 / 250 | .398 / .336 / .266 | 0.973 | 1.64 |
+  | seed 7, −0.88 | 0.947 / 1.288 | .479 | 18 | 37.3 / 29.1 / 312 | .400 / .339 / .261 | 0.987 | 1.90 |
+  | seed 11, −0.88 | 0.865 / 1.207 | .504 | 18 | 37.1 / 29.0 / 270 | .389 / .337 / .274 | 0.987 | 1.78 |
+
+  - **The rule:** seed 42 at −0.95 gave 0.818, outside 0.85–0.90. The intercept moved by
+    $\log(0.875/0.818) = +0.067$, rounded to +0.07; the second run gives 0.872.
+  - **Why −0.95 was low** (the review, 31 seeds): the building types and the size term lower the
+    mean by about 4% in log terms, and seed 42 was a high draw in the design runs (the room mix
+    alone averages 0.855 at −0.95, against seed 42's 0.873). About 0.04 of the +0.07 is the
+    model, 0.03 the seed.
+  - **The change is centred** (the review, seeds 42 and 0–29): at −0.88 the mean averages 0.882
+    (SD 0.038, range 0.822–0.979); seed 42 is the median; the intercept that centres the average
+    on 0.875 is −0.888.
+- **Canonical config** (60 neighborhoods, rate 3, seed 42): mean children 0.833 and zero share
+  0.509, inside the ranges; oracle recovery's maximum error 0.070 against 0.20. Over 31 seeds
+  (the review): mean 0.769–0.963, none outside 0.75–1.00 (step 1: 0.757–1.023, one seed
+  outside); zero share 0.481–0.543; recovery error 0.043–0.159.
+- **Tests:** `tests/unit` and `tests/validation -m "not slow"` (the calibration file with both
+  invariants, both statistical files): 1429 passed, 1 skipped, 1 xfailed.
+  `tests/validation/test_recovery.py` (slow): 1 passed. Not run: the characterization and
+  notebook tests (B3). No source or test file changed, so no static check ran on them; ruff
+  passes on the script.
+- **Review (independent subagent, Opus 5.5):** no real problem. The script computes 11.3's
+  quantities; the recalibration follows the rule; no file pins the intercept's value.
+  - Observations recorded, not fixed:
+    - **The $H > 4.5$ column rests on 3 neighborhoods at seed 42** (about 5 per run). 11.3's
+      "2.0 → 1.6" came from the same noise. On 1000 neighborhoods (seeds 42 / 7 / 11) the tail
+      averages 2.02 / 1.89 / 1.80 against step 1's 2.27 / 2.21 / 1.96: **step 2 lowers it by
+      about 11%**, not by a fifth. The realistic level stays about 2.7 (lead for step 3).
+    - **The tail invariant catches the old household-size scale (0.5) with less margin:** its
+      pass share at 0.5 is 0.58 / 0.75 / 0.69 against the 0.80 threshold (step 1: 0.24–0.49).
+      It still fails at 0.5, as it should. For B4 and step 3.
+    - **The kindergarten share** is .389–.400 (31-seed average .395, the same at −0.95 and
+      −0.88); step 1 had .371–.373. The new room mix causes nearly all of it, smaller apartments
+      pushing toward the younger cohorts (lead for step 4).
+    - **Building totals spread more:** SD 28–29 and maximum 250–312 (31 seeds: average maximum
+      284, worst 525), against 18.7–21.0 and 150–177 with the room mix alone. Towers in
+      large-household areas, as 11.6 expected.
+    - **One seed is a noisy rule:** a single seed's mean has a 95% band of about ±0.075, wider
+      than the 0.85–0.90 window. It worked here because seed 42 is the median. A later step's
+      recalibration could use a multi-seed average instead.
+    - Stale, older than this step: `docs/FEATURE_TRANSFORMATIONS.md` quotes an observed log
+      rate of about −0.5 (now about −0.13); `docs/DATA_GENERATION_PLAN.md` has −0.79. For B3's
+      doc pass.
+
+#### B3 (2026-11-24, Sonnet 5.5)
+- **EDA fixture** (`tests/characterization/fixtures/eda_jupyter_baseline.json`), regenerated by
+  `.mlflow-check/realism/b3_regenerate_eda_fixture.py` after it reproduced the old file byte
+  for byte. 5 fields changed, 46 did not (`b3_fixture_diff.txt`):
+  - `config.content_sha256`: `configs/simulation.yml` changed (B1, B2);
+  - `final_dataframe.sha256` and the two summary hashes (`cohort_share_describe_sha256`,
+    `feature_target_correlations_sha256`): every draw changed;
+  - `summaries.targets`: total children per building mean 35.60 to 35.29, SD 23.3 to 28.0,
+    maximum 187 to 250; kindergarten / elementary / high-school means 13.3 / 12.1 / 10.2 to
+    14.0 / 11.9 / 9.4; the kindergarten share rises (B2's lead for step 4). Zero shares are
+    still at most 1.8%.
+  - **Not changed:** `final_dataframe.shape` (1523 rows) and the building-count statistics,
+    because the building counts are drawn first and B1 kept them.
+  - All nine quality checks are still true.
+- **Pinned counts**, measured (`b3_measure_pins.py`): **none changed**. Rows 1523 (seed 42) and
+  1564 (seed 7), split 913/305/305, `n_train_val` 1218, wrong second share 974/244/305, whole
+  table to the second call 1142/381/305. No test file needed an edit.
+- **Full suite**, no marker filter (slow, calibration and notebook tests included): 1517
+  passed, 1 skipped, 1 xfailed, in 11 min 22 s (`b3_pytest_output.txt`). No source or test file
+  changed, so no static check ran.
+  - The slow NUTS recovery test emits the same `RuntimeWarning` as in N3 (worst R-hat 1.086,
+    effective sample size 25.7) and passes. The numbers equal N3's, so step 2 did not change
+    them; whether they are older than step 1 is still unchecked (a HEAD run was not made).
+- **Docs:** `docs/SIMPLIFIED_MODEL_PLAN.md`: the building parameter table, Step 2 (types, hidden
+  effects, lognormal sizes) and Step 3 (base shares, the building tilt with its size term, the
+  parameter table) now follow 11.1 and 11.4; a note says its neighborhood and outcome sections
+  are stale until the reruns. A grep of `README.md`, `docs/`, `src/`, `notebooks/`, `checks/`,
+  `tests/` and `configs/` finds `apartments_per_building_mean` and `_sd` only in this plan and
+  the config rejection test.
+- **Stale until the reruns (R9), left as they are:** `FEATURE_TRANSFORMATIONS.md` (the observed
+  log rate of about −0.5, the VIF and correlation tables), `HYPERPARAMETER_TUNING.md`,
+  `INDEPENDENT_COHORT_MODELS.md`, `MLFLOW_RUNS.md`, `PARAMETER_REFERENCE.md` and
+  `DATA_GENERATION_PLAN.md` (earlier panel design, −0.79).
+
+#### B4 (2026-11-24, Fable 5.2)
+The whole step (`git diff main...HEAD`, 11 files) read against 11.1–11.5.
+- **No defect in the model or the config.** The draws and their RNG order match 11.1; the
+  fields, the removed fields and the validation rules match 11.4; the intercept is B2's −0.88;
+  each test of 11.5 exists; the dataset columns are unchanged (R12).
+- **New check: does each statistical test fail when its own sign or value is wrong?** 11.4
+  leaves the signs and the order of the medians to the statistical tests; B1 had verified the
+  RNG order and the age sign only. `.mlflow-check/realism/b4_review_check.py` applies each
+  mutation as a config override on the tests' own draw (20,000 neighborhoods, rate 9) and calls
+  the test functions (output `b4_review_check_output.txt`):
+
+  | Mutation | Tests that fail |
+  |---|---|
+  | none (the config) | 0 |
+  | `tower_ses_coef` −0.7 | towers rise with SES |
+  | `tower_median_age_coef` −0.3 | towers rise with age at fixed SES |
+  | `tower_planned_school_coef` −0.7 | a planned school raises the tower share |
+  | the two medians swapped | 6: clipping, the skew and the mean, the tower share, and the three tower tests |
+  | no hidden texture or propensity (SDs 1e-9) | buildings of one neighborhood are alike |
+  | `building_size_tilt` +0.32, and 0 | larger buildings hold smaller apartments |
+  | `ses_tilt` −0.35 | apartments grow with SES; large households are crowded |
+  | the old tilts (household 0.35, SES 0.20) | apartments grow with SES |
+  | the old base shares (6 rooms 0.10) | 6-room apartments are rare |
+
+  Every mutation fails at least one test, so no test is changed.
+- **Fixed** (docs and one blank line):
+  - `docs/README.md`: the row for this plan described step 1 only.
+  - This plan's status header said B2 done, next B3.
+  - 11.3's lead for step 3 now carries B2's 1000-neighborhood measure (about 11%, not a fifth).
+  - `docs/SIMPLIFIED_MODEL_PLAN.md`: the Dirichlet row said the mixes stay near their
+    neighborhood expectation; with the size term it is the building's.
+  - 11.5 notes that `tests/unit/helpers.py` needed no change.
+  - `tests/unit/test_building.py`: a third blank line before `_replay_buildings`.
+- **Measured, left for the reruns (R9):** `notebooks/01_eda.py` has a fixed sentence, "Mean room
+  shares vary little across building-size bins", with the advice to treat building size as
+  distinct from the room mix. On the benchmark data (1,523 buildings, seed 42) the notebook's
+  number, the largest range of a mean share across its 8 size bins, is 0.054; with the size
+  term off it is 0.039. The level is still small, but the 3-room share now rises with size
+  (.286 in the smallest bin, .328 in the largest) where it fell before (.311 to .277). The
+  notebook is not edited in this PR; 11.6 records it.
+- **Checked, left:**
+  - **The tail invariant's margin** (B2's item): at the old household-size scale (0.5) its pass
+    share is 0.58–0.75 against the 0.80 threshold, so it still fails as it should. The
+    threshold is kept; step 3 changes the children model and can revisit it.
+  - **The NUTS `RuntimeWarning`** (B3's item) is not this plan's: N4 found that
+    `tests/validation/test_bayesian_recovery.py` imports nothing from `student_simulator`; its
+    imports are unchanged.
+  - `docs/MODULE_REFERENCE.md` names `BuildingSimulator.generate`; the method is
+    `sample_buildings`. The line is the same on `main`.
+- **Static checks:** on the step's source and test files, ruff reports 6 findings (import order
+  and one unused import) and mypy the same 4 as B1, in `config.py`; all are on lines this step
+  did not touch.
+- **Tests:** `tests/unit/test_building.py`: 6 passed. The full suite was not rerun: B4
+  changed no source or config, and B3's run gave 1517 passed.

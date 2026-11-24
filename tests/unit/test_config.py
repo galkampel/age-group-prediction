@@ -281,3 +281,56 @@ def test_the_reference_neighborhood_may_move_with_the_baselines() -> None:
 
     assert moved.transforms.household_size_reference == 2.6
     assert moved.neighborhood.median_age_baseline == 37.0
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [("apartments_per_building_mean", 40), ("apartments_per_building_sd", 12.0)],
+)
+def test_a_removed_building_field_is_rejected(field: str, value: object) -> None:
+    config = load_simulation_config(_config_path())
+
+    with pytest.raises(ConfigError, match=rf"building.{field}"):
+        config.with_overrides({"building": {field: value}})
+
+
+def test_a_zero_apartment_minimum_is_rejected() -> None:
+    # The room tilt takes the log of each building's size.
+    config = load_simulation_config(_config_path())
+
+    with pytest.raises(ConfigError, match=r"building.apartments_per_building_min"):
+        config.with_overrides({"building": {"apartments_per_building_min": 0}})
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("texture_apartments_median", 7.0),
+        ("tower_apartments_median", 161.0),
+    ],
+)
+def test_a_building_median_outside_the_bounds_is_rejected(
+    field: str, value: float
+) -> None:
+    config = load_simulation_config(_config_path())
+
+    with pytest.raises(
+        ConfigError,
+        match=rf"median must be within the apartment bounds: building.{field}",
+    ):
+        config.with_overrides({"building": {field: value}})
+
+
+@pytest.mark.parametrize(
+    "field",
+    [
+        "tower_propensity_sd",
+        "apartments_neighborhood_log_sd",
+        "apartments_building_log_sd",
+    ],
+)
+def test_a_zero_building_sd_is_rejected(field: str) -> None:
+    config = load_simulation_config(_config_path())
+
+    with pytest.raises(ConfigError, match=rf"building.{field}"):
+        config.with_overrides({"building": {field: 0.0}})

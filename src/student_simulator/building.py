@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import numpy as np
 import pandas as pd
+from scipy.special import expit
 
 from .config import (
     BuildingSettings,
@@ -9,7 +10,11 @@ from .config import (
     SimulationSettings,
     TransformSettings,
 )
-from .features import expected_room_probabilities, scale_household_size
+from .features import (
+    expected_room_probabilities,
+    scale_household_size,
+    scale_median_age,
+)
 
 
 class BuildingSimulator:
@@ -34,14 +39,18 @@ class BuildingSimulator:
     ) -> pd.DataFrame:
         """Sample the buildings of each neighborhood and their room counts.
 
-        Draws, in order: a building count per neighborhood, an apartment total
-        per building, then per building a Dirichlet room mix (tilted by the
-        neighborhood's SES and household size) and a multinomial split of the
-        total into room counts. Configured overrides replace the first two.
+        Draws, in order: a building count per neighborhood; all the
+        neighborhoods' hidden tower propensities, then all their hidden
+        log-size textures; one uniform per building for its hidden type
+        (texture or tower), then one normal per building for its log size;
+        then per building a Dirichlet room mix (tilted by SES, household size
+        and the building's size) and a multinomial split of the total into
+        room counts. Configured overrides replace the counts
+        and, for the apartment totals, all of the type and size draws.
 
         Args:
-            neighborhoods_df: Public neighborhood rows containing IDs, SES, and
-                average household size.
+            neighborhoods_df: Public neighborhood rows containing IDs, SES,
+                average household size, median age and school status.
             rng: Optional shared generator. When omitted, a fresh generator is
                 created from the configured simulation seed.
 
@@ -66,14 +75,28 @@ class BuildingSimulator:
             neighborhoods_df,
             buildings_per_neighborhood,
         )
+        # One row of neighborhood context per building, shared by both stages.
+        context = buildings_df.merge(
+            neighborhoods_df[
+                [
+                    "neighborhood_id",
+                    "ses",
+                    "avg_household_size",
+                    "median_age",
+                    "school_status",
+                ]
+            ],
+            on="neighborhood_id",
+            how="left",
+            validate="many_to_one",
+        )
         # Sample apartment totals and room counts for each building, honoring any
         # configured overrides.
         apartment_totals = self._sample_apartment_totals(
-            len(buildings_df), generator
+            context, buildings_per_neighborhood, generator
         )
         room_counts = self._sample_room_counts(
-            buildings_df,
-            neighborhoods_df,
+            context,
             apartment_totals,
             generator,
         )
@@ -135,10 +158,16 @@ class BuildingSimulator:
 
     def _sample_apartment_totals(
         self,
-        n_buildings: int,
+        context: pd.DataFrame,
+        buildings_per_neighborhood: np.ndarray,
         rng: np.random.Generator,
     ) -> np.ndarray:
-        """Return apartment totals per building, honoring exact overrides."""
+        """Return apartment totals per building.
+
+        An override replaces every type and size draw. The hidden type is
+        not returned.
+        """
+        n_buildings = len(context)
         override = self._settings.apartments_per_building
         if override:
             if len(override) != n_buildings:
@@ -149,44 +178,66 @@ class BuildingSimulator:
                 )
             return np.asarray(override, dtype=int)
 
-        # Round normal draws before clipping so every building total is an
-        # integer within the configured physical bounds.
-        totals = np.rint(
+        settings = self._settings
+        # Context rows run neighborhood by neighborhood (see _build_rows), so
+        # repeating each neighborhood's draw by its count aligns it.
+        n_neighborhoods = len(buildings_per_neighborhood)
+        tower_propensity = np.repeat(
+            rng.normal(0.0, settings.tower_propensity_sd, n_neighborhoods),
+            buildings_per_neighborhood,
+        )
+        texture = np.repeat(
             rng.normal(
-                loc=self._settings.apartments_per_building_mean,
-                scale=self._settings.apartments_per_building_sd,
-                size=n_buildings,
-            )
-        ).astype(int)
+                0.0, settings.apartments_neighborhood_log_sd, n_neighborhoods
+            ),
+            buildings_per_neighborhood,
+        )
+        median_age_scaled = scale_median_age(
+            context["median_age"].to_numpy(),
+            reference=self._transforms.median_age_reference,
+            scale=self._transforms.median_age_scale,
+        )
+        tower_log_odds = (
+            settings.tower_log_odds_intercept
+            + settings.tower_ses_coef * context["ses"].to_numpy()
+            + settings.tower_median_age_coef * median_age_scaled
+            + settings.tower_planned_school_coef
+            * (context["school_status"] == "planned").to_numpy()
+            + tower_propensity
+        )
+        is_tower = rng.random(n_buildings) < expit(tower_log_odds)
+        median = np.where(
+            is_tower,
+            settings.tower_apartments_median,
+            settings.texture_apartments_median,
+        )
+        building_noise = rng.normal(
+            0.0, settings.apartments_building_log_sd, n_buildings
+        )
+        # Round before clipping so every building total is an integer within
+        # the configured physical bounds.
+        totals = np.rint(median * np.exp(texture + building_noise)).astype(int)
         return np.clip(
             totals,
-            self._settings.apartments_per_building_min,
-            self._settings.apartments_per_building_max,
+            settings.apartments_per_building_min,
+            settings.apartments_per_building_max,
         )
 
     def _sample_room_counts(
         self,
-        buildings_df: pd.DataFrame,
-        neighborhoods_df: pd.DataFrame,
+        context: pd.DataFrame,
         apartment_totals: np.ndarray,
         rng: np.random.Generator,
     ) -> np.ndarray:
         """Sample integer room counts whose rows equal apartment totals.
 
-        The configured neighborhood tilt defines expected room probabilities.
+        The configured tilt (SES, household size and the building's size
+        relative to the texture median) defines expected room probabilities.
         A building-specific Dirichlet draw adds composition heterogeneity, and
         a multinomial draw converts that mix into exact integer counts.
         """
-        context = buildings_df.merge(
-            neighborhoods_df[
-                ["neighborhood_id", "ses", "avg_household_size"]
-            ],
-            on="neighborhood_id",
-            how="left",
-            validate="many_to_one",
-        )
         # Scale household size to the model reference before combining it with
-        # SES in the room-mix tilt.
+        # SES and the building's size in the room-mix tilt.
         household_size_scaled = scale_household_size(
             context["avg_household_size"].to_numpy(),
             reference=self._transforms.household_size_reference,
@@ -198,18 +249,22 @@ class BuildingSimulator:
             base_shares=room_config.base_shares,
             household_size_tilt=room_config.household_size_tilt,
             ses_tilt=room_config.ses_tilt,
+            building_size_tilt=room_config.building_size_tilt,
             room_distance_divisor=room_config.room_distance_divisor,
             household_size_scaled=household_size_scaled,
             ses=context["ses"].to_numpy(dtype=float),
+            log_relative_building_size=np.log(
+                apartment_totals / self._settings.texture_apartments_median
+            ),
         )
 
         room_counts = np.zeros(
-            (len(buildings_df), len(room_config.supported_rooms)),
+            (len(context), len(room_config.supported_rooms)),
             dtype=int,
         )
         for index, n_apartments in enumerate(apartment_totals):
-            # Concentration controls variation around the neighborhood-level
-            # expected mix; multinomial sampling preserves the apartment total.
+            # Concentration controls variation around the building's expected
+            # mix; multinomial sampling preserves the apartment total.
             alpha = (
                 room_config.dirichlet_concentration
                 * expected_probs[index]

@@ -86,16 +86,23 @@ def expected_room_probabilities(
     base_shares: dict[int, float],
     household_size_tilt: float,
     ses_tilt: float,
+    building_size_tilt: float,
     room_distance_divisor: float,
     household_size_scaled: np.ndarray | Iterable[float],
     ses: np.ndarray | Iterable[float],
+    log_relative_building_size: np.ndarray | Iterable[float],
 ) -> np.ndarray:
-    """Compute room probabilities before Dirichlet/multinomial draws."""
+    """Compute room probabilities before Dirichlet/multinomial draws.
+
+    A positive tilt moves weight toward larger apartments.
+    """
     household_size = np.asarray(household_size_scaled, dtype=float)
     ses_arr = np.asarray(ses, dtype=float)
-    if household_size.shape != ses_arr.shape:
+    log_size = np.asarray(log_relative_building_size, dtype=float)
+    if not household_size.shape == ses_arr.shape == log_size.shape:
         raise ValueError(
-            "household_size_scaled and ses must have the same shape"
+            "household_size_scaled, ses and log_relative_building_size "
+            "must have the same shape"
         )
 
     rooms = np.asarray(supported_rooms, dtype=float)
@@ -103,7 +110,11 @@ def expected_room_probabilities(
         [base_shares[int(room)] for room in supported_rooms],
         dtype=float,
     )
-    tilt = household_size_tilt * household_size + ses_tilt * ses_arr
+    tilt = (
+        household_size_tilt * household_size
+        + ses_tilt * ses_arr
+        + building_size_tilt * log_size
+    )
     distance = (rooms - 4.0) / room_distance_divisor
     weights = base[None, :] * np.exp(tilt[:, None] * distance[None, :])
     return normalize_positive_weights(weights)
