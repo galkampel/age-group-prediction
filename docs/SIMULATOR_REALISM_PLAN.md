@@ -1,7 +1,7 @@
 # Simulator realism: the plan
 
-> **Status (2026-11-24):** N0, N1 committed; **N2 done** (reviewed by Fable), awaiting the user's
-> commit. Next: **N3** (Sonnet 5.5). The record is §10.
+> **Status (2026-11-24):** N0, N1, N2 committed; **N3 done**, awaiting the user's commit.
+> Next: **N4** (Fable 5.2), then the PR. The record is §10.
 
 The simulator's neighborhood model is stylized: household size ignores SES, daycares ignore
 demand, school status is independent of everything, and the levels (household size 2.6, median
@@ -237,7 +237,7 @@ and assert shapes and signs only:
 | N0 | The branch `feat/realistic-neighborhoods` from `main`; this document committed | user | no | |
 | N1 | The config schema and validation (§4) and the new neighborhood draws (§2), with their unit and statistical tests (§5) | Opus 5.5 | yes | 2026-11-24 |
 | N2 | The downstream values (§3), the cross-section check, the validation-helper ranges, the consistency invariant; a full run confirming §3's targets with the final daycare formula | Opus 5.5 | yes | 2026-11-24 |
-| N3 | Regenerate the characterization fixtures; the full test suite; update the docs that name the old fields (grep for every removed and renamed field) | Sonnet 5.5 | no | |
+| N3 | Regenerate the characterization fixtures; the full test suite; update the docs that name the old fields (grep for every removed and renamed field) | Sonnet 5.5 | no | 2026-11-24 |
 | N4 | An independent review of the whole step against this plan, then the PR description | Fable 5.2 | is the review | |
 
 ### N0. Setup (the user)
@@ -268,9 +268,9 @@ Done when:
 
 ### N3. Fixtures, the suite, the docs (Sonnet 5.5)
 Done when:
-- [ ] The characterization fixtures are regenerated, and the diff of each is explained in §10.
-- [ ] The full test suite passes (output shown).
-- [ ] Every doc naming a removed or renamed field is updated. Historical plans and records under
+- [x] The characterization fixtures are regenerated, and the diff of each is explained in §10.
+- [x] The full test suite passes (output shown).
+- [x] Every doc naming a removed or renamed field is updated. Historical plans and records under
       `docs/archive/` stay as they are.
 
 ### N4. Review and the PR (Fable 5.2)
@@ -436,3 +436,49 @@ select.
     - recovery error spans 0.041–0.139;
     - `test_transforms.py` keeps the literals 2.6 and 0.5. It is self-contained, so they are
       stale but harmless.
+
+### N3 (2026-11-24, Sonnet 5.5)
+- **EDA fixture** (`tests/characterization/fixtures/eda_jupyter_baseline.json`), regenerated
+  by `capture_eda_baseline()` after checking that the writer reproduces the old file byte for
+  byte. 9 fields changed, 42 did not:
+  - `config.content_sha256`: `configs/simulation.yml` changed (N1, N2);
+  - `final_dataframe.shape`: 1529 to 1523 rows; `final_dataframe.sha256` and the two summary
+    hashes (`cohort_share_describe_sha256`, `feature_target_correlations_sha256`): every draw
+    changed;
+  - `buildings_per_neighborhood`: mean 10.19 to 10.15, SD 2.96 to 2.97, minimum 4 to 3;
+  - `targets`: total children per building 24.2 to 35.6 (SD 15.1 to 23.3), maximum 118 to 187;
+    kindergarten, elementary and high-school means 9.4 / 8.0 / 6.7 to 13.3 / 12.1 / 10.2.
+    Zero shares are still at most 1.3%.
+  - All nine quality checks are still true.
+- **Pinned counts**, measured (`.mlflow-check/realism/n3_measure_pins.py`), in
+  `test_objective_eda_notebook.py`, `test_hyperparameter_tuning_notebook.py` and
+  `test_model_inspection_notebook.py`:
+
+  | Pin | Old | New |
+  |---|---|---|
+  | rows, seed 42 | 1529 | 1523 |
+  | rows, seed 7 | 1561 | 1564 |
+  | split train / val / test | 917 / 306 / 306 | 913 / 305 / 305 |
+  | `n_train_val` | 1223 | 1218 |
+  | wrong second share (0.2) | 978 / 245 / 306 | 974 / 244 / 305 |
+  | whole table to the second call | 1146 / 383 / 306 | 1142 / 381 / 305 |
+
+  The wrong wirings still differ from the correct split, so each test still catches its bug.
+- **Full suite**, no marker filter (slow, calibration and notebook tests included): 1494
+  passed, 1 skipped, 1 xfailed, in 10 min 55 s.
+  - The slow NUTS recovery test emits a `RuntimeWarning` (worst R-hat 1.086 against 1.05,
+    effective sample size 25.7 against 50) and still passes. I did not run it on HEAD, so I do
+    not know whether the warning is new. N4 can check.
+- **Docs:** README and `FEATURE_TRANSFORMATIONS.md` give 1523 buildings. The §3.2 paragraph
+  "The hypothesis, and what the simulator does" now says household size depends on SES and age
+  and the children count has no direct SES term.
+  - A grep of `README.md`, `docs/`, `src/`, `notebooks/`, `checks/`, `tests/` and `configs/`
+    finds `median_age_mean`, `median_age_sd` and `school_status_probs` only in this plan and the
+    config rejection test.
+- **Stale until the reruns (R9), left as they are:**
+  - the measured-result docs: `HYPERPARAMETER_TUNING.md` (917/306/306),
+    `INDEPENDENT_COHORT_MODELS.md`, `MLFLOW_RUNS.md`, and the VIF, correlation and coefficient
+    tables of `FEATURE_TRANSFORMATIONS.md` (including its "r = −0.13" mentions);
+  - the handoffs, plans and records that name 1529, 917 or 1223;
+  - `PARAMETER_REFERENCE.md` and `DATA_GENERATION_PLAN.md`, which describe an earlier panel
+    design and not this simulator.

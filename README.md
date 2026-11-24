@@ -191,7 +191,7 @@ marimo `.py` notebooks are the sole research source.
    extension, select `.venv/bin/python` and launch VS Code from a shell where
    the same variables are set.
 
-4. Read the setup cells: the synthetic population (150 neighborhoods, 1529
+4. Read the setup cells: the synthetic population (150 neighborhoods, 1523
    buildings), the train/validation/test split, the feature variants and the
    MLflow experiment from `.env`. `03`'s setup fits nothing; `04`'s read refits
    the two best runs when the 24 tuning runs are logged. The buttons that tune and

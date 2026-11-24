@@ -15,7 +15,7 @@
     ]
   },
   "config": {
-    "content_sha256": "3a32ece116f29e10461c2fd778eac94d6c0837b550b25dec5b36023c252c663f",
+    "content_sha256": "a6051e1bd519bde16cfcf2e8b66eebb51a32ad05fdb7f99913f7cecb2a8a2194",
     "overrides": {
       "buildings_per_neighborhood_rate": 9.0,
       "n_neighborhoods": 150
@@ -60,9 +60,9 @@
       "school_status": "string",
       "ses": "float64"
     },
-    "sha256": "07a1414e8f71effcb3b71df3049b200a9fd201907fd8aa3c8b16ee4d5ff24379",
+    "sha256": "3f6e77d907d70c85db76092078c355ef4918690c6ffb9dafef5e964c05aff0fa",
     "shape": [
-      1529,
+      1523,
       16
     ],
     "unique_neighborhoods": 150
@@ -95,59 +95,59 @@
       "90%": 14.0,
       "count": 150.0,
       "max": 18.0,
-      "mean": 10.193333333333333,
-      "min": 4.0,
-      "std": 2.9576352486373474
+      "mean": 10.153333333333334,
+      "min": 3.0,
+      "std": 2.973567370731224
     },
-    "cohort_share_describe_sha256": "c118fac6dcecb7352c8f05514323c89304fabebb35313a11a1cc663ffa9c7267",
-    "feature_target_correlations_sha256": "38fbe4e3a36ee80a431d5cccd07fa75a6426a0eaa3d2949ac344461b6e7d1242",
+    "cohort_share_describe_sha256": "584238857bad4d0ceecc2a5108ca54fb6487f089bb60d37634adf031214c0c15",
+    "feature_target_correlations_sha256": "d5e79671358f7badfd952c6911993876b8213332245a9623f09b36c5b3d20cb1",
     "targets": [
       {
-        "count": 1529,
-        "max": 47.0,
-        "mean": 9.412034009156311,
+        "count": 1523,
+        "max": 75.0,
+        "mean": 13.285620485883125,
+        "q25": 7.0,
+        "q50": 11.0,
+        "q75": 17.0,
+        "std": 9.279311448151786,
+        "target": "n_kindergarten",
+        "variance_to_mean": 6.481114001660207,
+        "zero_share": 0.004596191726854892
+      },
+      {
+        "count": 1523,
+        "max": 59.0,
+        "mean": 12.073539067629678,
+        "q25": 6.0,
+        "q50": 10.0,
+        "q75": 16.0,
+        "std": 8.492006120639184,
+        "target": "n_elementary",
+        "variance_to_mean": 5.972910473807834,
+        "zero_share": 0.005252790544977019
+      },
+      {
+        "count": 1523,
+        "max": 68.0,
+        "mean": 10.242941562705187,
         "q25": 5.0,
         "q50": 8.0,
-        "q75": 12.0,
-        "std": 6.507970273240087,
-        "target": "n_kindergarten",
-        "variance_to_mean": 4.499949430290383,
-        "zero_share": 0.009810333551340745
-      },
-      {
-        "count": 1529,
-        "max": 40.0,
-        "mean": 8.00523217789405,
-        "q25": 4.0,
-        "q50": 7.0,
-        "q75": 11.0,
-        "std": 5.534870311066481,
-        "target": "n_elementary",
-        "variance_to_mean": 3.8268458277726443,
-        "zero_share": 0.013734466971877043
-      },
-      {
-        "count": 1529,
-        "max": 42.0,
-        "mean": 6.735775016350556,
-        "q25": 3.0,
-        "q50": 5.0,
-        "q75": 9.0,
-        "std": 5.408402730561592,
+        "q75": 13.0,
+        "std": 8.254418305666002,
         "target": "n_highschool",
-        "variance_to_mean": 4.342606459530204,
-        "zero_share": 0.031393067364290386
+        "variance_to_mean": 6.651938913036154,
+        "zero_share": 0.013131976362442548
       },
       {
-        "count": 1529,
-        "max": 118.0,
-        "mean": 24.153041203400914,
-        "q25": 14.0,
-        "q50": 21.0,
-        "q75": 30.0,
-        "std": 15.082499748512415,
+        "count": 1523,
+        "max": 187.0,
+        "mean": 35.60210111621799,
+        "q25": 20.0,
+        "q50": 31.0,
+        "q75": 44.0,
+        "std": 23.297889135240737,
         "target": "n_children_total",
-        "variance_to_mean": 9.418350126105283,
+        "variance_to_mean": 15.246056303983366,
         "zero_share": 0.0
       }
     ]
