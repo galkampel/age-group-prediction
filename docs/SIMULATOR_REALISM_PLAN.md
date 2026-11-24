@@ -1,8 +1,7 @@
 # Simulator realism: the plan
 
-> **Status (2026-11-24):** plan written; step 1 (neighborhoods) designed with two Fable consults
-> and approved by the user. Next: **N0** (the branch and this document's commit), then **N1**
-> (Opus 5.5). The record is §10.
+> **Status (2026-11-24):** N0 done; **N1 done** (reviewed by Fable), awaiting the user's commit.
+> Next: **N2** (Opus 5.5). The record is §10.
 
 The simulator's neighborhood model is stylized: household size ignores SES, daycares ignore
 demand, school status is independent of everything, and the levels (household size 2.6, median
@@ -236,7 +235,7 @@ and assert shapes and signs only:
 | # | Sub-task | Model | Review | Done |
 |---|---|---|---|---|
 | N0 | The branch `feat/realistic-neighborhoods` from `main`; this document committed | user | no | |
-| N1 | The config schema and validation (§4) and the new neighborhood draws (§2), with their unit and statistical tests (§5) | Opus 5.5 | yes | |
+| N1 | The config schema and validation (§4) and the new neighborhood draws (§2), with their unit and statistical tests (§5) | Opus 5.5 | yes | 2026-11-24 |
 | N2 | The downstream values (§3), the cross-section check, the validation-helper ranges, the consistency invariant; a full run confirming §3's targets with the final daycare formula | Opus 5.5 | yes | |
 | N3 | Regenerate the characterization fixtures; the full test suite; update the docs that name the old fields (grep for every removed and renamed field) | Sonnet 5.5 | no | |
 | N4 | An independent review of the whole step against this plan, then the PR description | Fable 5.2 | is the review | |
@@ -249,14 +248,14 @@ and assert shapes and signs only:
 
 ### N1. Config and the neighborhood draws (Opus 5.5, review)
 Done when:
-- [ ] The `neighborhood` section and its settings class follow §4, with the validation rules.
-- [ ] The neighborhood component draws §2 in its order, with the school status from one uniform
+- [x] The `neighborhood` section and its settings class follow §4, with the validation rules.
+- [x] The neighborhood component draws §2 in its order, with the school status from one uniform
       per row.
-- [ ] The unit tests (config, neighborhood) and the statistical tests of §5 pass; the other
+- [x] The unit tests (config, neighborhood) and the statistical tests of §5 pass; the other
       neighborhood-dependent unit tests are updated.
-- [ ] A check script prints the marginals, the SES-bin means and the correlations on a large
+- [x] A check script prints the marginals, the SES-bin means and the correlations on a large
       draw, next to §2's numbers.
-- [ ] Review findings reproduced and fixed.
+- [x] Review findings reproduced and fixed.
 
 ### N2. Downstream consistency (Opus 5.5, review)
 Done when:
@@ -325,3 +324,54 @@ select.
   - a separate PR from `main`;
   - school status dependent, kept simple;
   - the runs after the documentation.
+
+### N1 (2026-11-24, Opus 5.5; review Fable 5.2)
+- **Config:** `NeighborhoodSettings` and `configs/simulation.yml` follow §4.
+  - Removed: `median_age_mean`, `median_age_sd`, `school_status_probs`. `extra="forbid"`
+    rejects each one.
+  - Added rules:
+    - each reference share must be above 0;
+    - both baselines must be inside their bounds;
+    - `household_size_min` must be above 1.
+  - **The R8 cross-section check is left to N2**, as §8 places it. With today's `features`
+    references (2.6, 37) it would fail until N2 sets them to 3.0 and 31.
+- **Draws** (`NeighborhoodSimulator`): §2 in its RNG order.
+  - The order is SES, age noise, household noise, the Poisson, then one uniform per row.
+  - School status inverts the uniform through the row's cumulative probabilities, using only the
+    first two edges, so a rounding error at 1.0 cannot index past the labels.
+  - SES is bit-identical to the previous model.
+- **Check script:** `.mlflow-check/realism/n1_neighborhood_check.py`, 400,000 draws, seed 2026.
+  - Every §2 number matches to rounding: the marginals, clipped shares, daycare zeros and
+    dispersion, school shares, the SES-bin means, the daycare bins and all seven correlations.
+  - The 150-neighborhood, seed-42 summary matches too. The one exception is the median-age SD,
+    which is 5.547: 5.5 rounded, where §2 has 5.6. The mean and range are identical, so this is
+    rounding, not a different draw.
+- **Tests:**
+  - Unit:
+    - an oracle test rebuilds every column in the documented RNG order;
+    - SES is pinned to the previous model's values;
+    - a reference-neighborhood test checks the exact shares and the rate at H = 3.0, a = 31;
+    - config tests cover the removed fields, a zero share, baselines out of bounds on both
+      sides, and `household_size_min` = 1.
+  - `tests/validation/test_neighborhood_statistics.py` holds §5's statistical tests (20,000
+    rows, a fixed seed).
+  - Result: `tests/unit` plus the new file give 1397 passed, 1 skipped, 1 xfailed.
+- **Expected failures until N2/N3:**
+  - `tests/validation/test_calibration.py`: mean children 1.03 and zero share 0.50, against the
+    old ranges.
+  - The characterization and notebook tests that pin today's row counts and hashes.
+- **Fable review:** no bugs, no spec deviations.
+  - Fixed:
+    - the SES test now pins literal values from HEAD;
+    - the lower bound of each baseline is now tested;
+    - the household-minimum test matches its message;
+    - an over-long line is wrapped;
+    - a needless `size=` change is reverted.
+  - Kept:
+    - **P(planned) across the age terciles:** the margin is the thinnest in the file, but no
+      seed failed in 300.
+    - **A NaN `household_size_min`** is reported under the baseline's name. This comes from the
+      existing min/max check.
+    - **`ses_mean` is not bounds-checked:** §4 names only the baselines.
+    - **Pre-existing lint and mypy findings** on lines this change did not touch are left as they
+      are.

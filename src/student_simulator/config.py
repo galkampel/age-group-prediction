@@ -45,25 +45,35 @@ class TransformSettings(_Settings):
 
 
 class NeighborhoodSettings(_Settings):
-    """Neighborhood context distribution parameters."""
+    """Neighborhood context distribution parameters.
+
+    Age is centered at ``median_age_baseline`` and household size at
+    ``household_size_baseline`` in every draw that uses them.
+    """
 
     ses_mean: float
     ses_sd: float = Field(gt=0)
     ses_min: float
     ses_max: float
-    median_age_mean: float
-    median_age_sd: float = Field(gt=0)
+    median_age_baseline: float
+    median_age_ses_slope: float
+    median_age_noise_sd: float = Field(gt=0)
     median_age_min: float
     median_age_max: float
     household_size_baseline: float
     household_size_age_slope: float
+    household_size_ses_slope: float
+    household_size_ses_quadratic_coef: float
     household_size_noise_sd: float = Field(gt=0)
     household_size_min: float
     household_size_max: float
     daycare_log_intercept: float
+    daycare_household_size_coef: float
     daycare_ses_coef: float
     daycare_age_coef: float
-    school_status_probs: dict[str, float]
+    school_status_reference_shares: dict[str, float]
+    school_existing_household_size_coef: float
+    school_planned_age_coef: float
 
     @model_validator(mode="after")
     def validate_ranges_and_probabilities(self) -> NeighborhoodSettings:
@@ -78,11 +88,43 @@ class NeighborhoodSettings(_Settings):
             self.household_size_max,
             "neighborhood.household_size",
         )
+        if not (
+            self.median_age_min
+            <= self.median_age_baseline
+            <= self.median_age_max
+        ):
+            raise ValueError(
+                "baseline must be within its bounds: "
+                "neighborhood.median_age_baseline"
+            )
+        if not (
+            self.household_size_min
+            <= self.household_size_baseline
+            <= self.household_size_max
+        ):
+            raise ValueError(
+                "baseline must be within its bounds: "
+                "neighborhood.household_size_baseline"
+            )
+        if self.household_size_min <= 1:
+            raise ValueError(
+                "household size minimum must exceed 1: "
+                "neighborhood.household_size_min"
+            )
         _validate_probability_map(
-            self.school_status_probs,
+            self.school_status_reference_shares,
             {"existing", "planned", "none"},
-            "neighborhood.school_status_probs",
+            "neighborhood.school_status_reference_shares",
         )
+        # The draw takes the log of each share.
+        if any(
+            share <= 0
+            for share in self.school_status_reference_shares.values()
+        ):
+            raise ValueError(
+                "reference shares must be positive: "
+                "neighborhood.school_status_reference_shares"
+            )
         return self
 
 

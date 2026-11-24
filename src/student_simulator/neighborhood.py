@@ -26,8 +26,11 @@ class NeighborhoodSimulator:
     ) -> pd.DataFrame:
         """Sample one public row per neighborhood.
 
-        Draws, in order: SES, median age, household size (from median age),
-        daycare counts (from SES and median age), and school status.
+        Draws, in order (demographics first, facilities last): SES, median
+        age (from SES), household size (from median age and SES), daycare
+        counts (from household size, SES and median age), and school status
+        (from household size and median age). The generator is consumed in
+        that order: three normals, one Poisson and one uniform per row.
 
         Args:
             n_neighborhoods: Number of rows to generate. Uses the configured
@@ -54,14 +57,23 @@ class NeighborhoodSimulator:
 
         neighborhood_ids = self._generate_ids(n)
         ses = self._sample_ses(n, generator)
-        median_age = self._sample_median_age(n, generator)
-        household_size = self._sample_household_size(median_age, generator)
-        n_daycares = self._sample_daycares(
+        median_age = self._sample_median_age(ses, generator)
+        household_size = self._sample_household_size(
             ses=ses,
             median_age=median_age,
             rng=generator,
         )
-        school_status = self._sample_school_status(n, generator)
+        n_daycares = self._sample_daycares(
+            ses=ses,
+            household_size=household_size,
+            median_age=median_age,
+            rng=generator,
+        )
+        school_status = self._sample_school_status(
+            household_size=household_size,
+            median_age=median_age,
+            rng=generator,
+        )
 
         return pd.DataFrame(
             {
@@ -97,39 +109,41 @@ class NeighborhoodSimulator:
 
     def _sample_median_age(
         self,
-        n_neighborhoods: int,
+        ses: np.ndarray,
         rng: np.random.Generator,
     ) -> np.ndarray:
-        """Draw median ages from the configured clipped normal distribution."""
+        """Draw SES-dependent median ages within configured bounds."""
         ncfg = self._settings
+        age_noise = rng.normal(
+            loc=0.0,
+            scale=ncfg.median_age_noise_sd,
+            size=len(ses),
+        )
         return np.clip(
-            rng.normal(
-                loc=ncfg.median_age_mean,
-                scale=ncfg.median_age_sd,
-                size=n_neighborhoods,
-            ),
+            ncfg.median_age_baseline + ncfg.median_age_ses_slope * ses + age_noise,
             ncfg.median_age_min,
             ncfg.median_age_max,
         )
 
     def _sample_household_size(
         self,
+        ses: np.ndarray,
         median_age: np.ndarray,
         rng: np.random.Generator,
     ) -> np.ndarray:
-        """Draw age-dependent household sizes within configured bounds."""
+        """Draw age- and SES-dependent household sizes within configured bounds."""
         ncfg = self._settings
         hh_noise = rng.normal(
             loc=0.0,
             scale=ncfg.household_size_noise_sd,
             size=len(median_age),
         )
-        # Center age at its configured mean so the baseline remains the
-        # expected household size for a reference-age neighborhood.
         return np.clip(
             ncfg.household_size_baseline
             + ncfg.household_size_age_slope
-            * (median_age - ncfg.median_age_mean)
+            * (median_age - ncfg.median_age_baseline)
+            + ncfg.household_size_ses_slope * ses
+            + ncfg.household_size_ses_quadratic_coef * ses**2
             + hh_noise,
             ncfg.household_size_min,
             ncfg.household_size_max,
@@ -138,41 +152,53 @@ class NeighborhoodSimulator:
     def _sample_daycares(
         self,
         ses: np.ndarray,
+        household_size: np.ndarray,
         median_age: np.ndarray,
         rng: np.random.Generator,
     ) -> np.ndarray:
         """Draw daycare counts from the configured log-linear Poisson model."""
         ncfg = self._settings
-        # Age is centered so the intercept is the reference-age log rate;
-        # exponentiation converts that predictor to a positive Poisson rate.
         daycare_log_mu = (
             ncfg.daycare_log_intercept
+            + ncfg.daycare_household_size_coef
+            * (household_size - ncfg.household_size_baseline)
             + ncfg.daycare_ses_coef * ses
             + ncfg.daycare_age_coef
-            * (median_age - ncfg.median_age_mean)
+            * (median_age - ncfg.median_age_baseline)
         )
-        daycare_lambda = np.exp(daycare_log_mu)
-        return rng.poisson(lam=daycare_lambda, size=len(ses)).astype(int)
+        return rng.poisson(lam=np.exp(daycare_log_mu)).astype(int)
 
     def _sample_school_status(
         self,
-        n_neighborhoods: int,
+        household_size: np.ndarray,
+        median_age: np.ndarray,
         rng: np.random.Generator,
     ) -> np.ndarray:
-        """Draw school status from configured categorical probabilities."""
+        """Draw school status from per-row multinomial-logit probabilities.
+
+        The reference shares are exact at the reference neighborhood
+        (baseline household size and age). One uniform per row is inverted
+        through the row's cumulative probabilities, since ``rng.choice``
+        cannot take per-row probabilities.
+        """
         ncfg = self._settings
-        status_probs = ncfg.school_status_probs
+        shares = ncfg.school_status_reference_shares
         school_labels = np.array(["existing", "planned", "none"], dtype=object)
-        school_probs = np.array(
+        logits = np.column_stack(
             [
-                status_probs["existing"],
-                status_probs["planned"],
-                status_probs["none"],
-            ],
-            dtype=float,
+                np.log(shares["existing"])
+                + ncfg.school_existing_household_size_coef
+                * (household_size - ncfg.household_size_baseline),
+                np.log(shares["planned"])
+                + ncfg.school_planned_age_coef
+                * (median_age - ncfg.median_age_baseline),
+                np.full(len(household_size), np.log(shares["none"])),
+            ]
         )
-        return rng.choice(
-            school_labels,
-            size=n_neighborhoods,
-            p=school_probs,
-        )
+        weights = np.exp(logits - logits.max(axis=1, keepdims=True))
+        probabilities = weights / weights.sum(axis=1, keepdims=True)
+        uniforms = rng.random(len(household_size))
+        # Only the first two cumulative edges: the last is 1 up to rounding.
+        cumulative = np.cumsum(probabilities, axis=1)[:, :-1]
+        label_index = (uniforms[:, None] >= cumulative).sum(axis=1)
+        return school_labels[label_index]
