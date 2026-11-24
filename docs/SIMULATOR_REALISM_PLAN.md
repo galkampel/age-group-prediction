@@ -1224,7 +1224,7 @@ model:
 |---|---|---|---|---|
 | C0 | This plan committed on `feat/realistic-children` | user | no | |
 | C1 | The two building SDs (12.4), the ICC threshold (12.5), a check script against 12.2's building table | Sonnet 5.5 | no | x |
-| C2 | The children model: the config and validation (12.4), the transform, the design, the cap (12.1), the unit, config and statistical tests (12.5), a check script against 12.2 | Opus 5.5 | yes | |
+| C2 | The children model: the config and validation (12.4), the transform, the design, the cap (12.1), the unit, config and statistical tests (12.5), a check script against 12.2 | Opus 5.5 | yes | x |
 | C3 | The intercept on 31 seeds (12.3), a full run on seeds 42 / 7 / 11, the calibration ranges, the invariants, the recovery check | Opus 5.5 | yes | |
 | C4 | Regenerate the characterization fixtures; the full test suite; update the docs that describe the changed terms | Sonnet 5.5 | no | |
 | C5 | An independent review of the whole step against §12, with a mutation check of the new tests (B4's form), then the PR description | Fable 5.2 | is the review | |
@@ -1236,11 +1236,11 @@ model:
 - [x] `tests/unit/test_building.py` and `tests/validation/test_building_statistics.py` pass.
 
 **C2. Done when:**
-- [ ] `total_children` follows 12.4, with the validation rules and the runtime guard.
-- [ ] The design and the draw follow 12.1; the RNG order is unchanged.
-- [ ] The unit, config and statistical tests of 12.5 pass.
-- [ ] A check script prints 12.2's household-size, rooms and tail tables on seeds 42 / 7 / 11.
-- [ ] Review findings reproduced and fixed.
+- [x] `total_children` follows 12.4, with the validation rules and the runtime guard.
+- [x] The design and the draw follow 12.1; the RNG order is unchanged.
+- [x] The unit, config and statistical tests of 12.5 pass.
+- [x] A check script prints 12.2's household-size, rooms and tail tables on seeds 42 / 7 / 11.
+- [x] Review findings reproduced and fixed.
 
 **C3. Done when:**
 - [ ] The 31-seed mean is printed; the intercept changes only by 12.3's rule.
@@ -1333,3 +1333,73 @@ After the PR is merged: merge `main` into `docs/project-summary` and start the s
 - **Tests:** `tests/unit/test_building.py` and `tests/validation/test_building_statistics.py`:
   17 passed (`c1_pytest_output.txt`). `ruff check` and `mypy` clean. `ruff format --check`
   flags the test file for formatting that was already there (not the edited line); left as it is.
+
+#### C2 (2026-11-24, Opus 5.5; review Fable 5.2)
+- **Config** (`configs/simulation.yml`, `TotalChildrenSettings`): intercept −0.89,
+  `childless_household_size` 1.7 (new), `household_size_coef` 1.0, `rooms_household_interaction_coef`
+  −0.15, `max_children` 10 (new, `Field(ge=1)`; 0 and 2.5 are rejected). `Config` rejects a
+  childless size at or above `neighborhood.household_size_min`.
+- **Code:** a public `log_household_size_excess(values, reference, childless)` in `features.py`
+  (exported from the package). It raises when a household size, or the reference, is at or below
+  the childless size. The total-children design column `household_size_scaled` became
+  `log_household_size_excess`, and the interaction is `rooms_centered` × that term. The count is
+  `np.minimum(NB2 draw, max_children)`. The cohort stage and the room tilt keep
+  `scale_household_size`. The recovery's expected key in `tests/validation/helpers.py` is renamed;
+  the recovery test itself runs in C3.
+- **Check** (`.mlflow-check/realism/c2_children_check.py`, output `c2_children_check_output.txt`;
+  1,000 neighborhoods, rate 9, the totals replayed from the generator state before the stage).
+  - On all three seeds the capped replay equals the simulator's counts, so the RNG order is
+    unchanged.
+  - The "old" column is today's children model on C1's buildings.
+
+  | Seed 42 | Old | New | 12.2 |
+  |---|---|---|---|
+  | Band children (band H 2.08 … 4.98) | 0.50 0.58 0.71 0.87 1.08 1.36 1.95 | 0.23 0.43 0.66 0.90 1.19 1.50 2.03 | 0.20 0.42 0.66 0.92 1.20 1.54 2.03 |
+  | Slope per person (bands / neighborhoods) | 0.50 / 0.48 | 0.62 / 0.61 | 0.61–0.63 |
+  | Children ÷ (H − 1.7), relative to the middle band | 0.95–2.28 | 0.95–1.03 | 0.95–1.06 |
+  | 6 / 3-room ratio by H band | 1.95 2.71 3.66 5.50 | 3.65 2.50 2.04 1.81 | 3.4–3.7, 2.6, 2.1, 1.7–1.8 |
+  | Children at 3 / 6 rooms, H > 4.5 | 0.90 / 4.95 | 1.55 / 2.82 | 1.63 / 2.76 |
+  | Mean; zero share; maximum | 0.880; 0.505; 25 | 0.879; 0.510; 10 | 0.87–0.88; 0.51–0.52; 10 |
+  | Clipped draws; mean lost; at 10 | —; —; 0.04% | 0.04%; 0.11%; 0.07% | 0.03–0.04%; 0.1%; 0.07% |
+  | Invariants (all / H > 4.5) | 0.984 / 1.00 | 1.000 / 1.00 | 0.995–1.00 / 1.00 |
+
+  - Seeds 7 / 11, new band children: 0.23 / 0.21, 0.45 / 0.46, 0.66 / 0.66, 0.91 / 0.94,
+    1.20 / 1.20, 1.57 / 1.52, 1.93 / 1.85.
+  - Seeds 7 / 11, other values: mean 0.871 / 0.871; invariants 0.996 / 0.995 and 1.00.
+  - The lowest band reads 0.21–0.23 against 12.2's 0.20, inside the 0.15–0.25 target. Its mean
+    household size is 2.05–2.09 here.
+- **Band edges** (12.5 gives none): 2.25, 2.625, 3.0, 3.45, 3.95, 4.5, chosen to reproduce
+  12.2's band means.
+- **Tests:**
+  - `tests/validation/test_children_statistics.py` (new, seed 42) holds the five tests of 12.5.
+  - On today's model (the check's "old" column) four of them fail. The level test does not
+    fail, since the level is unchanged: it guards the intercept, and 12.5's "each fails" is too
+    strong for it.
+  - In `test_total_children_stage.py`, the contexts moved to 3.0 and 31, and these tests were
+    added: the log term, the room differences at H = 4.0, the replayed draw clipped at the cap,
+    every count at the cap under an intercept of 8, and the guards.
+  - In `test_config.py`, a childless size of 1.8 or 2.0 and `max_children` of 0 or 2.5 are
+    rejected. In `test_design.py`, the column list is renamed.
+  - Results: 96 passed on the eight affected files (`c2_pytest_output.txt`); 25 passed after the
+    review (`c2_pytest_after_review.txt`).
+- **Static checks:** ruff and mypy show no new findings. Pre-existing findings were left as they
+  are: the import sorting in `config.py`, `features.py` and `__init__.py`, the format of the
+  older test files, and four mypy errors in `config.py`.
+- **Review** (independent, Fable 5.2):
+  - It ran 20 mutated copies of the tree and found no bugs; every source-level mutant was killed
+    except for the four test gaps below.
+  - Each gap was reproduced (`.mlflow-check/realism/c2_repro/repro.py`), then fixed:
+    - The cap test read the cap from the config. With a cap of 1,000 it passed (maximum 24). It
+      now uses the literal 10, and fails at 1,000.
+    - The household-size slope test was arithmetic on two config numbers and never called the
+      simulator. It now takes `compute_log_mu` at H = 3.0 and 4.3 and expects 1.15 / 1.0 /
+      0.85 / 0.70.
+    - The proportionality test read the childless size from the config. It now uses the literal
+      1.7.
+    - The `reference <= childless` guard had no test. One was added.
+  - Nits: `log_household_size_excess` is now exported, and the module docstring is corrected.
+    Left as they are: lax int coercion for `max_children` (as for the other fields), and no bound
+    on `childless_household_size` beyond the cross-section check (NaN still ends in the
+    non-finite error).
+- **Not run:** the calibration, invariant and recovery tests, and the 31-seed intercept check
+  (C3); the characterization fixtures (C4).

@@ -60,7 +60,7 @@ def test_total_children_design_columns_match_config_keys_order() -> None:
         "rooms_5",
         "rooms_6",
         "ses_squared",
-        "household_size_scaled",
+        "log_household_size_excess",
         "daycare_saturation",
         "school_existing",
         "school_planned",

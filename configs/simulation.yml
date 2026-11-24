@@ -113,18 +113,22 @@ apartment: {}
 # NB2 log-mean model for total children per apartment.
 total_children:
   # Reference 3-room apartment log expected count.
-  intercept: -0.88
+  intercept: -0.89
   # The SES U-shape comes through household size; a direct term would double count it.
   ses_quadratic_coef: 0.0
-  # Larger local households imply more children.
-  household_size_coef: 0.30
+  # Household size with no children aged 3-18; must be below neighborhood.household_size_min.
+  childless_household_size: 1.7
+  # On log((H - 1.7) / (3.0 - 1.7)): expected children proportional to H - 1.7.
+  household_size_coef: 1.0
   # Positive but diminishing daycare association.
   daycare_saturation_coef: 0.12
   existing_school_coef: 0.10
   planned_school_coef: 0.04
   # Older areas imply fewer children, all else equal.
   median_age_coef: -0.06
-  rooms_household_interaction_coef: 0.10
+  # Crowding, on (rooms - 4) x the log household-size term: where households are
+  # large, small apartments also hold many children.
+  rooms_household_interaction_coef: -0.15
   # Facilities needed to reach 63% saturation.
   daycare_saturation_scale: 3.0
   # Unobserved building-level log-mean variation.
@@ -133,6 +137,8 @@ total_children:
   neighborhood_effect_sd: 0.20
   # Variance is mu + mu^2 / phi.
   nb_dispersion_phi: 3.0
+  # The count is clipped here: ten children inside a 16-year age span is about the limit.
+  max_children: 10
   # Multipliers relative to 3 rooms are exp(coefficient).
   room_log_mean_effects:
     "4": 0.45
