@@ -279,7 +279,7 @@ Assign those room labels to apartment IDs in random order.
 | SES tilt | 0.35 per SES unit | Apartment size rises with SES |
 | Building-size tilt | -0.32 per log of size over 30 | Larger buildings hold smaller apartments |
 | Room distance divisor | 2 | Keeps the tilt gradual rather than moving nearly all mass to an extreme room count |
-| Dirichlet concentration | 30 | Allows building mixes to differ, while keeping them near their neighborhood expectation |
+| Dirichlet concentration | 30 | Allows building mixes to differ, while keeping them near their building's expectation |
 
 The neighborhood and outcome sections of this document still describe the earlier
 simulator (before the realistic-simulator steps, 2026-11-24); they are stale until the reruns.

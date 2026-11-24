@@ -125,7 +125,6 @@ def test_building_apartment_override_length_mismatch_raises() -> None:
         make_building_simulator(config).sample_buildings(_neighborhoods())
 
 
-
 def _replay_buildings(config, neighborhoods: pd.DataFrame, seed: int) -> pd.DataFrame:
     """Redraw the building stage with numpy alone, in the documented order."""
     building_config = config.building

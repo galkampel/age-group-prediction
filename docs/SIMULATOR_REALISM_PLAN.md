@@ -1,8 +1,6 @@
 # Simulator realism: the plan
 
-> **Status (2026-11-24):** step 1 complete: N0–N3 committed, **N4 done** (the review and the PR
-> description), awaiting the user's commit and the PR. Next: step 2 of §7, starting with its own
-> Fable consult. The record is §10.
+> **Status (2026-11-24):** step 1 complete and merged (PR #29). The record is §10.
 
 The simulator's neighborhood model is stylized: household size ignores SES, daycares ignore
 demand, school status is independent of everything, and the levels (household size 2.6, median
@@ -11,8 +9,9 @@ age 37) are European rather than Israeli. The project summary (`docs/PROJECT_SUM
 instead. This plan revises the simulator **step by step, one PR per step, neighborhoods first**.
 
 > **Step 2 (2026-11-24):** buildings and the room mix, planned in §11 on
-> `feat/realistic-buildings`; decisions R11–R17. B0, B1 committed; **B2 done** (awaiting the user's
-> commit; the intercept is −0.88, not −0.95). Next: B3.
+> `feat/realistic-buildings`; decisions R11–R17. B0–B3 committed (the intercept is −0.88, not
+> −0.95); **B4 done** (the review and the PR description), awaiting the user's commit and the PR.
+> Next: step 3 of §7, after the project summary's S1c.2. The record is 11.9.
 
 ## 1. Decisions
 
@@ -625,7 +624,9 @@ Full runs with the room-mix values only (150 neighborhoods, rate 9;
   later steps, not fixed here (R17):
   - **Step 3:** children per apartment in the large-household neighborhoods fall from about 2.0 to
     about 1.6; the realistic level is about 2.7. The children count leans on rooms more than on
-    household size.
+    household size. **B2's measure:** those two numbers rest on 3 neighborhoods; on 1000
+    neighborhoods the fall is about 11% (2.27 / 2.21 / 1.96 to 2.02 / 1.89 / 1.80 at seeds 42 /
+    7 / 11; 11.9).
   - **Step 4:** the kindergarten share rises from .37 to about .39, because rooms push the cohort
     score toward the older cohorts.
 
@@ -705,7 +706,8 @@ is rejected; a zero apartment minimum is rejected.
 **Existing tests to update:** `tests/unit/test_building.py`, `tests/unit/test_config.py`,
 `tests/unit/helpers.py`, `tests/unit/test_transforms.py` (the room function's new argument),
 `tests/characterization/` (fixtures and pins, regenerated in B3). The pinned row counts and split
-sizes should not change; B3 measures them.
+sizes should not change; B3 measures them. `tests/unit/helpers.py` needed no change: it names no
+building field (B4).
 
 ### 11.6 Effects on the benchmark
 
@@ -719,6 +721,10 @@ sizes should not change; B3 measures them.
 - **Room shares** now carry SES information (the expected mix is close to a function of SES), so
   the importance of SES and of the room shares will be shared.
 - **The 6-room share** halves, so `6_rooms_share` becomes a noisier feature.
+- **Room shares now move with building size.** `notebooks/01_eda.py` states as a fixed finding
+  that mean room shares vary little across the building-size bins. The range is 0.054 (0.039
+  without the size term), and the 3-room share now rises with size, from .286 to .328 (B4,
+  11.9). The sentence is to be checked at the reruns (R9).
 
 ### 11.7 Step 2 sub-tasks
 
@@ -728,7 +734,7 @@ sizes should not change; B3 measures them.
 | B1 | The config schema and validation (11.4), the type and size draws and the room tilt's size term (11.1), with their unit and statistical tests (11.5) and a check script against 11.2 | Opus 5.5 | yes | 2026-11-24 |
 | B2 | The intercept (11.3), a full run on three seeds next to 11.3's table, the calibration ranges and the invariants | Opus 5.5 | yes | 2026-11-24 |
 | B3 | Regenerate the characterization fixtures; the full test suite; update the docs that name the removed fields | Sonnet 5.5 | no | 2026-11-24 |
-| B4 | An independent review of the whole step against this section, then the PR description | Fable 5.2 | is the review | |
+| B4 | An independent review of the whole step against this section, then the PR description | Fable 5.2 | is the review | 2026-11-24 |
 
 **B1. Done when:**
 - [x] The `building` section and its settings classes follow 11.4, with the validation rules.
@@ -753,9 +759,9 @@ sizes should not change; B3 measures them.
 - [x] Every doc naming a removed field is updated; `docs/archive/` stays as it is.
 
 **B4. Done when:**
-- [ ] The step is reviewed against 11.1–11.5 as a new reader; each finding is reproduced, then
+- [x] The step is reviewed against 11.1–11.5 as a new reader; each finding is reproduced, then
       fixed.
-- [ ] The PR description is printed in the chat.
+- [x] The PR description is printed in the chat.
 
 ### 11.8 Session prompts
 
@@ -949,3 +955,58 @@ After the PR is merged: merge `main` into `docs/project-summary` and start the s
   log rate of about −0.5, the VIF and correlation tables), `HYPERPARAMETER_TUNING.md`,
   `INDEPENDENT_COHORT_MODELS.md`, `MLFLOW_RUNS.md`, `PARAMETER_REFERENCE.md` and
   `DATA_GENERATION_PLAN.md` (earlier panel design, −0.79).
+
+#### B4 (2026-11-24, Fable 5.2)
+The whole step (`git diff main...HEAD`, 11 files) read against 11.1–11.5.
+- **No defect in the model or the config.** The draws and their RNG order match 11.1; the
+  fields, the removed fields and the validation rules match 11.4; the intercept is B2's −0.88;
+  each test of 11.5 exists; the dataset columns are unchanged (R12).
+- **New check: does each statistical test fail when its own sign or value is wrong?** 11.4
+  leaves the signs and the order of the medians to the statistical tests; B1 had verified the
+  RNG order and the age sign only. `.mlflow-check/realism/b4_review_check.py` applies each
+  mutation as a config override on the tests' own draw (20,000 neighborhoods, rate 9) and calls
+  the test functions (output `b4_review_check_output.txt`):
+
+  | Mutation | Tests that fail |
+  |---|---|
+  | none (the config) | 0 |
+  | `tower_ses_coef` −0.7 | towers rise with SES |
+  | `tower_median_age_coef` −0.3 | towers rise with age at fixed SES |
+  | `tower_planned_school_coef` −0.7 | a planned school raises the tower share |
+  | the two medians swapped | 6: clipping, the skew and the mean, the tower share, and the three tower tests |
+  | no hidden texture or propensity (SDs 1e-9) | buildings of one neighborhood are alike |
+  | `building_size_tilt` +0.32, and 0 | larger buildings hold smaller apartments |
+  | `ses_tilt` −0.35 | apartments grow with SES; large households are crowded |
+  | the old tilts (household 0.35, SES 0.20) | apartments grow with SES |
+  | the old base shares (6 rooms 0.10) | 6-room apartments are rare |
+
+  Every mutation fails at least one test, so no test is changed.
+- **Fixed** (docs and one blank line):
+  - `docs/README.md`: the row for this plan described step 1 only.
+  - This plan's status header said B2 done, next B3.
+  - 11.3's lead for step 3 now carries B2's 1000-neighborhood measure (about 11%, not a fifth).
+  - `docs/SIMPLIFIED_MODEL_PLAN.md`: the Dirichlet row said the mixes stay near their
+    neighborhood expectation; with the size term it is the building's.
+  - 11.5 notes that `tests/unit/helpers.py` needed no change.
+  - `tests/unit/test_building.py`: a third blank line before `_replay_buildings`.
+- **Measured, left for the reruns (R9):** `notebooks/01_eda.py` has a fixed sentence, "Mean room
+  shares vary little across building-size bins", with the advice to treat building size as
+  distinct from the room mix. On the benchmark data (1,523 buildings, seed 42) the notebook's
+  number, the largest range of a mean share across its 8 size bins, is 0.054; with the size
+  term off it is 0.039. The level is still small, but the 3-room share now rises with size
+  (.286 in the smallest bin, .328 in the largest) where it fell before (.311 to .277). The
+  notebook is not edited in this PR; 11.6 records it.
+- **Checked, left:**
+  - **The tail invariant's margin** (B2's item): at the old household-size scale (0.5) its pass
+    share is 0.58–0.75 against the 0.80 threshold, so it still fails as it should. The
+    threshold is kept; step 3 changes the children model and can revisit it.
+  - **The NUTS `RuntimeWarning`** (B3's item) is not this plan's: N4 found that
+    `tests/validation/test_bayesian_recovery.py` imports nothing from `student_simulator`; its
+    imports are unchanged.
+  - `docs/MODULE_REFERENCE.md` names `BuildingSimulator.generate`; the method is
+    `sample_buildings`. The line is the same on `main`.
+- **Static checks:** on the step's source and test files, ruff reports 6 findings (import order
+  and one unused import) and mypy the same 4 as B1, in `config.py`; all are on lines this step
+  did not touch.
+- **Tests:** `tests/unit/test_building.py`: 6 passed. The full suite was not rerun: B4
+  changed no source or config, and B3's run gave 1517 passed.
