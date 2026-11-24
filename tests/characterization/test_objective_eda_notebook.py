@@ -135,7 +135,7 @@ def test_an_override_not_reaching_the_simulator_is_caught(
     # The config alone gives 60 neighborhoods and far fewer rows; a config
     # hash without the overrides would also differ from the one computed here.
     assert _printed(default_run.stdout, "data") == {
-        "rows": "1529",
+        "rows": "1523",
         "neighborhoods": "150",
         "config_hash": _canonical_hash(),
     }
@@ -145,22 +145,22 @@ def test_a_dropped_position_mapping_in_the_split_is_caught(
     default_run: subprocess.CompletedProcess[str],
 ) -> None:
     # Measured on this table (random, seed 42): a second share of 0.2 instead
-    # of val_size / (1 - test_size) = 0.25 gives 978/245/306, and the whole
-    # table given to the second call gives 1146/383/306. The sizes do not
-    # catch the second call's positions used as table positions (917/306/306
+    # of val_size / (1 - test_size) = 0.25 gives 974/244/305, and the whole
+    # table given to the second call gives 1142/381/305. The sizes do not
+    # catch the second call's positions used as table positions (913/305/305
     # with 250 rows in two parts); the notebook maps them with
     # train_val_index[...] instead.
     assert _printed(default_run.stdout, "split") == {
-        "n_train": "917",
-        "n_val": "306",
-        "n_test": "306",
+        "n_train": "913",
+        "n_val": "305",
+        "n_test": "305",
     }
 
 
 def test_a_seed_override_not_reaching_the_simulator_is_caught(tmp_path: Path) -> None:
     # The default keeps the config's seed, so only a run with the override set
     # shows whether it is wired: the printed seed and the config hash must
-    # change, and so must the population (1561 rows at seed 7, measured), which
+    # change, and so must the population (1564 rows at seed 7, measured), which
     # the hash alone cannot show.
     source = NOTEBOOK_PATH.read_text(encoding="utf-8")
     assert source.count("simulation_seed = None") == 1
@@ -181,7 +181,7 @@ def test_a_seed_override_not_reaching_the_simulator_is_caught(tmp_path: Path) ->
     assert _printed(result.stdout, "data_settings")["simulation_seed"] == "7"
     printed = _printed(result.stdout, "data")
     assert printed["config_hash"] != _canonical_hash()
-    assert printed["rows"] == "1561"
+    assert printed["rows"] == "1564"
 
 
 def test_a_tuning_cell_outside_a_run_button_is_caught() -> None:

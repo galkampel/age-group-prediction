@@ -89,6 +89,7 @@ implementation details conflict, the model specification controls behavior.
 | [T4 handoff](NOTEBOOK_T4_HANDOFF.md) | The old package deleted (T4a), the new one built and imported by the notebook (T4b), the docs (T5): each sub-task's steps, result and commit, the checks and the 24 baselines |
 | [Model inspection plan](MODEL_INSPECTION_PLAN.md) | Implemented (PR #14): decisions I1–I2, I7, I12–I13 and the test record of `BootstrapEvaluator`; the user guide is above |
 | [Simulator white-box plan](SIMULATOR_WHITE_BOX_PLAN.md) | The `student_simulator` refactor: components constructed outside and handed in, `simulate()` whose body is the flow, a `SimulationResult` with the dataset and the latent effects per owner; Stops 1–3 done, Stop 4 (docs) and a cleanup stop remain |
+| [Simulator realism plan](SIMULATOR_REALISM_PLAN.md) | The simulator calibrated to Israel, step by step: step 1, the neighborhoods (median age on SES, household size a reverse-J in SES, daycares on demand, school status on household size and age), with decisions R1–R10, the sub-tasks N0–N4 and their record; steps 2–4 outlined |
 | [Feature importance plan](FEATURE_IMPORTANCE_PLAN.md) | Implemented (PR C): decisions I3–I6, I8–I11 with their measured evidence (shap's maskers, exact vs permutation, the row-wise exposure) and the test records of `PermutationImportance` and `ShapExplainer`; the user guide is above |
 
 ## Extensions Beyond The Simplified Model (Not Implemented)

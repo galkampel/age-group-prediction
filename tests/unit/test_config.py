@@ -19,7 +19,7 @@ def test_load_simulation_config_returns_typed_settings() -> None:
     config = load_simulation_config(_config_path())
 
     assert isinstance(config, Config)
-    assert config.neighborhood.school_status_probs == {
+    assert config.neighborhood.school_status_reference_shares == {
         "existing": 0.55,
         "planned": 0.20,
         "none": 0.25,
@@ -27,7 +27,7 @@ def test_load_simulation_config_returns_typed_settings() -> None:
     room_mix = config.building.room_mix
     assert room_mix.supported_rooms == (3, 4, 5, 6)
     assert set(room_mix.base_shares) == {3, 4, 5, 6}
-    assert config.transforms.household_size_reference == 2.6
+    assert config.transforms.household_size_reference == 3.0
     assert config.transforms.room_reference == 4.0
     assert config.total_children.nb_dispersion_phi > 0
 
@@ -83,7 +83,11 @@ def test_invalid_probability_sum_fails(tmp_path: Path) -> None:
     cfg_path = tmp_path / "bad_probs.yml"
     cfg_path.write_text(text)
 
-    with pytest.raises(ConfigError, match=r"probabilities must sum to 1.0: neighborhood.school_status_probs"):
+    with pytest.raises(
+        ConfigError,
+        match=r"probabilities must sum to 1.0: "
+        r"neighborhood.school_status_reference_shares",
+    ):
         load_simulation_config(cfg_path)
 
 
@@ -185,3 +189,95 @@ def test_an_override_of_an_unknown_field_is_rejected() -> None:
 
     with pytest.raises(ConfigError, match=r"simulation.n_neighbourhoods"):
         config.with_overrides({"simulation": {"n_neighbourhoods": 150}})
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("median_age_mean", 37.0),
+        ("median_age_sd", 5.0),
+        ("school_status_probs", {"existing": 0.55, "planned": 0.20, "none": 0.25}),
+    ],
+)
+def test_a_removed_neighborhood_field_is_rejected(field: str, value: object) -> None:
+    config = load_simulation_config(_config_path())
+
+    with pytest.raises(ConfigError, match=rf"neighborhood.{field}"):
+        config.with_overrides({"neighborhood": {field: value}})
+
+
+def test_a_zero_school_reference_share_is_rejected() -> None:
+    # The draw takes the log of each share; the map still sums to 1.
+    config = load_simulation_config(_config_path())
+    shares = {"existing": 0.55, "planned": 0.0, "none": 0.45}
+
+    with pytest.raises(
+        ConfigError,
+        match=r"reference shares must be positive: "
+        r"neighborhood.school_status_reference_shares",
+    ):
+        config.with_overrides(
+            {"neighborhood": {"school_status_reference_shares": shares}}
+        )
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("median_age_baseline", 15.0),
+        ("median_age_baseline", 60.0),
+        ("household_size_baseline", 1.5),
+        ("household_size_baseline", 7.0),
+    ],
+)
+def test_a_baseline_outside_its_bounds_is_rejected(field: str, value: float) -> None:
+    config = load_simulation_config(_config_path())
+
+    with pytest.raises(
+        ConfigError, match=rf"baseline must be within its bounds: neighborhood.{field}"
+    ):
+        config.with_overrides({"neighborhood": {field: value}})
+
+
+def test_a_household_size_minimum_of_one_is_rejected() -> None:
+    config = load_simulation_config(_config_path())
+
+    with pytest.raises(
+        ConfigError,
+        match=r"household size minimum must exceed 1: neighborhood.household_size_min",
+    ):
+        config.with_overrides({"neighborhood": {"household_size_min": 1.0}})
+
+
+@pytest.mark.parametrize(
+    ("section", "field", "value", "path"),
+    [
+        ("features", "household_size_reference", 2.6, "features.household_size_reference"),
+        ("features", "median_age_reference", 37.0, "features.median_age_reference"),
+        ("neighborhood", "household_size_baseline", 2.6, "features.household_size_reference"),
+        ("neighborhood", "median_age_baseline", 37.0, "features.median_age_reference"),
+    ],
+)
+def test_the_reference_neighborhood_must_equal_the_baselines(
+    section: str, field: str, value: float, path: str
+) -> None:
+    # Either side changed alone leaves the outcome models centered on a
+    # neighborhood the draws do not center on.
+    config = load_simulation_config(_config_path())
+
+    with pytest.raises(ConfigError, match=rf"{path} must equal neighborhood\."):
+        config.with_overrides({section: {field: value}})
+
+
+def test_the_reference_neighborhood_may_move_with_the_baselines() -> None:
+    config = load_simulation_config(_config_path())
+
+    moved = config.with_overrides(
+        {
+            "features": {"household_size_reference": 2.6, "median_age_reference": 37.0},
+            "neighborhood": {"household_size_baseline": 2.6, "median_age_baseline": 37.0},
+        }
+    )
+
+    assert moved.transforms.household_size_reference == 2.6
+    assert moved.neighborhood.median_age_baseline == 37.0

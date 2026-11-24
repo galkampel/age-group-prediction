@@ -980,7 +980,7 @@ def test_an_evaluation_run_logs_the_composite_and_each_best_runs_files(
     ]
     kept_statistics = {"score", bound_names["lower"], bound_names["upper"]}
     # The final run's settings: the notebook's and its own n_train_val.
-    settings = {**notebook_defs["shared_params"], "n_train_val": 1223}
+    settings = {**notebook_defs["shared_params"], "n_train_val": 1218}
     scores_df = pd.DataFrame(
         [
             {

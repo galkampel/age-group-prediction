@@ -11,10 +11,10 @@ from student_simulator.outcomes import LatentEffects, TotalChildrenSimulator
 # Test-only quality thresholds for the canonical configs/simulation.yml run;
 # they do not control data generation.
 VALIDATION = ValidationSettings(
-    mean_children_min=0.40,
-    mean_children_max=0.61,
-    zero_share_min=0.60,
-    zero_share_max=0.75,
+    mean_children_min=0.75,
+    mean_children_max=1.00,
+    zero_share_min=0.45,
+    zero_share_max=0.60,
     recovery_abs_tolerance=0.20,
 )
 
