@@ -135,6 +135,7 @@ class RoomMixSettings(_Settings):
     base_shares: dict[int, float]
     household_size_tilt: float
     ses_tilt: float
+    building_size_tilt: float
     room_distance_divisor: float = Field(gt=0)
     dirichlet_concentration: float = Field(gt=0)
 
@@ -155,9 +156,17 @@ class BuildingSettings(_Settings):
 
     buildings_per_neighborhood_min: int = Field(gt=0)
     buildings_per_neighborhood_rate: float = Field(gt=0)
-    apartments_per_building_mean: int = Field(gt=0)
-    apartments_per_building_sd: float = Field(gt=0)
-    apartments_per_building_min: int
+    tower_log_odds_intercept: float
+    tower_ses_coef: float
+    tower_median_age_coef: float
+    tower_planned_school_coef: float
+    tower_propensity_sd: float = Field(gt=0)
+    texture_apartments_median: float
+    tower_apartments_median: float
+    apartments_neighborhood_log_sd: float = Field(gt=0)
+    apartments_building_log_sd: float = Field(gt=0)
+    # Positive: the room tilt takes the log of each building's size.
+    apartments_per_building_min: int = Field(gt=0)
     apartments_per_building_max: int
     buildings_per_neighborhood: tuple[int, ...]
     apartments_per_building: tuple[int, ...]
@@ -170,6 +179,15 @@ class BuildingSettings(_Settings):
             self.apartments_per_building_max,
             "building.apartments_per_building",
         )
+        for name in ("texture_apartments_median", "tower_apartments_median"):
+            if not (
+                self.apartments_per_building_min
+                <= getattr(self, name)
+                <= self.apartments_per_building_max
+            ):
+                raise ValueError(
+                    f"median must be within the apartment bounds: building.{name}"
+                )
         if any(value <= 0 for value in self.buildings_per_neighborhood):
             raise ValueError("building counts must be positive")
         for value in self.apartments_per_building:

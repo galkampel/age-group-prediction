@@ -45,9 +45,11 @@ def test_expected_room_probabilities_are_valid_and_tilt() -> None:
         base_shares={3: 0.30, 4: 0.38, 5: 0.22, 6: 0.10},
         household_size_tilt=0.35,
         ses_tilt=0.20,
+        building_size_tilt=0.0,
         room_distance_divisor=2.0,
         household_size_scaled=np.array([-1.0, 1.5]),
         ses=np.array([-1.0, 1.0]),
+        log_relative_building_size=np.zeros(2),
     )
 
     assert probs.shape == (2, 4)
@@ -89,3 +91,23 @@ def test_nb2_sampling_matches_mean_and_variance() -> None:
             # Tolerances are deliberately generous but deterministic.
             assert abs(sample_mean - expected_mean) < 0.06 + 0.03 * expected_mean
             assert abs(sample_var - expected_var) < 0.25 + 0.10 * expected_var
+
+
+def test_a_larger_building_holds_smaller_apartments() -> None:
+    # A negative size tilt: the same neighborhood, the second building twice as large.
+    probs = expected_room_probabilities(
+        supported_rooms=(3, 4, 5, 6),
+        base_shares={3: 0.30, 4: 0.41, 5: 0.24, 6: 0.05},
+        household_size_tilt=0.10,
+        ses_tilt=0.35,
+        building_size_tilt=-0.32,
+        room_distance_divisor=2.0,
+        household_size_scaled=np.zeros(2),
+        ses=np.zeros(2),
+        log_relative_building_size=np.log(np.array([1.0, 2.0])),
+    )
+    rooms = np.array([3, 4, 5, 6])
+
+    assert np.allclose(probs[0], [0.30, 0.41, 0.24, 0.05])
+    assert probs[1] @ rooms < probs[0] @ rooms
+    assert probs[1, 0] > probs[0, 0]
