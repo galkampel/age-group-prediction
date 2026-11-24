@@ -11,7 +11,8 @@ age 37) are European rather than Israeli. The project summary (`docs/PROJECT_SUM
 instead. This plan revises the simulator **step by step, one PR per step, neighborhoods first**.
 
 > **Step 2 (2026-11-24):** buildings and the room mix, planned in §11 on
-> `feat/realistic-buildings`; decisions R11–R17. Next: B0 (the user commits this plan), then B1.
+> `feat/realistic-buildings`; decisions R11–R17. B0 committed; **B1 done** (awaiting the user's
+> commit). Next: B2.
 
 ## 1. Decisions
 
@@ -659,8 +660,10 @@ building:
 - **Removed:** `apartments_per_building_mean`, `apartments_per_building_sd`.
 - **The median age is scaled** with the existing `features.median_age_reference` and
   `features.median_age_scale`; no new reference.
-- **Validation added:** both medians above 0 and inside the bounds; the texture median below the
-  tower median; the three SDs above 0.
+- **Validation added:** both medians inside the bounds; `apartments_per_building_min` above 0
+  (the tilt takes the log of each size); the three SDs above 0. No ordering rule between the two
+  medians: nothing fails when they are swapped, and the statistical tests catch it (B1, the
+  user's decision).
 - **Validation kept:** min ≤ max; the overrides inside the bounds; the base shares as an exact-key
   probability map.
 - **No sign constraints** on the coefficients; the signs belong to the statistical tests.
@@ -676,23 +679,27 @@ tower-sized at 52 apartments or more (between the texture's 95th percentile and 
   - the intraclass correlation of log size is above 0.15.
 - **Towers:**
   - the tower-sized share is in 8–22%;
-  - it rises across the SES terciles and across the median-age terciles;
+  - it rises across the SES terciles, and across the median-age terciles inside the middle SES
+    tercile (median age rises with SES, so a plain age split misses a flipped age sign);
   - it is higher with a planned school than without, inside the middle SES tercile;
-  - at the reference neighborhood without a planned school it is near
-    $\mathrm{E}[\mathrm{logistic}(-2.35 + r)]$.
+  - **moved to a unit test (B1):** with the hidden effects and the size noise near zero, sizes are
+    exactly 30 or 90, and the tower share of four kinds of neighborhood (the reference, a planned
+    school, SES +1, age +10) matches the logistic formula. The propensity's own effect is pinned
+    by the oracle test.
 - **Room mix:**
   - mean rooms rise across the SES quintiles;
   - people per room in the neighborhoods with $H > 4.5$ is above 1.15;
   - the 6-room share is under 8%;
   - inside each SES tercile, tower-sized buildings have fewer mean rooms than the others;
-  - each building's room counts sum to its apartments.
-- **Reproducibility:** the same seed gives the same frame; the building counts equal the previous
-  model's for the same seed.
+- **The draw order:** an oracle unit test replays 11.1 with numpy and equals the simulator
+  exactly; it also covers the building counts (drawn first) and the room-count sums. The building
+  counts at 150 neighborhoods, rate 9, seeds 42 and 7 equal the previous model's (the check
+  script).
 - **Unchanged and still required:** the calibration ranges (mean children 0.75–1.00, zero share
   0.45–0.60) and both consistency invariants of §5.
 
-**Config tests:** a removed field is rejected; a texture median at or above the tower median is
-rejected; a median outside the bounds is rejected; a zero SD is rejected.
+**Config tests:** a removed field is rejected; a median outside the bounds is rejected; a zero SD
+is rejected; a zero apartment minimum is rejected.
 
 **Existing tests to update:** `tests/unit/test_building.py`, `tests/unit/test_config.py`,
 `tests/unit/helpers.py`, `tests/unit/test_transforms.py` (the room function's new argument),
@@ -716,19 +723,19 @@ sizes should not change; B3 measures them.
 
 | # | Sub-task | Model | Review | Done |
 |---|---|---|---|---|
-| B0 | This plan committed on `feat/realistic-buildings` | user | no | |
-| B1 | The config schema and validation (11.4), the type and size draws and the room tilt's size term (11.1), with their unit and statistical tests (11.5) and a check script against 11.2 | Opus 5.5 | yes | |
+| B0 | This plan committed on `feat/realistic-buildings` | user | no | 2026-11-24 |
+| B1 | The config schema and validation (11.4), the type and size draws and the room tilt's size term (11.1), with their unit and statistical tests (11.5) and a check script against 11.2 | Opus 5.5 | yes | 2026-11-24 |
 | B2 | The intercept (11.3), a full run on three seeds next to 11.3's table, the calibration ranges and the invariants | Opus 5.5 | yes | |
 | B3 | Regenerate the characterization fixtures; the full test suite; update the docs that name the removed fields | Sonnet 5.5 | no | |
 | B4 | An independent review of the whole step against this section, then the PR description | Fable 5.2 | is the review | |
 
 **B1. Done when:**
-- [ ] The `building` section and its settings classes follow 11.4, with the validation rules.
-- [ ] The building component draws 11.1 in its RNG order; the building counts for seeds 42 and 7
+- [x] The `building` section and its settings classes follow 11.4, with the validation rules.
+- [x] The building component draws 11.1 in its RNG order; the building counts for seeds 42 and 7
       equal the previous model's.
-- [ ] The unit tests and the statistical tests of 11.5 pass.
-- [ ] A check script prints 11.2's quantities on a large draw, next to 11.2's numbers.
-- [ ] Review findings reproduced and fixed.
+- [x] The unit tests and the statistical tests of 11.5 pass.
+- [x] A check script prints 11.2's quantities on a large draw, next to 11.2's numbers.
+- [x] Review findings reproduced and fixed.
 
 **B2. Done when:**
 - [ ] The intercept is in the config.
@@ -798,3 +805,58 @@ After the PR is merged: merge `main` into `docs/project-summary` and start the s
   - the bounds 8 and 160: 0.4% of sizes are clipped at the top.
 - **Not run:** a full simulator run with the types and the size term; they need the code. B2 does
   it.
+
+#### B1 (2026-11-24, Opus 5.5; reviews Opus 5.5 and Fable 5.2)
+- **Config:** `building` follows 11.4. Removed `apartments_per_building_mean` and
+  `apartments_per_building_sd` (`extra="forbid"` rejects them); bounds 8 and 160; the room tilt's
+  new values and `building_size_tilt`.
+- **Draws** (`BuildingSimulator`): 11.1 in its order. All the neighborhoods' propensities, then
+  all their textures; one uniform per building for the type; one normal per building for the
+  size; then the unchanged Dirichlet and multinomial loop.
+  - The neighborhood draws are aligned to the buildings by repeating each by its building count:
+    the rows run neighborhood by neighborhood.
+  - The tower probability uses `scipy.special.expit` (scipy is already a dependency).
+  - `expected_room_probabilities` takes `building_size_tilt` and the log of the size over the
+    texture median, as a required argument.
+  - The building context (SES, household size, median age, school status) is merged once and used
+    by both stages.
+- **Check script:** `.mlflow-check/realism/b1_building_check.py`, 20,000 neighborhoods, rate 9.
+  The type is read exactly by replaying the draws; the replayed sizes equal the simulator's.
+  - Every 11.2 quantity matches to sampling noise: tower share 0.151 (plan 0.153); by SES band
+    0.035–0.355; texture 31.4 (18–49), towers 93.3 (55–147); mean 40.7, SD 26.0, skew 2.19; ICC
+    0.29; mean rooms by SES band 3.85–4.20, exactly as planned; 1.27 people per room where
+    $H > 4.5$; 6-room share 0.048; texture / tower rooms 4.03 / 3.97.
+  - The building counts at 150 neighborhoods, rate 9: 1,523 (seed 42) and 1,564 (seed 7), equal
+    to the previous model's.
+  - It ran before the reviews' cleanup and was not rerun: the oracle test, which replays the
+    draws with a hand-written logistic, still passes, so the draws are unchanged.
+- **Tests:** `tests/unit` plus both statistical files: 1429 passed before the reviews, 1426 passed
+  after (three duplicate tests removed), 1 skipped, 1 xfailed. Not run, expected to fail until
+  B2/B3: `tests/validation/test_calibration.py` and the characterization and notebook tests.
+  - Static checks: the 8 ruff and 4 mypy findings in the touched files are on untouched lines and
+    exist at HEAD.
+- **Correctness review (Opus 5.5):** no deviation from 11.1 or 11.4; the RNG order is pinned
+  (mutations of the order fail the oracle); the statistical tests pass at five seeds with stable
+  margins.
+  - Fixed:
+    - **A building with zero apartments now crashed** (`log 0` in the tilt; reproduced: numpy's
+      "pvals contains NaNs"). `apartments_per_building_min` must now be above 0, with a test.
+    - **The age half of the tower test could not catch a flipped age sign** (median age rises
+      with SES). Now taken inside the middle SES tercile; a mutation with the age coefficient
+      at −0.3 now fails it.
+    - Four stale comments (the draw order's wording, the room tilt's comments, the base shares'
+      comment).
+  - Kept: the exact-type test switches the propensity off, so the propensity's marginal effect is
+    pinned by the oracle only. The household tilt's sign is too weak to test statistically.
+- **Simplicity review (Fable 5.2):**
+  - Fixed: the neighborhood-to-building lookup replaced by the repeat (one argument fewer); the
+    hand-written logistic replaced by `expit`; `cfg` renamed `settings`; two needless
+    conversions removed; the method docstring cut to what the public one lacks; the room
+    function's docstring cut to its one constraint; the `gt=0` on the medians removed (implied by
+    the bounds once the minimum is above 0).
+  - Tests: the building-count test and the same-seed test removed (the oracle and the existing
+    RNG test cover them); the bounds test reduced to its one new assertion; the replay calls the
+    room function instead of re-deriving it; short names replaced; the exact-type helper inlined.
+  - **The user's decisions:** the median-order rule dropped (nothing fails without it; it forbade
+    equal medians, the way to switch towers off); the SDs keep `gt=0`, the file's convention, so
+    the exact-type test uses 1e-9 with a comment.
