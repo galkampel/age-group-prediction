@@ -63,8 +63,8 @@ unnecessarily large.
 | `tower_propensity_sd` | `1.0` | Hidden neighborhood effect on the tower log-odds, so towers cluster |
 | `texture_apartments_median` | `30` | Median size of a mid-rise (6-10 floors) building |
 | `tower_apartments_median` | `90` | Median size of a tower |
-| `apartments_neighborhood_log_sd` | `0.20` | Hidden neighborhood texture on log size: one neighborhood's buildings are alike |
-| `apartments_building_log_sd` | `0.22` | Building-to-building variation on log size |
+| `apartments_neighborhood_log_sd` | `0.25` | Hidden neighborhood texture on log size: one neighborhood's buildings are alike |
+| `apartments_building_log_sd` | `0.15` | Building-to-building variation on log size |
 | `apartments_per_building_min` | `8` | Avoids unrealistically tiny buildings |
 | `apartments_per_building_max` | `160` | Prevents rare draws from creating implausibly large towers |
 | `nb_dispersion_phi` | `3.0` | Allows household child counts to vary more than a Poisson model |
@@ -205,7 +205,7 @@ $$
 
 The defaults $B_{min}=1$ and $\lambda_B=3$ give an average of four buildings
 per neighborhood. For each neighborhood draw two hidden effects, $r_j\sim\mathcal N(0,1.0^2)$ (tower
-propensity) and $t_j\sim\mathcal N(0,0.20^2)$ (texture). Each building is a tower with
+propensity) and $t_j\sim\mathcal N(0,0.25^2)$ (texture). Each building is a tower with
 probability
 
 $$
@@ -218,7 +218,7 @@ hidden: it is not a dataset column. Then draw the apartment count:
 
 $$
 A_b=\operatorname{clip}\left(\operatorname{round}\left(m\,e^{t_j+e_b}\right),A_{min},A_{max}\right),
-\qquad e_b\sim\mathcal N(0,0.22^2),
+\qquad e_b\sim\mathcal N(0,0.15^2),
 $$
 
 with $m=30$ for a texture building and $m=90$ for a tower, so sizes are right-skewed (mean about
@@ -283,7 +283,9 @@ Assign those room labels to apartment IDs in random order.
 
 The neighborhood and outcome sections of this document still describe the earlier
 simulator (before the realistic-simulator steps, 2026-11-24); they are stale until the reruns.
-The building and room-mix model above follows `docs/SIMULATOR_REALISM_PLAN.md` 11.1 and 11.4.
+The building and room-mix model above follows `docs/SIMULATOR_REALISM_PLAN.md` 11.1, 11.4 and 12.4,
+and Step 4's total-children model follows 12.1 and 12.4. The neighborhood section and the
+cohort step are not updated.
 
 Increasing concentration makes buildings more alike; decreasing it creates
 more specialized buildings. The multinomial guarantees that room counts sum
@@ -291,7 +293,10 @@ exactly to the configured apartment total.
 
 ### Step 4: Total children per apartment
 
-Let $R_i$ be the room count for apartment $i$ and $Room_{c,i}=R_i-4$.
+Let $R_i$ be the room count for apartment $i$ and $Room_{c,i}=R_i-4$. Let
+$x_j=\log\dfrac{H_j-1.7}{3.0-1.7}$ be the household-size term of neighborhood $j$, where
+$H_j$ is its average household size, 1.7 is the household size of an area with no children
+aged 3-18, and 3.0 is the reference neighborhood (where $x_j=0$).
 
 Daycare saturation is:
 
@@ -306,65 +311,65 @@ The expected total count is:
 
 $$
 \begin{aligned}
-\log\mu_i={}&-1.30
+\log\mu_i={}&-0.89
 +0.45\mathbb{1}\{R_i=4\}
 +0.80\mathbb{1}\{R_i=5\}
 +0.95\mathbb{1}\{R_i=6\}\\
 &+0.05SES_j^2
-+0.30HH_{0.5,j}
++1.0\,x_j
 +0.12S(D_j)\\
 &+0.10Existing_j+0.04Planned_j
 -0.06Age_{10,j}\\
-&+0.10Room_{c,i}HH_{0.5,j}+u_b+w_j.
+&-0.15\,Room_{c,i}\,x_j+u_b+w_j.
 \end{aligned}
 $$
 
 Draw:
 
-$$N_i\sim\operatorname{NB2}(\mu_i,\phi=3.0)$$
+$$N_i=\min\bigl(\operatorname{NB2}(\mu_i,\phi=3.0),\,10\bigr)$$
+
+The count is clipped at 10, about the most children a household can have inside a 16-year age span.
 
 The coefficients are on the log expected-count scale. Holding other terms
 fixed, a coefficient $\beta$ multiplies expected children by $e^\beta$.
 
 | Term | $\beta$ | Practical interpretation |
 |---|---:|---|
-| Intercept | -1.30 | A reference 3-room apartment has $e^{-1.30}=0.27$ expected children before school, daycare, and random effects |
+| Intercept | -0.89 | A reference 3-room apartment in the reference neighborhood has $e^{-0.89}=0.41$ expected children before school, daycare, and random effects |
 | 4 rooms | 0.45 | Multiplies the 3-room expectation by 1.57, a 57% increase |
 | 5 rooms | 0.80 | Multiplies it by 2.23, a 123% increase |
 | 6 rooms | 0.95 | Multiplies it by 2.59, a 159% increase; the gain flattens after 5 rooms |
 | SES squared | 0.05 | Creates a mild symmetric U-shape: SES $\pm2$ adds 0.20 to log mean, or about 22% more expected children than SES 0 |
-| Household size | 0.30 | Each additional 0.5 people in neighborhood average multiplies expected children by 1.35 |
+| Household size | 1.0 | On $x_j$: expected children are proportional to $H_j-1.7$, the household members beyond the adults, so doubling $H_j-1.7$ doubles them |
 | Daycare saturation | 0.12 | Moving from no daycares toward full saturation can raise the expectation by at most 13% |
 | Daycare saturation scale | 3 facilities | The first few facilities matter most; at 3 facilities the saturation function has reached 63% of its maximum |
 | Existing school | 0.10 | Multiplies the no-school reference by 1.11 |
 | Planned school | 0.04 | Multiplies the no-school reference by 1.04; weaker because it is not yet operating |
 | Median age | -0.06 | A 10-year older neighborhood multiplies expected children by 0.94, after holding the other neighborhood covariates fixed |
-| Rooms by household size | 0.10 | Modifies the effect of an extra 0.5 neighborhood household members: the expected-count multipliers are 1.22, 1.35, 1.49, and 1.65 for 3, 4, 5, and 6 rooms respectively |
+| Rooms by household size (crowding) | -0.15 | On $Room_{c,i}\,x_j$: the household-size slope in $x_j$ is 1.15, 1.00, 0.85, and 0.70 for 3, 4, 5, and 6 rooms; the room gap shrinks where households are large and widens where they are small |
 | Building-effect SD | 0.25 | A typical one-SD building difference changes the mean by a factor of about 1.28 up or 0.78 down |
 | Neighborhood-effect SD | 0.20 | A typical one-SD neighborhood difference changes the mean by about 1.22 up or 0.82 down |
 | NB2 dispersion $\phi$ | 3.0 | Adds variance $\mu^2/3$ beyond Poisson; smaller values create more household-to-household variation |
+| Cap | 10 | The count is clipped here; about 0.07% of apartments sit at the cap |
 
 Rooms have a nonlinear, flattening effect. Household size is the strongest
-contextual driver. Daycare has diminishing returns. The interaction says large
-apartments produce more children where local household demand is also high.
+contextual driver. Daycare has diminishing returns. The interaction is
+crowding: where households are large, small apartments also hold many
+children, so the gain from extra rooms is smaller there (a 6-room apartment
+holds about 1.8 times the children of a 3-room one where household size is
+over 4.5, against about 3.5 times where it is under 2.6).
 The negative median-age coefficient encodes a neighborhood lifecycle signal:
 areas with older resident populations are expected to contain fewer children
 than otherwise similar younger areas. This is a modeled population-level
 association, not a causal claim that an older individual household has fewer
 children.
-The household-size main effect remains positive for every supported room count.
-For a 3-room apartment, one additional 0.5 people in neighborhood average
-household size changes the log mean by $0.30-0.10=0.20$, or multiplies expected
-children by $e^{0.20}=1.22$. Small apartments in large-household neighborhoods
-can therefore still be more crowded; the interaction only makes their increase
-smaller than the increase in apartments with more capacity.
+The household-size slope in $x_j$ is positive for every supported room count:
+$1.0-0.15(R-4)$ is 1.15, 1.00, 0.85, and 0.70 for 3, 4, 5, and 6 rooms.
 
 `avg_household_size` is a neighborhood-level context variable, not the actual
 number of people occupying apartment $i$. The interaction must therefore be
-interpreted as **apartment capacity by local household demand**, not as direct
-evidence that a particular apartment is crowded. At high household size, the
-main effect raises expected children for every apartment, while the interaction
-allows larger apartments to accommodate more of that demand.
+interpreted as **apartment size by local household demand**, not as direct
+evidence that a particular apartment is crowded.
 The positive SES-square coefficient represents the limited hypothesis that
 both low- and high-SES contexts may have somewhat larger families than the
 middle. It is deliberately weak because SES can proxy cultural, religious, and
@@ -514,10 +519,10 @@ private implementation state.
 | Simulated mean composition | Report and monitor; do not force it to equal the reference shares |
 | Mean children rises from 3 to 5 rooms | Required; 6-room increment may flatten |
 | Building variance/mean | Clearly above 1 |
-| Room effect strengthens with household size | Required for the total-count interaction |
-| Household-size effect remains positive for 3, 4, 5, and 6 rooms | Required; verify $0.30+0.10(R-4)>0$ for every supported room count |
+| Room effect shrinks with household size (crowding) | Required for the total-count interaction: the 6-to-3-room ratio is lower where household size is over 4.5 than where it is under 2.6 |
+| Household-size effect remains positive for 3, 4, 5, and 6 rooms | Required; verify $1.0-0.15(R-4)>0$ for every supported room count |
 | Room by household-size scenario grid | Report expected means for every room count across household sizes 1.8, 2.6, 3.1, 3.6, and 4.2 |
-| Extreme 6-room/high-household prediction | Inspect during calibration so the positive interaction does not create implausibly large counts |
+| Extreme 6-room/high-household prediction | Inspect during calibration; the cap of 10 bounds the count, and the crowding interaction keeps large rooms from compounding with large households |
 | Large-room effect shifts composition older more strongly only in neighborhoods older than 37 | Required for the one-sided composition interaction |
 | Small rooms in young neighborhoods receive no room-age interaction | Required; their younger shift comes only from the main effects |
 

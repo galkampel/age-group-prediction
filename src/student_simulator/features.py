@@ -15,6 +15,33 @@ def scale_household_size(
     return (arr - reference) / scale
 
 
+def log_household_size_excess(
+    values: np.ndarray | Iterable[float],
+    reference: float,
+    childless: float,
+) -> np.ndarray:
+    """Log of household size beyond the childless size, relative to the reference.
+
+    Computes $\\log((H - childless) / (reference - childless))$: 0 at the
+    reference, and $\\log 2$ more when $H - childless$ doubles.
+
+    Raises:
+        ValueError: If any household size, or the reference, is at or below
+            the childless size (the log is undefined there).
+    """
+    arr = np.asarray(values, dtype=float)
+    if reference <= childless:
+        raise ValueError(
+            "the household-size reference must exceed the childless household size"
+        )
+    if np.any(arr <= childless):
+        raise ValueError(
+            "household sizes must exceed the childless household size "
+            f"({childless}); got a minimum of {arr.min()}"
+        )
+    return np.log((arr - childless) / (reference - childless))
+
+
 def scale_median_age(
     values: np.ndarray | Iterable[float],
     reference: float,

@@ -213,6 +213,9 @@ class TotalChildrenSettings(_Settings):
     intercept: float
     room_log_mean_effects: dict[int, float]
     ses_quadratic_coef: float
+    # Household size with no children aged 3-18; the household-size term is
+    # log((H - childless) / (reference - childless)).
+    childless_household_size: float
     household_size_coef: float
     daycare_saturation_coef: float
     existing_school_coef: float
@@ -223,6 +226,8 @@ class TotalChildrenSettings(_Settings):
     building_effect_sd: float = Field(gt=0)
     neighborhood_effect_sd: float = Field(gt=0)
     nb_dispersion_phi: float = Field(gt=0)
+    # The NB2 draw is clipped here.
+    max_children: int = Field(ge=1)
 
 
 class CohortSettings(_Settings):
@@ -313,6 +318,16 @@ class Config(_Settings):
         ):
             if reference != baseline:
                 raise ValueError(f"{reference_path} must equal {baseline_path}")
+
+        # The household-size term takes log(H - childless) for every drawn H.
+        if (
+            self.total_children.childless_household_size
+            >= self.neighborhood.household_size_min
+        ):
+            raise ValueError(
+                "total_children.childless_household_size must be below "
+                "neighborhood.household_size_min"
+            )
 
         supported_rooms = set(self.building.room_mix.supported_rooms)
         reference_room = min(supported_rooms)

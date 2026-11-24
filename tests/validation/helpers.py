@@ -108,7 +108,7 @@ def run_recovery_checks(
             )
         },
         "ses_squared": total.ses_quadratic_coef,
-        "household_size_scaled": total.household_size_coef,
+        "log_household_size_excess": total.household_size_coef,
         "daycare_saturation": total.daycare_saturation_coef,
         "school_existing": total.existing_school_coef,
         "school_planned": total.planned_school_coef,

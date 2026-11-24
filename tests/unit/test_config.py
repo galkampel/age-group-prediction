@@ -334,3 +334,25 @@ def test_a_zero_building_sd_is_rejected(field: str) -> None:
 
     with pytest.raises(ConfigError, match=rf"building.{field}"):
         config.with_overrides({"building": {field: 0.0}})
+
+
+@pytest.mark.parametrize("value", [1.8, 2.0])
+def test_a_childless_household_size_at_or_above_the_minimum_is_rejected(
+    value: float,
+) -> None:
+    config = load_simulation_config(_config_path())
+
+    with pytest.raises(
+        ConfigError,
+        match=r"total_children.childless_household_size must be below "
+        r"neighborhood.household_size_min",
+    ):
+        config.with_overrides({"total_children": {"childless_household_size": value}})
+
+
+@pytest.mark.parametrize("value", [0, 2.5])
+def test_a_max_children_below_one_or_fractional_is_rejected(value: float) -> None:
+    config = load_simulation_config(_config_path())
+
+    with pytest.raises(ConfigError, match=r"total_children.max_children"):
+        config.with_overrides({"total_children": {"max_children": value}})

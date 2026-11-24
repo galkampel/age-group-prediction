@@ -10,8 +10,13 @@ instead. This plan revises the simulator **step by step, one PR per step, neighb
 
 > **Step 2 (2026-11-24):** buildings and the room mix, planned in §11 on
 > `feat/realistic-buildings`; decisions R11–R17. B0–B3 committed (the intercept is −0.88, not
-> −0.95); **B4 done** (the review and the PR description), awaiting the user's commit and the PR.
-> Next: step 3 of §7, after the project summary's S1c.2. The record is 11.9.
+> −0.95); B4 done (the review and the PR description). **Complete and merged (PR #30).** The
+> record is 11.9.
+
+> **Step 3 (2026-11-24):** children per apartment and the building-size scales, planned in §12
+> on `feat/realistic-children`; decisions R18–R24. C0–C4 committed (the intercept stays −0.89);
+> **C5 done** (the review and the PR description), awaiting the user's commit and the PR. Next:
+> merge `main` into `docs/project-summary`, then the summary's S1c.3. The record is 12.10.
 
 ## 1. Decisions
 
@@ -34,6 +39,13 @@ instead. This plan revises the simulator **step by step, one PR per step, neighb
 | R15 | Step 2: larger buildings hold smaller apartments (user): the room tilt gets a term in the building's own size. |
 | R16 | Step 2, room mix: apartment size rises with SES and depends only weakly on household size, so large poor households are crowded. The room categories stay 3–6 (no new dataset column), with a lower 6-room share (user). |
 | R17 | Step 2 changes downstream only the children intercept (R6). The fall of the children count in large-household neighborhoods is left to step 3 (user). |
+| R18 | Step 3: the children model stays at the apartment level (user). Scope: the household-size relation, one interaction, a cap, the intercept. Not in the step: the zero share and family size (no two-part draw), the hidden effects' SDs, the main room effects, the daycare, school-status and median-age terms, $\phi$. |
+| R19 | Step 3: expected children are **proportional to household size minus 1.7**, the household size of an area without children aged 3–18. The exponent stays 1. |
+| R20 | Step 3: the top target is revised. Children aged 3–18 per household equal household size times the population share aged 3–18, which gives about 2.0–2.4 at household size 5.0 (Haredi areas 2.4–2.6, Arab towns 1.7–1.9) and a slope of 0.6–0.7 per person, not 2.5–2.7 and 0.8–0.9 (medium). |
+| R21 | Step 3: the model keeps one interaction (user: at least one, it may be non-linear). **Crowding:** rooms × the log household-size term, with a negative sign: where households are large, small apartments also hold many children. |
+| R22 | Step 3: the count is capped at **10** by clipping the draw (user). |
+| R23 | Step 3: the building-size log SDs become **0.25** (neighborhood texture) and **0.15** (the building's own), from 0.20 and 0.22 (user). |
+| R24 | Step 3: the intercept is calibrated on the average of 31 seeds, not on seed 42 alone (B2's lesson). |
 
 ## 2. Step 1: the neighborhood model
 
@@ -245,7 +257,7 @@ leads.
 | Step | Component | Known issues (from Fable's step-1 run) |
 |---|---|---|
 | 2 | Buildings and room mix | Large-household, low-SES areas get larger apartments (mean rooms 4.39 against 4.04); in Israel they are crowded. Building size may depend on the area. |
-| 3 | Children per apartment | The NB tail: a maximum of 37 children in one apartment (needs a cap or a larger $\phi$). Zero share 0.52 against about 0.60 real. Too flat at small households (0.45 children at $H = 2.2$; real about 0.1–0.3). |
+| 3 | Children per apartment (**planned in §12**) | The NB tail: a maximum of 37 children in one apartment (needs a cap or a larger $\phi$). Zero share 0.52 against about 0.60 real. Too flat at small households (0.45 children at $H = 2.2$; real about 0.1–0.3). |
 | 4 | The cohort split | Reference shares 0.40/0.35/0.25 against a real 27/38/35% for ages 3–6/7–12/13–18. The household-size coefficient (+0.15) pushes large-household areas toward high school, the opposite of Israel. |
 | 5 | The reruns | After the summary's documentation (summary P12): notebooks 03 and 04 rerun on the new data, a fresh MLflow store, then the summary's S5a onward. |
 
@@ -1015,3 +1027,556 @@ The whole step (`git diff main...HEAD`, 11 files) read against 11.1–11.5.
   did not touch.
 - **Tests:** `tests/unit/test_building.py`: 6 passed. The full suite was not rerun: B4
   changed no source or config, and B3's run gave 1517 passed.
+
+## 12. Step 3: children per apartment, and the building-size scales
+
+Decided on 2026-11-24 from the project summary's S1c.2 analysis
+(`docs/PROJECT_SUMMARY_PLAN.md` §9 on `docs/project-summary`). Decisions R18–R24 (§1).
+
+### 12.1 The model
+
+$H_j$ is the neighborhood's household size, $r_i$ the apartment's rooms.
+
+| # | Variable | Formula | Why |
+|---|---|---|---|
+| 1 | Household-size term | $x_j = \log\dfrac{H_j - 1.7}{3.0 - 1.7}$ | children are the household members beyond the adults; 1.7 is the household size of an area with no children aged 3–18; 3.0 is the reference neighborhood, where the term is 0 |
+| 2 | Log expected count | $\log\mu_i = -0.89 + \rho_{r_i} + 1.0\,x_j - 0.15\,(r_i - 4)\,x_j + \text{daycare, school and median-age terms} + u_b + w_j$ | $\rho$: the room effects (0, 0.45, 0.80, 0.95), unchanged. The interaction is crowding: the room gap shrinks where households are large and widens where they are small |
+| 3 | Count | $n_i = \min(\mathrm{NB2}(\mu_i,\ \phi = 3),\ 10)$ | ten children inside a 16-year age span is about the limit |
+| 4 | Building size (step 2's draw 5) | $A_b = \mathrm{clip}(\mathrm{round}(m \cdot e^{t_j + e_b}), 8, 160)$ with $t_j \sim \mathcal N(0, 0.25^2)$, $e_b \sim \mathcal N(0, 0.15^2)$ | a neighborhood's buildings share an era, a plan and plot sizes; the towers give the contrast inside a neighborhood |
+
+- **Replaced:** `0.30 · H̃` and `+0.10 · (rooms − 4) · H̃`, with $\tilde H = (H - 3.0)/0.75$. The
+  SES² term (coefficient 0 since step 1) is left as it is.
+- **RNG order unchanged:** the building effects, the neighborhood effects, one NB2 draw per
+  apartment. The clip uses no draw. The building counts and the hidden types are unchanged for a
+  seed; the sizes change, so every later draw changes.
+- **The scaled household size stays** in the room tilt and the cohort score, with
+  `features.household_size_scale`.
+- **Near the floor:** household size is clipped at 1.8, where the term is $\log(0.1/1.3)$ (a factor
+  of 0.077). 3 of 1,000 neighborhoods sit there. The config must keep 1.7 below the minimum (12.4).
+
+### 12.2 Calibration
+
+All runs in memory (plan mode), the new model replayed on the simulator's own draws: 1,000
+neighborhoods, rate 9, seeds 42 / 7 / 11 (about 410,000 apartments each). The targets are from
+memory (R10).
+
+**Household size** (mean children per apartment by the neighborhood's household-size band):
+
+| Band's mean household size | 2.05 | 2.43 | 2.82 | 3.22 | 3.70 | 4.22 | 4.98 | Slope per person |
+|---|---|---|---|---|---|---|---|---|
+| Today | 0.45 | 0.61 | 0.72 | 0.88 | 1.09 | 1.39 | 2.09 | 0.44–0.51 |
+| New (seed 42) | 0.20 | 0.42 | 0.66 | 0.92 | 1.20 | 1.54 | 2.03 | 0.61–0.63 |
+| New, seeds 7 / 11 | 0.20 / 0.20 | 0.43 / 0.45 | 0.65 / 0.66 | 0.92 / 0.95 | 1.24 / 1.25 | 1.61 / 1.52 | 1.93 / 1.85 | |
+| Target (confidence) | 0.15–0.25 (medium-high) | | | 0.90–0.95 (high) | | | 2.0–2.4 (medium) | 0.6–0.7 |
+
+Children divided by (household size − 1.7), each band against the middle band: 0.95–1.06 (today
+2.2–2.6 in the lowest band).
+
+**Rooms and crowding** (children in a 6-room apartment over a 3-room one):
+
+| Household size | under 2.6 | 2.6–3.5 | 3.5–4.5 | over 4.5 | Children at 3 / 6 rooms, over 4.5 |
+|---|---|---|---|---|---|
+| Today | 2.0–2.1 | | | 5.0–5.9 | 0.97 / 5.78 |
+| New | 3.4–3.7 | 2.6 | 2.1 | 1.7–1.8 | 1.63 / 2.76 |
+
+**Level, tail, cap:**
+
+| Quantity | Today | New | Target (confidence) |
+|---|---|---|---|
+| Mean per apartment, 1,000 neighborhoods | 0.87–0.89 | 0.87–0.88 | about 0.9 (medium) |
+| Zero share | 0.50 | 0.51–0.52 | about 0.60; not in the step (R18) |
+| Maximum | 25–40 | 10 | above 10–12 does not occur (high) |
+| Clipped draws; mean lost | — | 0.03–0.04%; 0.1% | |
+| Apartments at exactly 10 | 0.04% | 0.07% | a small pile-up, invisible in building sums |
+| Both invariants of §5 | 0.98; 1.00 | 0.995–1.00; 1.00 | |
+
+**The intercept** (150 neighborhoods, rate 9, seeds 42 and 0–29): at −0.89 the mean is 0.879 (SD
+0.042, range 0.820–0.991); the value centring 0.875 is −0.894. **Seed 42 is a low draw: 0.845**
+(0.872 today). Seeds 7 / 11: 0.958 / 0.868.
+
+**The canonical config** (60 neighborhoods, rate 3; 31 seeds): mean 0.777–0.961, zero share
+0.490–0.547, all inside the ranges. Oracle recovery's largest error: 0.17 over 31 seeds (2 above
+0.15), 0.05 at seed 42; the tolerance stays 0.20.
+
+**Building size** (step 2's statistical draw: 20,000 neighborhoods, seed 20261125):
+
+| Quantity | 0.20 / 0.22 | 0.25 / 0.15 |
+|---|---|---|
+| Mean, SD, skew | 40.7, 26.1, 2.19 | 40.6, 25.9, 2.18 |
+| Percentiles 5 / 25 / 50 / 75 / 95 / 99 | 19 / 26 / 32 / 43 / 102 / 141 | 19 / 26 / 32 / 42 / 102 / 139 |
+| Clipped at 160 | 0.41% | 0.37% |
+| Intraclass correlation of log size | 0.28 | 0.375 |
+| Texture-size variance between neighborhoods (formula) | 45% | 74% |
+| 10th–90th percentile inside one neighborhood, texture buildings | 23–40 | 25–36 |
+| Correlation with SES / median age / household size | +0.20 / +0.15 / −0.13 | the same |
+| The 11 tests of 11.5 | pass | pass |
+
+### 12.3 Downstream consistency
+
+| Field | Now | New | Why |
+|---|---|---|---|
+| `total_children.intercept` | −0.88 | −0.89 | keeps the level: 0.879 on 31 seeds (R24) |
+
+- **C3 re-verifies with the code.** The intercept changes from −0.89 only if the 31-seed mean
+  (150 neighborhoods, rate 9, seeds 42 and 0–29) leaves 0.865–0.885.
+- Nothing else downstream changes (R6). The cohort split is step 4.
+
+### 12.4 The config schema
+
+```yaml
+building:
+  apartments_neighborhood_log_sd: 0.25   # was 0.20
+  apartments_building_log_sd: 0.15       # was 0.22
+
+total_children:
+  intercept: -0.89                        # was -0.88
+  childless_household_size: 1.7           # new: household size with no children aged 3-18
+  household_size_coef: 1.0                # was 0.30; now on log((H - 1.7) / (3.0 - 1.7))
+  rooms_household_interaction_coef: -0.15 # was +0.10; now on (rooms - 4) x that log term
+  max_children: 10                        # new: the count is clipped here
+```
+
+- **No field removed.** The two coefficients keep their names and change their feature.
+- **Validation added:** `max_children` a whole number of at least 1; a cross-section check in
+  `Config` that `childless_household_size` is below `neighborhood.household_size_min` (the log is
+  taken).
+- **A runtime guard** in the transform: a household size at or below the childless size raises a
+  clear error (hand-built contexts bypass the clip).
+- **Code:** a public `log_household_size_excess(values, reference, childless)` in
+  `src/student_simulator/features.py`; the design column `household_size_scaled` becomes
+  `log_household_size_excess`; `rooms_household_interaction` keeps its name; the clip follows the
+  draw in `sample_total_children`.
+
+### 12.5 The tests
+
+**New statistical tests** (`tests/validation/test_children_statistics.py`: 1,000 neighborhoods,
+rate 9, a fixed seed, the stages up to the totals; shapes and signs only). Each but the level
+test fails on today's model (the level is unchanged; that test guards the intercept):
+
+- **Small households hold few children:** the mean where household size is under 2.3 is below
+  0.35 (new 0.23–0.26; today 0.47–0.53).
+- **Proportionality:** children ÷ (household size − 1.7) in each of the seven bands is within 25%
+  of the middle band (new 0.95–1.06; today 2.2–2.6 in the lowest).
+- **Crowding:** the 6-to-3-room ratio where household size is over 4.5 is below the ratio where
+  it is under 2.6, and below 2.6 (new 1.7–1.8 against 3.4–3.7; today 5.0–5.9 against 2.0–2.1).
+- **The cap:** no count above 10; under 0.3% of apartments at the cap (today's maximum 25–40).
+- **The level:** the mean is in 0.80–0.95.
+
+**Unit tests** (`tests/unit/test_total_children_stage.py`):
+- the log term is 0 at the reference and adds $\log 2$ when $H - 1.7$ doubles;
+- the room difference in log $\mu$ at household size $H$ equals the room effects plus
+  $-0.15\,(r - 4)\,x$;
+- the counts equal the minimum of the replayed NB2 draw and the cap; with a very large intercept
+  every count equals the cap;
+- a household size at or below 1.7 raises;
+- `test_household_size_main_effect_positive_for_supported_rooms` is rewritten for the new terms
+  (the slope in $x$ is positive for every room count);
+- the hand-built contexts move to the current references (3.0 and 31; they use 2.6 and 37).
+
+**Config tests:** `childless_household_size` at or above the household-size minimum is rejected;
+`max_children` of 0 is rejected.
+
+**Changed:** the intraclass-correlation test of `test_building_statistics.py` asks for more than
+0.30 (was 0.15): 0.28 fails, 0.375 passes.
+
+**Existing tests to update:** `tests/unit/test_design.py` (the column list),
+`tests/validation/helpers.py` (the recovery's expected coefficients),
+`tests/characterization/` (fixtures and pins, regenerated in C4).
+
+**Unchanged and still required:** the calibration ranges, both invariants of §5 (they pass at
+0.995 and 1.00 and now guard only against a gross error) and the other ten tests of 11.5.
+
+### 12.6 Effects on the benchmark
+
+- **Household size is no longer log-linear.** A log-link model with a linear household-size term
+  loses about 6% of the explained deviance against the true form (the consult's measure). Trees
+  and splines can follow it; the modeling side has a spline option for SES only.
+- **The rooms × household-size feature of the models keeps a ground truth, with the opposite
+  sign.** `docs/FEATURE_TRANSFORMATIONS.md` (the total-stage pair) is revised at the reruns (R9).
+- **Buildings in small-household areas are nearly empty of children** (0.2 per apartment), and
+  the spread between neighborhoods grows (slope 0.63 against 0.48).
+- **Building totals** (150 neighborhoods, rate 9, seeds 42 / 7 / 11): mean 34–38, SD 30–32,
+  maximum 265–305 (step 2: SD 28–29, maximum 250–312).
+- **The benchmark's seed gives a lower level:** 0.845 children per apartment at seed 42 (0.872
+  today), because the intercept is centred on 31 seeds.
+- **Sizes inside a neighborhood are more alike,** so `n_apartments` carries more neighborhood
+  information (intraclass correlation 0.375), which matters for grouped splits.
+
+### 12.7 Leads, not in this step
+
+- **Affordability** (the user's relation: high-SES households afford large apartments): measured
+  as rooms × SES above 0 at −0.10. It is recovered, but at SES over 1.5 a 6-room apartment then
+  holds fewer children than a 5-room one (0.88 against 0.95), which has no support. Not taken;
+  the room mix already gives high-SES areas larger apartments (step 2).
+- **Families with many children avoid towers** (the user's relation; plausible: cost, upkeep
+  fees, smaller apartments). It already holds through two paths, measured on seed 42: towers are
+  rare where households are large (5.6% of buildings where household size is over 4, against
+  19.5% in the middle band), and tower apartments are smaller. Tower-sized buildings hold 0.77
+  children per apartment against 0.94, and 28% of the apartments with four or more children
+  against 38% of all apartments. Inside large-household neighborhoods the gap is small (1.55
+  against 1.71). A direct effect needs the hidden type (R12); the type stays hidden.
+- **New buildings attract young families** (the user's relation): the data has no building age.
+  For step 4: a higher kindergarten share where a school is planned or the building is a tower.
+- **Median age in the room mix:** at a fixed SES the mean rooms do not move with age
+  (3.88 / 3.89 / 3.85). The poorest areas already have the smallest apartments (3.88 against
+  4.17).
+- **The tail under the cap:** $\mu$ still reaches about 8.5 through the hidden effects; the cap
+  hides it. The effects' SDs are out of scope (R18).
+- **The zero share** stays 0.51 against about 0.60 (R18).
+
+### 12.8 Step 3 sub-tasks
+
+| # | Sub-task | Model | Review | Done |
+|---|---|---|---|---|
+| C0 | This plan committed on `feat/realistic-children` | user | no | |
+| C1 | The two building SDs (12.4), the ICC threshold (12.5), a check script against 12.2's building table | Sonnet 5.5 | no | x |
+| C2 | The children model: the config and validation (12.4), the transform, the design, the cap (12.1), the unit, config and statistical tests (12.5), a check script against 12.2 | Opus 5.5 | yes | x |
+| C3 | The intercept on 31 seeds (12.3), a full run on seeds 42 / 7 / 11, the calibration ranges, the invariants, the recovery check | Opus 5.5 | yes | x |
+| C4 | Regenerate the characterization fixtures; the full test suite; update the docs that describe the changed terms | Sonnet 5.5 | no | x |
+| C5 | An independent review of the whole step against §12, with a mutation check of the new tests (B4's form), then the PR description | Fable 5.2 | is the review | x |
+
+**C1. Done when:**
+- [x] The two SDs are in the config and the ICC test asks for more than 0.30.
+- [x] A check script prints 12.2's building table on step 2's draw; the building counts at 150
+      neighborhoods, rate 9, seeds 42 and 7 are still 1,523 and 1,564.
+- [x] `tests/unit/test_building.py` and `tests/validation/test_building_statistics.py` pass.
+
+**C2. Done when:**
+- [x] `total_children` follows 12.4, with the validation rules and the runtime guard.
+- [x] The design and the draw follow 12.1; the RNG order is unchanged.
+- [x] The unit, config and statistical tests of 12.5 pass.
+- [x] A check script prints 12.2's household-size, rooms and tail tables on seeds 42 / 7 / 11.
+- [x] Review findings reproduced and fixed.
+
+**C3. Done when:**
+- [x] The 31-seed mean is printed; the intercept changes only by 12.3's rule.
+- [x] A full run (150 neighborhoods, rate 9, seeds 42, 7, 11) prints children per apartment and
+      per building, the zero share, the maximum, the cohort shares and both invariants.
+- [x] The calibration ranges, the invariants and the recovery test pass, or the failure is shown
+      with its numbers.
+- [x] Review findings reproduced and fixed.
+
+**C4. Done when:**
+- [x] The characterization fixtures are regenerated, and each diff is explained in 12.10.
+- [x] The full test suite passes (output shown).
+- [x] `docs/SIMPLIFIED_MODEL_PLAN.md` follows 12.1 and 12.4; `docs/archive/` stays as it is; the
+      docs that wait for the reruns (R9) are listed.
+
+**C5. Done when:**
+- [x] The step is reviewed against 12.1–12.5 as a new reader; each finding is reproduced, then
+      fixed.
+- [x] Each new test fails under its own mutation (the old coefficients, the interaction's sign
+      flipped, no cap, the old SDs).
+- [x] The PR description is printed in the chat.
+
+### 12.9 Session prompts
+
+**The opening:**
+
+```text
+We are making the simulator realistic, step 3 (children per apartment and the building-size
+scales), on branch feat/realistic-children. Read docs/SIMULATOR_REALISM_PLAN.md first: §1
+decisions (R18–R24 are this step's), §12 the step (12.1 the model, 12.3 downstream, 12.4 the
+config, 12.5 the tests, 12.8 your sub-task, 12.10 the record), and 11.9 for how step 2's
+sub-tasks were recorded. Rules: do only this sub-task; the plan's values are decided (do not
+re-derive them; if one fails a check, stop and show the evidence); scripts and their outputs go
+in .mlflow-check/realism/ (git-ignored) and run with ~/.venvs/age-group-prediction/bin/python;
+static checks (ruff, mypy with --cache-dir in that folder) before the tests; run each check
+once; do not commit. At the stop: show the diff and the test output, tick the sub-task's "done
+when" boxes and add its entry to 12.10, write the commit message in a text block (no
+Co-Authored-By line), and print the next sub-task's prompt (this opening, a blank line, its
+text) in one code block, naming the model to select.
+```
+
+| Sub-task | Text after the opening |
+|---|---|
+| C1 | `Implement C1: the two building-size SDs (12.4), the ICC threshold (12.5) and a check script against 12.2's building table.` |
+| C2 | `Implement C2: the children model's config and validation (12.4), the log household-size transform, the design and the cap (12.1), with the unit, config and statistical tests (12.5) and a check script against 12.2's tables. Run an independent review subagent before the stop.` |
+| C3 | `Implement C3: the intercept on 31 seeds (12.3), a full run on three seeds, the calibration ranges, the invariants and the recovery check. Run an independent review subagent before the stop.` |
+| C4 | `Implement C4: regenerate the characterization fixtures, run the full test suite, and update the docs that describe the changed terms.` |
+| C5 | `Implement C5: review the whole step against §12 as a new reader; reproduce each finding before fixing it; run a mutation check of the new tests; then write the PR description.` |
+
+After the PR is merged: merge `main` into `docs/project-summary` and start the summary's S1c.3.
+
+### 12.10 Record
+
+#### Planning (2026-11-24, Fable 5.2)
+- **Source:** the S1c.2 analysis and the user's two decisions (the children step; the
+  building-size scales).
+- **Runs:** in memory only (plan mode); no script was saved. C1 and C2 write the check scripts.
+- **Candidates measured for the household-size relation:**
+  - log-linear at 0.40 / 0.50 / 0.60: the lowest band stays at 0.29–0.42, and at 0.60 the top
+    reaches 3.35;
+  - proportional with exponent 1.15: 0.15 / 0.93 / 2.23; it grows faster than proportionally
+    and adds a value;
+  - childless size 1.5: the lowest band is 0.27.
+- **The Fable consult** (independent, with its own draws):
+  - its targets: 0.15–0.25, 0.90–0.95 and 2.0–2.4 children at household size 2.05, 3.2 and 5.0;
+    slope 0.6–0.7 (R20);
+  - the proportional form, 1.7 and exponent 1; a clip at 10; 0.25 / 0.15 with the ICC threshold
+    at 0.30;
+  - it advised dropping the interaction and noted that crowding argues for a negative one.
+- **The user's choices:** the cap of 10; at least one interaction, possibly non-linear; the
+  relations of 12.7 recorded as leads.
+- **Chosen in the session:** crowding alone. The user left "both" (crowding and affordability)
+  to the session's judgment of realism; affordability gave an unsupported room profile (12.7).
+- **Not run:** the code itself; the cohort shares under the new counts (C3).
+
+#### C1 (2026-11-24, Sonnet 5.5)
+- **Config:** `configs/simulation.yml`: `apartments_neighborhood_log_sd` 0.20 to 0.25,
+  `apartments_building_log_sd` 0.22 to 0.15. No source file changed.
+- **Test:** the intraclass-correlation test of `test_building_statistics.py` asks for more than
+  0.30 (was 0.15).
+- **Check** (`.mlflow-check/realism/c1_building_check.py`, output `c1_building_check_output.txt`;
+  20,000 neighborhoods, rate 9, seed 20261125). New column against 12.2: mean / SD / skew
+  40.6 / 25.9 / 2.18 (same); percentiles 19 26 32 42 102 139 (same); clipped at 160 0.37%
+  (same); ICC 0.379 (plan 0.375); texture variance between neighborhoods 0.74 (same);
+  10th–90th inside one neighborhood 25–36 (same); correlations +0.20 / +0.15 / −0.13 (same).
+  Old column: 40.7 / 26.1 / 2.19; 19 26 32 43 102 141; 0.41%; ICC 0.283; 0.45; 23–39.
+  Small differences from 12.2 (ICC 0.379, old 10th–90th 23–39) are the estimators' rounding.
+- **Building counts** at 150 neighborhoods, rate 9: seed 42 gives 1,523 and seed 7 gives 1,564,
+  both unchanged.
+- **Tests:** `tests/unit/test_building.py` and `tests/validation/test_building_statistics.py`:
+  17 passed (`c1_pytest_output.txt`). `ruff check` and `mypy` clean. `ruff format --check`
+  flags the test file for formatting that was already there (not the edited line); left as it is.
+
+#### C2 (2026-11-24, Opus 5.5; review Fable 5.2)
+- **Config** (`configs/simulation.yml`, `TotalChildrenSettings`): intercept −0.89,
+  `childless_household_size` 1.7 (new), `household_size_coef` 1.0, `rooms_household_interaction_coef`
+  −0.15, `max_children` 10 (new, `Field(ge=1)`; 0 and 2.5 are rejected). `Config` rejects a
+  childless size at or above `neighborhood.household_size_min`.
+- **Code:** a public `log_household_size_excess(values, reference, childless)` in `features.py`
+  (exported from the package). It raises when a household size, or the reference, is at or below
+  the childless size. The total-children design column `household_size_scaled` became
+  `log_household_size_excess`, and the interaction is `rooms_centered` × that term. The count is
+  `np.minimum(NB2 draw, max_children)`. The cohort stage and the room tilt keep
+  `scale_household_size`. The recovery's expected key in `tests/validation/helpers.py` is renamed;
+  the recovery test itself runs in C3.
+- **Check** (`.mlflow-check/realism/c2_children_check.py`, output `c2_children_check_output.txt`;
+  1,000 neighborhoods, rate 9, the totals replayed from the generator state before the stage).
+  - On all three seeds the capped replay equals the simulator's counts, so the RNG order is
+    unchanged.
+  - The "old" column is today's children model on C1's buildings.
+
+  | Seed 42 | Old | New | 12.2 |
+  |---|---|---|---|
+  | Band children (band H 2.08 … 4.98) | 0.50 0.58 0.71 0.87 1.08 1.36 1.95 | 0.23 0.43 0.66 0.90 1.19 1.50 2.03 | 0.20 0.42 0.66 0.92 1.20 1.54 2.03 |
+  | Slope per person (bands / neighborhoods) | 0.50 / 0.48 | 0.62 / 0.61 | 0.61–0.63 |
+  | Children ÷ (H − 1.7), relative to the middle band | 0.95–2.28 | 0.95–1.03 | 0.95–1.06 |
+  | 6 / 3-room ratio by H band | 1.95 2.71 3.66 5.50 | 3.65 2.50 2.04 1.81 | 3.4–3.7, 2.6, 2.1, 1.7–1.8 |
+  | Children at 3 / 6 rooms, H > 4.5 | 0.90 / 4.95 | 1.55 / 2.82 | 1.63 / 2.76 |
+  | Mean; zero share; maximum | 0.880; 0.505; 25 | 0.879; 0.510; 10 | 0.87–0.88; 0.51–0.52; 10 |
+  | Clipped draws; mean lost; at 10 | —; —; 0.04% | 0.04%; 0.11%; 0.07% | 0.03–0.04%; 0.1%; 0.07% |
+  | Invariants (all / H > 4.5) | 0.984 / 1.00 | 1.000 / 1.00 | 0.995–1.00 / 1.00 |
+
+  - Seeds 7 / 11, new band children: 0.23 / 0.21, 0.45 / 0.46, 0.66 / 0.66, 0.91 / 0.94,
+    1.20 / 1.20, 1.57 / 1.52, 1.93 / 1.85.
+  - Seeds 7 / 11, other values: mean 0.871 / 0.871; invariants 0.996 / 0.995 and 1.00.
+  - The lowest band reads 0.21–0.23 against 12.2's 0.20, inside the 0.15–0.25 target. Its mean
+    household size is 2.05–2.09 here.
+- **Band edges** (12.5 gives none): 2.25, 2.625, 3.0, 3.45, 3.95, 4.5, chosen to reproduce
+  12.2's band means.
+- **Tests:**
+  - `tests/validation/test_children_statistics.py` (new, seed 42) holds the five tests of 12.5.
+  - On today's model (the check's "old" column) four of them fail. The level test does not
+    fail, since the level is unchanged: it guards the intercept, and 12.5's "each fails" is too
+    strong for it.
+  - In `test_total_children_stage.py`, the contexts moved to 3.0 and 31, and these tests were
+    added: the log term, the room differences at H = 4.0, the replayed draw clipped at the cap,
+    every count at the cap under an intercept of 8, and the guards.
+  - In `test_config.py`, a childless size of 1.8 or 2.0 and `max_children` of 0 or 2.5 are
+    rejected. In `test_design.py`, the column list is renamed.
+  - Results: 96 passed on the eight affected files (`c2_pytest_output.txt`); 25 passed after the
+    review (`c2_pytest_after_review.txt`).
+- **Static checks:** ruff and mypy show no new findings. Pre-existing findings were left as they
+  are: the import sorting in `config.py`, `features.py` and `__init__.py`, the format of the
+  older test files, and four mypy errors in `config.py`.
+- **Review** (independent, Fable 5.2):
+  - It ran 20 mutated copies of the tree and found no bugs; every source-level mutant was killed
+    except for the four test gaps below.
+  - Each gap was reproduced (`.mlflow-check/realism/c2_repro/repro.py`), then fixed:
+    - The cap test read the cap from the config. With a cap of 1,000 it passed (maximum 24). It
+      now uses the literal 10, and fails at 1,000.
+    - The household-size slope test was arithmetic on two config numbers and never called the
+      simulator. It now takes `compute_log_mu` at H = 3.0 and 4.3 and expects 1.15 / 1.0 /
+      0.85 / 0.70.
+    - The proportionality test read the childless size from the config. It now uses the literal
+      1.7.
+    - The `reference <= childless` guard had no test. One was added.
+  - Nits: `log_household_size_excess` is now exported, and the module docstring is corrected.
+    Left as they are: lax int coercion for `max_children` (as for the other fields), and no bound
+    on `childless_household_size` beyond the cross-section check (NaN still ends in the
+    non-finite error).
+- **Not run:** the calibration, invariant and recovery tests, and the 31-seed intercept check
+  (C3); the characterization fixtures (C4).
+
+#### C3 (2026-11-24, Opus 5.5; review Fable 5.2)
+- **No file changed but this plan:** the intercept stays **−0.89**.
+- **The intercept on 31 seeds** (`.mlflow-check/realism/c3_intercept_seeds.py`, output
+  `c3_intercept_seeds.out`; 150 neighborhoods, rate 9, seeds 42 and 0–29):
+  - The mean averages **0.8788** (SD 0.0429, range 0.820–0.991). Seeds 42 / 7 / 11 give
+    0.845 / 0.958 / 0.868. All equal 12.2.
+  - The centring intercept is −0.8943, which rounds to −0.89. The average is inside 0.865–0.885,
+    so 12.3's rule keeps the value.
+  - The review reran the 31 seeds at −0.894 and got 0.8742; the cap does not disturb the
+    centring.
+- **The canonical config on the same 31 seeds:**
+  - Mean 0.777–0.961 and zero share 0.490–0.547, none outside the ranges.
+  - Oracle recovery's maximum error 0.021–0.172 (average 0.086). Seeds 11 and 24 are above 0.15,
+    none above 0.20. Seed 42 is 0.033 (12.2 said 0.05, from the plan-mode replay).
+  - The worst case is `log_household_size_excess` at seed 11 (0.172): the margin across seeds is
+    thin, but the test runs seed 42 only (for C5).
+- **Full run** (`c3_full_run_check.py`, output `c3_full_run_output.txt`; 150 neighborhoods,
+  rate 9):
+
+  | Run | Per apartment, mean / SD | Zero share | Max | Per building, mean / SD / max | Kindergarten / elementary / high school | Invariant share | $H > 4.5$ |
+  |---|---|---|---|---|---|---|---|
+  | B2, seed 42 (−0.88) | 0.872 / 1.229 | .507 | 19 | 35.3 / 28.0 / 250 | .398 / .336 / .266 | 0.973 | 1.64 |
+  | seed 42 | 0.845 / 1.211 | .524 | 10 | 34.1 / 30.0 / 265 | .398 / .337 / .266 | 0.993 | 1.77 |
+  | seed 7 | 0.958 / 1.297 | .481 | 10 | 37.5 / 31.8 / 305 | .409 / .338 / .253 | 1.000 | 1.47 |
+  | seed 11 | 0.868 / 1.222 | .513 | 10 | 36.8 / 30.9 / 276 | .395 / .334 / .271 | 0.993 | 1.92 |
+
+  - **Building totals:** they equal 12.6 (mean 34–38, SD 30–32, maximum 265–305). Over 31 seeds
+    (the review): mean 32.9–38.8, SD 26.8–34.2, maximum averaging 309 with a worst of 571 (B2:
+    284 and 525).
+  - **Cohort shares** (not run in the planning): over 31 seeds the review measured .400 / .336 /
+    .264, with kindergarten .388–.413 (B2 averaged .395). A small upward drift, the lead for
+    step 4.
+  - **The tail invariant on its test's setup** (1,000 neighborhoods, rate 3): seeds 42 / 7 / 11
+    have 38 / 40 / 39 tail neighborhoods averaging 2.11 / 1.98 / 1.98 children. The pass share is
+    0.974 / 1.000 / 0.974 against the threshold of 0.80. Over all neighborhoods it is 0.989–0.991.
+    (12.2's 0.995–1.00 and 1.00 were measured at rate 9; one neighborhood fails at rate 3.)
+  - **Apartments at the cap** (the review): 0.046% / 0.072% / 0.043%.
+- **Canonical config at seed 42:** mean 0.849, zero share 0.506, oracle recovery 0.033; all
+  pass.
+- **Tests:**
+  - `tests/unit` and `tests/validation -m "not slow"` (the calibration ranges, both invariants,
+    the three statistical files): 1445 passed, 1 skipped, 1 xfailed, 19 deselected, in 1 min 42 s
+    (`c3_pytest_output.txt`). The 6 warnings come from mlflow in `test_gate8_tracking.py`.
+  - `tests/validation/test_recovery.py` (slow): 1 passed (`c3_pytest_recovery.txt`).
+  - Not run: the characterization and notebook tests (C4).
+- **Static checks:** no source or test file changed. Ruff shows 5 style findings on the two
+  git-ignored scripts: implicit string concatenation copied from B2's script, and unused `noqa`.
+  They were left as they are.
+- **Review** (independent, Fable 5.2):
+  - It reproduced the numbers with its own code through the public pipeline: the 31-seed block,
+    the centring, seed 42's full row, both invariants and the canonical block.
+  - It found no bug, no gap, and no pin of −0.88 or of the old level or maximum. Tracked files in
+    `src/`, `tests/` (without characterization), `checks/` and `configs/` were searched.
+  - Its observations are recorded above: the invariants at rate 3, the recovery margin, the
+    cohort drift, and the 31-seed building totals.
+
+#### C4 (2026-11-24, Sonnet 5.5)
+- **EDA fixture** (`tests/characterization/fixtures/eda_jupyter_baseline.json`), regenerated by
+  `.mlflow-check/realism/c4_regenerate_eda_fixture.py` after it reproduced the old file byte for
+  byte. 5 fields changed, 46 did not (`c4_fixture_diff.txt`):
+  - `config.content_sha256`: `configs/simulation.yml` changed (C1, C2);
+  - `final_dataframe.sha256` and the two summary hashes (`cohort_share_describe_sha256`,
+    `feature_target_correlations_sha256`): every draw after the building sizes changed;
+  - `summaries.targets` (against step 2's fixture):
+
+    | Target | Mean | SD | Max | Zero share |
+    |---|---|---|---|---|
+    | Kindergarten | 14.03 → 13.56 | 12.0 → 12.3 | 99 → 97 | 0.8% → 2.5% |
+    | Elementary | 11.87 → 11.48 | 9.7 → 10.6 | 82 → 95 | 0.3% → 1.9% |
+    | High school | 9.39 → 9.07 | 8.6 → 9.4 | 91 → 96 | 1.8% → 3.2% |
+    | Total | 35.29 → 34.10 | 28.0 → 30.0 | 250 → 265 | 0% → 0.3% |
+
+    The total's mean and SD equal C3's full run at seed 42 (34.1 / 30.0 / 265). More buildings
+    sit near zero children where households are small. The spread grows with the building-size
+    scales and the household-size slope (12.6).
+  - **Not changed:** `final_dataframe.shape` (1523 rows) and the building-count statistics; the
+    building counts are drawn first. All nine quality checks are still true.
+- **Pinned counts**, measured (`c4_measure_pins.py`): **none changed**. Rows 1523 (seed 42) and
+  1564 (seed 7), split 913/305/305, `n_train_val` 1218, wrong second share 974/244/305, whole
+  table to the second call 1142/381/305. No test file needed an edit.
+- **Full suite**, no marker filter (slow, calibration and notebook tests included): 1533 passed,
+  1 skipped, 1 xfailed, in 11 min 31 s (`c4_pytest_output.txt`). No source or test file changed,
+  so no static check ran.
+  - The slow NUTS recovery test emits the same `RuntimeWarning` as in N3 and B3, with the same
+    numbers (worst R-hat 1.086, effective sample size 25.7), and passes. Steps 2 and 3 did not
+    change them.
+  - The other warnings are mlflow's integer-schema hint in two tracking tests.
+- **Docs:** `docs/SIMPLIFIED_MODEL_PLAN.md` now follows 12.1 and 12.4:
+  - The building table and the size formulas: the SDs 0.25 and 0.15.
+  - Step 4:
+    - the intercept −0.89;
+    - the household-size term $x_j=\log((H_j-1.7)/1.3)$ with coefficient 1.0;
+    - the crowding interaction −0.15 on $Room_{c,i}\,x_j$;
+    - the cap: $N_i=\min(\mathrm{NB2},10)$;
+    - the coefficient table, the interaction text (slopes 1.15 / 1.00 / 0.85 / 0.70), and the
+      statistical-check rows for the household-size and crowding checks.
+  - The note that marks the neighborhood and outcome sections as stale now says that Step 4's
+    total-children model is current.
+  - `docs/archive/` is untouched.
+- **Still stale until the reruns (R9), left as they are:**
+  - In `docs/SIMPLIFIED_MODEL_PLAN.md`: the neighborhood section, the SES² line (0.05; the config
+    has had 0 since step 1), the cohort step, and the statistical-check ranges for mean children
+    (0.40–0.60) and zero share (60–75%).
+  - A grep of `README.md`, `notebooks/` and the six docs of B3's list for the old column
+    `household_size_scaled`, `household_size_coef`, `rooms_household_interaction` and
+    `log_sd` finds no hit outside `docs/SIMPLIFIED_MODEL_PLAN.md`, `docs/SIMULATOR_REALISM_PLAN.md`
+    and `src/`.
+  - `FEATURE_TRANSFORMATIONS.md`, `HYPERPARAMETER_TUNING.md`, `INDEPENDENT_COHORT_MODELS.md`,
+    `MLFLOW_RUNS.md`, `PARAMETER_REFERENCE.md` and `DATA_GENERATION_PLAN.md` still hold numbers
+    from the earlier simulator (the total-stage pair's ground truth now has the household-size
+    term on a log scale and the opposite interaction sign); they are redone at the reruns.
+
+#### C5 (2026-11-24, Fable 5.2)
+The whole step (`git diff main...HEAD`, 14 files) read against 12.1–12.5.
+- **No defect in the model or the config.**
+  - The log term, the interaction on that term, the clip after the draw (no extra draw) and the
+    RNG order match 12.1.
+  - The fields, the cross-section check, `max_children` of at least 1 and the runtime guard
+    match 12.4.
+  - The intercept is −0.89, and each test of 12.5 exists.
+  - The cohort stage and the room tilt keep the scaled household size.
+- **Does each new test fail under its own mutation?**
+  `.mlflow-check/realism/c5_review_check.py` (output `c5_review_check_output.txt`).
+  - **The statistical tests**, called on their own draw under a config override (1,000
+    neighborhoods, rate 9, seed 42; the ICC test on 20,000 neighborhoods):
+
+    | Mutation | Tests that fail |
+    |---|---|
+    | none (the config) | 0 |
+    | the old model: 0.30 on $\tilde H$, +0.10 on rooms × $\tilde H$, −0.88, no cap | 4: small households, proportionality, crowding, the cap (maximum 25) |
+    | `household_size_coef` 0.30 on the new term | small households, proportionality, the level (0.794) |
+    | `rooms_household_interaction_coef` +0.15 | crowding |
+    | `rooms_household_interaction_coef` 0 | crowding |
+    | `max_children` 1000 | the cap (maximum 24) |
+    | `intercept` −0.60, and −1.20 | the level (1.171, and 0.647) |
+    | the old SDs (0.20 / 0.22) | buildings of one neighborhood are alike |
+
+  - **The unit and config tests** read the config file, so each mutation is one source edit on a
+    copy of the tree (`test_total_children_stage.py`, `test_config.py`, `test_design.py`; 63
+    pass unmutated):
+
+    | Source mutation | Tests that fail |
+    |---|---|
+    | no `np.minimum` in `sample_total_children` | the replayed draw; every count at the cap |
+    | the interaction's sign flipped in the design | the slopes by room; the room differences |
+    | the scaled term in place of the log term | the slopes by room; the room differences; the household-size guard (2) |
+    | the household-size guard removed | the household-size guard (2) |
+    | the reference guard removed | the reference guard |
+    | the `Config` cross-section check removed | the childless-size config test (2) |
+    | `Field(ge=1)` removed from `max_children` | `max_children` of 0 |
+
+  Every mutation fails at least one test, so no test body is changed.
+- **Fixed** (docs and one docstring):
+  - This plan's status header said step 2 awaited its PR and step 3's next was C0.
+  - `docs/README.md`: the row for this plan said "steps 3–4 outlined".
+  - 12.5 said each statistical test fails on today's model; the level test does not (C2).
+  - `tests/validation/test_children_statistics.py`: a broken line wrap in the module docstring.
+- **Checked, left:**
+  - **The recovery margin** (C3's item): the largest error is 0.172 at seed 11 against the
+    tolerance of 0.20; the test runs seed 42 (0.033). 12.2 keeps 0.20.
+  - **The tail invariant's threshold** (B4's item): the pass share is 0.974–1.000 against 0.80
+    (C3). 12.5 keeps it; it now guards only against a gross error.
+  - `docs/SIMPLIFIED_MODEL_PLAN.md` still shows `+0.05 SES²` in Step 4's formula and defines
+    $HH_{0.5}$ with 2.6 in its §5. Both are on C4's list for the reruns (R9).
+- **Static checks:** on the step's 10 source and test files, ruff reports 5 findings (import
+  order, `__all__` order, two `collections.abc` imports) and mypy the same 4 as C2, in
+  `config.py`. They are the pre-existing findings C2 recorded.
+- **Tests:** `tests/validation/test_children_statistics.py`: 5 passed (`c5_pytest_output.txt`).
+  The full suite was not rerun: C5 changed no source, config or test body, and C4's run gave
+  1533 passed.

@@ -83,7 +83,7 @@ def test_buildings_of_one_neighborhood_are_alike(buildings: pd.DataFrame) -> Non
     n_per_group = groups.size().mean()
     between = groups.mean().var(ddof=1) - within / n_per_group
 
-    assert between / (between + within) > 0.15
+    assert between / (between + within) > 0.30
 
 
 def test_towers_are_a_minority(buildings: pd.DataFrame) -> None:
