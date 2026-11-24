@@ -1,7 +1,9 @@
 # Project summary document: the plan
 
 > **Status (2026-11-23):** plan approved; S0 done (branch `docs/project-summary`, this document,
-> the environment checks). S1a done. Next: **S1b** (Opus 5.5). The implementation record is §9.
+> the environment checks). S1a, S1b done. **Paused (2026-11-24) for the simulator revision (P12,
+> `docs/SIMULATOR_REALISM_PLAN.md`, its own PR from `main`).** After it merges: **S1c** (section 2
+> for the revised simulator), then S2. The implementation record is §9.
 
 The project is documented in 62 files under `docs/`, most of them plans and work records. No
 single document tells a new reader what the task is, how the data is generated, how it is
@@ -22,6 +24,8 @@ produces that document, `docs/PROJECT_SUMMARY.md`, in its own PR.
 | P8 | Each sub-task names its implementing model. Sonnet 5.5 or Opus 5.5 by default; Fable 5.2 only for the hard ones (S5d, S7a, S7b, the S8b review). |
 | P9 | The PNGs are drawn with matplotlib (and shap's own matplotlib plots). `kaleido` is not installed and is not added. The PNGs therefore differ in look from notebook 04's Plotly figures. |
 | P10 | Depth where it matters (user, 2026-11-23): sections 2 (data generation), 3 (preprocessing) and 4 (models) are specific and in LaTeX: every generated variable, every transform and every model has its formula, with its symbols defined, in the order the code applies them. Section 1 stays lean (no seeds, config defaults or overrides there). Cross-validation belongs to section 5 (tuning), not section 1. |
+| P12 | The realistic simulator first (user, 2026-11-24). Section 2 questioned the neighborhood model; the user chose to make the simulator realistic, calibrated to Israel, step by step (neighborhoods first), in separate PRs from `main` (`docs/SIMULATOR_REALISM_PLAN.md`). This branch merges `main` after each simulator PR. The order becomes: simulator step(s) → S1c and S2–S4b (the documentation) → the reruns (notebooks 03 and 04 on the new data) → S5a onward. The results of the run at `da6afc9` (§3) are superseded then. |
+| P11 | The reader's view (user, 2026-11-24), for the whole summary: no implementation details (no Python names or calls, file paths, line numbers, config keys or notebook names; dataset column names and links to the detailed docs stay). Formulas carry their actual values inline, with no notation or parameter tables: distributions labeled, e.g. $\mathcal N(\mu=0, \sigma^2=1^2)$, linear formulas with plain coefficients explained in words. Each section opens by describing and motivating its subject. Code lines go only into §9, the record. |
 
 The summary describes **the path the notebooks run**: the `student_simulator` package and the
 new `preprocessing.py`, `feature_engineering`, `modeling`, `hyperparameter_tuning` and
@@ -33,7 +37,7 @@ not described.
 1. **Task and settings**: 2–5 lines on the task, then a setup table (unit = building, 3 cohort
    targets, 1,529 buildings / 150 neighborhoods / 61,317 apartments, seeds, 917/306/306 split).
 2. **Data generation process**: neighborhood → building → apartment → outcomes → aggregation, in
-   draw order, one formula per variable, a parameter table, a column table of the dataset.
+   draw order, one formula per variable with its values inline (P11), a column table of the dataset.
 3. **Preprocessing**: room counts → shares (3 rooms the reference), the exposure, one table of
    feature × model family (transform, formula, motivation), the candidate variants, the checks.
 4. **Models**: 4.1 the shared exposure treatment (weighted rate vs log offset, the Poisson
@@ -166,7 +170,8 @@ not have. In `test_shap_values.csv` the `base_value` correlates 1.0 with `n_apar
 |---|---|---|---|---|
 | S0 | Setup: branch, plan doc, environment checks | Sonnet 5.5 (done by the planning session) | no | ✅ |
 | S1a | Skeleton + section 1 (task and settings) | Sonnet 5.5 | no | ✅ |
-| S1b | Section 2 (data generation process) | Opus 5.5 | yes | |
+| S1b | Section 2 (data generation process) | Opus 5.5 | yes | ✅ |
+| S1c | Section 2 rewritten for the revised simulator (after P12's PR merges into this branch) | Opus 5.5 | yes | |
 | S2 | Section 3 (preprocessing) | Opus 5.5 | yes | |
 | S3a | Section 4.1–4.2 (exposure treatment, Model 1) | Opus 5.5 | yes | |
 | S3b | Section 4.3–4.4 (Model 2, Model 3 placeholder) | Opus 5.5 | yes | |
@@ -211,14 +216,31 @@ Done when:
 ### S1b. Section 2, data generation (Opus 5.5, review)
 Neighborhood; building (count, apartments, room mix: tilt → Dirichlet → multinomial); apartment;
 total children (the NB2 log-linear mean with random effects); cohort split (lifecycle score,
-softmax, multinomial); aggregation to the building. A notation table, a parameter table, the
-dataset's column table. Adapt `docs/SIMPLIFIED_MODEL_PLAN.md` §6; follow the code where they differ.
+softmax, multinomial); aggregation to the building. Values inline (P11), the dataset's column
+table. Adapt `docs/SIMPLIFIED_MODEL_PLAN.md` §6; follow the code where they differ.
 LaTeX per P10: no variable, transform or model is described in words only.
 Done when:
-- [ ] Every generated variable has its formula, in draw order.
-- [ ] `check_s1b.py` parses the doc's parameter table and compares every value with
-      `configs/simulation.yml` plus the notebooks' overrides: zero mismatches.
-- [ ] The section states what is hidden from the models (the random effects, apartment-level rows).
+- [x] Every generated variable has its formula, in draw order.
+- [x] `check_s1b.py` reads every value written into section 2 and compares it with
+      `configs/simulation.yml` plus the notebooks' overrides: zero mismatches, every value covered.
+- [x] The section states what is hidden from the models (the random effects, apartment-level rows).
+- [x] Review findings reproduced and fixed.
+
+### S1c. Section 2 for the revised simulator (Opus 5.5, review)
+Starts after the simulator PR (P12) merges into `main` and `main` is merged into this branch.
+Rewrite sections 2.1–2.6 for the new model in `docs/SIMULATOR_REALISM_PLAN.md`, keeping the
+opening as revised in S1b. The user's notes (2026-11-24):
+- The explanations must be better throughout; each variable says what it represents.
+- SES: the neighborhood's low or high socioeconomic class, on a national index (relative to the
+  whole population, not to the city: a global feature).
+- Median age: the median age of the residents of neighborhood $j$.
+- No explanation of what clipping does.
+- Each relation is motivated (why household size falls with median age, why daycares follow
+  demand and purchasing power, why school status follows the demographics).
+Done when:
+- [ ] `check_s1c.py` (adapted from `check_s1b.py`) matches every inline value with the new config
+      plus the notebooks' overrides, the columns with the dataset, and finds no implementation
+      detail; section 1's counts are re-checked (they change with the new draws).
 - [ ] Review findings reproduced and fixed.
 
 ### S2. Section 3, preprocessing (Opus 5.5, review)
@@ -394,7 +416,7 @@ We are writing docs/PROJECT_SUMMARY.md on branch docs/project-summary. Read
 docs/PROJECT_SUMMARY_PLAN.md first: §1 decisions, §2 the outline, §3 sources and the doc/code
 disagreements, §4 facts (leads to re-verify, not sources), §5 workflow, §7 your sub-task, §9 the
 record. Rules: do only this sub-task; code wins over docs; write for a technical reader new to
-the repo; scripts and outputs go in .mlflow-check/summary/ and run with
+the repo, with no implementation details in the summary (P11); scripts and outputs go in .mlflow-check/summary/ and run with
 ~/.venvs/age-group-prediction/bin/python; run each check once; change nothing under src/ or
 notebooks/; do not commit. If a plan assumption breaks, stop and show the evidence. At the stop:
 show the diff and the check's output, tick the sub-task's "done when" boxes and add its entry to
@@ -409,6 +431,7 @@ select.
 |---|---|
 | S1a | `Implement S1a: the skeleton and section 1 (task and settings), with check_s1a.py.` |
 | S1b | `Implement S1b: section 2 (the data generation process), with check_s1b.py comparing the parameter table with configs/simulation.yml. Run an independent review subagent before the stop.` |
+| S1c | `Implement S1c: section 2 rewritten for the revised simulator (docs/SIMULATOR_REALISM_PLAN.md), with check_s1c.py. Run an independent review subagent before the stop.` |
 | S2 | `Implement S2: section 3 (preprocessing), with check_s2.py printing each candidate transformer's output columns. Run an independent review subagent before the stop.` |
 | S3a | `Implement S3a: sections 4.1–4.2 (the exposure treatment and Model 1), with check_s3a.py for the Poisson rate/offset equivalence. Run an independent review subagent before the stop.` |
 | S3b | `Implement S3b: sections 4.3–4.4 (Model 2 and the Model 3 placeholder), with check_s3b.py for the reconciliation. Run an independent review subagent before the stop.` |
@@ -444,3 +467,105 @@ select.
   `building_id, neighborhood_id, ses, avg_household_size, median_age, n_daycares_500m,
   school_status, 3_rooms..6_rooms, n_apartments, n_kindergarten, n_elementary, n_highschool`; after
   shares `4_rooms_share, 5_rooms_share, 6_rooms_share` replace the room counts. All as §4 expected.
+
+### S1b (2026-11-23)
+- Wrote section 2 of `docs/PROJECT_SUMMARY.md` with sub-sections 2.1 notation, 2.2 neighborhoods,
+  2.3 buildings and room mix, 2.4 apartments and transforms, 2.5 total children, 2.6 cohort split,
+  2.7 aggregation (the conditional expectation, proportional to `n_apartments` at fixed shares),
+  2.8 what is hidden, 2.9 parameters (67 rows), 2.10 the dataset's columns. Formulas are in
+  symbols; the values are in 2.9.
+- Code facts not in §4: household size and daycares center age at `neighborhood.median_age_mean`,
+  the outcome models at `features.median_age_reference`. The room-tilt pivot 4 is a literal
+  (`features.py:107`), not `room_reference`. $A_b$ is rounded with `np.rint` before clipping.
+  Notebook 01 uses `from_config`; notebooks 02–04 build the five components by hand (same result).
+- Each formula's code: $S_j$ `neighborhood.py:86-96`; $M_j$ `:98-113`; $H_j$ `:115-136`;
+  $D_j$ `:138-155`; $Z_j$ `:157-178`; $B_j$ `building.py:102-105`; $A_b$ `:154-165`;
+  $q_j$, $\omega_{jr}$ `features.py:84-109`; Dirichlet and multinomial `building.py:210-220`;
+  permutation `apartment.py:50`; transforms `features.py:8-43`, `outcomes.py:180-201`;
+  $u_b$, $w_j$ `outcomes.py:90-99`; $\log\mu_i$ `outcomes.py:123-178`; NB2 `outcomes.py:224-234`;
+  $v_b$ `outcomes.py:278-282`; $\theta_i$ `outcomes.py:306-324, 344-387`; $p_{ik}$
+  `outcomes.py:326-342`; cohort multinomial `outcomes.py:295-300`; $C_{bk}$ `pipeline.py:39-71`.
+- `.mlflow-check/summary/check_s1b.py` (output `check_s1b.out`), one run:
+  (1) the parameter table against `configs/simulation.yml`, with the overrides read from notebook
+  03's source: 67 rows, 0 mismatches. Every YAML leaf has a row; the two override lists are
+  asserted empty and excluded. (2) The column table against the simulated dataset: equal names and
+  order, 1,529 rows. (3) Beyond the plan: a numpy redraw of the dataset from section 2's formulas,
+  in its stated order, with the values parsed from the doc's table. It is exactly equal to the
+  simulator's dataset in every column and in $u_b$, $w_j$, $v_b$. (4) Beyond the plan: 2.7's
+  closed form against $\sum_i \mu_i p_{ik}$: max abs diff 3.2e-14. The mean expected building
+  total is 24.169 against 24.153 observed.
+- Review (independent subagent): no errors in the formulas, values, draw order, 2.7 or 2.8. It
+  reported 13 points; each one was reproduced against the code or the doc text, then fixed:
+  (1) not all notebooks call `from_config`: reworded; (2) SES also acts through the daycares and
+  the room mix; (3) clip caps values, it does not remove them: meanings and the notation row;
+  (4) the reference neighborhood behind $\beta_0$ stated, and "per unit of its term";
+  (5) $B_j$ added to the notation table, and "every other symbol is a constant" corrected;
+  (6) the $s$ and $c$ clashes in $\mathcal N$ and clip; (7) the code name for $(x)_+$ is
+  `np.maximum`; (8) $\tilde H_j$ defined once, and $h_0$ vs $H_{\mathrm{ref}}$ noted;
+  (9) $\bar\eta_{jr}$, $\bar\theta_{jr}$ for the effect-free terms; (10) $x_b$ defined, and the
+  effects' independence of $x_b$ stated; (11) the cohort expectation given the features
+  written out, with only the integral over $v$ open; (12) the noise statement made precise;
+  (13) `\{` in inline math replaced by `\lbrace`, and the inline formula with `\,` moved into a
+  display block. The fixes changed only prose and the meaning cells of 2.9, which the check does
+  not parse, so the check was not rerun.
+- Length: section 2 is about 400 lines, 67 of them the parameter table. The whole document may
+  pass P1's 600–900 lines; S8b decides.
+- **Revision (2026-11-24, after the user's review; decision P11):**
+  - The opening paragraph was replaced by a description and motivation of the levels, in draw
+    order: neighborhood (the context); building (count, size, room mix); apartment (where the
+    children are generated); building sums (the prediction level). It also says why the
+    simulation runs per apartment and then sums.
+  - The notation table and the 67-row parameter table were removed. Every formula now carries its
+    values inline. Distributions are labeled ($\mathcal N(\mu=0, \sigma^2=1^2)$); linear formulas
+    use plain coefficients explained in words.
+  - Every implementation detail was removed (code calls, file and line references, config keys,
+    notebook names), as was the link to `SIMPLIFIED_MODEL_PLAN.md`. Section 2 is now 2.1
+    neighborhoods, 2.2 buildings, 2.3 apartments, 2.4 building sums and expectations, 2.5 what
+    is hidden, 2.6 the dataset's columns, about 345 lines. The column table keeps its Symbol
+    column, which maps each column to its formula.
+  - `check_s1b.py` was rewritten and run once:
+    - (1) 78 numbers in 27 formulas, read where the doc writes them, match the config plus the
+      notebook's overrides, read from notebook 03's source: 0 mismatches. 67 of 69 config keys
+      are covered; the 2 empty override lists are asserted empty.
+    - (2) The column table equals the dataset's columns.
+    - (3) 0 implementation-detail hits, and no backticked token other than a dataset column.
+    - The first run's redraw was not repeated: the formulas are unchanged.
+  - Second review (independent subagent): no errors in the formulas, values, draw order,
+    expectations or hidden-variable claims. It raised 16 points:
+    - Reproduced and fixed (13):
+      - (1) three hidden effects, not two kinds.
+      - (2) the 1.35 holds at 4 rooms and the room multipliers at household size 2.6; the
+        interaction's 1.22 and 1.65 were added.
+      - (3) the tilt also lowers the 4-room share.
+      - (4) the $q_j = 1$ example lay outside the data (realized −0.57 to 0.60); it is now
+        $q_j = 0.5$ (multipliers 0.78/1/1.28/1.65, shares 22/36/27/16%).
+      - (5) $A_b$ is independent of the neighborhood features, not of the room counts.
+      - (6) SES reaches the score indirectly.
+      - (7) $w_j$ belongs to the neighborhood.
+      - (8) $x_b$ defined.
+      - (9) NB2 explained.
+      - (10) the averaged factor is the constant 1.053.
+      - (11) "building by building".
+      - (12) a motivation for school status and for daycares in the score.
+      - (14) the link to an outdated doc dropped.
+    - Not reproduced (1): (13) "section 7.3 points nowhere". The heading exists; the forward
+      references go to S8b's link check.
+    - Kept by choice (2): (15) the Symbol column, flagged for the user; (16) `\mathbb 1`
+      renders as a plain 1 in MathJax, which is acceptable, and the check's templates read it.
+  - None of these fixes touched a formula block that the check reads, so the check was not rerun.
+- **Paused (2026-11-24).** The user's notes on the revised section 2:
+  - Opening: the two building bullets merged into one ("Building: the level we predict"); the
+    "why simulate apartments" paragraph replaced by its hidden-effects sentence. Applied.
+  - Section 2.1: the explanations are not good enough, and the neighborhood model itself was
+    questioned:
+    - household size against median age and SES;
+    - daycares against age and SES;
+    - the order of the draws.
+  - Two Fable consults:
+    - The negative age slope of household size is right: the median age counts the children.
+    - Household size should follow a reverse-J in SES.
+    - Daycares should follow demand (household size, young age) and purchasing power (SES).
+    - Demographics come before facilities.
+  - The user chose a realistic, Israel-calibrated simulator first (P12). The design, the values
+    and the sub-tasks are in `docs/SIMULATOR_REALISM_PLAN.md`. Sections 2.1–2.6 are rewritten in
+    S1c; the notes are in §7 S1c.
