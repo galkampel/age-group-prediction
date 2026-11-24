@@ -1,7 +1,8 @@
 # Simulator realism: the plan
 
-> **Status (2026-11-24):** N0, N1, N2 committed; **N3 done**, awaiting the user's commit.
-> Next: **N4** (Fable 5.2), then the PR. The record is §10.
+> **Status (2026-11-24):** step 1 complete: N0–N3 committed, **N4 done** (the review and the PR
+> description), awaiting the user's commit and the PR. Next: step 2 of §7, starting with its own
+> Fable consult. The record is §10.
 
 The simulator's neighborhood model is stylized: household size ignores SES, daycares ignore
 demand, school status is independent of everything, and the levels (household size 2.6, median
@@ -86,7 +87,7 @@ The targets carry medium confidence.
 
 **At 150 neighborhoods, seed 42** (before the daycare age term):
 - SES SD 0.85 (sample luck, the same draws as today).
-- Median age 30.7 ± 5.6 (18.3–45.5).
+- Median age 30.7 ± 5.5 (18.3–45.5).
 - Household size 3.17 ± 0.60 (1.8–4.57).
 - No Haredi-like tail above $H = 4.6$ in this draw.
 
@@ -186,6 +187,9 @@ and assert shapes and signs only:
   variable; the same seed gives the same frame.
 - **Consistency invariant** (full run): in at least 95% of neighborhoods, mean children per
   apartment is at most $H - 1.5$.
+  - **Added in N4:** on a 1000-neighborhood run, at least 80% of the neighborhoods with
+    $H > 4.5$ satisfy the same rule. The 95% rule alone barely detects a household-size scale
+    that is too small (§10, N2 and N4).
 
 **Config tests:**
 - a removed field is rejected (`extra="forbid"`);
@@ -238,7 +242,7 @@ and assert shapes and signs only:
 | N1 | The config schema and validation (§4) and the new neighborhood draws (§2), with their unit and statistical tests (§5) | Opus 5.5 | yes | 2026-11-24 |
 | N2 | The downstream values (§3), the cross-section check, the validation-helper ranges, the consistency invariant; a full run confirming §3's targets with the final daycare formula | Opus 5.5 | yes | 2026-11-24 |
 | N3 | Regenerate the characterization fixtures; the full test suite; update the docs that name the old fields (grep for every removed and renamed field) | Sonnet 5.5 | no | 2026-11-24 |
-| N4 | An independent review of the whole step against this plan, then the PR description | Fable 5.2 | is the review | |
+| N4 | An independent review of the whole step against this plan, then the PR description | Fable 5.2 | is the review | 2026-11-24 |
 
 ### N0. Setup (the user)
 1. On `docs/project-summary`, commit the summary's changes (not this document).
@@ -275,8 +279,8 @@ Done when:
 
 ### N4. Review and the PR (Fable 5.2)
 Done when:
-- [ ] The step is reviewed against §1–§5 as a new reader; each finding is reproduced, then fixed.
-- [ ] The PR description is printed in the chat.
+- [x] The step is reviewed against §1–§5 as a new reader; each finding is reproduced, then fixed.
+- [x] The PR description is printed in the chat.
 
 ## 9. Session prompts
 
@@ -482,3 +486,31 @@ select.
   - the handoffs, plans and records that name 1529, 917 or 1223;
   - `PARAMETER_REFERENCE.md` and `DATA_GENERATION_PLAN.md`, which describe an earlier panel
     design and not this simulator.
+
+### N4 (2026-11-24, Fable 5.2)
+The whole step (`git diff main..HEAD`, 17 files) read against §1–§5.
+- **No defect in the model or the config.** The formulas, centering, clips and RNG order match
+  §2; the fields, removed fields and validation rules match §4; the five values match §3.
+- **Fixed:**
+  - **The invariant** (N2's open item). Reproduced on 1000 neighborhoods, seeds 42, 7 and 11
+    (`.mlflow-check/realism/n4_invariant_tail.py`):
+
+    | Household-size scale | Share of all neighborhoods within $H - 1.5$ | Share of the $H > 4.5$ neighborhoods | Their mean children per apartment |
+    |---|---|---|---|
+    | 0.75 (now) | 0.976–0.985 | 0.949–0.975 | 1.96–2.27 |
+    | 0.5 (before) | 0.946–0.956 | 0.237–0.487 | 3.66–4.73 |
+
+    The 95% rule moves by three points; the tail moves by fifty or more. The user chose to add a
+    second test, `test_large_household_neighborhoods_leave_room_for_the_adults`: at least 80% of
+    the $H > 4.5$ neighborhoods (about 39 of 1000) within $H - 1.5$. §5 records the added rule.
+  - **`docs/README.md`** had no row for this plan; added.
+  - **§2:** the median-age SD at 150 neighborhoods is 5.5 (5.547), not 5.6.
+- **Checked, not caused by this step:**
+  - The NUTS `RuntimeWarning` in N3's full run: `tests/validation/test_bayesian_recovery.py`
+    builds its own data and imports nothing from `student_simulator`.
+  - `docs/MODULE_REFERENCE.md` names `NeighborhoodSimulator.generate`; the method is
+    `sample_neighborhoods`. The line is the same on `main`.
+- **Left:** `tests/unit/test_transforms.py` passes its own literals (2.6, 0.5, 37) to the
+  transforms and does not read the config.
+- **Tests:** `tests/validation/test_calibration.py`: 3 passed. The full suite was not rerun:
+  N4 changed no source or config, and N3's run gave 1494 passed.
