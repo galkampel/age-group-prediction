@@ -6,12 +6,12 @@ simulation:
 
 # Shared centering/scaling used by both apartment outcome models.
 features:
-  # Reference neighborhood household size.
-  household_size_reference: 2.6
-  # A one-unit feature change means 0.5 people.
-  household_size_scale: 0.5
-  # Reference neighborhood median age in years.
-  median_age_reference: 37.0
+  # Reference neighborhood household size; must equal neighborhood.household_size_baseline.
+  household_size_reference: 3.0
+  # A one-unit feature change means 0.75 people.
+  household_size_scale: 0.75
+  # Reference neighborhood median age in years; must equal neighborhood.median_age_baseline.
+  median_age_reference: 31.0
   # A one-unit feature change means 10 years.
   median_age_scale: 10.0
   # Reference apartment size for centered room effects.
@@ -97,8 +97,9 @@ apartment: {}
 # NB2 log-mean model for total children per apartment.
 total_children:
   # Reference 3-room apartment log expected count.
-  intercept: -1.30
-  ses_quadratic_coef: 0.05
+  intercept: -1.00
+  # The SES U-shape comes through household size; a direct term would double count it.
+  ses_quadratic_coef: 0.0
   # Larger local households imply more children.
   household_size_coef: 0.30
   # Positive but diminishing daycare association.

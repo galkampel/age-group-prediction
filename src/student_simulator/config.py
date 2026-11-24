@@ -277,6 +277,25 @@ class Config(_Settings):
                 "simulation.n_neighborhoods"
             )
 
+        # The outcome models' reference neighborhood is the one the
+        # neighborhood draws center on.
+        for reference_path, reference, baseline_path, baseline in (
+            (
+                "features.household_size_reference",
+                self.transforms.household_size_reference,
+                "neighborhood.household_size_baseline",
+                self.neighborhood.household_size_baseline,
+            ),
+            (
+                "features.median_age_reference",
+                self.transforms.median_age_reference,
+                "neighborhood.median_age_baseline",
+                self.neighborhood.median_age_baseline,
+            ),
+        ):
+            if reference != baseline:
+                raise ValueError(f"{reference_path} must equal {baseline_path}")
+
         supported_rooms = set(self.building.room_mix.supported_rooms)
         reference_room = min(supported_rooms)
         expected_effect_rooms = supported_rooms - {reference_room}

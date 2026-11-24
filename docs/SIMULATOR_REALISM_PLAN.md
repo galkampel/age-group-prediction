@@ -1,7 +1,7 @@
 # Simulator realism: the plan
 
-> **Status (2026-11-24):** N0 done; **N1 done** (reviewed by Fable), awaiting the user's commit.
-> Next: **N2** (Opus 5.5). The record is §10.
+> **Status (2026-11-24):** N0, N1 committed; **N2 done** (reviewed by Fable), awaiting the user's
+> commit. Next: **N3** (Sonnet 5.5). The record is §10.
 
 The simulator's neighborhood model is stylized: household size ignores SES, daycares ignore
 demand, school status is independent of everything, and the levels (household size 2.6, median
@@ -236,7 +236,7 @@ and assert shapes and signs only:
 |---|---|---|---|---|
 | N0 | The branch `feat/realistic-neighborhoods` from `main`; this document committed | user | no | |
 | N1 | The config schema and validation (§4) and the new neighborhood draws (§2), with their unit and statistical tests (§5) | Opus 5.5 | yes | 2026-11-24 |
-| N2 | The downstream values (§3), the cross-section check, the validation-helper ranges, the consistency invariant; a full run confirming §3's targets with the final daycare formula | Opus 5.5 | yes | |
+| N2 | The downstream values (§3), the cross-section check, the validation-helper ranges, the consistency invariant; a full run confirming §3's targets with the final daycare formula | Opus 5.5 | yes | 2026-11-24 |
 | N3 | Regenerate the characterization fixtures; the full test suite; update the docs that name the old fields (grep for every removed and renamed field) | Sonnet 5.5 | no | |
 | N4 | An independent review of the whole step against this plan, then the PR description | Fable 5.2 | is the review | |
 
@@ -259,12 +259,12 @@ Done when:
 
 ### N2. Downstream consistency (Opus 5.5, review)
 Done when:
-- [ ] The five values of §3 are in the config, and the cross-section check is in `Config`.
-- [ ] A full run (150 neighborhoods, rate 9, seeds 42, 7, 11) prints children per apartment and
+- [x] The five values of §3 are in the config, and the cross-section check is in `Config`.
+- [x] A full run (150 neighborhoods, rate 9, seeds 42, 7, 11) prints children per apartment and
       per building, the zero share, the max and the cohort shares, next to §3's table. The
       intercept is recalibrated only if the mean leaves 0.85–0.90.
-- [ ] The validation helpers' ranges are updated, and the consistency invariant is a test.
-- [ ] Review findings reproduced and fixed.
+- [x] The validation helpers' ranges are updated, and the consistency invariant is a test.
+- [x] Review findings reproduced and fixed.
 
 ### N3. Fixtures, the suite, the docs (Sonnet 5.5)
 Done when:
@@ -375,3 +375,64 @@ select.
     - **`ses_mean` is not bounds-checked:** §4 names only the baselines.
     - **Pre-existing lint and mypy findings** on lines this change did not touch are left as they
       are.
+
+### N2 (2026-11-24, Opus 5.5; review Fable 5.2)
+- **Config:** §3's five values are in `configs/simulation.yml`:
+  - `features.household_size_reference` 3.0, `features.median_age_reference` 31.0;
+  - `features.household_size_scale` 0.75;
+  - `total_children.intercept` −1.00;
+  - `total_children.ses_quadratic_coef` 0.0.
+- **R8 check:** `Config.validate_cross_section_contracts` now requires each `features` reference
+  to equal its `neighborhood` baseline. Either side changed alone raises
+  `features.<x>_reference must equal neighborhood.<x>_baseline`.
+- **Full run** (`.mlflow-check/realism/n2_full_run_check.py`; 150 neighborhoods, rate 9, the
+  final daycare formula):
+
+  | Run | Per apartment, mean / SD | Zero share | Max | Per building, mean / SD | Kindergarten / elementary / high school | Invariant share |
+  |---|---|---|---|---|---|---|
+  | §3, seed 42 | 0.872 / 1.279 | .515 | 37 | 35.1 / 23.4 | .375 / .336 / .289 | |
+  | seed 42 | 0.888 / 1.282 | .509 | 16 | 35.6 / 23.3 | .373 / .339 / .288 | 0.987 |
+  | seed 7 | 0.871 / 1.261 | .512 | 19 | 34.9 / 22.3 | .371 / .336 / .293 | 1.000 |
+  | seed 11 | 0.842 / 1.203 | .516 | 19 | 33.9 / 21.4 | .371 / .338 / .291 | 0.993 |
+
+  - Seed 42's mean is inside 0.85–0.90 (0.012 from the top), so **the intercept is not
+    recalibrated**.
+  - Seed 11 (0.842) is just below §3's 0.85–0.86. The rule looks at seed 42 only.
+  - The maximum is 16–19, where §3 had 37. That was one extreme draw, made with the earlier
+    daycare formula.
+- **Canonical config** (60 neighborhoods, rate 3, seed 42):
+  - mean children 0.829 and zero share 0.520, inside the new ranges;
+  - oracle recovery's maximum error is 0.084 against the tolerance of 0.20.
+- **Validation helpers:** mean children 0.75–1.00 and zero share 0.45–0.60 (§5); the recovery
+  tolerance stays at 0.20.
+- **Tests:**
+  - `test_calibration.py` gains the consistency invariant, on the benchmark's setup at seed 42.
+  - `test_config.py` covers R8 from either side, plus the accepted case where both sides move
+    together.
+  - Two unit frames sat at the old reference point and are moved to H 3.0 and age 31:
+    - the `test_design.py` reference row;
+    - the room-effect test in `test_total_children_stage.py`. There the rooms × household
+      interaction made its differences non-zero; the first test run caught it.
+  - Result:
+    - `tests/unit` plus the non-slow `tests/validation`: 1404 passed, 1 failed (that room-effect
+      frame), 1 skipped, 1 xfailed;
+    - after the fix, that file plus `test_recovery.py` (slow): 8 passed;
+    - after the review, the three touched files: 39 passed.
+- **Fable review:** no bugs, no spec deviations.
+  - Fixed:
+    - the R8 accepted case is now tested;
+    - the positive-quadrant test's ages are widened (30 → 25), since it passed by one year
+      against the new reference;
+    - the invariant's docstring no longer overclaims.
+  - **Open for N4 or the user: the invariant is weak.**
+    - At the old scale of 0.5, seed 42 fails by one neighborhood (0.947), and 7 of 9 seeds pass.
+    - Seed 42 has no H > 5 neighborhood.
+    - It implements §5's 95% rule literally and catches gross errors (intercept −0.5 gives 0.760;
+      scale 0.3 gives 0.847). A stronger test would change §5.
+  - Recorded:
+    - over 31 seeds of the canonical config, the mean spans 0.757–1.023 (seed 24 lies outside
+      0.75–1.00); the `calibration` marker already calls it seed-sensitive;
+    - the zero share spans 0.481–0.550;
+    - recovery error spans 0.041–0.139;
+    - `test_transforms.py` keeps the literals 2.6 and 0.5. It is self-contained, so they are
+      stale but harmless.
