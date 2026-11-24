@@ -10,12 +10,13 @@ instead. This plan revises the simulator **step by step, one PR per step, neighb
 
 > **Step 2 (2026-11-24):** buildings and the room mix, planned in §11 on
 > `feat/realistic-buildings`; decisions R11–R17. B0–B3 committed (the intercept is −0.88, not
-> −0.95); **B4 done** (the review and the PR description), awaiting the user's commit and the PR.
-> Next: step 3 of §7, after the project summary's S1c.2. The record is 11.9.
+> −0.95); B4 done (the review and the PR description). **Complete and merged (PR #30).** The
+> record is 11.9.
 
 > **Step 3 (2026-11-24):** children per apartment and the building-size scales, planned in §12
-> on `feat/realistic-children`; decisions R18–R24. Next: C0 (the user commits this plan), then C1.
-> The record is 12.10.
+> on `feat/realistic-children`; decisions R18–R24. C0–C4 committed (the intercept stays −0.89);
+> **C5 done** (the review and the PR description), awaiting the user's commit and the PR. Next:
+> merge `main` into `docs/project-summary`, then the summary's S1c.3. The record is 12.10.
 
 ## 1. Decisions
 
@@ -1144,8 +1145,8 @@ total_children:
 ### 12.5 The tests
 
 **New statistical tests** (`tests/validation/test_children_statistics.py`: 1,000 neighborhoods,
-rate 9, a fixed seed, the stages up to the totals; shapes and signs only). Each fails on today's
-model:
+rate 9, a fixed seed, the stages up to the totals; shapes and signs only). Each but the level
+test fails on today's model (the level is unchanged; that test guards the intercept):
 
 - **Small households hold few children:** the mean where household size is under 2.3 is below
   0.35 (new 0.23–0.26; today 0.47–0.53).
@@ -1227,7 +1228,7 @@ model:
 | C2 | The children model: the config and validation (12.4), the transform, the design, the cap (12.1), the unit, config and statistical tests (12.5), a check script against 12.2 | Opus 5.5 | yes | x |
 | C3 | The intercept on 31 seeds (12.3), a full run on seeds 42 / 7 / 11, the calibration ranges, the invariants, the recovery check | Opus 5.5 | yes | x |
 | C4 | Regenerate the characterization fixtures; the full test suite; update the docs that describe the changed terms | Sonnet 5.5 | no | x |
-| C5 | An independent review of the whole step against §12, with a mutation check of the new tests (B4's form), then the PR description | Fable 5.2 | is the review | |
+| C5 | An independent review of the whole step against §12, with a mutation check of the new tests (B4's form), then the PR description | Fable 5.2 | is the review | x |
 
 **C1. Done when:**
 - [x] The two SDs are in the config and the ICC test asks for more than 0.30.
@@ -1257,11 +1258,11 @@ model:
       docs that wait for the reruns (R9) are listed.
 
 **C5. Done when:**
-- [ ] The step is reviewed against 12.1–12.5 as a new reader; each finding is reproduced, then
+- [x] The step is reviewed against 12.1–12.5 as a new reader; each finding is reproduced, then
       fixed.
-- [ ] Each new test fails under its own mutation (the old coefficients, the interaction's sign
+- [x] Each new test fails under its own mutation (the old coefficients, the interaction's sign
       flipped, no cap, the old SDs).
-- [ ] The PR description is printed in the chat.
+- [x] The PR description is printed in the chat.
 
 ### 12.9 Session prompts
 
@@ -1515,3 +1516,62 @@ After the PR is merged: merge `main` into `docs/project-summary` and start the s
     `MLFLOW_RUNS.md`, `PARAMETER_REFERENCE.md` and `DATA_GENERATION_PLAN.md` still hold numbers
     from the earlier simulator (the total-stage pair's ground truth now has the household-size
     term on a log scale and the opposite interaction sign); they are redone at the reruns.
+
+#### C5 (2026-11-24, Fable 5.2)
+The whole step (`git diff main...HEAD`, 14 files) read against 12.1–12.5.
+- **No defect in the model or the config.**
+  - The log term, the interaction on that term, the clip after the draw (no extra draw) and the
+    RNG order match 12.1.
+  - The fields, the cross-section check, `max_children` of at least 1 and the runtime guard
+    match 12.4.
+  - The intercept is −0.89, and each test of 12.5 exists.
+  - The cohort stage and the room tilt keep the scaled household size.
+- **Does each new test fail under its own mutation?**
+  `.mlflow-check/realism/c5_review_check.py` (output `c5_review_check_output.txt`).
+  - **The statistical tests**, called on their own draw under a config override (1,000
+    neighborhoods, rate 9, seed 42; the ICC test on 20,000 neighborhoods):
+
+    | Mutation | Tests that fail |
+    |---|---|
+    | none (the config) | 0 |
+    | the old model: 0.30 on $\tilde H$, +0.10 on rooms × $\tilde H$, −0.88, no cap | 4: small households, proportionality, crowding, the cap (maximum 25) |
+    | `household_size_coef` 0.30 on the new term | small households, proportionality, the level (0.794) |
+    | `rooms_household_interaction_coef` +0.15 | crowding |
+    | `rooms_household_interaction_coef` 0 | crowding |
+    | `max_children` 1000 | the cap (maximum 24) |
+    | `intercept` −0.60, and −1.20 | the level (1.171, and 0.647) |
+    | the old SDs (0.20 / 0.22) | buildings of one neighborhood are alike |
+
+  - **The unit and config tests** read the config file, so each mutation is one source edit on a
+    copy of the tree (`test_total_children_stage.py`, `test_config.py`, `test_design.py`; 63
+    pass unmutated):
+
+    | Source mutation | Tests that fail |
+    |---|---|
+    | no `np.minimum` in `sample_total_children` | the replayed draw; every count at the cap |
+    | the interaction's sign flipped in the design | the slopes by room; the room differences |
+    | the scaled term in place of the log term | the slopes by room; the room differences; the household-size guard (2) |
+    | the household-size guard removed | the household-size guard (2) |
+    | the reference guard removed | the reference guard |
+    | the `Config` cross-section check removed | the childless-size config test (2) |
+    | `Field(ge=1)` removed from `max_children` | `max_children` of 0 |
+
+  Every mutation fails at least one test, so no test body is changed.
+- **Fixed** (docs and one docstring):
+  - This plan's status header said step 2 awaited its PR and step 3's next was C0.
+  - `docs/README.md`: the row for this plan said "steps 3–4 outlined".
+  - 12.5 said each statistical test fails on today's model; the level test does not (C2).
+  - `tests/validation/test_children_statistics.py`: a broken line wrap in the module docstring.
+- **Checked, left:**
+  - **The recovery margin** (C3's item): the largest error is 0.172 at seed 11 against the
+    tolerance of 0.20; the test runs seed 42 (0.033). 12.2 keeps 0.20.
+  - **The tail invariant's threshold** (B4's item): the pass share is 0.974–1.000 against 0.80
+    (C3). 12.5 keeps it; it now guards only against a gross error.
+  - `docs/SIMPLIFIED_MODEL_PLAN.md` still shows `+0.05 SES²` in Step 4's formula and defines
+    $HH_{0.5}$ with 2.6 in its §5. Both are on C4's list for the reruns (R9).
+- **Static checks:** on the step's 10 source and test files, ruff reports 5 findings (import
+  order, `__all__` order, two `collections.abc` imports) and mypy the same 4 as C2, in
+  `config.py`. They are the pre-existing findings C2 recorded.
+- **Tests:** `tests/validation/test_children_statistics.py`: 5 passed (`c5_pytest_output.txt`).
+  The full suite was not rerun: C5 changed no source, config or test body, and C4's run gave
+  1533 passed.

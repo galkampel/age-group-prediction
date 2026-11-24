@@ -3,8 +3,8 @@
 The plan's real-world targets are approximate (docs/SIMULATOR_REALISM_PLAN.md,
 R10 and 12.2), so these tests assert directions and coarse ranges, not exact
 numbers. Each but the level test fails on the model before step 3 (12.5); the
-level guards the intercept. The household-size bands
-have fixed edges whose band means are about 12.2's (2.05 ... 4.98).
+level guards the intercept. The household-size bands have fixed edges whose
+band means are about 12.2's (2.05 ... 4.98).
 """
 
 from __future__ import annotations
