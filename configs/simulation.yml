@@ -78,9 +78,9 @@ building:
   # Median apartments of a tower.
   tower_apartments_median: 90.0
   # Hidden neighborhood texture on log size: one neighborhood's buildings are alike.
-  apartments_neighborhood_log_sd: 0.20
+  apartments_neighborhood_log_sd: 0.25
   # Building-to-building variation on log size.
-  apartments_building_log_sd: 0.22
+  apartments_building_log_sd: 0.15
   apartments_per_building_min: 8
   apartments_per_building_max: 160
   # Optional one-value-per-neighborhood override.

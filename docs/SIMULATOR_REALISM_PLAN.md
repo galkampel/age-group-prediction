@@ -1223,17 +1223,17 @@ model:
 | # | Sub-task | Model | Review | Done |
 |---|---|---|---|---|
 | C0 | This plan committed on `feat/realistic-children` | user | no | |
-| C1 | The two building SDs (12.4), the ICC threshold (12.5), a check script against 12.2's building table | Sonnet 5.5 | no | |
+| C1 | The two building SDs (12.4), the ICC threshold (12.5), a check script against 12.2's building table | Sonnet 5.5 | no | x |
 | C2 | The children model: the config and validation (12.4), the transform, the design, the cap (12.1), the unit, config and statistical tests (12.5), a check script against 12.2 | Opus 5.5 | yes | |
 | C3 | The intercept on 31 seeds (12.3), a full run on seeds 42 / 7 / 11, the calibration ranges, the invariants, the recovery check | Opus 5.5 | yes | |
 | C4 | Regenerate the characterization fixtures; the full test suite; update the docs that describe the changed terms | Sonnet 5.5 | no | |
 | C5 | An independent review of the whole step against §12, with a mutation check of the new tests (B4's form), then the PR description | Fable 5.2 | is the review | |
 
 **C1. Done when:**
-- [ ] The two SDs are in the config and the ICC test asks for more than 0.30.
-- [ ] A check script prints 12.2's building table on step 2's draw; the building counts at 150
+- [x] The two SDs are in the config and the ICC test asks for more than 0.30.
+- [x] A check script prints 12.2's building table on step 2's draw; the building counts at 150
       neighborhoods, rate 9, seeds 42 and 7 are still 1,523 and 1,564.
-- [ ] `tests/unit/test_building.py` and `tests/validation/test_building_statistics.py` pass.
+- [x] `tests/unit/test_building.py` and `tests/validation/test_building_statistics.py` pass.
 
 **C2. Done when:**
 - [ ] `total_children` follows 12.4, with the validation rules and the runtime guard.
@@ -1315,3 +1315,21 @@ After the PR is merged: merge `main` into `docs/project-summary` and start the s
 - **Chosen in the session:** crowding alone. The user left "both" (crowding and affordability)
   to the session's judgment of realism; affordability gave an unsupported room profile (12.7).
 - **Not run:** the code itself; the cohort shares under the new counts (C3).
+
+#### C1 (2026-11-24, Sonnet 5.5)
+- **Config:** `configs/simulation.yml`: `apartments_neighborhood_log_sd` 0.20 to 0.25,
+  `apartments_building_log_sd` 0.22 to 0.15. No source file changed.
+- **Test:** the intraclass-correlation test of `test_building_statistics.py` asks for more than
+  0.30 (was 0.15).
+- **Check** (`.mlflow-check/realism/c1_building_check.py`, output `c1_building_check_output.txt`;
+  20,000 neighborhoods, rate 9, seed 20261125). New column against 12.2: mean / SD / skew
+  40.6 / 25.9 / 2.18 (same); percentiles 19 26 32 42 102 139 (same); clipped at 160 0.37%
+  (same); ICC 0.379 (plan 0.375); texture variance between neighborhoods 0.74 (same);
+  10th–90th inside one neighborhood 25–36 (same); correlations +0.20 / +0.15 / −0.13 (same).
+  Old column: 40.7 / 26.1 / 2.19; 19 26 32 43 102 141; 0.41%; ICC 0.283; 0.45; 23–39.
+  Small differences from 12.2 (ICC 0.379, old 10th–90th 23–39) are the estimators' rounding.
+- **Building counts** at 150 neighborhoods, rate 9: seed 42 gives 1,523 and seed 7 gives 1,564,
+  both unchanged.
+- **Tests:** `tests/unit/test_building.py` and `tests/validation/test_building_statistics.py`:
+  17 passed (`c1_pytest_output.txt`). `ruff check` and `mypy` clean. `ruff format --check`
+  flags the test file for formatting that was already there (not the edited line); left as it is.
