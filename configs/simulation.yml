@@ -113,7 +113,7 @@ apartment: {}
 # NB2 log-mean model for total children per apartment.
 total_children:
   # Reference 3-room apartment log expected count.
-  intercept: -1.00
+  intercept: -0.88
   # The SES U-shape comes through household size; a direct term would double count it.
   ses_quadratic_coef: 0.0
   # Larger local households imply more children.

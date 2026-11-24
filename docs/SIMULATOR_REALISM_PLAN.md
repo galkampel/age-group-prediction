@@ -11,8 +11,8 @@ age 37) are European rather than Israeli. The project summary (`docs/PROJECT_SUM
 instead. This plan revises the simulator **step by step, one PR per step, neighborhoods first**.
 
 > **Step 2 (2026-11-24):** buildings and the room mix, planned in §11 on
-> `feat/realistic-buildings`; decisions R11–R17. B0 committed; **B1 done** (awaiting the user's
-> commit). Next: B2.
+> `feat/realistic-buildings`; decisions R11–R17. B0, B1 committed; **B2 done** (awaiting the user's
+> commit; the intercept is −0.88, not −0.95). Next: B3.
 
 ## 1. Decisions
 
@@ -620,6 +620,7 @@ Full runs with the room-mix values only (150 neighborhoods, rate 9;
 
 - **B2 re-verifies with the final model** (the types and the size term were not in these runs). The
   intercept is changed from −0.95 only if seed 42's mean leaves 0.85–0.90.
+  **B2's outcome: −0.88** (seed 42 gave 0.818 at −0.95; 11.9).
 - **Nothing else downstream changes in this step (R6).** Two effects are recorded as leads for the
   later steps, not fixed here (R17):
   - **Step 3:** children per apartment in the large-household neighborhoods fall from about 2.0 to
@@ -725,7 +726,7 @@ sizes should not change; B3 measures them.
 |---|---|---|---|---|
 | B0 | This plan committed on `feat/realistic-buildings` | user | no | 2026-11-24 |
 | B1 | The config schema and validation (11.4), the type and size draws and the room tilt's size term (11.1), with their unit and statistical tests (11.5) and a check script against 11.2 | Opus 5.5 | yes | 2026-11-24 |
-| B2 | The intercept (11.3), a full run on three seeds next to 11.3's table, the calibration ranges and the invariants | Opus 5.5 | yes | |
+| B2 | The intercept (11.3), a full run on three seeds next to 11.3's table, the calibration ranges and the invariants | Opus 5.5 | yes | 2026-11-24 |
 | B3 | Regenerate the characterization fixtures; the full test suite; update the docs that name the removed fields | Sonnet 5.5 | no | |
 | B4 | An independent review of the whole step against this section, then the PR description | Fable 5.2 | is the review | |
 
@@ -738,13 +739,13 @@ sizes should not change; B3 measures them.
 - [x] Review findings reproduced and fixed.
 
 **B2. Done when:**
-- [ ] The intercept is in the config.
-- [ ] A full run (150 neighborhoods, rate 9, seeds 42, 7, 11) prints children per apartment and per
+- [x] The intercept is in the config.
+- [x] A full run (150 neighborhoods, rate 9, seeds 42, 7, 11) prints children per apartment and per
       building, the zero share, the maximum, the cohort shares and the children in the
       neighborhoods with $H > 4.5$, next to 11.3's table. The intercept is recalibrated only if
       seed 42's mean leaves 0.85–0.90.
-- [ ] The calibration ranges and both invariants pass, or the failure is shown with its numbers.
-- [ ] Review findings reproduced and fixed.
+- [x] The calibration ranges and both invariants pass, or the failure is shown with its numbers.
+- [x] Review findings reproduced and fixed.
 
 **B3. Done when:**
 - [ ] The characterization fixtures are regenerated, and the diff of each is explained in 11.9.
@@ -860,3 +861,57 @@ After the PR is merged: merge `main` into `docs/project-summary` and start the s
   - **The user's decisions:** the median-order rule dropped (nothing fails without it; it forbade
     equal medians, the way to switch towers off); the SDs keep `gt=0`, the file's convention, so
     the exact-type test uses 1e-9 with a comment.
+
+#### B2 (2026-11-24, Opus 5.5; review Opus 5.5)
+- **Config:** `total_children.intercept` −1.00 → **−0.88**, not the planned −0.95.
+- **Full run** (`.mlflow-check/realism/b2_full_run_check.py`; 150 neighborhoods, rate 9, the
+  final model; output `b2_full_run_output.txt`, and `b2_full_run_output_at_-0.95.txt` for the
+  first run):
+
+  | Run | Per apartment, mean / SD | Zero share | Max | Per building, mean / SD / max | Kindergarten / elementary / high school | Invariant share | $H > 4.5$ |
+  |---|---|---|---|---|---|---|---|
+  | seed 42, −0.95 | 0.818 / 1.171 | .524 | 17 | 33.1 / 26.3 / 233 | .397 / .335 / .268 | 0.973 | 1.53 |
+  | seed 42, −0.88 | 0.872 / 1.229 | .507 | 19 | 35.3 / 28.0 / 250 | .398 / .336 / .266 | 0.973 | 1.64 |
+  | seed 7, −0.88 | 0.947 / 1.288 | .479 | 18 | 37.3 / 29.1 / 312 | .400 / .339 / .261 | 0.987 | 1.90 |
+  | seed 11, −0.88 | 0.865 / 1.207 | .504 | 18 | 37.1 / 29.0 / 270 | .389 / .337 / .274 | 0.987 | 1.78 |
+
+  - **The rule:** seed 42 at −0.95 gave 0.818, outside 0.85–0.90. The intercept moved by
+    $\log(0.875/0.818) = +0.067$, rounded to +0.07; the second run gives 0.872.
+  - **Why −0.95 was low** (the review, 31 seeds): the building types and the size term lower the
+    mean by about 4% in log terms, and seed 42 was a high draw in the design runs (the room mix
+    alone averages 0.855 at −0.95, against seed 42's 0.873). About 0.04 of the +0.07 is the
+    model, 0.03 the seed.
+  - **The change is centred** (the review, seeds 42 and 0–29): at −0.88 the mean averages 0.882
+    (SD 0.038, range 0.822–0.979); seed 42 is the median; the intercept that centres the average
+    on 0.875 is −0.888.
+- **Canonical config** (60 neighborhoods, rate 3, seed 42): mean children 0.833 and zero share
+  0.509, inside the ranges; oracle recovery's maximum error 0.070 against 0.20. Over 31 seeds
+  (the review): mean 0.769–0.963, none outside 0.75–1.00 (step 1: 0.757–1.023, one seed
+  outside); zero share 0.481–0.543; recovery error 0.043–0.159.
+- **Tests:** `tests/unit` and `tests/validation -m "not slow"` (the calibration file with both
+  invariants, both statistical files): 1429 passed, 1 skipped, 1 xfailed.
+  `tests/validation/test_recovery.py` (slow): 1 passed. Not run: the characterization and
+  notebook tests (B3). No source or test file changed, so no static check ran on them; ruff
+  passes on the script.
+- **Review (independent subagent, Opus 5.5):** no real problem. The script computes 11.3's
+  quantities; the recalibration follows the rule; no file pins the intercept's value.
+  - Observations recorded, not fixed:
+    - **The $H > 4.5$ column rests on 3 neighborhoods at seed 42** (about 5 per run). 11.3's
+      "2.0 → 1.6" came from the same noise. On 1000 neighborhoods (seeds 42 / 7 / 11) the tail
+      averages 2.02 / 1.89 / 1.80 against step 1's 2.27 / 2.21 / 1.96: **step 2 lowers it by
+      about 11%**, not by a fifth. The realistic level stays about 2.7 (lead for step 3).
+    - **The tail invariant catches the old household-size scale (0.5) with less margin:** its
+      pass share at 0.5 is 0.58 / 0.75 / 0.69 against the 0.80 threshold (step 1: 0.24–0.49).
+      It still fails at 0.5, as it should. For B4 and step 3.
+    - **The kindergarten share** is .389–.400 (31-seed average .395, the same at −0.95 and
+      −0.88); step 1 had .371–.373. The new room mix causes nearly all of it, smaller apartments
+      pushing toward the younger cohorts (lead for step 4).
+    - **Building totals spread more:** SD 28–29 and maximum 250–312 (31 seeds: average maximum
+      284, worst 525), against 18.7–21.0 and 150–177 with the room mix alone. Towers in
+      large-household areas, as 11.6 expected.
+    - **One seed is a noisy rule:** a single seed's mean has a 95% band of about ±0.075, wider
+      than the 0.85–0.90 window. It worked here because seed 42 is the median. A later step's
+      recalibration could use a multi-seed average instead.
+    - Stale, older than this step: `docs/FEATURE_TRANSFORMATIONS.md` quotes an observed log
+      rate of about −0.5 (now about −0.13); `docs/DATA_GENERATION_PLAN.md` has −0.79. For B3's
+      doc pass.
