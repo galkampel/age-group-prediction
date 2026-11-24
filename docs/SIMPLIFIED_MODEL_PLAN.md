@@ -47,7 +47,7 @@ Only variables expected to be available at prediction time are predictors.
 All numerical values in this document are configurable defaults, including
 distribution parameters, coefficients, random-effect scales, and validation
 tolerances. The scale defaults below create about 240
-buildings and 9,600 apartments, enough to test recovery without making a run
+buildings and roughly 10,000 apartments, enough to test recovery without making a run
 unnecessarily large.
 
 | Parameter | Default | Meaning and intuition |
@@ -56,10 +56,17 @@ unnecessarily large.
 | `n_neighborhoods` | `60` | Provides enough neighborhood variation to estimate contextual effects |
 | `buildings_per_neighborhood_min` | `1` | Every simulated neighborhood contributes at least one building |
 | `buildings_per_neighborhood_rate` | `3.0` | Add a Poisson draw with mean 3, giving 4 buildings per neighborhood on average |
-| `apartments_per_building_mean` | `40` | Represents a medium-sized residential building |
-| `apartments_per_building_sd` | `12` | Allows meaningful variation in building size |
-| `apartments_per_building_min` | `12` | Avoids unrealistically tiny buildings for this use case |
-| `apartments_per_building_max` | `80` | Prevents rare normal draws from creating implausibly large buildings |
+| `tower_log_odds_intercept` | `-2.35` | Tower log-odds at the reference neighborhood without a planned school |
+| `tower_ses_coef` | `0.7` | Towers need high land value: per SES SD |
+| `tower_median_age_coef` | `0.3` | Renewal targets established areas: per scaled decade of median age |
+| `tower_planned_school_coef` | `0.7` | New, growing areas: a planned school against the other two statuses |
+| `tower_propensity_sd` | `1.0` | Hidden neighborhood effect on the tower log-odds, so towers cluster |
+| `texture_apartments_median` | `30` | Median size of a mid-rise (6-10 floors) building |
+| `tower_apartments_median` | `90` | Median size of a tower |
+| `apartments_neighborhood_log_sd` | `0.20` | Hidden neighborhood texture on log size: one neighborhood's buildings are alike |
+| `apartments_building_log_sd` | `0.22` | Building-to-building variation on log size |
+| `apartments_per_building_min` | `8` | Avoids unrealistically tiny buildings |
+| `apartments_per_building_max` | `160` | Prevents rare draws from creating implausibly large towers |
 | `nb_dispersion_phi` | `3.0` | Allows household child counts to vary more than a Poisson model |
 | `target_cohort_shares` | `(0.40, 0.35, 0.25)` | Baseline shares for kindergarten, elementary, and high school |
 
@@ -197,48 +204,57 @@ B_j=B_{min}+\operatorname{Poisson}(\lambda_B)
 $$
 
 The defaults $B_{min}=1$ and $\lambda_B=3$ give an average of four buildings
-per neighborhood. For each building, draw its apartment count:
+per neighborhood. For each neighborhood draw two hidden effects, $r_j\sim\mathcal N(0,1.0^2)$ (tower
+propensity) and $t_j\sim\mathcal N(0,0.20^2)$ (texture). Each building is a tower with
+probability
 
 $$
-A_b=\operatorname{clip}
-\left(\operatorname{round}(\mathcal N(\mu_A,\sigma_A^2)),A_{min},A_{max}\right)
+P(\text{tower})=\operatorname{logistic}\left(-2.35+0.7\,SES_j+0.3\,\tilde M_j
++0.7\,\mathbb 1\{Z_j=\text{planned}\}+r_j\right),
 $$
 
-Here, $\mu_A$, $\sigma_A$, $A_{min}$, and $A_{max}$ are the four corresponding
-`apartments_per_building_*` configuration values. Round to an integer after
-drawing and then apply the limits. A mean of 40 and standard deviation of 12
-create mostly 20-60 apartment buildings while still allowing 12-80. When exact
-counts are supplied in configuration, skip both random draws.
+where $\tilde M_j=(\text{median age}_j-31)/10$ and $Z_j$ is the school status. The type is
+hidden: it is not a dataset column. Then draw the apartment count:
+
+$$
+A_b=\operatorname{clip}\left(\operatorname{round}\left(m\,e^{t_j+e_b}\right),A_{min},A_{max}\right),
+\qquad e_b\sim\mathcal N(0,0.22^2),
+$$
+
+with $m=30$ for a texture building and $m=90$ for a tower, so sizes are right-skewed (mean about
+40, median about 32). Here $A_{min}=8$ and $A_{max}=160$ are the
+`apartments_per_building_*` bounds. When exact counts are supplied in configuration, skip all
+the random draws of this step (the type, the size noise and the two hidden effects).
 
 ### Step 3: Room composition
 
 For room counts $k\in\{3,4,5,6\}$, start from:
 
-$$\boldsymbol\pi^0=(0.30,0.38,0.22,0.10)$$
+$$\boldsymbol\pi^0=(0.30,0.41,0.24,0.05)$$
 
-Define the neighborhood tilt:
+Define the building tilt, with $\tilde H_j=(HH_j-3.0)/0.75$ the scaled household size:
 
-$$q_j=0.35HH_{0.5,j}+0.20SES_j$$
+$$q_b=0.35\,SES_j+0.10\,\tilde H_j-0.32\log(A_b/30)$$
 
-$q_j$ compresses two neighborhood signals into one direction for the room mix.
-If $q_j>0$, larger households or higher SES shift weight toward larger
-apartments; if $q_j<0$, weight shifts toward smaller apartments; and if
-$q_j=0$, the baseline mix is unchanged. Household size receives more weight
-than SES because it is more directly related to room demand.
+$q_b$ compresses three signals into one direction for the room mix. If $q_b>0$ weight shifts
+toward larger apartments; if $q_b<0$, toward smaller ones; if $q_b=0$ the baseline mix is
+unchanged. Apartment size rises with SES; household size weighs little, so large poor
+households are crowded; and larger buildings hold smaller apartments (a building twice the
+texture median of 30 has about 0.10 fewer rooms per apartment).
 
 $$
 \widetilde w_{bk}=\pi_k^0
-\exp\left(q_j\frac{k-4}{2}\right),
+\exp\left(q_b\frac{k-4}{2}\right),
 \qquad
 w_{bk}=\frac{\widetilde w_{bk}}{\sum_h\widetilde w_{bh}}
 $$
 
 For $k=(3,4,5,6)$, the factor $(k-4)/2$ equals
 $(-0.5,0,0.5,1)$. Four rooms is therefore the pivot: its multiplier is always
-1 before normalization. A positive $q_j$ decreases the relative weight of
+1 before normalization. A positive $q_b$ decreases the relative weight of
 3-room apartments and increases the weights of 5- and 6-room apartments, with
 the largest change at 6 rooms. Dividing by 2 keeps this rotation gradual. For
-example, when $q_j=1$, the four unnormalized multipliers are approximately
+example, when $q_b=1$, the four unnormalized multipliers are approximately
 $(0.61,1.00,1.65,2.72)$ before they are converted back to probabilities.
 
 Draw a building-specific mix:
@@ -258,11 +274,16 @@ Assign those room labels to apartment IDs in random order.
 
 | Parameter | Value | Intuition |
 |---|---:|---|
-| Base shares for 3/4/5/6 rooms | 30%/38%/22%/10% | Four-room apartments are most common; very large apartments are uncommon |
-| Household-size tilt | 0.35 per 0.5 people | Larger-household neighborhoods shift the available mix toward larger apartments |
-| SES tilt | 0.20 per SES unit | Higher-SES areas have a modest shift toward larger apartments |
+| Base shares for 3/4/5/6 rooms | 30%/41%/24%/5% | Four-room apartments are most common; 6-room apartments are rare in apartment buildings |
+| Household-size tilt | 0.10 per scaled household-size unit | Household size weighs little: large poor households are crowded |
+| SES tilt | 0.35 per SES unit | Apartment size rises with SES |
+| Building-size tilt | -0.32 per log of size over 30 | Larger buildings hold smaller apartments |
 | Room distance divisor | 2 | Keeps the tilt gradual rather than moving nearly all mass to an extreme room count |
 | Dirichlet concentration | 30 | Allows building mixes to differ, while keeping them near their neighborhood expectation |
+
+The neighborhood and outcome sections of this document still describe the earlier
+simulator (before the realistic-simulator steps, 2026-11-24); they are stale until the reruns.
+The building and room-mix model above follows `docs/SIMULATOR_REALISM_PLAN.md` 11.1 and 11.4.
 
 Increasing concentration makes buildings more alike; decreasing it creates
 more specialized buildings. The multinomial guarantees that room counts sum
