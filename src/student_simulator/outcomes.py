@@ -12,6 +12,7 @@ from .config import (
 from .features import (
     center_rooms,
     daycare_saturation,
+    log_household_size_excess,
     scale_household_size,
     scale_median_age,
     stable_row_normalize,
@@ -70,6 +71,7 @@ class TotalChildrenSimulator:
         Draws, in order: one Gaussian effect per building, one per
         neighborhood, then an NB2 count per apartment from the room, SES,
         household-size, daycare, school and median-age terms plus both effects.
+        The count is clipped at `max_children`; the clip uses no draw.
 
         Args:
             apartment_context: Apartment rows joined to building and
@@ -114,7 +116,10 @@ class TotalChildrenSimulator:
             )
 
         out = apartment_context.copy(deep=True)
-        out["n_children_total"] = self._sample_nb2(generator, mu).astype(int)
+        counts = np.minimum(
+            self._sample_nb2(generator, mu), self._settings.max_children
+        )
+        out["n_children_total"] = counts.astype(int)
         return out, {
             "building_total_count_effect": building_effect,
             "neighborhood_total_count_effect": neighborhood_effect,
@@ -161,8 +166,8 @@ class TotalChildrenSimulator:
 
         ses = apartment_context["ses"].to_numpy(dtype=float)
         design["ses_squared"] = ses**2
-        design["household_size_scaled"] = features[
-            "household_size_scaled"
+        design["log_household_size_excess"] = features[
+            "log_household_size_excess"
         ]
         design["daycare_saturation"] = features["daycare_saturation"]
         design["school_existing"] = (
@@ -173,7 +178,7 @@ class TotalChildrenSimulator:
         ).astype(float)
         design["median_age_scaled"] = features["median_age_scaled"]
         design["rooms_household_interaction"] = (
-            features["rooms_centered"] * features["household_size_scaled"]
+            features["rooms_centered"] * features["log_household_size_excess"]
         )
         return design.loc[:, list(self._feature_coefficients())]
 
@@ -184,10 +189,10 @@ class TotalChildrenSimulator:
             apartment_context["rooms"].to_numpy(),
             reference=self._transforms.room_reference,
         )
-        features["household_size_scaled"] = scale_household_size(
+        features["log_household_size_excess"] = log_household_size_excess(
             apartment_context["avg_household_size"].to_numpy(),
             reference=self._transforms.household_size_reference,
-            scale=self._transforms.household_size_scale,
+            childless=self._settings.childless_household_size,
         )
         features["median_age_scaled"] = scale_median_age(
             apartment_context["median_age"].to_numpy(),
@@ -211,7 +216,7 @@ class TotalChildrenSimulator:
                 )
             },
             "ses_squared": self._settings.ses_quadratic_coef,
-            "household_size_scaled": self._settings.household_size_coef,
+            "log_household_size_excess": self._settings.household_size_coef,
             "daycare_saturation": self._settings.daycare_saturation_coef,
             "school_existing": self._settings.existing_school_coef,
             "school_planned": self._settings.planned_school_coef,
