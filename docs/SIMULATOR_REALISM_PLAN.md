@@ -19,8 +19,9 @@ instead. This plan revises the simulator **step by step, one PR per step, neighb
 > 12.10.
 
 > **Step 4 (2026-11-25):** the cohort split, planned in §13 on `feat/realistic-cohorts`;
-> decisions R25–R30. K0 committed; K1 done (the reference shares kept by 13.3's rule); K2 done (the fixture, the pins, the suite, the docs). Next: K3.
-> The record is 13.10.
+> decisions R25–R30. K0–K2 committed (the reference shares kept by 13.3's rule); **K3 done**
+> (the review and the PR description), awaiting the user's commit and the PR. Next: merge `main`
+> into `docs/project-summary`, then the summary's S1c.4. The record is 13.10.
 
 ## 1. Decisions
 
@@ -1611,7 +1612,7 @@ age and household size; $P_j = 1$ where the neighborhood's school is planned, el
   split between the three targets does.
 - **The reference apartment** ($\theta = 0$): 4 rooms, no daycares, median age 31, household size
   3.0, no planned school, building effect 0. Its shares are 22.5 / 38.5 / 39.0%. The
-  population's are about 27 / 38 / 35%, because the mean score is about −0.15: the average
+  population's are about 27 / 38 / 35%, because the mean score is about −0.14: the average
   neighborhood has daycares (about −0.12) and a fifth have a planned school (about −0.05).
 
 ### 13.2 Calibration
@@ -1785,7 +1786,7 @@ to stay (the building counts and totals do not change); K2 measures them.
 | K0 | This plan committed on `feat/realistic-cohorts` | user | no | |
 | K1 | The cohort model: the config and the score (13.1, 13.4), the helpers' removal, the unit, config and statistical tests (13.5), a check script against 13.2 on five seeds with 13.3's rule | Opus 5.5 | yes | yes |
 | K2 | Regenerate the EDA fixture and measure the pins; the full test suite; update the docs that describe the cohort step | Sonnet 5.5 | no | yes |
-| K3 | An independent review of the whole step against §13, with a mutation check of the new tests (C5's form), then the PR description | Fable 5.2 | is the review | |
+| K3 | An independent review of the whole step against §13, with a mutation check of the new tests (C5's form), then the PR description | Fable 5.2 | is the review | yes |
 
 Why these models: K1 changes the source, the schema and the tests together, and gets an
 independent review. K2 is mechanical and follows C4's scripts. K3 is the one read not anchored
@@ -1810,12 +1811,12 @@ shares are checked inside K1, because nothing in the totals moves.
       reruns (R9) are listed.
 
 **K3. Done when:**
-- [ ] The step is reviewed against 13.1–13.5 as a new reader; each finding is reproduced, then
+- [x] The step is reviewed against 13.1–13.5 as a new reader; each finding is reproduced, then
       fixed.
-- [ ] Each new test fails under its own mutation: today's values; the planned-school coefficient
+- [x] Each new test fails under its own mutation: today's values; the planned-school coefficient
       0; household size 0.10 and 0.15; rooms 0.30; reference shares 0.27 / 0.38 / 0.35. The
       restored bonus is expected to fail nothing; that is recorded.
-- [ ] The PR description is printed in the chat.
+- [x] The PR description is printed in the chat.
 
 ### 13.9 Session prompts
 
@@ -2007,3 +2008,88 @@ After the PR is merged: merge `main` into `docs/project-summary` and start the s
     truth), `HYPERPARAMETER_TUNING.md`, `INDEPENDENT_COHORT_MODELS.md`, `MLFLOW_RUNS.md`,
     `PARAMETER_REFERENCE.md`, `DATA_GENERATION_PLAN.md` still hold numbers or mechanisms from the
     earlier simulator; they are redone at the reruns.
+
+#### K3 (2026-11-25, Fable 5.2)
+The whole step (`git diff main...HEAD`, 15 files) read against 13.1–13.5.
+- **No defect in the model, the config or the tests.**
+  - The score has 13.1's five terms and the building effect; the dummy is the total-children
+    design's; the softmax and the RNG order (one effect per building, then one multinomial per
+    apartment) are untouched.
+  - `cohort` and `CohortSettings` match 13.4: the bonus field is gone, `planned_school_coef` is
+    required, no new validation.
+  - The two helpers are gone from `features.py`, the exports (29 names) and `test_transforms.py`.
+    A grep of the source, tests, configs, notebooks and docs for their names, the bonus field
+    and its column finds only the config test that rejects the removed key and the historical
+    records (this plan, `SIMULATOR_WHITE_BOX_PLAN.md`).
+  - Each test of 13.5 exists and asserts 13.5's literals (the room gap's upper edge is K1's
+    0.22).
+- **The step's claims, measured** (`.mlflow-check/realism/k3_review_check.py`, part 0; output
+  `k3_review_check_output.txt`; `main` exported by `git archive` to `k3_main/`):
+  - On the canonical config at seeds 42 and 7 (250 and 230 buildings), every per-apartment
+    column other than the three cohort counts equals `main`'s, the totals and the cohort
+    building effect included; only the cohort counts differ.
+  - 13.6's numbers at seed 42 reproduce: realized shares 26.3 / 38.5 / 35.2 (`main`
+    40.3 / 33.5 / 26.2), mean per building 8.7 / 12.7 / 11.7 (`main` 13.3 / 11.1 / 8.6; 13.6
+    says 8.7), buildings with fewer than 3 in a cohort 18% / 5% / 5% (`main` 5% / 6% / 16%).
+  - 13.1's mean score, weighted by children on the statistical tests' draw: −0.135 (rooms
+    +0.048, daycares −0.117, median age −0.041, household size +0.028, planned school −0.051;
+    18.8% of the neighborhoods have a planned school).
+- **Does each new test fail under its own mutation?** Parts 1 and 2 of the same script.
+  - **The statistical tests**, called on their own draw under a config override (1,000
+    neighborhoods, rate 9, seed 42; 7 tests, 8 cases):
+
+    | Mutation | Tests that fail |
+    |---|---|
+    | none (the config) | 0 |
+    | today's values (rooms 0.30, household size 0.15, planned school 0, shares 0.40 / 0.35 / 0.25; no bonus) | 4: the level (.402 / .338 / .260), a planned school (both cases, +0.010), large households (−0.013), the room gap (0.295) |
+    | `planned_school_coef` 0 | a planned school (both cases; kindergarten +0.011) |
+    | `household_size_coef` 0.10 | large households (+0.008) |
+    | `household_size_coef` 0.15 | large households (−0.020) |
+    | `room_coef` 0.30 | the room gap (0.242) |
+    | reference shares 0.27 / 0.38 / 0.35 | the level (.316 / .372 / .312) |
+    | the bonus restored (+0.12, a patch of `compute_theta`; no override can restore it) | 0, as 13.8 expects (shares .267 / .380 / .353, room gap 0.177) |
+    | today's model exactly (today's values and the bonus) | the same 4 (room gap 0.304) |
+
+    The three guards pass under every row.
+  - **The unit and config tests** read the config file, so each mutation is a source edit on a
+    copy of the tree (`test_cohort_aggregation_stage.py`, `test_design.py`, `test_config.py`;
+    64 pass unmutated):
+
+    | Source mutation | Tests that fail |
+    |---|---|
+    | the planned-school entry removed from the coefficient map | the score terms; a planned school lowers the score |
+    | the dummy built from `"existing"` | 5: the reference shares (existing), the score terms, a planned school lowers the score, the dummy test, the transform-flow test |
+    | `household_size_coef` −0.05 in the YAML | the score terms |
+    | the bonus restored as a feature column (+0.12) | the two column-list tests |
+    | the bonus restored inside `compute_theta` (+0.12, no column) | none (the documented case) |
+    | `planned_school_coef` optional with a default in `CohortSettings` | the missing-field config test |
+    | extra: the removed bonus field accepted again in `CohortSettings` | the removed-key config test |
+    | extra: reference shares 0.27 / 0.38 / 0.35 in the YAML | the reference shares (2) |
+    | extra: `planned_school_coef` 0 in the YAML | the score terms; a planned school lowers the score; the missing-field test (its precondition, K1's note) |
+
+  Every mutation except the restored bonus fails at least one test, so no test body is changed.
+  The bonus is zero wherever the score-term test moves one term at a time (it needs more than 4
+  rooms and a median age over 31 together), and at +0.12 it moves no statistical test.
+- **Fixed** (docs only):
+  - This plan's status header said the next sub-task is K3.
+  - 13.1 said the mean score is about −0.15; measured −0.135, so it now says about −0.14.
+  - `docs/SIMPLIFIED_MODEL_PLAN.md`: the stale-sections note still opened with "the neighborhood
+    and outcome sections ... are stale" although both outcome steps are now current, and its §5
+    defines $Age_{10}$ with 37 and $HH_{0.5}$ with 2.6 while Step 5 centres at 31 and at 3.0 per
+    0.75. The note now names the neighborhood section and §5's two definitions as the stale
+    parts and says Step 5 states its own centring.
+- **Checked, left:**
+  - 13.6's "today" high-school mean per building (8.7) is 8.6 on the code's realized draw; the
+    new model's numbers match.
+  - 13.2's canonical-config mean over 30 seeds (27.1 / 38.0 / 34.9) against K1's realized
+    27.1 / 38.1 / 34.8: within 0.1 point.
+  - The restored bonus is not pinned by a test (above). A sixth apartment in the score-term test
+    with 6 rooms and median age 41 (score 0.65) would pin it; 13.8 records the case as expected,
+    so the test is not changed.
+  - 13.8's K0 cell is empty, as 12.8's C0 cell is.
+- **Static checks:** on the step's 9 source and test files, ruff reports 8 findings (import
+  order, the unsorted `__all__`, two `typing` imports, one unused import), the same 8 as on
+  `main`'s versions of those files; mypy the same 4 as K1, in `config.py`.
+- **Tests:** none rerun: K3 changed no source, config or test body, and K2's run gave 1546
+  passed, 1 skipped, 1 xfailed. The unmutated copy of the tree gives 64 passed on the three unit
+  files (the script's first row).

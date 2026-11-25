@@ -281,11 +281,12 @@ Assign those room labels to apartment IDs in random order.
 | Room distance divisor | 2 | Keeps the tilt gradual rather than moving nearly all mass to an extreme room count |
 | Dirichlet concentration | 30 | Allows building mixes to differ, while keeping them near their building's expectation |
 
-The neighborhood and outcome sections of this document still describe the earlier
-simulator (before the realistic-simulator steps, 2026-11-24); they are stale until the reruns.
-The building and room-mix model above follows `docs/SIMULATOR_REALISM_PLAN.md` 11.1, 11.4 and 12.4,
-Step 4's total-children model follows 12.1 and 12.4, and Step 5's cohort composition follows 13.1
-and 13.4. The neighborhood section is not updated.
+The neighborhood section and the definitions of $HH_{0.5}$ and $Age_{10}$ in §5 still describe
+the earlier simulator (before the realistic-simulator steps, 2026-11-24); they are stale until
+the reruns. The building and room-mix model above follows `docs/SIMULATOR_REALISM_PLAN.md` 11.1,
+11.4 and 12.4, Step 4's total-children model follows 12.1 and 12.4, and Step 5's cohort
+composition follows 13.1 and 13.4; Step 5 states its own centring (median age 31, household size
+3.0 per 0.75).
 
 Increasing concentration makes buildings more alike; decreasing it creates
 more specialized buildings. The multinomial guarantees that room counts sum
