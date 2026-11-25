@@ -238,7 +238,7 @@ class CohortSettings(_Settings):
     daycare_coef: float
     median_age_coef: float
     household_size_coef: float
-    room_age_positive_interaction_coef: float
+    planned_school_coef: float
     building_effect_sd: float = Field(gt=0)
     kindergarten_lifecycle_slope: float
     highschool_lifecycle_slope: float

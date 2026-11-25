@@ -356,3 +356,24 @@ def test_a_max_children_below_one_or_fractional_is_rejected(value: float) -> Non
 
     with pytest.raises(ConfigError, match=r"total_children.max_children"):
         config.with_overrides({"total_children": {"max_children": value}})
+
+
+def test_the_removed_cohort_bonus_is_rejected() -> None:
+    config = load_simulation_config(_config_path())
+
+    with pytest.raises(ConfigError, match=r"cohort.room_age_positive_interaction_coef"):
+        config.with_overrides({"cohort": {"room_age_positive_interaction_coef": 0.12}})
+
+
+def test_a_config_without_the_cohort_planned_school_coef_is_rejected(
+    tmp_path: Path,
+) -> None:
+    raw_text = _config_path().read_text()
+    text = raw_text.replace("  planned_school_coef: -0.25\n", "", 1)
+    # The total-children section keeps its own field of the same name.
+    assert text.count("\n  planned_school_coef:") == 1
+    cfg_path = tmp_path / "bad_missing_cohort.yml"
+    cfg_path.write_text(text)
+
+    with pytest.raises(ConfigError, match=r"cohort.planned_school_coef"):
+        load_simulation_config(cfg_path)
