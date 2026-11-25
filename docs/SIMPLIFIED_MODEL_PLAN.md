@@ -37,7 +37,7 @@ neighborhood.
 | SES | Neighborhood | Quadratic | None in Stage 1 | Captures socioeconomic sorting |
 | Average household size | Neighborhood | Strong positive | Larger households shift older | Strongest direct demographic signal |
 | Daycares within 500 m | Neighborhood | Positive, saturating | Shifts younger | Low-cost family-infrastructure signal |
-| School status | Neighborhood | Existing/planned positive | None in Stage 1 | Availability signal without load complexity |
+| School status | Neighborhood | Existing/planned positive | Planned school shifts younger | Availability signal without load complexity |
 | Median age | Neighborhood | Weak negative | Shifts older | Neighborhood lifecycle signal |
 
 Only variables expected to be available at prediction time are predictors.
@@ -68,7 +68,7 @@ unnecessarily large.
 | `apartments_per_building_min` | `8` | Avoids unrealistically tiny buildings |
 | `apartments_per_building_max` | `160` | Prevents rare draws from creating implausibly large towers |
 | `nb_dispersion_phi` | `3.0` | Allows household child counts to vary more than a Poisson model |
-| `target_cohort_shares` | `(0.40, 0.35, 0.25)` | Baseline shares for kindergarten, elementary, and high school |
+| `target_cohort_shares` | `(0.225, 0.385, 0.390)` | Reference apartment's shares for kindergarten, elementary, and high school; the population's split is about 27 / 38 / 35% |
 
 The optional `buildings_per_neighborhood` list contains one exact count per
 neighborhood. The optional `apartments_per_building` list contains one exact
@@ -284,8 +284,8 @@ Assign those room labels to apartment IDs in random order.
 The neighborhood and outcome sections of this document still describe the earlier
 simulator (before the realistic-simulator steps, 2026-11-24); they are stale until the reruns.
 The building and room-mix model above follows `docs/SIMULATOR_REALISM_PLAN.md` 11.1, 11.4 and 12.4,
-and Step 4's total-children model follows 12.1 and 12.4. The neighborhood section and the
-cohort step are not updated.
+Step 4's total-children model follows 12.1 and 12.4, and Step 5's cohort composition follows 13.1
+and 13.4. The neighborhood section is not updated.
 
 Increasing concentration makes buildings more alike; decreasing it creates
 more specialized buildings. The multinomial guarantees that room counts sum
@@ -391,21 +391,24 @@ $$v_b\sim\mathcal N(0,0.20^2)$$
 
 $$
 \theta_i=
-0.30Room_{c,i}
+0.20Room_{c,i}
 -0.20S(D_j)
 +0.25Age_{10,j}
-+0.15HH_{0.5,j}
-+0.12\max(Room_{c,i},0)\max(Age_{10,j},0)
++0.05HH_{0.75,j}
+-0.25P_j
 +v_b
 $$
 
-Start from the configured baseline cohort shares and apply the lifecycle index:
+where $Room_c=R-4$, $Age_{10}=(Age-31)/10$, $HH_{0.75}=(HH-3.0)/0.75$ and $P_j=1$ where the
+neighborhood's school is planned, else 0.
 
-$$a_{kg,i}=0.40\exp(-1.0\theta_i)$$
+Start from the configured reference cohort shares and apply the lifecycle index:
 
-$$a_{el,i}=0.35$$
+$$a_{kg,i}=0.225\exp(-1.0\theta_i)$$
 
-$$a_{hs,i}=0.25\exp(1.1\theta_i)$$
+$$a_{el,i}=0.385$$
+
+$$a_{hs,i}=0.390\exp(1.1\theta_i)$$
 
 $$
 p_{k,i}=\frac{a_{k,i}}{a_{kg,i}+a_{el,i}+a_{hs,i}}
@@ -416,41 +419,38 @@ $$
 \sim\operatorname{Multinomial}(N_i,\mathbf p_i)
 $$
 
-When $\theta=0$, probabilities are exactly 40%, 35%, and 25%. Positive
+When $\theta=0$, probabilities are exactly 22.5%, 38.5%, and 39.0%. Positive
 $\theta$ means an older family lifecycle: it lowers kindergarten and raises
-high school while elementary stays between them.
+high school while elementary stays between them. The reference apartment has 4 rooms, no
+daycares, median age 31, household size 3.0 and no planned school. The population's split is about
+27% / 38% / 35%, because the average neighborhood has daycares (about $-0.12$ on $\theta$) and a
+fifth have a planned school (about $-0.05$).
 
 | Term | Coefficient | Practical interpretation |
 |---|---:|---|
-| Additional room | 0.30 | Each room above 4 moves the lifecycle index 0.30 toward older cohorts |
+| Additional room | 0.20 | Each room above 4 moves the lifecycle index 0.20 toward older cohorts: families move to larger apartments as the children grow |
 | Daycare saturation | -0.20 | Strong daycare availability moves the index up to 0.20 toward younger cohorts |
 | Median age | 0.25 | A 10-year older neighborhood moves the index 0.25 toward older cohorts |
-| Household size | 0.15 | An additional 0.5 people moves the index 0.15 toward older cohorts |
-| Large rooms in older neighborhoods | 0.12 | Each room above 4 interacts with each positive 10-year age unit; the interaction is zero for small apartments or neighborhoods younger than 37 |
+| Household size | 0.05 | An additional 0.75 people moves the index 0.05 toward older cohorts |
+| Planned school | -0.25 | A planned school marks a new, growing neighborhood of young families and moves the index 0.25 toward younger cohorts |
 | Building composition SD | 0.20 | Allows otherwise similar buildings to differ modestly in lifecycle |
 | Kindergarten lifecycle slope | -1.0 | A one-unit increase in $\theta$ multiplies kindergarten-to-elementary odds by 0.37 |
 | High-school lifecycle slope | 1.1 | A one-unit increase in $\theta$ multiplies high-school-to-elementary odds by 3.00 |
 
-The one-sided interaction represents move-up families: a large apartment in an
-established neighborhood attracts older children more strongly than the same
-apartment in a young neighborhood. Using positive parts is intentional. The
-ordinary product $Room_cAge_{10}$ would also be positive for a small apartment
-in a young neighborhood because both centered values are negative. That would
-partly cancel their two younger-cohort main effects without a clear mechanism.
-The one-sided form leaves the other three room-age combinations to their main
-effects and adds a bonus only for large apartments in older neighborhoods.
+There is no room-by-age interaction: the earlier one-sided bonus for large apartments in older
+neighborhoods was dropped, and the room and median-age terms act through their main effects.
 
-Generic school status does not alter cohort composition in Stage 1. Knowing
-that a school exists does not identify whether it serves kindergarten,
-elementary, or high-school ages. Stage-specific school access can be added when
-the school stage is observed.
+An existing school does not alter cohort composition. Knowing that a school exists does not
+identify whether it serves kindergarten, elementary, or high-school ages. A planned school does
+carry information: it marks a new neighborhood, whose families are young. Stage-specific school
+access can be added when the school stage is observed.
 
 The shared $v_b$ makes apartments in one building similar in cohort age. A
 plain multinomial is sufficient for this first version; add a
 Dirichlet-multinomial only if composition remains overdispersed after accounting
 for $v_b$.
 
-The 40%/35%/25% values are **reference shares**, not a requirement that the
+The 22.5%/38.5%/39.0% values are **reference shares**, not a requirement that the
 whole generated sample have exactly those shares. The sample average can differ
 because its apartments and neighborhoods do not all have $\theta=0$. This
 removes the need for a separate, hard-to-interpret intercept-calibration loop.
@@ -515,7 +515,7 @@ private implementation state.
 | Mean children per apartment | 0.40-0.60 |
 | Apartments with zero children | 60-75% |
 | Apartment variance/mean | Clearly above 1 |
-| Reference composition | At $\theta=0$, exactly 40%/35%/25% |
+| Reference composition | At $\theta=0$, exactly 22.5%/38.5%/39.0% |
 | Simulated mean composition | Report and monitor; do not force it to equal the reference shares |
 | Mean children rises from 3 to 5 rooms | Required; 6-room increment may flatten |
 | Building variance/mean | Clearly above 1 |
@@ -523,8 +523,8 @@ private implementation state.
 | Household-size effect remains positive for 3, 4, 5, and 6 rooms | Required; verify $1.0-0.15(R-4)>0$ for every supported room count |
 | Room by household-size scenario grid | Report expected means for every room count across household sizes 1.8, 2.6, 3.1, 3.6, and 4.2 |
 | Extreme 6-room/high-household prediction | Inspect during calibration; the cap of 10 bounds the count, and the crowding interaction keeps large rooms from compounding with large households |
-| Large-room effect shifts composition older more strongly only in neighborhoods older than 37 | Required for the one-sided composition interaction |
-| Small rooms in young neighborhoods receive no room-age interaction | Required; their younger shift comes only from the main effects |
+| Planned school shifts composition younger | Required; the kindergarten share is higher in neighborhoods with a planned school at the same median age |
+| Kindergarten share falls with rooms and with median age | Required; each room above 4 and each older age band shifts composition older |
 
 Do not freeze the proposed exact room means or variance ratio until a canonical
 run verifies that all interactions and random effects behave as intended.
