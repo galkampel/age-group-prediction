@@ -12,7 +12,11 @@
 > The cohort split gets a
 > simulator step: Israel's cohort levels, a planned-school term, the negligible bonus dropped.
 > The simulator's step 4 (the cohort split) is merged (PR #32) and `main` is merged into this
-> branch. S1c.4 done (2.3's second half written). **Next: S1c.5.** The implementation record is §9.
+> branch. S1c.4 done (2.3's second half written, committed `dac973f`). Sections 2.1–2.3 were then
+> shortened to P14 (2026-11-25, reviewed by Fable 5.2, check passing; **uncommitted**, with the
+> crowding sentence of S1c.4's follow-up). **Next (handoff, 2026-11-25): one session, Opus 5.5:
+> first the user's verification of the shortened 2.1–2.3 (fix what the user raises, then the user
+> commits), then S1c.5.** The prompt is §8's S1c.5 row. The implementation record is §9.
 
 The project is documented in 62 files under `docs/`, most of them plans and work records. No
 single document tells a new reader what the task is, how the data is generated, how it is
@@ -36,6 +40,7 @@ produces that document, `docs/PROJECT_SUMMARY.md`, in its own PR.
 | P12 | The realistic simulator first (user, 2026-11-24). Section 2 questioned the neighborhood model; the user chose to make the simulator realistic, calibrated to Israel, step by step (neighborhoods first), in separate PRs from `main` (`docs/SIMULATOR_REALISM_PLAN.md`). This branch merges `main` after each simulator PR. The order becomes: simulator step(s) → S1c and S2–S4b (the documentation) → the reruns (notebooks 03 and 04 on the new data) → S5a onward. The results of the run at `da6afc9` (§3) are superseded then. **The order of the simulator steps and S1c is replaced by P13;** the rest holds. |
 | P11 | The reader's view (user, 2026-11-24), for the whole summary: no implementation details (no Python names or calls, file paths, line numbers, config keys or notebook names; dataset column names and links to the detailed docs stay). Formulas carry their actual values inline, with no notation or parameter tables: distributions labeled, e.g. $\mathcal N(\mu=0, \sigma^2=1^2)$, linear formulas with plain coefficients explained in words. Each section opens by describing and motivating its subject. Code lines go only into §9, the record. |
 | P13 | Section 2 part by part (user, 2026-11-24); replaces P12's order. Section 2 is written one part at a time, in draw order: 2.1 neighborhoods, 2.2 buildings, 2.3 total children, 2.3 the cohort split, then 2.4–2.6 and section 1's counts (S1c.1–S1c.5). Each part is written for the simulator as it stands when its sub-task starts. Before a part is written it is analyzed with the user: is this model realistic for Israel? The user decides: **keep**, or **a simulator step** (planned in `docs/SIMULATOR_REALISM_PLAN.md`, its own PR from `main`; this branch merges `main` after it). A part is written only after its decision has taken effect, so no part is written twice. 2.1 needs no analysis: step 1 was its step. After section 2: S2–S4b, the reruns, S5a onward, as in P12. |
+| P14 | Concise (user, 2026-11-25), for the whole summary from section 2 on: clear, informative and concise. The formulas carry the content, each symbol defined once with its reference values. Prose only where a formula does not show it: what a non-obvious variable means, a multiplier or scale not visible at a glance, effects that combine or cancel, why a number that looks odd is what it is, the terms absent by design. No obvious motivations and no restatement of a formula in words. Replaces the S1c notes "the explanations must be better" and "each relation is motivated" (§7). Sections 2.1–2.3 were shortened to it. |
 
 The summary describes **the path the notebooks run**: the `student_simulator` package and the
 new `preprocessing.py`, `feature_engineering`, `modeling`, `hyperparameter_tuning` and
@@ -259,10 +264,11 @@ Done when:
 ### S1c. Section 2, part by part (P13)
 Five sub-tasks, S1c.1–S1c.5, in the loop of §5. The rules common to all five:
 - **The user's notes (2026-11-24)** apply to every part:
-  - The explanations must be better throughout; each variable says what it represents.
-  - Each relation is motivated.
+  - ~~The explanations must be better throughout; each relation is motivated.~~ Replaced by P14
+    (2026-11-25): concise, formulas first, prose only where it informs.
+  - Each variable says what it represents (once).
   - No explanation of what clipping does.
-  - P10 and P11 hold.
+  - P10, P11 and P14 hold.
 - **One check script, `check_s1c.py`,** adapted from `check_s1b.py`. It grows by one part per
   sub-task and always checks every part written so far: each inline value against the config plus
   the notebooks' overrides, and no implementation detail. A later simulator step that changes an
@@ -330,6 +336,24 @@ Done when:
 - [x] Review findings reproduced and fixed.
 
 ### S1c.5. Sections 2.4–2.6, the opening, section 1's counts (Opus 5.5, review)
+**First, the verification of the shortened 2.1–2.3** (P14, §9 "Shortening of 2.1–2.3"): if the
+working tree still holds it uncommitted, show the user `git diff --stat` and the check's last
+output, and ask for the user's review of 2.1–2.3. Each point the user raises is reproduced (or
+read against the code), fixed, and the check rerun once if a checked sentence changed. The user
+then commits, before 2.4 is touched.
+
+**Then S1c.5, in P14's style** (formulas first; prose only where a formula does not show it; the
+intuition for every non-trivial form and sign kept). Known points, from S1c.3–S1c.4 and the
+shortening:
+- The count is capped at 10 (2.3), so an apartment's expected count is slightly below $\mu_i$, and
+  2.4's closed form $A_b e^{u_b + w_j} \sum_r s_{br} e^{\bar\eta_{jr}} p_k$ is not exact. Re-derive
+  it with the cap, or state it as an approximation and measure the gap.
+- 2.4 writes $N_{ik}$, 2.3 writes $N_{i,\mathrm{kg}}$; $\bar\theta_{jr}$ uses the new score.
+- 2.5 omits the hidden values of 2.2 ($T_b$, $\rho_j$, $\tau_j$, $\varepsilon^{A}_b$).
+- The apartment order's permutation draw is not mentioned in section 2.
+- Section 1 and 2.6: the draw gave 1,523 buildings, 61,450 apartments and a 913 / 305 / 305 split
+  (S1c.3's record); re-measure.
+
 Rewrite 2.4 (the sums and the expectations, their constants re-derived), 2.5 (what is hidden) and
 2.6 (the columns). Re-read section 2's opening against the finished parts. Add the seed-42
 numbers left out of S1c.1–S1c.4, and correct section 1's counts and split sizes (stale at
@@ -533,7 +557,7 @@ select.
 | S1c.2 | `Implement S1c.2: write section 2.2 (buildings) for the simulator as it now is, with check_s1c.py extended to 2.2. Read §7 "S1c" first for the common rules and §9 for 2.2's decision. Run an independent review subagent (Opus 5.5). Then analyze the first half of section 2.3 with me (the hidden effects, the children count per apartment): is it realistic for Israel? Record my decision in §9 and print the prompt it leads to.` |
 | S1c.3 | `Implement S1c.3: write the first half of section 2.3 (the scaled values, the hidden effects, total children per apartment) for the simulator as it now is, with check_s1c.py extended to it. Read §7 "S1c" first for the common rules and §9 for the decision. Run an independent review subagent (Opus 5.5). Then analyze the cohort split with me: is it realistic for Israel? Record my decision in §9 and print the prompt it leads to.` |
 | S1c.4 | `Implement S1c.4: write the second half of section 2.3 (the cohort split) for the simulator as it now is, with check_s1c.py extended to it. Read §7 "S1c" first for the common rules and §9 for the decision. Run an independent review subagent before the stop.` |
-| S1c.5 | `Implement S1c.5: rewrite sections 2.4–2.6, re-read section 2's opening, add the seed-42 numbers and correct section 1's counts, with check_s1c.py extended to the columns, the config-key coverage and the counts. Read §7 "S1c" first for the common rules. Run an independent review subagent before the stop.` |
+| S1c.5 | `First verify with me the shortened sections 2.1–2.3 (P14; §9 "Shortening of 2.1–2.3"; uncommitted in the working tree): show the diff stat and the check's last output, take my review points, reproduce and fix each, and wait for my commit. Then implement S1c.5 in P14's style: rewrite sections 2.4–2.6, re-read section 2's opening, add the seed-42 numbers and correct section 1's counts, with check_s1c.py extended to the columns, the config-key coverage and the counts. Read §7 "S1c" and "S1c.5" first (the known points: the cap at 10 and 2.4's closed form, the notation, 2.5's missing hidden values, the permutation draw). Run an independent review subagent before the stop.` |
 | S2 | `Implement S2: section 3 (preprocessing), with check_s2.py printing each candidate transformer's output columns. Run an independent review subagent before the stop.` |
 | S3a | `Implement S3a: sections 4.1–4.2 (the exposure treatment and Model 1), with check_s3a.py for the Poisson rate/offset equivalence. Run an independent review subagent before the stop.` |
 | S3b | `Implement S3b: sections 4.3–4.4 (Model 2 and the Model 3 placeholder), with check_s3b.py for the reconciliation. Run an independent review subagent before the stop.` |
@@ -958,8 +982,10 @@ S1c sub-task with its prompt above.
 - **Each formula's code** (`src/student_simulator/outcomes.py`): $v_b$ `:284-288`; $\theta_i$
   `:312-330` with its features `:350-380` and coefficients `:382-390`; the probabilities
   `:332-348`; the multinomial `:301-306`.
-- **`check_s1c.py`** extended to the cohort split (output `check_s1c.out`). It ran twice: the
-  review's fixes changed three sentences that it reads, and two claims were added.
+- **`check_s1c.py`** extended to the cohort split (output `check_s1c.out`). It ran four times:
+  the review's fixes changed three sentences that it reads and added two claims (second run); the
+  user's crowding note added a checked sentence (third run), whose check had a sign error in its
+  own diagnostic, the product term (fourth run). The text was right in both runs.
   - 93 numbers in 33 formulas against the config plus notebook 03's overrides: 0 mismatches; 78
     of 78 `neighborhood`, `building`, `total_children` and `cohort` keys covered.
   - Derived numbers: 10 cohort statements in words; the probabilities at $\theta = 0$ from the
@@ -1005,6 +1031,76 @@ S1c sub-task with its prompt above.
     - The elementary probability is not fixed (it peaks at $\theta \approx -0.31$): now "moves
       less than the other two", which part 6 checks.
   - Left for S1c.5: 2.4 writes $N_{ik}$ where 2.3 writes $N_{i,\mathrm{kg}}$.
+- **The user's note (after the stop):** in $\log\mu_i$ a large apartment in a small-household
+  neighborhood gets a positive crowding term; should it not be the opposite? It is intended:
+  together with the household term the effect is $(1 - 0.15\,c_i)\,L_j$, still negative for every
+  room count, and the crowding term only sets how the drop is shared. At household size 2.2 the
+  product term alone is $+0.287$ at 6 rooms, but a 3-room apartment expects 0.3333 and a 6-room one
+  0.5123 of its reference-neighborhood count. At the user's choice, one sentence saying this was
+  added to 2.3's crowding bullet (S1c.3's text), with its check in part 2.
 - **Left for S1c.5:** sections 2.4–2.6 (2.4's expectations with the new score, 2.6's row count),
   section 1's counts and split sizes, the apartment order's permutation draw, every seed-42
   number.
+
+### Shortening of 2.1–2.3 (2026-11-25, Opus 5.5; review Fable 5.2; decision P14)
+- **The user's request:** make 2.3 shorter: formulas first, no explanation of obvious things,
+  only what is relevant and informative. Asked for the scope, the user chose 2.1–2.3 now and the
+  style for every later part (P14). Asked how far to cut: "clear, informative and concise". After
+  the first draft: keep the intuition for everything non-trivial, so that each formula's
+  derivation stays understandable.
+- **Lengths:** 2.1–2.3 went from 462 to 330 lines (2.1 76, 2.2 113, 2.3 141). The prose went from
+  369 to 237 lines; the 22 formula blocks (93 lines) are byte-identical, asserted by the rewrite
+  script. Dropped:
+  - restatements of a formula in words;
+  - obvious motivations (larger households need rooms, the indicator's definition);
+  - repeated cross-references;
+  - the direct SES minimum of household size (0.6);
+  - the per-year household-size slope in words;
+  - the explicit "many buildings near 30 and a group of towers near 90";
+  - the base shares in words.
+- The crowding sentence of S1c.4's follow-up was kept, compressed.
+- **Review (Fable 5.2, independent; its script in `review_shorten/check_claims.py`; this session's
+  reproduction in `review_shorten/s1c_shorten_repro.py`).** Two passes: the second applied the
+  user's intuition criterion. 22 items:
+  - **Errors introduced by the shortening (3), reproduced and fixed:**
+    - "buildings differ more between neighborhoods than inside one" lost "of the same type". Over
+      all buildings the log-size variance is 0.148 within against 0.090 between; under 52
+      apartments it is 0.025 against 0.049. Part 4 of the check now tests the typed claim.
+    - The 9% tower chance lost "no planned school and $\rho_j = 0$": averaged over $\rho_j$ it is
+      11.9%.
+    - The room multipliers hold at household size 3.0 only, because of the crowding term.
+  - **Intuition restored (9):**
+    - why household size falls with median age;
+    - why the texture $\tau_j$ exists;
+    - why household size raises the odds of an existing school;
+    - why the daycare, school and median-age terms of the count have their signs;
+    - why the step to 6 rooms is small;
+    - why rooms, daycares and median age have their signs in the score;
+    - elementary as the pivot, being the middle cohort;
+    - the size term taking back part of the SES term at high SES (towers by SES tercile 9.8 /
+      15.9 / 26.5%);
+    - the reason for $v_b$ (apartments sold within a few years), from this session's own pass.
+  - **Clarity (5), applied:**
+    - "raises … by 0.74" reworded;
+    - "unmeasured draws" (draws read as samples);
+    - the baseline sentence;
+    - "against none" for the planned-school odds;
+    - the exposure and section 7.3 references separated.
+  - **Cuts (3), applied:**
+    - 2.2's repeated sentence on the hidden values;
+    - "the three counts sum exactly to $N_i$" (the multinomial's definition);
+    - the concentration sentence, replaced by its scale: a 4-room share SD of 0.088 around 41%,
+      written as about 9 points and checked.
+  - **Withdrawn by the reviewer (1):** the cut of "the deviations multiply the size, because
+    building sizes are right-skewed": it is the reason for the form.
+  - **Not applied (1):** "a model cannot cleanly separate their effects" (optional). S1c.1's
+    review replaced exactly that overreach.
+- **`check_s1c.py`**, run twice: after the rewrite, and after the fixes, which changed checked
+  sentences. The review's numbers were reproduced by a separate script
+  (`review_shorten/s1c_shorten_repro.py`). The result:
+  - part 1 unchanged: 93 numbers in 33 formulas, 0 mismatches, 78 of 78 keys; the two anchors in
+    2.1's opening moved to "**reference neighborhood**";
+  - part 2 mirrors the new text: 14 statements in words for 2.1–2.3's first half and 5 for the
+    cohort split; the checks of removed sentences are gone;
+  - part 4 lost the "near 30" claim and gained the typed between/within claim;
+  - 0 problems; 0 implementation-detail hits; every claim of parts 4–6 holds.
