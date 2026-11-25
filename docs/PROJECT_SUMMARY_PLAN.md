@@ -14,8 +14,10 @@
 > The simulator's step 4 (the cohort split) is merged (PR #32) and `main` is merged into this
 > branch. S1c.4 done (2.3's second half written, committed `dac973f`). Sections 2.1–2.3 were then
 > shortened to P14 (2026-11-25, reviewed by Fable 5.2, check passing; committed `772accc`). The
-> user's verification of it rewrote 2.3's crowding bullet. **Next: S1c.5 in the same session
-> (Opus 5.5).** The implementation record is §9.
+> user's verification of it rewrote 2.3's crowding bullet (`f932c41`). S1c.5 done (2026-11-25:
+> 2.4 rewritten, the old 2.5 removed, the columns now 2.5, section 1's counts; reviewed by Fable
+> 5.2). Section 2 is complete. **Next: S2 (section 3, preprocessing), Opus 5.5.** The implementation
+> record is §9.
 
 The project is documented in 62 files under `docs/`, most of them plans and work records. No
 single document tells a new reader what the task is, how the data is generated, how it is
@@ -49,9 +51,11 @@ not described.
 ## 2. The summary's outline
 
 1. **Task and settings**: 2–5 lines on the task, then a setup table (unit = building, 3 cohort
-   targets, 1,529 buildings / 150 neighborhoods / 61,317 apartments, seeds, 917/306/306 split).
+   targets, 1,523 buildings / 150 neighborhoods / 61,450 apartments, 913/305/305 split).
 2. **Data generation process**: neighborhood → building → apartment → outcomes → aggregation, in
    draw order, one formula per variable with its values inline (P11), a column table of the dataset.
+   Each hidden value is named where it is introduced; there is no separate "what is hidden"
+   section (user, 2026-11-25).
 3. **Preprocessing**: room counts → shares (3 rooms the reference), the exposure, one table of
    feature × model family (transform, formula, motivation), the candidate variants, the checks.
 4. **Models**: 4.1 the shared exposure treatment (weighted rate vs log offset, the Poisson
@@ -199,7 +203,7 @@ not have. In `test_shap_values.csv` the `base_value` correlates 1.0 with `n_apar
 | S1c.2 | Section 2.2 (buildings); then the analysis of 2.3's first half (the hidden effects, the children count per apartment) | **Fable 5.2** | yes | ✅ |
 | S1c.3 | Section 2.3, first half (the scaled values, the hidden effects, total children); then the analysis of the cohort split | **Fable 5.2** | yes | ✅ |
 | S1c.4 | Section 2.3, second half (the cohort split); no analysis follows | Opus 5.5 | yes | ✅ |
-| S1c.5 | Sections 2.4–2.6, the section's opening, section 1's counts, every seed-42 number | Opus 5.5 | yes | |
+| S1c.5 | Sections 2.4–2.5 (the old 2.5 removed), the section's opening, section 1's counts, every seed-42 number | Opus 5.5 (review Fable 5.2) | yes | ✅ |
 | S2 | Section 3 (preprocessing); starts after S1c.5 | Opus 5.5 | yes | |
 | S3a | Section 4.1–4.2 (exposure treatment, Model 1) | Opus 5.5 | yes | |
 | S3b | Section 4.3–4.4 (Model 2, Model 3 placeholder) | Opus 5.5 | yes | |
@@ -334,7 +338,7 @@ Done when:
 - [x] `check_s1c.py` passes on 2.1–2.3.
 - [x] Review findings reproduced and fixed.
 
-### S1c.5. Sections 2.4–2.6, the opening, section 1's counts (Opus 5.5, review)
+### S1c.5. Sections 2.4–2.5, the opening, section 1's counts (Opus 5.5, review)
 **First, the verification of the shortened 2.1–2.3** (P14, §9 "Shortening of 2.1–2.3"): if the
 working tree still holds it uncommitted, show the user `git diff --stat` and the check's last
 output, and ask for the user's review of 2.1–2.3. Each point the user raises is reproduced (or
@@ -354,15 +358,18 @@ shortening:
   (S1c.3's record); re-measure.
 
 Rewrite 2.4 (the sums and the expectations, their constants re-derived), 2.5 (what is hidden) and
-2.6 (the columns). Re-read section 2's opening against the finished parts. Add the seed-42
+2.6 (the columns). **Changed by the user (2026-11-25):** the old 2.5 is removed, each hidden value
+named where it is introduced; the old 2.6 becomes 2.5, the column table only; 2.4 keeps only what
+is relevant (the exact form with the capped mean, the closed form as an approximation with its
+gap); the seed-42 numbers are section 1's counts and 2.4's gap. Re-read section 2's opening against the finished parts. Add the seed-42
 numbers left out of S1c.1–S1c.4, and correct section 1's counts and split sizes (stale at
 1,529 / 61,317 and 917 / 306 / 306).
 Done when:
-- [ ] `check_s1c.py` passes on all of section 2, and now also checks: the column table against
+- [x] `check_s1c.py` passes on all of section 2, and now also checks: the column table against
       the dataset, that every config key is covered, section 1's counts and split sizes, and
-      every seed-42 number.
-- [ ] 2.4's closed form is checked against the sum over the apartments' expected counts.
-- [ ] Review findings reproduced and fixed.
+      every seed-42 number (by the user's decision: section 1's counts and 2.4's gap).
+- [x] 2.4's closed form is checked against the sum over the apartments' expected counts.
+- [x] Review findings reproduced and fixed.
 
 ### S2. Section 3, preprocessing (Opus 5.5, review)
 `ShareTransformer` (the formula, the 3-room reference and why); `ExposureTransformer`; the
@@ -1115,3 +1122,109 @@ S1c sub-task with its prompt above.
     `review_s1c5_plan/verify.py`); its points are in S1c.5's entry.
   - `check_s1c.py` part 2 reads the new wording and also checks $+0.29$ (+0.2867), $-0.96$
     (−0.9555) and 30% (30.0%). It ran once: 0 mismatches, 0 problems, 0 hits, every claim holds.
+
+### S1c.5 (2026-11-25, Opus 5.5; verification and review Fable 5.2)
+- **Before the start:** the user's verification of the shortened 2.1–2.3 rewrote the crowding
+  bullet (committed `f932c41`; see "Shortening of 2.1–2.3").
+- **The user's decisions (asked in the session):**
+  - 2.4 states the exact expectation with the cap, then the familiar closed form as an
+    approximation with its gap; the capped mean is $g(\mu)$ ($m_b$ is taken in 2.2);
+  - 2.4 keeps only relevant information and is kept simple;
+  - the old 2.5 ("what is hidden") is removed, provided each hidden value is named where it is
+    introduced; the old 2.6 becomes 2.5, the column table only (no paragraph on repetition or
+    ids, no seed-42 ranges).
+- **A Fable 5.2 check of the plan, before the writing** (`review_s1c5_plan/verify.py`). Every
+  point held: the crowding numbers, the exact form, proportionality with the cap, the
+  permutation, section 1's counts. Applied:
+  - the stated gap is the one of the formula shown (features only), not the effects-given one;
+  - the symbol $g$;
+  - $T_b$, $\varepsilon^{A}_b$, $\mathbf g_b$ and the apartments are declared hidden where they
+    are introduced;
+  - $\bar\eta_{jr}$, $\bar\theta_{jr}$ are defined by reference to 2.3, with no repeated
+    coefficients;
+  - the split settings are parsed in the check, since `check_s1a.py` hardcodes them;
+  - this plan's stale counts and "2.4–2.6".
+- **Written:**
+  - **Section 1:** 1,523 buildings, 61,450 apartments, split 913 / 305 / 305. The sentence on
+    the unit of prediction (it repeats the table) and two blank lines were dropped.
+  - **Section 2's opening:** "The data are simulated…" dropped (it repeats section 1). The
+    hidden-values paragraph now names the building values (type, size deviation, own room mix)
+    and says they reach the children only through the observed room counts. It also says the
+    three effects are independent of every feature and of each other.
+  - **2.2:** "hidden" added to $T_b$, $\varepsilon^{A}_b$ and $\mathbf g_b$.
+  - **2.3:** the apartments are not in the data, only their counts by rooms and their cohort
+    sums.
+  - **2.4:**
+    - the sum $C_{b,k}$;
+    - $\bar\eta_{jr}$, $\bar\theta_{jr}$ and $g(\mu_i) = \mathbb E[\min(N^*_i, 10)]$;
+    - the exact expectation given the effects;
+    - proportional to $A_b$;
+    - the approximate total $1.053\,A_b \sum_r s_{br} e^{\bar\eta_{jr}}$, with what the exact
+      sum holds instead and its gap (0.09% overall, at most 0.66% for one building);
+    - the noise sentence.
+    - Dropped: the per-cohort expectation given $x_b$ with its open integral over $v$, the list
+      of four quantities, the sentence on the absent total column.
+  - **2.5 (was 2.6):** the column table with one lead line. The ids' roles moved into their
+    cells. The paragraph after the table was dropped.
+  - **Not written:** the apartment-order permutation. It changes which random number an
+    apartment gets, not any distribution, and the dataset keeps only building sums (P11, P14).
+- **Each formula's code:** the cap `outcomes.py:119-121`; the NB2 draw `:229-239`; $\theta_i$
+  `:312-330`; $p_k$ `:332-348`; the sums `pipeline.py` `aggregate_to_buildings`; the
+  permutation `apartment.py:50`.
+- **`check_s1c.py`**, extended and run once after the review's fixes (output `check_s1c.out`):
+  - part 1 over all of section 2: 93 numbers, 0 mismatches; **85 of 85 config keys** (the
+    `simulation` and `features` sections added; `apartment` asserted empty; every top-level
+    section asserted checked);
+  - part 2: the crowding numbers; the averaged factor (1.0526, written 1.053, also in the
+    total's formula); the cap in $g$; 0 problems;
+  - part 3 over sections 1–2: 0 hits; 18 backticked tokens, each a dataset column (part 7);
+  - parts 4–6 unchanged: every claim holds;
+  - **new part 7:**
+    - the benchmark dataset built as notebook 03 builds it equals the stages' draw;
+    - the column table equals the dataset's columns, and each Level matches (neighborhood
+      columns constant within a neighborhood);
+    - section 1's counts 150 / 1,523 / 61,450;
+    - the split from the notebook's parsed settings (random, seed 42, 0.2, 0.2): 913 / 305 / 305.
+    - 0 problems.
+  - **new part 8:**
+    - $\bar\eta$ and $\bar\theta$ are constant within (neighborhood, rooms);
+    - the room-share form against the sum of $g(\mu_i)\,p_k(\theta_i)$ over the apartments: max
+      abs diff 2.8e-14 over 1,523 buildings;
+    - given the features (Gauss–Hermite over $u + w$), exact total 54,039.2 against the
+      approximation's 54,086.4: 0.087% overall, 0.000% to 0.656% per building (written 0.09 and
+      0.66);
+    - given the effects (not written): 0.067%, worst 2.8%;
+    - observed 51,932 against the effects-given 51,964.4 (0.9994).
+    - 0 problems.
+- **Review (independent subagent, Fable 5.2; its scripts in `review_s1c5/`):** no error in a
+  formula or a number.
+  - Reproduced and fixed (10):
+    - check bug: `\mu` in a raw regex is a bad escape and would have crashed part 2
+      (reproduced: `re.error: bad escape \m`);
+    - check bug: the split sizes were searched in section 2's text, not section 1's (read: `flat`
+      is built from section 2). After both, every regex literal outside the templates was
+      compiled statically before the run;
+    - "the exact value" was undefined: the sentence now says what the exact sum holds;
+    - the opening's two "They" (the building values, the effects) are now named; the second is
+      false of the building values, whose type depends on SES;
+    - $\bar\eta_{jr}$ is "the log mean before the cap", since the apartment expects $g(\mu_i)$;
+    - the noise sentence no longer points at the approximate total;
+    - cuts in 2.4: the apartments sharing the building (2.3 says it), the absent total (section
+      1 says it); a tighter middle;
+    - cuts in the openings: section 2's first sentence, section 1's unit sentence, blank lines;
+    - 2.3: the room counts are also sums, and they are observed;
+    - part 8's room-share form uses the simulator's own $\bar\eta$, $\bar\theta$: a comment
+      states what it tests. The reviewer's script computed them from the written formulas: 5.7e-14.
+- **The user's note (after the stop):** the expectation in 2.4 was unclear: why a sum over rooms
+  and not over apartments, and what $g$ and $p_k$ are. At the user's choice 2.4 now takes that
+  path:
+  - first the sum over the apartments, $\sum_{i \in b} g(\mu_i)\, p_k(\theta_i)$, with $g$ the
+    apartment's expected number of children after the cap and $p_k(\theta_i) = p_{i,k}$ a child's
+    cohort probability;
+  - then why it groups by room count (inside a building, $\mu_i$ and $\theta_i$ depend only on the
+    rooms);
+  - then the grouped form, which uses only the observed room counts.
+  - The check ran once more (its 2.4 regexes still match): 85 of 85 keys, 0 mismatches, 0
+    problems, every claim holds, parts 7–8 with 0 problems (max abs diff 2.8e-14, gap 0.087% /
+    0.656%).
+- **Next:** S2 (section 3, preprocessing), Opus 5.5, in a new session.

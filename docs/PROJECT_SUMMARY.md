@@ -9,25 +9,22 @@ for a technical reader who is new to the repository.
 The task is to predict, for each residential building, how many children it holds in each of three
 school-age cohorts (kindergarten, elementary, high school), from the building's and its
 neighborhood's characteristics. The data are simulated, so the generating process is known and
-every model can be judged against it. The unit of prediction is the building; the number of
-apartments is part of the data and is also the natural exposure (the building's size).
+every model can be judged against it. The number of apartments is part of the data and is also
+the natural exposure (the building's size).
 
 | Setting | Value |
 |---|---|
 | Unit of prediction | building |
 | Targets | `n_kindergarten`, `n_elementary`, `n_highschool` (counts per building; no total column) |
-| Neighborhoods | 150  |
-| Buildings | 1,529 |
-| Apartments | 61,317  |
-| Split | random over buildings: 917 train / 306 validation / 306 test (about 60 / 20 / 20 %) |
-
-
+| Neighborhoods | 150 |
+| Buildings | 1,523 |
+| Apartments | 61,450 |
+| Split | random over buildings: 913 train / 305 validation / 305 test (about 60 / 20 / 20 %) |
 
 ## 2. Data generation process
 
-The data are simulated, so the process that generates them is known exactly. It follows how
-children are housed: children live in apartments, apartments are in buildings, and buildings are in
-neighborhoods. Each level has its own role.
+The generating process follows how children are housed: children live in apartments, apartments
+are in buildings, and buildings are in neighborhoods. Each level has its own role.
 
 - **Neighborhood: the context.** Socioeconomic status (SES), median age, average household size,
   nearby daycares and school status describe the area. They are linked as in real neighborhoods:
@@ -47,10 +44,13 @@ neighborhoods. Each level has its own role.
   many children too. The children are older in larger apartments and in older neighborhoods, and
   younger near daycares and where a school is planned.
 
-Hidden values act at two places, and none of them is in the dataset. A building's type and two
-values per neighborhood shape the building sizes (section 2.2). Two effects per building and one
-per neighborhood shape the children (section 2.3): they make apartments in the same building or
-neighborhood more alike than their features explain, as unmeasured local factors do in real data.
+Hidden values act at two places, and none of them is in the dataset. Two values per neighborhood,
+and a building's type, size deviation and own room mix, shape the buildings (section 2.2). The
+building values reach the children only through the room counts, which are observed. Two effects
+per building and one per neighborhood shape the children (section 2.3): they make apartments in
+the same building or neighborhood more alike than their features explain, as unmeasured local
+factors do in real data. The three effects are drawn independently of every feature and of each
+other, so they add unexplained variation, not confounding.
 
 The whole draw is reproducible from one seed (42). The steps below follow the order of the draws.
 Throughout, $j$ indexes neighborhoods, $b$ buildings and $i$ apartments.
@@ -155,8 +155,8 @@ $$
 \tau_j \sim \mathcal N(\mu=0,\ \sigma^2=0.25^2)
 $$
 
-**Building type** $T_b$ is 1 for a tower and 0 for a texture building, the neighborhood's usual
-mid-rise. The median age enters in decades:
+The hidden **building type** $T_b$ is 1 for a tower and 0 for a texture building, the
+neighborhood's usual mid-rise. The median age enters in decades:
 
 $$
 \tilde M_j = \frac{M_j - 31}{10}
@@ -188,10 +188,11 @@ $$
 
 A texture building has a median of 30 apartments (6 to 10 floors), and a tower has three times as
 many. The deviations multiply the size, because building sizes are right-skewed. The building's
-own deviation has a smaller standard deviation than the neighborhood's shift $\tau_j$ (0.15
-against 0.25), so buildings of the same type differ more between neighborhoods than inside one. A building's size
-therefore says something about its neighborhood: large buildings are more common where SES is
-high, where the residents are older and where a school is planned. The size is also the models'
+own hidden deviation $\varepsilon^{A}_b$ has a smaller standard deviation than the neighborhood's
+shift $\tau_j$ (0.15 against 0.25), so buildings of the same type differ more between
+neighborhoods than inside one. A building's size therefore says something about its
+neighborhood: large buildings are more common where SES is high, where the residents are older
+and where a school is planned. The size is also the models'
 exposure (section 4); section 7.3 returns to its importance as a feature.
 
 **Room mix.** Each building splits its apartments over 3, 4, 5 and 6 rooms. Household size enters
@@ -231,7 +232,7 @@ the 6-room weight and $e^{-q_b/2}$ the 3-room weight. At $q_b = 0.35$, a buildin
 at SES 1 and household size 3.0, the multipliers are 0.84, 1, 1.19 and 1.42, and the shares become
 25%, 40%, 28% and 7%.
 
-A Dirichlet draw gives each building its own mix $\mathbf g_b$ around the expected shares
+A Dirichlet draw gives each building its own hidden mix $\mathbf g_b$ around the expected shares
 $\boldsymbol\omega_b$, and a multinomial draw turns it into room counts $A_{br}$ that sum to
 $A_b$:
 
@@ -247,8 +248,9 @@ percentage points around the reference building's expected 41%.
 ### 2.3 Apartments: children and their ages
 
 $R_i$ is the number of rooms of apartment $i$. Children are generated per apartment in two steps,
-how many and then how old. Inside one building the apartments differ only in their rooms. Besides
-$\tilde M_j$ and $\tilde H_j$ (section 2.2), three values enter:
+how many and then how old. Inside one building the apartments differ only in their rooms. The
+apartments are not in the data, only their counts by rooms and their cohort sums per building.
+Besides $\tilde M_j$ and $\tilde H_j$ (section 2.2), three values enter:
 
 $$
 L_j = \log\frac{H_j - 1.7}{3.0 - 1.7},
@@ -389,84 +391,61 @@ back; inside a neighborhood, size acts only through the room mix).
 
 ### 2.4 Buildings: the sums we predict
 
-The targets are the sums over each building's apartments, for kindergarten (kg), elementary (el)
-and high school (hs):
+The targets are the sums over each building's apartments:
 
 $$
-C_{bk} = \sum_{i \in b} N_{ik},
+C_{b,k} = \sum_{i \in b} N_{i,k},
 \qquad
 k \in \lbrace \mathrm{kg}, \mathrm{el}, \mathrm{hs} \rbrace
 $$
 
-The building's total is the sum of the three cohorts, and the data do not store it.
-
-What count does a building expect? All its apartments share the neighborhood's features and the
-hidden effects of the building and its neighborhood; they differ only in rooms. Four quantities
-enter the formula:
-
-- $s_{br} = A_{br}/A_b$ is the share of $r$-room apartments.
-- $\bar\eta_{jr}$ is the log mean $\log\mu_i$ of an $r$-room apartment in neighborhood $j$, without
-  $u_b + w_j$.
-- $\bar\theta_{jr}$ is that apartment's score, without $v_b$.
-- $p_k(\cdot)$ is the cohort probability above.
-
-Let $x_b$ be the building's features: its neighborhood's five values and its room counts
-$A_{br}$. Given $x_b$ and the hidden effects:
+Each apartment expects $g(\mu_i) = \mathbb E[\min(N^{*}_i, 10)]$ children: the cap at 10 puts this
+slightly below $\mu_i$. Each of its children is in cohort $k$ with the probability
+$p_{i,k} = p_k(\theta_i)$ of section 2.3, whatever their number. So given the building's features
+$x_b$ (its neighborhood's five values and its room counts) and the hidden effects:
 
 $$
-\mathbb E\big[C_{bk} \mid x_b, u_b, w_j, v_b\big]
-= A_b\, e^{u_b + w_j} \sum_{r=3}^{6} s_{br}\, e^{\bar\eta_{jr}}\, p_k(\bar\theta_{jr} + v_b)
+\mathbb E\big[C_{b,k} \mid x_b, u_b, w_j, v_b\big] = \sum_{i \in b} g(\mu_i)\, p_k(\theta_i)
 $$
 
-The hidden effects are independent of each other and of the features. The average of
-$e^{u_b + w_j}$ is therefore the constant $e^{(0.25^2 + 0.20^2)/2} \approx 1.053$. Only the
-average over $v_b$ inside the softmax has no closed form:
+Inside a building, $\mu_i$ and $\theta_i$ depend only on the rooms, so the $A_{br}$ apartments with
+$r$ rooms share them: $\mu_i = e^{\bar\eta_{jr} + u_b + w_j}$ and $\theta_i = \bar\theta_{jr} + v_b$,
+where $\bar\eta_{jr}$ and $\bar\theta_{jr}$ are the log mean and the score of an $r$-room apartment
+in neighborhood $j$ without the hidden effects. With the room shares $s_{br} = A_{br}/A_b$, the
+sum groups by room count:
 
 $$
-\mathbb E\big[C_{bk} \mid x_b\big]
-= A_b\, e^{(0.25^2 + 0.20^2)/2} \sum_{r=3}^{6} s_{br}\, e^{\bar\eta_{jr}}\,
-\mathbb E_{v}\big[p_k(\bar\theta_{jr} + v)\big],
-\qquad v \sim \mathcal N(\mu=0,\ \sigma^2=0.20^2)
+\mathbb E\big[C_{b,k} \mid x_b, u_b, w_j, v_b\big]
+= A_b \sum_{r=3}^{6} s_{br}\, g\big(e^{\bar\eta_{jr} + u_b + w_j}\big)\, p_k\big(\bar\theta_{jr} + v_b\big)
 $$
 
-For the total, the probabilities sum to 1 and drop out:
+This form uses only the room counts, which are observed. At fixed room shares and neighborhood, it
+is **proportional to the number of apartments** $A_b$.
+
+Given the features alone, the effects average out. They are independent of the features and of
+each other, so $\mathbb E[e^{u_b + w_j}] = e^{(0.25^2 + 0.20^2)/2} \approx 1.053$. The cap rarely
+binds ($g(\mu) \approx \mu$), and for the total the probabilities sum to 1:
 
 $$
-\mathbb E\Big[\sum_k C_{bk} \;\Big|\; x_b\Big]
-= A_b\, e^{(0.25^2 + 0.20^2)/2} \sum_{r=3}^{6} s_{br}\, e^{\bar\eta_{jr}}
+\mathbb E\Big[\sum_k C_{b,k} \;\Big|\; x_b\Big]
 \approx 1.053\, A_b \sum_{r=3}^{6} s_{br}\, e^{\bar\eta_{jr}}
 $$
 
-With the room shares and the neighborhood fixed, a building's expected count is **proportional to
-its number of apartments** $A_b$.
+The exact sum holds $\mathbb E_{u,w}\big[g(e^{\bar\eta_{jr} + u + w})\big]$ in place of
+$1.053\, e^{\bar\eta_{jr}}$. Over the dataset's buildings the approximation is 0.09% above it, and
+at most 0.66% for one building.
 
-### 2.5 What the models see and what is hidden
+Even a model that knew the hidden effects would not predict the counts without error, because each
+apartment's count and split are random draws; without the effects, the error is larger.
 
-The models see one row per building (section 2.6). The following are not in the data:
+### 2.5 The dataset's columns
 
-- **The hidden effects** $u_b$, $w_j$ and $v_b$. The simulator returns them next to the data, for
-  checks that recover the coefficients, but they are never columns.
-- **The apartments**: each apartment's rooms, children and cohorts. The models see only a
-  building's room counts and its cohort sums.
-- **Each building's own room mix** $\mathbf g_b$. Its realized room counts are observed, and the
-  outcomes depend only on those.
-
-The hidden effects are drawn independently of every feature. They add unexplained variation around
-the expected count: they are heterogeneity, not confounders. A building one standard deviation
-above average in $u_b$ expects $e^{0.25} \approx 1.28$ times as many children, and no feature
-reveals it. Even given the effects, each apartment's count is a negative binomial draw and its
-split a multinomial draw. A model that knew the expectation of section 2.4 exactly, effects
-included, would therefore still not predict the counts without error. Without the effects, the
-error is larger still.
-
-### 2.6 The dataset's columns
-
-One row per building, 1,529 rows, the columns in this order:
+One row per building, the columns in this order:
 
 | Column | Level | Symbol | Description |
 |---|---|---|---|
-| `building_id` | building | $b$ | the building's id |
-| `neighborhood_id` | neighborhood | $j$ | the neighborhood's id |
+| `building_id` | building | $b$ | the building's id, not a feature |
+| `neighborhood_id` | neighborhood | $j$ | the neighborhood's id, not a feature; the bootstrap resamples by it (section 5) |
 | `ses` | neighborhood | $S_j$ | socioeconomic status, standardized |
 | `avg_household_size` | neighborhood | $H_j$ | average household size (people) |
 | `median_age` | neighborhood | $M_j$ | median age (years) |
@@ -480,10 +459,6 @@ One row per building, 1,529 rows, the columns in this order:
 | `n_kindergarten` | target | $C_{b,\mathrm{kg}}$ | kindergarten children |
 | `n_elementary` | target | $C_{b,\mathrm{el}}$ | elementary children |
 | `n_highschool` | target | $C_{b,\mathrm{hs}}$ | high-school children |
-
-The neighborhood columns repeat on every building of the neighborhood. The two id columns are not
-features. `building_id` names the row. `neighborhood_id` groups the buildings for the bootstrap,
-which resamples neighborhoods (section 5).
 
 ## 3. Preprocessing
 
