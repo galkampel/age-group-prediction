@@ -11,8 +11,8 @@
 > `main` is merged into this branch. S1c.3 done (2.3's first half written).
 > The cohort split gets a
 > simulator step: Israel's cohort levels, a planned-school term, the negligible bonus dropped.
-> **Next: the simulator's step 4 (planned from `main`), then S1c.4.** The implementation record
-> is §9.
+> The simulator's step 4 (the cohort split) is merged (PR #32) and `main` is merged into this
+> branch. S1c.4 done (2.3's second half written). **Next: S1c.5.** The implementation record is §9.
 
 The project is documented in 62 files under `docs/`, most of them plans and work records. No
 single document tells a new reader what the task is, how the data is generated, how it is
@@ -194,7 +194,7 @@ not have. In `test_shap_values.csv` the `base_value` correlates 1.0 with `n_apar
 | S1c.1 | Section 2.1 (neighborhoods, the step-1 model); then the analysis of 2.2 (buildings per neighborhood, apartments per building, the room mix) | **Fable 5.2** | yes |✅ |
 | S1c.2 | Section 2.2 (buildings); then the analysis of 2.3's first half (the hidden effects, the children count per apartment) | **Fable 5.2** | yes | ✅ |
 | S1c.3 | Section 2.3, first half (the scaled values, the hidden effects, total children); then the analysis of the cohort split | **Fable 5.2** | yes | ✅ |
-| S1c.4 | Section 2.3, second half (the cohort split); no analysis follows | Opus 5.5 | yes | |
+| S1c.4 | Section 2.3, second half (the cohort split); no analysis follows | Opus 5.5 | yes | ✅ |
 | S1c.5 | Sections 2.4–2.6, the section's opening, section 1's counts, every seed-42 number | Opus 5.5 | yes | |
 | S2 | Section 3 (preprocessing); starts after S1c.5 | Opus 5.5 | yes | |
 | S3a | Section 4.1–4.2 (exposure treatment, Model 1) | Opus 5.5 | yes | |
@@ -325,9 +325,9 @@ Starts after the cohort split's decision has taken effect. Write the second half
 building's second hidden effect, the lifecycle score, the cohort probabilities and their draw. No
 analysis follows: 2.4–2.6 are derived from the parts above, not modelled.
 Done when:
-- [ ] Each term of the score is explained and motivated.
-- [ ] `check_s1c.py` passes on 2.1–2.3.
-- [ ] Review findings reproduced and fixed.
+- [x] Each term of the score is explained and motivated.
+- [x] `check_s1c.py` passes on 2.1–2.3.
+- [x] Review findings reproduced and fixed.
 
 ### S1c.5. Sections 2.4–2.6, the opening, section 1's counts (Opus 5.5, review)
 Rewrite 2.4 (the sums and the expectations, their constants re-derived), 2.5 (what is hidden) and
@@ -938,3 +938,73 @@ S1c sub-task with its prompt above.
   - Not in the step: a building-size term (the consult may propose it, the default is no), the
     building effect's SD, the daycare and median-age terms.
   S1c.4 waits for that step's PR to be merged into this branch.
+
+### S1c.4 (2026-11-25, Opus 5.5; review Opus 5.5)
+- **Before the start:** the simulator's step 4 is merged (PR #32, `81c8cc5`) and `main` is merged
+  into this branch (`862a682`).
+- **Section 2.3's second half written** for the step-4 model, from "The cohort split" to section
+  2.4, with the apartment bullet of section 2's opening (how old the children are). In draw order:
+  the three cohorts with their age bands (3–6, 7–12, 13–18), the hidden building effect $v_b$, the
+  life-cycle score and one bullet per term, the probabilities, why the reference probabilities are
+  22.5 / 38.5 / 39.0%, the multinomial, the three absent terms (SES, an existing school, building
+  size).
+- **The user's choice** (asked before writing): state the population split, about 27 / 38 / 35% of
+  all children, to explain the reference probabilities, with the band widths (4, 6, 6 years) as
+  the reason kindergarten is smallest; checked on a large draw, no Israeli statistic cited.
+- **Symbols:** $v_b$, $\theta_i$, $p_{i,k}$ and $\mathbf p_i$ as before; the subscripts kg / el / hs
+  are now defined at their first use in 2.3. The score reuses $c_i$, $\mathrm{sat}(D_j)$,
+  $\tilde M_j$ and $\tilde H_j$. One worked number: a planned school multiplies the odds of high
+  school against kindergarten by $e^{-(1.0 + 1.1) \cdot 0.25} \approx 0.59$.
+- **Each formula's code** (`src/student_simulator/outcomes.py`): $v_b$ `:284-288`; $\theta_i$
+  `:312-330` with its features `:350-380` and coefficients `:382-390`; the probabilities
+  `:332-348`; the multinomial `:301-306`.
+- **`check_s1c.py`** extended to the cohort split (output `check_s1c.out`). It ran twice: the
+  review's fixes changed three sentences that it reads, and two claims were added.
+  - 93 numbers in 33 formulas against the config plus notebook 03's overrides: 0 mismatches; 78
+    of 78 `neighborhood`, `building`, `total_children` and `cohort` keys covered.
+  - Derived numbers: 10 cohort statements in words; the probabilities at $\theta = 0$ from the
+    simulator's own softmax; the planned school's odds (0.5916, written 0.59). 0 problems.
+  - 0 implementation-detail hits, no backticked token, no explanation of clipping.
+  - Parts 4 and 5 unchanged: all claims hold.
+  - New part 6: 14 claims of the cohort split on part 5's draw (1,000 neighborhoods, rate 9,
+    seed 42, 361,885 children), all hold:
+    - the split 27.1 / 38.1 / 34.8% (written 27 / 38 / 35); planned schools in 18.8% of the
+      neighborhoods; mean score −0.149 (−0.135 by children);
+    - kindergarten 34.8 / 28.3 / 22.5 / 17.4% at 3–6 rooms, 33.0% to 18.9% over six median-age
+      bands, 29.8% with 5 or more daycares against 22.9% with none, 34.0% where a school is
+      planned against 25.3% (32.9% against 24.4% at median age 28–34), 31.2% where household
+      size is over 4.5 against 26.4% at 3.0–3.45;
+    - in that household comparison the child-weighted score changes by −0.241 (median age),
+      −0.046 (rooms), −0.011 (daycares) and +0.118 (household size);
+    - over the 5th to 95th percentile scores (−0.674 to 0.381), elementary moves from 38.0% to
+      34.0%, kindergarten from 43.6% to 13.6% and high school from 18.4% to 52.4%;
+    - the cohorts sum to $N_i$; corr($u_b$, $v_b$) −0.003 over 10,050 buildings; the SD of a
+      building's expected kindergarten share is 0.078 with $v_b$ and 0.054 from the features alone.
+- **Review (independent subagent, Opus 5.5; its script and output in `review_s1c4/`, with this
+  session's reproduction in `review_s1c4/s1c4_repro.py`):** no error in a formula, a value, the
+  draw order or a derived number.
+  - Reproduced and fixed (9):
+    - Error: "younger and have more daycares" gave the wrong reason. Large-household
+      neighborhoods have about the same number of daycares (term change −0.011); the score falls
+      through median age and rooms. Now "younger (section 2.1) and have smaller apartments
+      (section 2.2)", and part 6 checks the decomposition.
+    - Error: "how many children a building holds says nothing about how old they are". Over
+      buildings, children per apartment correlates +0.13 with the kindergarten share through the
+      features. Now: a building with more children than its features explain does not, for that
+      reason, hold younger or older ones.
+    - "The weakest term" holds by spread over apartments (0.040 against 0.050 for daycares), but
+      across household-size bands the term moves 0.19 against the daycares' 0.04. Dropped.
+    - The household-size motivation talked about one family's oldest child. It is now about
+      neighborhoods: a household grows as its children are born.
+    - "A negative one younger children": the average score is negative, so this is now "a higher
+      score means older children, a lower score younger ones".
+    - "Each room above 4 adds 0.20" now also says that each room below 4 removes 0.20.
+    - The split's reading: "of all the children" (27.1 / 38.1 / 34.8), not the mean probability
+      (27.4 / 38.2 / 34.4).
+    - kg / el / hs defined at their first use; "lifecycle" spelled "life-cycle".
+    - The elementary probability is not fixed (it peaks at $\theta \approx -0.31$): now "moves
+      less than the other two", which part 6 checks.
+  - Left for S1c.5: 2.4 writes $N_{ik}$ where 2.3 writes $N_{i,\mathrm{kg}}$.
+- **Left for S1c.5:** sections 2.4–2.6 (2.4's expectations with the new score, 2.6's row count),
+  section 1's counts and split sizes, the apartment order's permutation draw, every seed-42
+  number.

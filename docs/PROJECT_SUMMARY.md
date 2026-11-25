@@ -43,8 +43,9 @@ neighborhoods. Each level has its own role.
 - **Apartment: where the children are generated.** An apartment's rooms and its neighborhood set
   how many children live there and how old they are. The number of children follows how far
   the neighborhood's household size lies above that of a household without school-age children.
-  Larger apartments hold more children, and older ones, but where households are large the small
-  apartments hold many children too.
+  Larger apartments hold more children, but where households are large the small apartments hold
+  many children too. The children are older in larger apartments and in older neighborhoods, and
+  younger near daycares and where a school is planned.
 
 Hidden values act at two places, and none of them is in the dataset. A building's type and two
 values per neighborhood shape the building sizes (section 2.2). Two effects per building and one
@@ -434,46 +435,84 @@ neighborhood, building size changes an apartment's expected count only through t
 since larger buildings hold smaller apartments (section 2.2). Across neighborhoods, large
 buildings also stand where households are smaller.
 
-**The cohort split.** First comes a second hidden effect for every building, then a lifecycle score
-$\theta_i$ for every apartment. A higher score means an older family stage:
+**The cohort split.** The apartment's children are then split over the three cohorts by age:
+kindergarten (kg, ages 3 to 6), elementary (el, 7 to 12) and high school (hs, 13 to 18). First comes
+a second hidden effect for every building:
 
 $$
 v_b \sim \mathcal N(\mu=0,\ \sigma^2=0.20^2)
 $$
 
+A building's apartments are often sold or let within a few years, so families at the same stage
+move in together and their children grow up together: one building leans toward young children,
+another toward teenagers. $v_b$ stands for that shared stage, beyond what the features explain. It
+is drawn independently of $u_b$: a building that holds more children than its features explain does
+not, for that reason, hold younger or older ones.
+
+Then every apartment gets a **life-cycle score** $\theta_i$: how far along the family life cycle
+its children are. A higher score means older children, a lower score younger ones:
+
 $$
-\theta_i = 0.30\,c_i - 0.20\,\mathrm{sat}(D_j) + 0.25\,\tilde M_j + 0.15\,\tilde H_j
-+ 0.12\,(c_i)_+\,(\tilde M_j)_+ + v_b
+\theta_i = 0.20\,c_i - 0.20\,\mathrm{sat}(D_j) + 0.25\,\tilde M_j + 0.05\,\tilde H_j
+- 0.25\,\mathbb 1\lbrace Z_j = \text{planned}\rbrace + v_b
 $$
 
-Here $(x)_+ = \max(x, 0)$. The score tilts the reference shares of 40%, 35% and 25% (kindergarten,
-elementary, high school). A multinomial then splits the apartment's children over the three
-cohorts:
+The score is zero for a 4-room apartment in the reference neighborhood (median age 31, household
+size 3.0) with no daycares, no planned school and $v_b = 0$. Each term shifts it:
+
+- **Rooms.** Families move to larger homes as their children grow, so the older children live in
+  the larger apartments: each room above 4 adds 0.20, and each room below 4 removes 0.20.
+- **Daycares.** Daycares draw families with young children. They lower the score by at most 0.20,
+  with the same saturation as in the count.
+- **Median age.** An older neighborhood is further along the family cycle, and so are its
+  children: ten more years of median age add 0.25.
+- **Household size.** A household grows as its children are born, so among neighborhoods of the
+  same median age, those with larger households are further along the family cycle: 0.05 per
+  three quarters of a person. Neighborhoods of large households still hold younger children
+  overall, because they are younger (section 2.1) and have smaller apartments (section 2.2).
+- **A planned school.** A planned school marks a new neighborhood that is still filling up with
+  young families (section 2.1). It lowers the score by 0.25.
+- **The building's effect.** One standard deviation of $v_b$ shifts the score by 0.20, as much as
+  one more room does.
+
+The score sets the cohort probabilities. Each cohort gets a weight, and its probability is its
+share of the three weights (a softmax):
 
 $$
-p_{i,\mathrm{kg}} \propto 0.40\,e^{-1.0\,\theta_i},
+p_{i,\mathrm{kg}} \propto 0.225\,e^{-1.0\,\theta_i},
 \qquad
-p_{i,\mathrm{el}} \propto 0.35,
+p_{i,\mathrm{el}} \propto 0.385,
 \qquad
-p_{i,\mathrm{hs}} \propto 0.25\,e^{1.1\,\theta_i}
+p_{i,\mathrm{hs}} \propto 0.390\,e^{1.1\,\theta_i}
 $$
+
+At $\theta_i = 0$ the probabilities are exactly 22.5%, 38.5% and 39.0%. Elementary is the pivot:
+its weight does not depend on the score, so its probability moves less than the other two. A
+higher score moves children from kindergarten toward high school, and a lower one moves them
+back. Both weights move, so a planned school, for example, multiplies the odds of high school
+against kindergarten by $e^{-(1.0 + 1.1) \cdot 0.25} \approx 0.59$.
+
+The reference apartment is not the typical one. Most neighborhoods have daycares and about a
+fifth have a planned school, so the average score is negative, and of all the children about 27%,
+38% and 35% fall in the three cohorts. The reference probabilities are set to give this split.
+Kindergarten is the smallest cohort mainly because it spans 4 years of age, against 6 for each of
+the others.
+
+A multinomial draw then gives each of the apartment's children a cohort, with the probabilities
+$\mathbf p_i = (p_{i,\mathrm{kg}},\ p_{i,\mathrm{el}},\ p_{i,\mathrm{hs}})$:
 
 $$
 (N_{i,\mathrm{kg}},\ N_{i,\mathrm{el}},\ N_{i,\mathrm{hs}}) \sim \mathrm{Multinomial}(N_i,\ \mathbf p_i)
 $$
 
-The three probabilities are normalized to sum to 1 (a softmax). At $\theta_i = 0$ they are exactly
-0.40, 0.35 and 0.25. A higher score moves children from kindergarten toward high school:
+The three counts sum exactly to $N_i$, so the split changes the children's ages, not their number.
 
-- More rooms, an older neighborhood and larger households raise the score. Daycares lower it,
-  because they draw families with young children.
-- The interaction adds a bonus only for large apartments (above 4 rooms) in older neighborhoods
-  (above 37). It stands for families that move up into bigger homes. A plain product would also
-  give the bonus to small apartments in young neighborhoods, where both factors are negative.
-- SES and school status do not enter the score directly. SES acts on it indirectly, through the
-  daycares and the room counts.
-
-The multinomial makes the cohorts sum exactly to $N_i$.
+Three terms are absent by design. There is **no direct SES term**: SES acts through the other
+neighborhood values and the room mix. There is **no existing-school term**: an existing school
+draws families (above), but it does not set their children's ages. There is **no building-size
+term**: new towers draw young families, while renewal towers often bring their older owners back,
+so the direction is unclear. Inside a neighborhood, building size shifts the ages only through the
+room mix.
 
 ### 2.4 Buildings: the sums we predict
 
