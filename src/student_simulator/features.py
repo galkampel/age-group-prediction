@@ -70,20 +70,6 @@ def daycare_saturation(
     return 1.0 - np.exp(-arr / saturation_scale)
 
 
-def positive_part(values: np.ndarray | Iterable[float]) -> np.ndarray:
-    """Apply the element-wise positive-part transform max(x, 0)."""
-    arr = np.asarray(values, dtype=float)
-    return np.maximum(arr, 0.0)
-
-
-def positive_part_interaction(
-    lhs: np.ndarray | Iterable[float],
-    rhs: np.ndarray | Iterable[float],
-) -> np.ndarray:
-    """Compute the one-sided interaction max(lhs, 0) * max(rhs, 0)."""
-    return positive_part(lhs) * positive_part(rhs)
-
-
 def normalize_positive_weights(weights: np.ndarray) -> np.ndarray:
     """Normalize non-negative weights to probabilities along the last axis."""
     arr = np.asarray(weights, dtype=float)

@@ -15,7 +15,7 @@
     ]
   },
   "config": {
-    "content_sha256": "bfed7dedc52d0eab887d141fc07e938db775107134f77cdf0e0478a7c9f22c05",
+    "content_sha256": "20d2f39d60ca89de3687e427dea9519a22f58c51044fab3fdbc7851508092d8b",
     "overrides": {
       "buildings_per_neighborhood_rate": 9.0,
       "n_neighborhoods": 150
@@ -60,7 +60,7 @@
       "school_status": "string",
       "ses": "float64"
     },
-    "sha256": "ab1906e8274bd9a2753c71876b2ac69b31a7e4835c0cdb096edea5268d5591f2",
+    "sha256": "14f1256d622dc4bdb315e34872b376a252baa351ef9411e29d01486e1ac19dcf",
     "shape": [
       1523,
       16
@@ -99,44 +99,44 @@
       "min": 3.0,
       "std": 2.973567370731224
     },
-    "cohort_share_describe_sha256": "49bc4cbc5ff37da4b94a8ef453d855d4a02fd2c61a98d51f3c9a2c317f465d34",
-    "feature_target_correlations_sha256": "fd463ef0eebb017ede00ebe4dc99a8217afa423abc82c608ffe69283cd22d0d2",
+    "cohort_share_describe_sha256": "70cb7d40fd42e19348cf5f140ee557929fd2d68c66206f15f1467ca9f767d872",
+    "feature_target_correlations_sha256": "4eb5c5633db748f39ae6f51f91959479036a2d238786fce3b8675b7792e62cc7",
     "targets": [
       {
         "count": 1523,
-        "max": 97.0,
-        "mean": 13.55548260013132,
-        "q25": 6.0,
-        "q50": 10.0,
-        "q75": 17.0,
-        "std": 12.345445614131988,
-        "target": "n_kindergarten",
-        "variance_to_mean": 11.243423189522906,
-        "zero_share": 0.02495075508864084
-      },
-      {
-        "count": 1523,
-        "max": 95.0,
-        "mean": 11.476690741956665,
-        "q25": 5.0,
-        "q50": 9.0,
-        "q75": 15.0,
-        "std": 10.580643401854195,
-        "target": "n_elementary",
-        "variance_to_mean": 9.754555325598528,
-        "zero_share": 0.019041365725541694
-      },
-      {
-        "count": 1523,
-        "max": 96.0,
-        "mean": 9.066316480630334,
+        "max": 81.0,
+        "mean": 9.110308601444517,
         "q25": 3.0,
         "q50": 6.0,
         "q75": 12.0,
-        "std": 9.353837991670202,
+        "std": 8.873007842335246,
+        "target": "n_kindergarten",
+        "variance_to_mean": 8.641888174639819,
+        "zero_share": 0.03742613263296126
+      },
+      {
+        "count": 1523,
+        "max": 106.0,
+        "mean": 13.113591595535128,
+        "q25": 6.0,
+        "q50": 10.0,
+        "q75": 16.0,
+        "std": 11.979761422545609,
+        "target": "n_elementary",
+        "variance_to_mean": 10.943964717490163,
+        "zero_share": 0.01772816808929744
+      },
+      {
+        "count": 1523,
+        "max": 104.0,
+        "mean": 11.874589625738674,
+        "q25": 5.0,
+        "q50": 9.0,
+        "q75": 15.0,
+        "std": 11.501558102142024,
         "target": "n_highschool",
-        "variance_to_mean": 9.650477717311034,
-        "zero_share": 0.03151674326986211
+        "variance_to_mean": 11.140245090256736,
+        "zero_share": 0.011818778726198293
       },
       {
         "count": 1523,

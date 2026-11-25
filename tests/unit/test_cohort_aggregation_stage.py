@@ -4,6 +4,7 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
+import pytest
 
 from student_simulator import (
     ApartmentSimulator,
@@ -164,6 +165,96 @@ def test_cohort_probabilities_remain_finite_for_extreme_lifecycle_scores() -> No
 
     assert np.isfinite(probabilities).all()
     assert np.allclose(probabilities.sum(axis=1), 1.0)
+
+
+def one_apartment_per_neighborhood(
+    rooms: list[int],
+    avg_household_size: list[float],
+    median_age: list[float],
+    n_daycares_500m: list[int],
+    school_status: list[str],
+) -> tuple[pd.DataFrame, pd.Series]:
+    """Each apartment in its own building and neighborhood, with zero building effects."""
+    building_ids = [f"B_{index:06d}" for index in range(1, len(rooms) + 1)]
+    neighborhood_ids = [f"N_{index:03d}" for index in range(1, len(rooms) + 1)]
+    apartments = pd.DataFrame(
+        {
+            "apartment_id": [f"A_{index:08d}" for index in range(1, len(rooms) + 1)],
+            "building_id": building_ids,
+            "rooms": rooms,
+            "n_children_total": [2] * len(rooms),
+        }
+    )
+    buildings = pd.DataFrame(
+        {"building_id": building_ids, "neighborhood_id": neighborhood_ids}
+    )
+    neighborhoods = pd.DataFrame(
+        {
+            "neighborhood_id": neighborhood_ids,
+            "ses": [0.0] * len(rooms),
+            "avg_household_size": avg_household_size,
+            "median_age": median_age,
+            "n_daycares_500m": n_daycares_500m,
+            "school_status": school_status,
+        }
+    )
+    context = ApartmentSimulator.join_context(apartments, buildings, neighborhoods)
+    zero_effect = pd.Series(0.0, index=pd.Index(building_ids, name="building_id"))
+    return context, zero_effect
+
+
+@pytest.mark.parametrize("school_status", ["none", "existing"])
+def test_the_reference_apartment_gets_the_reference_shares(school_status: str) -> None:
+    simulator = make_cohort_simulator(load_simulation_config(_config_path()))
+    context, zero_effect = one_apartment_per_neighborhood(
+        rooms=[4],
+        avg_household_size=[3.0],
+        median_age=[31.0],
+        n_daycares_500m=[0],
+        school_status=[school_status],
+    )
+
+    theta = simulator.compute_theta(context, zero_effect)
+
+    assert np.allclose(theta, [0.0])
+    assert np.allclose(simulator.cohort_probabilities(theta), [[0.225, 0.385, 0.390]])
+
+
+def test_each_score_term_follows_the_plan() -> None:
+    # The reference apartment, then one apartment per term moved off its reference.
+    simulator = make_cohort_simulator(load_simulation_config(_config_path()))
+    context, zero_effect = one_apartment_per_neighborhood(
+        rooms=[4, 6, 4, 4, 4, 4],
+        avg_household_size=[3.0, 3.0, 3.0, 3.0, 3.75, 3.0],
+        median_age=[31.0, 31.0, 31.0, 41.0, 31.0, 31.0],
+        n_daycares_500m=[0, 0, 3, 0, 0, 0],
+        school_status=["none", "none", "none", "none", "none", "planned"],
+    )
+
+    theta = simulator.compute_theta(context, zero_effect)
+
+    # 13.1: 0.20 (r - 4) - 0.20 (1 - exp(-D / 3)) + 0.25 (M - 31) / 10
+    #       + 0.05 (H - 3.0) / 0.75 - 0.25 P
+    expected = [0.0, 0.40, -0.20 * (1 - np.exp(-1.0)), 0.25, 0.05, -0.25]
+    assert np.allclose(theta, expected)
+
+
+def test_a_planned_school_lowers_the_score_and_shifts_the_split_younger() -> None:
+    simulator = make_cohort_simulator(load_simulation_config(_config_path()))
+    context, zero_effect = one_apartment_per_neighborhood(
+        rooms=[4, 4],
+        avg_household_size=[3.4, 3.4],
+        median_age=[35.0, 35.0],
+        n_daycares_500m=[2, 2],
+        school_status=["existing", "planned"],
+    )
+
+    theta = simulator.compute_theta(context, zero_effect)
+    probabilities = simulator.cohort_probabilities(theta)
+
+    assert np.isclose(theta[1] - theta[0], -0.25)
+    assert probabilities[1, 0] > probabilities[0, 0]
+    assert probabilities[1, 2] < probabilities[0, 2]
 
 
 def test_aggregate_to_buildings_sums_the_apartment_counts() -> None:

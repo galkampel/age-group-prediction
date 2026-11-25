@@ -15,8 +15,13 @@ instead. This plan revises the simulator **step by step, one PR per step, neighb
 
 > **Step 3 (2026-11-24):** children per apartment and the building-size scales, planned in §12
 > on `feat/realistic-children`; decisions R18–R24. C0–C4 committed (the intercept stays −0.89);
-> **C5 done** (the review and the PR description), awaiting the user's commit and the PR. Next:
-> merge `main` into `docs/project-summary`, then the summary's S1c.3. The record is 12.10.
+> C5 done (the review and the PR description). **Complete and merged (PR #31).** The record is
+> 12.10.
+
+> **Step 4 (2026-11-25):** the cohort split, planned in §13 on `feat/realistic-cohorts`;
+> decisions R25–R30. K0–K2 committed (the reference shares kept by 13.3's rule); **K3 done**
+> (the review and the PR description), awaiting the user's commit and the PR. Next: merge `main`
+> into `docs/project-summary`, then the summary's S1c.4. The record is 13.10.
 
 ## 1. Decisions
 
@@ -46,6 +51,12 @@ instead. This plan revises the simulator **step by step, one PR per step, neighb
 | R22 | Step 3: the count is capped at **10** by clipping the draw (user). |
 | R23 | Step 3: the building-size log SDs become **0.25** (neighborhood texture) and **0.15** (the building's own), from 0.20 and 0.22 (user). |
 | R24 | Step 3: the intercept is calibrated on the average of 31 seeds, not on seed 42 alone (B2's lesson). |
+| R25 | Step 4 (user): the cohort split need not be exact; relations are added where they make it more realistic, without overcomplicating. The score keeps five terms: rooms, daycares, median age, household size, a planned school. |
+| R26 | Step 4: the population's split is about **27 / 38 / 35%** kindergarten / elementary / high school. The reference shares are solved so that the realized shares land there (0.225 / 0.385 / 0.390); they are the probabilities of the reference apartment, not the population's. |
+| R27 | Step 4: one new relation: **a planned school shifts the split toward kindergarten** (−0.25 on the score; user, after the consult). It marks a new, growing neighborhood. |
+| R28 | Step 4: the rooms × age bonus is removed (negligible), with its config field and the two positive-part helpers, which nothing else uses. |
+| R29 | Step 4: the household-size coefficient becomes **+0.05** (from +0.15) and the room coefficient **+0.20** (from +0.30) (user, after the consult). |
+| R30 | Step 4: unchanged: the building effect's SD (0.20), the daycare term (−0.20), the median-age term (+0.25) and the two slopes (−1.0, 1.1). No building-size term and no existing-school term (the consult found no clear case for either). |
 
 ## 2. Step 1: the neighborhood model
 
@@ -253,7 +264,7 @@ and assert shapes and signs only:
 |---|---|---|
 | 2 | Buildings and room mix | Large-household, low-SES areas get larger apartments (mean rooms 4.39 against 4.04); in Israel they are crowded. Building size may depend on the area. |
 | 3 | Children per apartment (**planned in §12**) | The NB tail: a maximum of 37 children in one apartment (needs a cap or a larger $\phi$). Zero share 0.52 against about 0.60 real. Too flat at small households (0.45 children at $H = 2.2$; real about 0.1–0.3). |
-| 4 | The cohort split | Reference shares 0.40/0.35/0.25 against a real 27/38/35% for ages 3–6/7–12/13–18. The household-size coefficient (+0.15) pushes large-household areas toward high school, the opposite of Israel. |
+| 4 | The cohort split (**planned in §13**) | Reference shares 0.40/0.35/0.25 against a real 27/38/35% for ages 3–6/7–12/13–18. The household-size coefficient (+0.15) cancels the median-age term in large-household areas, so the split is flat over household size; Israel has a mild tilt to the young there. A planned school has no effect on the split. |
 | 5 | The reruns | After the summary's documentation (summary P12): notebooks 03 and 04 rerun on the new data, a fresh MLflow store, then the summary's S5a onward. |
 
 ## 8. Step 1 sub-tasks
@@ -1575,3 +1586,510 @@ The whole step (`git diff main...HEAD`, 14 files) read against 12.1–12.5.
 - **Tests:** `tests/validation/test_children_statistics.py`: 5 passed (`c5_pytest_output.txt`).
   The full suite was not rerun: C5 changed no source, config or test body, and C4's run gave
   1533 passed.
+
+## 13. Step 4: the cohort split
+
+Decided on 2026-11-25 from the project summary's S1c.3 analysis
+(`docs/PROJECT_SUMMARY_PLAN.md` §9 on `docs/project-summary`). Decisions R25–R30 (§1).
+
+### 13.1 The model
+
+$r_i$ is the apartment's rooms; $D_j$, $M_j$ and $H_j$ are the neighborhood's daycares, median
+age and household size; $P_j = 1$ where the neighborhood's school is planned, else 0.
+
+| # | Variable | Formula | Why |
+|---|---|---|---|
+| 1 | Building effect | $v_b \sim \mathcal N(0,\ 0.20^2)$ | unchanged: a building fills with one generation of families |
+| 2 | Score | $\theta_i = 0.20\,(r_i - 4) - 0.20\,(1 - e^{-D_j/3}) + 0.25\,\dfrac{M_j - 31}{10} + 0.05\,\dfrac{H_j - 3.0}{0.75} - 0.25\,P_j + v_b$ | a positive score means older children. Rooms: families move to larger apartments as the children grow. Planned school: a new neighborhood holds young families |
+| 3 | Probabilities | the softmax of $\log 0.225 - 1.0\,\theta_i$ (kindergarten), $\log 0.385$ (elementary), $\log 0.390 + 1.1\,\theta_i$ (high school) | the form is unchanged; only the three shares move |
+| 4 | Counts | a multinomial of the apartment's total over the three cohorts | unchanged |
+
+- **Replaced:** the room coefficient 0.30, the household-size coefficient 0.15, the reference
+  shares 0.40 / 0.35 / 0.25.
+- **Removed:** the bonus $+0.12\,\max(r_i - 4, 0)\,\max\!\big(\tfrac{M_j - 31}{10}, 0\big)$.
+- **RNG order unchanged:** one effect per building, then one multinomial per apartment. Every
+  draw up to the totals is the same for a seed, so the building totals do not change; only the
+  split between the three targets does.
+- **The reference apartment** ($\theta = 0$): 4 rooms, no daycares, median age 31, household size
+  3.0, no planned school, building effect 0. Its shares are 22.5 / 38.5 / 39.0%. The
+  population's are about 27 / 38 / 35%, because the mean score is about −0.14: the average
+  neighborhood has daycares (about −0.12) and a fifth have a planned school (about −0.05).
+
+### 13.2 Calibration
+
+All runs in memory (plan mode), the new model replayed on the simulator's own draws: 1,000
+neighborhoods, rate 9. The consult used seeds 42 / 7 / 11 / 2026 / 123, the session seeds
+42 / 7 / 11; the two agree within a point wherever both measured. The numbers below are the
+consult's, on seed 42 unless a range is given: expected shares in %, weighted by children,
+kindergarten / elementary / high school. The targets are from memory (R10).
+
+| Quantity | Today | New | Target (confidence) |
+|---|---|---|---|
+| Overall, five seeds | 39.8–40.4 / 33.5–33.7 / 26.1–26.5 | 26.7–27.1 / 38.0–38.1 / 34.8–35.3 | 27 / 38 / 35 (high, ±1 point) |
+| Household size over 4.5 | 39 / 34 / 27 | 31 / 39 / 30 | 31 / 38 / 30 in Haredi areas (medium); Arab towns nearer 25–26 / 38 / 36–37 (medium) |
+| Household size under 2.25 | 38 / 34 / 29 | 22 / 37 / 42 | 22–26 / 37 / 37–41 where the area is old (low) |
+| Kindergarten at 3 / 4 / 5 / 6 rooms | 53 / 43 / 32 / 22 | 35 / 28 / 22 / 17 | a gap of 10–15 points, at most about 18 (low-medium) |
+| Planned school against the others at the same median-age mix | 41 / 33 / 25 against 40 / 34 / 26 | 34 / 39 / 28 against 26 / 38 / 36 | kindergarten +6 to +10 points, high school −6 to −10 (low-medium) |
+| Kindergarten, median age under 24 to over 38 | 43 to 31 | 33 to 19, falling in every band | right direction (high) |
+| Kindergarten, existing school against none | 40 against 39 | 26 against 24 | no known direct effect (low) |
+| Kindergarten, buildings of 60 or more apartments against smaller | +0.2 points | −0.7 to 0 points on five seeds | ambiguous; no term |
+| SD of a building's expected kindergarten share (from the features alone) | 0.085 (0.053) | 0.078 (0.054) | cannot be calibrated |
+
+**Household size** (the neighborhood's household-size band):
+
+| Band | under 2.25 | 2.25–2.625 | 2.625–3.0 | 3.0–3.45 | 3.45–3.95 | 3.95–4.5 | over 4.5 |
+|---|---|---|---|---|---|---|---|
+| Today | 38 / 34 / 29 | 38 / 34 / 29 | 40 / 34 / 27 | 40 / 34 / 26 | 41 / 34 / 26 | 41 / 34 / 25 | 39 / 34 / 27 |
+| New (+0.05) | 22 / 37 / 42 | 23 / 37 / 40 | 25 / 38 / 37 | 26 / 38 / 36 | 28 / 38 / 34 | 31 / 39 / 31 | 31 / 39 / 30 |
+| At +0.10 | 24 / 38 / 39 | 24 / 37 / 38 | 26 / 38 / 36 | 27 / 38 / 35 | 28 / 38 / 34 | 29 / 38 / 33 | 28 / 38 / 34 |
+
+At +0.10 the top band is at the national average and below the band under it, so there is no
+tilt to the young.
+
+**Planned school:** planned neighborhoods are only slightly younger (median age 29.8 against 30.1
+with an existing school and 32.2 with none), so matching the age mix moves the comparison by
+half a point. Inside each median-age band the kindergarten gap is 5.8–8.7 points.
+
+**Candidates not taken:**
+- **Reference shares of exactly 0.27 / 0.38 / 0.35** with the other new values realize
+  31.7 / 37.1 / 31.2 on all five seeds.
+- **Rooms:** 0.15 gives kindergarten 33 / 28 / 24 / 20 (a 13-point gap, the centre of the
+  target); 0.25 gives 37 / 29 / 22 / 16 (the session's draw). 0.20 keeps more signal in the room
+  mix.
+- **Planned school:** −0.35 gives 36% kindergarten in planned neighborhoods, which reads as a
+  brand-new neighborhood and is too strong for a fifth of all areas. −0.40 gives 38% against 24%
+  (the session's draw).
+- **Household size:** +0.075 gives kindergarten 23% to 30% from the lowest to the top band (the
+  session's draw, six bands).
+
+**Smaller draws** (realized shares from a multinomial on the replayed probabilities):
+
+| Draw | Today | New |
+|---|---|---|
+| 150 neighborhoods, rate 9, seed 42 | 39.8 / 33.7 / 26.6 | 26.7 / 38.5 / 34.8 |
+| 150 neighborhoods, rate 9, seed 7 | 40.9 / 33.8 / 25.3 | 27.6 / 38.3 / 34.1 |
+| 150 neighborhoods, rate 9, seed 11 | 39.5 / 33.4 / 27.1 | 26.5 / 38.2 / 35.4 |
+| The canonical config (60 neighborhoods, rate 3), seed 42 | 40.3 / 33.5 / 26.2 | 26.3 / 38.5 / 35.2 |
+| The canonical config, the mean of 30 other seeds | 40.0 / 33.7 / 26.3 | 27.1 / 38.0 / 34.9 |
+| The canonical config, the range over those 30 seeds | kindergarten 38.7–42.8 | kindergarten 24.7–28.9, high school 31.7–37.9 |
+
+### 13.3 Downstream consistency
+
+- **Nothing in the totals changes:** the children intercept, the calibration ranges, both
+  invariants of §5 and the recovery test are untouched.
+- **K1 re-verifies the reference shares with the code.** They change from 0.225 / 0.385 / 0.390
+  only if the five-seed mean of a realized share (1,000 neighborhoods, rate 9, seeds
+  42 / 7 / 11 / 2026 / 123) is more than 1 point from 27 / 38 / 35.
+
+### 13.4 The config schema (`cohort` section)
+
+```yaml
+cohort:
+  room_coef: 0.20                # was 0.30
+  daycare_coef: -0.20
+  median_age_coef: 0.25
+  household_size_coef: 0.05      # was 0.15
+  planned_school_coef: -0.25     # new: a new, growing neighborhood holds younger children
+  building_effect_sd: 0.20
+  kindergarten_lifecycle_slope: -1.0
+  highschool_lifecycle_slope: 1.1
+  # The reference apartment's probabilities (theta = 0: 4 rooms, no daycares, median age 31,
+  # household size 3.0, no planned school). The population's split is about 27 / 38 / 35%.
+  reference_shares:
+    kindergarten: 0.225          # was 0.40
+    elementary: 0.385            # was 0.35
+    highschool: 0.390            # was 0.25
+```
+
+- **Removed:** `room_age_positive_interaction_coef`. **Added:** `planned_school_coef`
+  (`total_children` has a field of the same name; the sections are separate).
+- **No new validation:** unknown keys are already rejected, and the shares are already checked
+  for their labels, signs and sum.
+- **Code** (`CohortCompositionSimulator` in `src/student_simulator/outcomes.py`): the lifecycle
+  features lose `rooms_median_age_positive_interaction` and gain `school_planned`, the same dummy
+  the total-children design builds; the coefficient map follows; the docstring of
+  `sample_cohorts` names the planned school.
+- **Removed as unused (R28):** `positive_part` and `positive_part_interaction` in
+  `src/student_simulator/features.py`, their exports in `src/student_simulator/__init__.py` and
+  their test in `tests/unit/test_transforms.py`. The simulator never called them; the bonus used
+  `np.maximum` directly.
+
+### 13.5 The tests
+
+**New statistical tests** (`tests/validation/test_cohort_statistics.py`, in the form of
+`test_children_statistics.py`: 1,000 neighborhoods, rate 9, a fixed seed, the stages through the
+cohorts; realized shares; shapes and signs only). The numbers are realized shares over the
+consult's five seeds:
+
+| Test | Assertion | Today | New |
+|---|---|---|---|
+| The level | kindergarten in 0.24–0.30, elementary in 0.35–0.41, high school in 0.32–0.38 | .40 / .34 / .26 | .27 / .38 / .35 |
+| A planned school holds younger children | planned minus the others: kindergarten over +0.04 and high school under −0.04, overall and where the median age is 28–34 | +0.01 to +0.02; −0.01 to −0.02 | +0.07 to +0.09; −0.09 |
+| Large households tilt to the young | kindergarten where household size is over 4.5, minus the 3.0–3.45 band, over 0.02 | −0.003 to −0.015 | +0.039 to +0.051 (about +0.012 at 0.10) |
+| The room gap is moderate | kindergarten at 3 rooms minus 6 rooms in 0.08–0.22 (not 0.24: today's 0.30 gives 0.242, a margin of 0.002), and falling with every room | 0.295–0.310 | 0.171–0.176 |
+| Older areas hold older children (guard) | kindergarten falls over six median-age bands, with a gap over 0.06 | 0.095–0.119 | 0.125–0.141 |
+| Building size has no effect (guard) | kindergarten in buildings of 60 or more apartments, minus the smaller ones, under 0.03 in size | 0.000 to +0.003 | −0.007 to 0.000 |
+| Buildings differ (guard) | the SD of the kindergarten share over buildings with 20 or more children in 0.07–0.14 | 0.113–0.115 | 0.104–0.107 |
+
+The first four fail on today's model; the three guards pass on both.
+
+**Unit tests:**
+- `tests/unit/test_design.py`: the two column lists become `rooms_centered`,
+  `daycare_saturation`, `median_age_scaled`, `household_size_scaled`, `school_planned`; the
+  positive-quadrant test is replaced by one on the dummy (1 for planned, 0 for existing and
+  none).
+- `tests/unit/test_cohort_aggregation_stage.py`:
+  - the scores of two apartments that differ only in the planned school differ by −0.25;
+  - the reference apartment with a zero building effect gets exactly the reference shares;
+  - a planned school raises the kindergarten probability and lowers the high-school one.
+- `tests/unit/test_config.py`: `cohort.room_age_positive_interaction_coef` is rejected as an
+  unknown key; a config without `cohort.planned_school_coef` is rejected.
+
+**Unchanged and still required:** the existing cohort unit tests (the sums, the zero totals, the
+extreme scores, the RNG convention), `test_children_statistics.py`, the calibration ranges, the
+invariants and the recovery test.
+
+**Characterization:** the EDA fixture is regenerated in K2. The row and split pins are expected
+to stay (the building counts and totals do not change); K2 measures them.
+
+### 13.6 Effects on the benchmark
+
+- **Kindergarten becomes the rarest target.** On the canonical config at seed 42 (250 buildings)
+  the mean count per building is 8.7 / 12.7 / 11.7 (today 13.3 / 11.1 / 8.7), and the buildings
+  with fewer than 3 in a cohort are 18% / 5% / 5% (today 5% / 6% / 16%). No cohort is rarer than
+  high school is today. The benchmark fits were not rerun.
+- **`school_status` now has a ground truth in the split,** next to its small one in the total.
+- **The room mix carries less of the split** (a 17-point kindergarten gap, not 30) **and
+  household size more** (22% to 31% kindergarten; flat today).
+- **The median-age profile steepens a little** (kindergarten 33% to 19% against 43% to 31%),
+  because household size no longer cancels it.
+- **The rooms × median-age interaction of the composition models loses its ground truth.**
+  `docs/FEATURE_TRANSFORMATIONS.md` is revised at the reruns (R9).
+- **Building totals do not change.**
+
+### 13.7 Leads, not in this step
+
+- **A building-size term:** reality is ambiguous (towers are newer, but renewal towers return
+  older owners), and the type is hidden (R12).
+- **An existing-school term:** existing is already 1–2 points more kindergarten than none through
+  household size and median age, and no target contradicts that.
+- **Rooms at 0.15:** a 13-point gap, the centre of the target.
+- **The large-household tilt is a Haredi effect.** Arab towns sit near the national split; the
+  model has one household-size axis and cannot tell them apart.
+- **Shares by daycare count** were not profiled under the new model (today: kindergarten 35%
+  with none, 42% with 5–7).
+
+### 13.8 Step 4 sub-tasks
+
+| # | Sub-task | Model | Review | Done |
+|---|---|---|---|---|
+| K0 | This plan committed on `feat/realistic-cohorts` | user | no | |
+| K1 | The cohort model: the config and the score (13.1, 13.4), the helpers' removal, the unit, config and statistical tests (13.5), a check script against 13.2 on five seeds with 13.3's rule | Opus 5.5 | yes | yes |
+| K2 | Regenerate the EDA fixture and measure the pins; the full test suite; update the docs that describe the cohort step | Sonnet 5.5 | no | yes |
+| K3 | An independent review of the whole step against §13, with a mutation check of the new tests (C5's form), then the PR description | Fable 5.2 | is the review | yes |
+
+Why these models: K1 changes the source, the schema and the tests together, and gets an
+independent review. K2 is mechanical and follows C4's scripts. K3 is the one read not anchored
+on the implementation. The step has no separate level sub-task (step 3's C3): the reference
+shares are checked inside K1, because nothing in the totals moves.
+
+**K1. Done when:**
+- [x] `cohort` and `CohortSettings` follow 13.4; the two helpers and their test are gone.
+- [x] The score follows 13.1; the RNG order is unchanged; the building totals at 150
+      neighborhoods, rate 9, seeds 42 and 7 equal `main`'s.
+- [x] The unit, config and statistical tests of 13.5 pass.
+- [x] A check script prints 13.2's tables on the five seeds; the reference shares change only by
+      13.3's rule.
+- [x] Review findings reproduced and fixed.
+
+**K2. Done when:**
+- [x] The EDA fixture is regenerated, and each diff is explained in 13.10 (expected: the config
+      hash, the dataset hash, the cohort summaries; not the total's).
+- [x] The pins are measured; the full test suite passes (output shown).
+- [x] `docs/SIMPLIFIED_MODEL_PLAN.md`'s cohort step follows 13.1 and 13.4, and `docs/README.md`'s
+      row for this plan is current; `docs/archive/` stays as it is; the docs that wait for the
+      reruns (R9) are listed.
+
+**K3. Done when:**
+- [x] The step is reviewed against 13.1–13.5 as a new reader; each finding is reproduced, then
+      fixed.
+- [x] Each new test fails under its own mutation: today's values; the planned-school coefficient
+      0; household size 0.10 and 0.15; rooms 0.30; reference shares 0.27 / 0.38 / 0.35. The
+      restored bonus is expected to fail nothing; that is recorded.
+- [x] The PR description is printed in the chat.
+
+### 13.9 Session prompts
+
+**The opening:**
+
+```text
+We are making the simulator realistic, step 4 (the cohort split), on branch
+feat/realistic-cohorts. Read docs/SIMULATOR_REALISM_PLAN.md first: §1 decisions (R25–R30 are
+this step's), §13 the step (13.1 the model, 13.3 downstream, 13.4 the config, 13.5 the tests,
+13.8 your sub-task, 13.10 the record), and 12.10 for how step 3's sub-tasks were recorded.
+Rules: do only this sub-task; the plan's values are decided (do not re-derive them; if one fails
+a check, stop and show the evidence); scripts and their outputs go in .mlflow-check/realism/
+(git-ignored) and run with ~/.venvs/age-group-prediction/bin/python; static checks (ruff, mypy
+with --cache-dir in that folder) before the tests; run each check once; do not commit. At the
+stop: show the diff and the test output, tick the sub-task's "done when" boxes and add its entry
+to 13.10, write the commit message in a text block (no Co-Authored-By line), and print the next
+sub-task's prompt (this opening, a blank line, its text) in one code block, naming the model to
+select.
+```
+
+| Sub-task | Text after the opening |
+|---|---|
+| K1 | `Implement K1: the cohort model's config and score (13.1, 13.4), the removal of the two positive-part helpers, the unit, config and statistical tests (13.5) and a check script against 13.2's tables on five seeds, with 13.3's rule for the reference shares. Run an independent review subagent before the stop.` |
+| K2 | `Implement K2: regenerate the EDA fixture and measure the pins, run the full test suite, and update the docs that describe the cohort step.` |
+| K3 | `Implement K3: review the whole step against §13 as a new reader; reproduce each finding before fixing it; run a mutation check of the new tests; then write the PR description.` |
+
+After the PR is merged: merge `main` into `docs/project-summary` and start the summary's S1c.4.
+
+### 13.10 Record
+
+#### Planning (2026-11-25, Fable 5.2)
+- **Source:** the S1c.3 analysis and the user's decision (R25), with the scope it set: the level,
+  a planned-school term, the bonus dropped, the household-size and room coefficients re-checked.
+- **Runs:** in memory only (plan mode); no script was saved. K1 writes the check script.
+- **The session's candidates** (seed 42, the reference shares re-solved for each): rooms
+  0.20 / 0.25 / 0.30, household size 0.05 / 0.075 / 0.10, planned school −0.20 / −0.30 / −0.40.
+- **The Fable consult** (independent, its own draws on five seeds; it reproduced the S1c.3
+  numbers on seed 42):
+  - its targets are 13.2's last column; the large-household tilt is a Haredi effect only;
+  - rooms 0.20 (0.15 also defensible), household size 0.05, planned school −0.25, reference
+    shares 0.225 / 0.385 / 0.390 (solved: 0.2256 / 0.3841 / 0.3903);
+  - no building-size term and no existing-school term; the median-age and daycare terms, the
+    slopes and the building effect's SD stay;
+  - the tests of 13.5 and the rarest-cohort numbers of 13.6.
+- **Two departures from the scope,** found by the session and the consult independently:
+  - **The reference shares are not 27 / 38 / 35.** S1c.3's "28 / 37 / 36 realized" held for
+    today's other values; the planned-school term and the lower household-size coefficient move
+    the level to 31.7 / 37.1 / 31.2.
+  - **Household size is +0.05, not about +0.10.** S1c.3's estimate was made before the level was
+    re-centred; at +0.10 the top band is at the national average.
+- **The user's choices** (asked with the measurements): household size +0.05, rooms +0.20,
+  planned school −0.25.
+- **Chosen in the session:** the two unused helpers go with the bonus (R28).
+- **Not run:** the code itself; the benchmark fits; the EDA fixture; shares by daycare count
+  under the new model.
+
+#### K1 (2026-11-25, Opus 5.5; review Opus 5.5)
+- **Config** (`configs/simulation.yml`, `CohortSettings`): `room_coef` 0.20,
+  `household_size_coef` 0.05 (it gained the section's missing comment line),
+  `planned_school_coef` −0.25 (new), reference shares 0.225 / 0.385 / 0.390 with 13.4's comment;
+  `room_age_positive_interaction_coef` removed. No new validation.
+- **Code:** the lifecycle features lose `rooms_median_age_positive_interaction` and gain
+  `school_planned` (last), built like the total-children dummy; the coefficient map follows, and
+  `sample_cohorts`'s docstring names the planned school. The RNG order is untouched.
+  `positive_part` and `positive_part_interaction` are gone from `features.py`, the package exports
+  and `test_transforms.py`. `docs/MODULE_REFERENCE.md`'s `features.py` row drops them and gains the
+  missing `log_household_size_excess`; the export count is corrected to 29 (it read 27, against 31
+  on `main`).
+- **Check** (`.mlflow-check/realism/k1_cohort_check.py`, output `k1_cohort_check_output.txt`;
+  `main` exported to `k1_main/` and loaded as `student_simulator_main`).
+  - At 150 neighborhoods, rate 9, seeds 42 and 7: every non-cohort dataset column, the
+    per-building totals, both building-effect columns and the neighborhood effects equal `main`'s
+    (all True); only the cohort counts differ.
+  - 13.2's tables on seeds 42 / 7 / 11 / 2026 / 123 reproduce within a point everywhere, for
+    today and new. Seed 42, expected (realized) %:
+
+  | Seed 42 | Today | New | 13.2 (new) |
+  |---|---|---|---|
+  | Overall | 40.1 / 33.6 / 26.3 | 27.0 / 38.1 / 34.9 (27.1 / 38.1 / 34.8) | 26.7–27.1 / 38.0–38.1 / 34.8–35.3 |
+  | Household size under 2.25 / over 4.5 | 38 / 34 / 29; 39 / 34 / 27 | 22 / 37 / 42; 31 / 39 / 30 | 22 / 37 / 42; 31 / 39 / 30 |
+  | Kindergarten at 3 / 4 / 5 / 6 rooms | 52.7 / 42.7 / 32.0 / 22.4 | 34.6 / 28.2 / 22.4 / 17.4 | 35 / 28 / 22 / 17 |
+  | Planned against the others at its age mix | 41.1 / 33.4 / 25.4 against 40.1 / 33.6 / 26.2 | 33.6 / 38.5 / 27.8 against 25.8 / 38.1 / 36.1 | 34 / 39 / 28 against 26 / 38 / 36 |
+  | Kindergarten gap inside each age band | −1.5 to 1.8 | 5.8 to 8.6 | 5.8–8.7 |
+  | Kindergarten, median age under 24 to over 38 | 43.2 to 31.2 | 32.9 to 18.8, falling in every band | 33 to 19 |
+  | Kindergarten, existing against none | 40.0 against 39.2 | 25.7 against 24.1 | 26 against 24 |
+  | 60 or more apartments minus smaller | +0.21 points | −0.21 (five seeds −0.62 to −0.21) | −0.7 to 0 |
+  | SD of a building's expected kg share (features only) | 0.085 (0.053) | 0.078 (0.054) | 0.078 (0.054) |
+  | Median age planned / existing / none | 29.8 / 30.1 / 32.2 | same | 29.8 / 30.1 / 32.2 |
+
+  - The seven assertions on all five seeds: today fails the first four and passes the three
+    guards; new passes all seven (planned-school gap +0.079 to +0.087 overall, +0.070 to +0.085 at
+    median age 28–34; household tilt +0.039 to +0.051; room gap 0.171–0.176; age gap 0.125–0.141;
+    building size −0.007 to 0.000; building SD 0.104–0.107).
+  - **13.3's rule:** the five-seed mean realized share is 27.0 / 38.1 / 35.0 (−0.02 / +0.06 /
+    −0.04 points): KEEP; the reference shares stay 0.225 / 0.385 / 0.390.
+  - Smaller draws, new: 26.7 / 38.5 / 34.8, 27.6 / 38.3 / 34.1 and 26.5 / 38.2 / 35.4 at 150
+    neighborhoods (seeds 42 / 7 / 11); 26.3 / 38.5 / 35.2 on the canonical config at seed 42;
+    seeds 0–29 mean 27.1 / 38.1 / 34.8, kindergarten 24.7–28.9, high school 31.7–37.9. Today's
+    column matches 13.2's to the decimal.
+- **Band edges** (13.5 gives none for median age): 24, 28, 31, 34, 38, chosen in K1; they
+  reproduce 13.5's numbers. The household-size bands are 12.10's (2.25 … 4.5).
+- **The room-gap edge is 0.22, not 0.24** (user): today's coefficient gives 0.242, a margin of
+  0.002 above 13.5's edge; the new model gives 0.171–0.176. K3's mutation of rooms 0.30 now fails
+  with room to spare.
+- **Tests:**
+  - `tests/validation/test_cohort_statistics.py` (new, seed 42): the seven tests of 13.5, the
+    plan's numbers as literals, realized shares from `simulate_stages`.
+  - `test_cohort_aggregation_stage.py`: the reference apartment gets 0.225 / 0.385 / 0.390 (no
+    school and an existing one); a planned school moves the score by −0.25 and the split younger;
+    after the review, each of the five score terms against 13.1 written as literals.
+  - `test_config.py`: the removed bonus is rejected as an unknown key; a config without
+    `cohort.planned_school_coef` is rejected. `test_design.py`: the column lists end in
+    `school_planned`; the positive-quadrant test is replaced by one on the dummy.
+  - Results: 101 passed and 1 failed on the ten files (`k1_pytest_output.txt`). The failure was
+    the missing-field test's own precondition: `tower_planned_school_coef:` also contains the
+    searched text; it now counts `"\n  planned_school_coef:"` (1 passed,
+    `k1_pytest_config_fix.txt`). 58 passed after the review (`k1_pytest_after_review.txt`).
+- **Static checks** (`k1_static_checks.txt`): no new findings. Pre-existing: ruff's import
+  sorting (`__init__.py`, `config.py`, `test_cohort_aggregation_stage.py`, `test_transforms.py`),
+  the unsorted `__all__`, `typing` imports (`config.py`, `features.py`), an unused import in
+  `test_cohort_aggregation_stage.py`, the format of six older files, and mypy's four errors in
+  `config.py`.
+- **Review** (independent, Opus 5.5; mutated copies of the tree, `k1_review/`): no bugs; the score
+  equals 13.1 to 1e-16, the RNG order and the five-seed level agree with the check.
+  - Each finding was reproduced (`.mlflow-check/realism/k1_repro/`), then fixed:
+    - **Household size was not pinned from below:** at coefficients 0 and −0.05 every test
+      passed (the tilt is +0.080 and +0.128: the direct term leans older, and the young tilt comes
+      through median age and daycares). Fixed by the score-term unit test, which fails at
+      household size 0 and −0.05, rooms 0.25, daycares 0, planned school 0 and median age 0.
+    - **Rooms 0.25 and daycares 0 were loosely pinned:** closed by the same test.
+    - Nits: the missing comment line above `household_size_coef`; the module reference's export
+      count and its missing `log_household_size_excess`.
+  - Left as it is: the missing-field test removes the literal line `planned_school_coef: -0.25`,
+    so a changed value breaks its precondition rather than its claim; the other config tests edit
+    the text the same way.
+  - Restoring the bonus fails only the two column-list tests, as 13.8 expects for K3.
+- **Not run:** the characterization tests (their fixture is stale until K2) and the full suite
+  (K2). `docs/SIMPLIFIED_MODEL_PLAN.md` still describes the bonus (K2).
+
+#### K2 (2026-11-25, Sonnet 5.5)
+- **EDA fixture** (`tests/characterization/fixtures/eda_jupyter_baseline.json`), regenerated by
+  `.mlflow-check/realism/k2_regenerate_eda_fixture.py` after it reproduced the old file byte for
+  byte. Sanity step: `main`'s code (`k1_main/` export, `k2_old_sanity.py`) also reproduces the
+  committed fixture exactly (`k2_old_sanity_output.txt`). 5 fields changed, 46 did not
+  (`k2_fixture_diff.txt`):
+  - `config.content_sha256`: `configs/simulation.yml` changed (K1);
+  - `final_dataframe.sha256` and the two summary hashes (`cohort_share_describe_sha256`,
+    `feature_target_correlations_sha256`): the cohort counts changed;
+  - `summaries.targets` (against step 3's fixture):
+
+    | Target | Mean | SD | Max | Zero share | Median |
+    |---|---|---|---|---|---|
+    | Kindergarten | 13.56 → 9.11 | 12.3 → 8.9 | 97 → 81 | 2.5% → 3.7% | 10 → 6 |
+    | Elementary | 11.48 → 13.11 | 10.6 → 12.0 | 95 → 106 | 1.9% → 1.8% | 9 → 10 |
+    | High school | 9.07 → 11.87 | 9.4 → 11.5 | 96 → 104 | 3.2% → 1.2% | 6 → 9 |
+    | Total | unchanged (34.10, 30.05, 265, 0.3%) | | | | |
+
+    Kindergarten becomes the rarest target, as 13.6 says.
+  - **Not changed:** `final_dataframe.shape` (1523 rows), the building-count statistics and the
+    total's summary (byte-identical); the totals are drawn before the split. All nine quality
+    checks are still true.
+- **Pinned counts**, measured (`k2_measure_pins.py`): **none changed**. Rows 1523 (seed 42) and
+  1564 (seed 7), split 913/305/305, `n_train_val` 1218, wrong second share 974/244/305, whole
+  table to the second call 1142/381/305. No test file needed an edit.
+- **Full suite**, no marker filter (the pyproject has no `addopts`; slow, calibration and
+  notebook tests included): 1546 passed, 1 skipped, 1 xfailed, 13 warnings, in 11 min 18 s
+  (`k2_pytest_output.txt`). No source or test file changed in K2, so no static check ran. The
+  NUTS recovery test emits the same `RuntimeWarning` as before (worst R-hat 1.086) and passes;
+  the other warnings are mlflow's integer-schema hint.
+- **Docs:** `docs/SIMPLIFIED_MODEL_PLAN.md` follows 13.1 and 13.4:
+  - Step 5 (cohort composition): the score with 0.20 rooms, −0.20 daycares, 0.25 median age
+    (centred at 31), 0.05 household size (centred at 3.0, per 0.75), −0.25 planned school; the
+    reference shares 0.225 / 0.385 / 0.390 with the population's 27 / 38 / 35%; the bonus and its
+    explanation removed; the school paragraph now separates an existing school (no effect) from a
+    planned one; the coefficient table.
+  - The predictor table's school-status row, the `target_cohort_shares` row, the stale-sections
+    note (Step 5 is now current), and the statistical-check rows (the reference composition, the
+    two interaction rows replaced by the planned-school and the rooms / median-age rows).
+  - `docs/README.md`: the row for this plan says step 4 is planned and implemented in §13.
+  - `docs/archive/` is untouched.
+- **Still stale until the reruns (R9), left as they are:**
+  - In `docs/SIMPLIFIED_MODEL_PLAN.md`: the neighborhood section, the SES² line, and the
+    statistical-check ranges for mean children and zero share.
+  - A grep of `README.md`, `notebooks/`, `docs/` for `room_age_positive_interaction`,
+    `positive_part`, `rooms_median_age_positive` and the old 0.40 / 0.35 / 0.25 shares finds only
+    `docs/SIMULATOR_WHITE_BOX_PLAN.md` (a historical record) and the config test that checks the
+    removed key is rejected.
+  - `docs/FEATURE_TRANSFORMATIONS.md` (the room share × median age term as the lifecycle ground
+    truth), `HYPERPARAMETER_TUNING.md`, `INDEPENDENT_COHORT_MODELS.md`, `MLFLOW_RUNS.md`,
+    `PARAMETER_REFERENCE.md`, `DATA_GENERATION_PLAN.md` still hold numbers or mechanisms from the
+    earlier simulator; they are redone at the reruns.
+
+#### K3 (2026-11-25, Fable 5.2)
+The whole step (`git diff main...HEAD`, 15 files) read against 13.1–13.5.
+- **No defect in the model, the config or the tests.**
+  - The score has 13.1's five terms and the building effect; the dummy is the total-children
+    design's; the softmax and the RNG order (one effect per building, then one multinomial per
+    apartment) are untouched.
+  - `cohort` and `CohortSettings` match 13.4: the bonus field is gone, `planned_school_coef` is
+    required, no new validation.
+  - The two helpers are gone from `features.py`, the exports (29 names) and `test_transforms.py`.
+    A grep of the source, tests, configs, notebooks and docs for their names, the bonus field
+    and its column finds only the config test that rejects the removed key and the historical
+    records (this plan, `SIMULATOR_WHITE_BOX_PLAN.md`).
+  - Each test of 13.5 exists and asserts 13.5's literals (the room gap's upper edge is K1's
+    0.22).
+- **The step's claims, measured** (`.mlflow-check/realism/k3_review_check.py`, part 0; output
+  `k3_review_check_output.txt`; `main` exported by `git archive` to `k3_main/`):
+  - On the canonical config at seeds 42 and 7 (250 and 230 buildings), every per-apartment
+    column other than the three cohort counts equals `main`'s, the totals and the cohort
+    building effect included; only the cohort counts differ.
+  - 13.6's numbers at seed 42 reproduce: realized shares 26.3 / 38.5 / 35.2 (`main`
+    40.3 / 33.5 / 26.2), mean per building 8.7 / 12.7 / 11.7 (`main` 13.3 / 11.1 / 8.6; 13.6
+    says 8.7), buildings with fewer than 3 in a cohort 18% / 5% / 5% (`main` 5% / 6% / 16%).
+  - 13.1's mean score, weighted by children on the statistical tests' draw: −0.135 (rooms
+    +0.048, daycares −0.117, median age −0.041, household size +0.028, planned school −0.051;
+    18.8% of the neighborhoods have a planned school).
+- **Does each new test fail under its own mutation?** Parts 1 and 2 of the same script.
+  - **The statistical tests**, called on their own draw under a config override (1,000
+    neighborhoods, rate 9, seed 42; 7 tests, 8 cases):
+
+    | Mutation | Tests that fail |
+    |---|---|
+    | none (the config) | 0 |
+    | today's values (rooms 0.30, household size 0.15, planned school 0, shares 0.40 / 0.35 / 0.25; no bonus) | 4: the level (.402 / .338 / .260), a planned school (both cases, +0.010), large households (−0.013), the room gap (0.295) |
+    | `planned_school_coef` 0 | a planned school (both cases; kindergarten +0.011) |
+    | `household_size_coef` 0.10 | large households (+0.008) |
+    | `household_size_coef` 0.15 | large households (−0.020) |
+    | `room_coef` 0.30 | the room gap (0.242) |
+    | reference shares 0.27 / 0.38 / 0.35 | the level (.316 / .372 / .312) |
+    | the bonus restored (+0.12, a patch of `compute_theta`; no override can restore it) | 0, as 13.8 expects (shares .267 / .380 / .353, room gap 0.177) |
+    | today's model exactly (today's values and the bonus) | the same 4 (room gap 0.304) |
+
+    The three guards pass under every row.
+  - **The unit and config tests** read the config file, so each mutation is a source edit on a
+    copy of the tree (`test_cohort_aggregation_stage.py`, `test_design.py`, `test_config.py`;
+    64 pass unmutated):
+
+    | Source mutation | Tests that fail |
+    |---|---|
+    | the planned-school entry removed from the coefficient map | the score terms; a planned school lowers the score |
+    | the dummy built from `"existing"` | 5: the reference shares (existing), the score terms, a planned school lowers the score, the dummy test, the transform-flow test |
+    | `household_size_coef` −0.05 in the YAML | the score terms |
+    | the bonus restored as a feature column (+0.12) | the two column-list tests |
+    | the bonus restored inside `compute_theta` (+0.12, no column) | none (the documented case) |
+    | `planned_school_coef` optional with a default in `CohortSettings` | the missing-field config test |
+    | extra: the removed bonus field accepted again in `CohortSettings` | the removed-key config test |
+    | extra: reference shares 0.27 / 0.38 / 0.35 in the YAML | the reference shares (2) |
+    | extra: `planned_school_coef` 0 in the YAML | the score terms; a planned school lowers the score; the missing-field test (its precondition, K1's note) |
+
+  Every mutation except the restored bonus fails at least one test, so no test body is changed.
+  The bonus is zero wherever the score-term test moves one term at a time (it needs more than 4
+  rooms and a median age over 31 together), and at +0.12 it moves no statistical test.
+- **Fixed** (docs only):
+  - This plan's status header said the next sub-task is K3.
+  - 13.1 said the mean score is about −0.15; measured −0.135, so it now says about −0.14.
+  - `docs/SIMPLIFIED_MODEL_PLAN.md`: the stale-sections note still opened with "the neighborhood
+    and outcome sections ... are stale" although both outcome steps are now current, and its §5
+    defines $Age_{10}$ with 37 and $HH_{0.5}$ with 2.6 while Step 5 centres at 31 and at 3.0 per
+    0.75. The note now names the neighborhood section and §5's two definitions as the stale
+    parts and says Step 5 states its own centring.
+- **Checked, left:**
+  - 13.6's "today" high-school mean per building (8.7) is 8.6 on the code's realized draw; the
+    new model's numbers match.
+  - 13.2's canonical-config mean over 30 seeds (27.1 / 38.0 / 34.9) against K1's realized
+    27.1 / 38.1 / 34.8: within 0.1 point.
+  - The restored bonus is not pinned by a test (above). A sixth apartment in the score-term test
+    with 6 rooms and median age 41 (score 0.65) would pin it; 13.8 records the case as expected,
+    so the test is not changed.
+  - 13.8's K0 cell is empty, as 12.8's C0 cell is.
+- **Static checks:** on the step's 9 source and test files, ruff reports 8 findings (import
+  order, the unsorted `__all__`, two `typing` imports, one unused import), the same 8 as on
+  `main`'s versions of those files; mypy the same 4 as K1, in `config.py`.
+- **Tests:** none rerun: K3 changed no source, config or test body, and K2's run gave 1546
+  passed, 1 skipped, 1 xfailed. The unmutated copy of the tree gives 64 passed on the three unit
+  files (the script's first row).

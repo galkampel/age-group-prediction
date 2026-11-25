@@ -6,7 +6,6 @@ from student_simulator.features import (
     center_rooms,
     daycare_saturation,
     expected_room_probabilities,
-    positive_part_interaction,
     scale_household_size,
     scale_median_age,
 )
@@ -30,13 +29,6 @@ def test_daycare_saturation_properties() -> None:
     assert np.all(np.diff(sat) > 0)
     assert sat[-1] < 1.0
     assert sat[-1] > 0.95
-
-
-def test_positive_part_interaction_activation_quadrants() -> None:
-    lhs = np.array([-1.0, -1.0, 2.0, 2.0])
-    rhs = np.array([-1.0, 3.0, -1.0, 3.0])
-    interaction = positive_part_interaction(lhs, rhs)
-    assert np.array_equal(interaction, np.array([0.0, 0.0, 0.0, 6.0]))
 
 
 def test_expected_room_probabilities_are_valid_and_tilt() -> None:
