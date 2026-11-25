@@ -13,10 +13,9 @@
 > simulator step: Israel's cohort levels, a planned-school term, the negligible bonus dropped.
 > The simulator's step 4 (the cohort split) is merged (PR #32) and `main` is merged into this
 > branch. S1c.4 done (2.3's second half written, committed `dac973f`). Sections 2.1–2.3 were then
-> shortened to P14 (2026-11-25, reviewed by Fable 5.2, check passing; **uncommitted**, with the
-> crowding sentence of S1c.4's follow-up). **Next (handoff, 2026-11-25): one session, Opus 5.5:
-> first the user's verification of the shortened 2.1–2.3 (fix what the user raises, then the user
-> commits), then S1c.5.** The prompt is §8's S1c.5 row. The implementation record is §9.
+> shortened to P14 (2026-11-25, reviewed by Fable 5.2, check passing; committed `772accc`). The
+> user's verification of it rewrote 2.3's crowding bullet. **Next: S1c.5 in the same session
+> (Opus 5.5).** The implementation record is §9.
 
 The project is documented in 62 files under `docs/`, most of them plans and work records. No
 single document tells a new reader what the task is, how the data is generated, how it is
@@ -1104,3 +1103,15 @@ S1c sub-task with its prompt above.
     cohort split; the checks of removed sentences are gone;
   - part 4 lost the "near 30" claim and gained the typed between/within claim;
   - 0 problems; 0 implementation-detail hits; every claim of parts 4–6 holds.
+- **The user's verification (2026-11-25, Opus 5.5; S1c.5's first step).** The shortening was
+  already committed (`772accc`), not uncommitted as §7 assumed. The user's one point: the crowding
+  bullet did not make clear why a positive product term still gives fewer children. At the user's
+  choice it was rewritten:
+  - the product term is a fraction of the household term, so the two combine into one power;
+  - large apartments follow household size less steeply, in both directions;
+  - at household size 2.2 the product term is $+0.29$ at 6 rooms against the household term's
+    $-0.96$, an offset of 30%.
+  - Before the rewrite, a Fable 5.2 subagent checked S1c.5's plan against the code (its script is
+    `review_s1c5_plan/verify.py`); its points are in S1c.5's entry.
+  - `check_s1c.py` part 2 reads the new wording and also checks $+0.29$ (+0.2867), $-0.96$
+    (−0.9555) and 30% (30.0%). It ran once: 0 mismatches, 0 problems, 0 hits, every claim holds.

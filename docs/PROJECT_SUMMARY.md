@@ -307,14 +307,16 @@ $$
 - **Household size** is the strongest term. With the coefficient 1.0 on $L_j$ and the other terms
   fixed, the expected count of a 4-room apartment is exactly proportional to $H_j - 1.7$: a
   household size of 4.3 doubles the reference neighborhood's count, and one of 2.35 halves it.
-- **Crowding.** With the household term, the count goes as
-  $\big((H_j - 1.7)/1.3\big)^{\,1 - 0.15\,c_i}$, a power of 1.15 at 3 rooms, 1.0 at 4, 0.85 at 5
-  and 0.70 at 6. The product term alone is positive for a large apartment where households are
-  small, but every apartment there expects fewer children than at the reference, the large ones
-  less so: at household size 2.2, 0.33 times (3 rooms) and 0.51 times (6 rooms). The 6-to-3-room
-  ratio is 2.59 at the reference, about 4.0 at household size 2.2 (families with children
-  concentrate in the large apartments) and about 1.8 at 4.5 (crowded families fill the small ones
-  too).
+- **Crowding.** The product term is a fraction of the household term, so the two combine into one
+  power of the household excess, $\big((H_j - 1.7)/1.3\big)^{\,1 - 0.15\,c_i}$: a power of 1.15 at
+  3 rooms, 1.0 at 4, 0.85 at 5 and 0.70 at 6. Large apartments follow household size less steeply
+  than small ones, in both directions. Where households are small, every apartment expects fewer
+  children than at the reference, the small ones most: at household size 2.2, 0.33 times at 3
+  rooms and 0.51 times at 6. The product term is positive there ($+0.29$ at 6 rooms), but it
+  offsets only 30% of the household term's $-0.96$. Where households are large, every apartment
+  expects more, the small ones most. The 6-to-3-room ratio is 2.59 at the reference, about 4.0 at
+  household size 2.2 (families with children concentrate in the large apartments) and about 1.8
+  at 4.5 (crowded families fill the small ones too).
 - **Small terms.** Daycares mark an area that suits families beyond what its household size
   says: many of them multiply the count by at most $e^{0.12} \approx 1.13$. Families settle near
   schools: an existing one multiplies it by $e^{0.10} \approx 1.11$ and a planned one by
