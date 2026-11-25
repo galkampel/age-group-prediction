@@ -15,8 +15,8 @@ instead. This plan revises the simulator **step by step, one PR per step, neighb
 
 > **Step 3 (2026-11-24):** children per apartment and the building-size scales, planned in §12
 > on `feat/realistic-children`; decisions R18–R24. C0–C4 committed (the intercept stays −0.89);
-> **C5 done** (the review and the PR description), awaiting the user's commit and the PR. Next:
-> merge `main` into `docs/project-summary`, then the summary's S1c.3. The record is 12.10.
+> C5 done (the review and the PR description). **Complete and merged (PR #31, `3ab0360`)**, and
+> `main` is merged into `docs/project-summary`. The record is 12.10.
 
 ## 1. Decisions
 

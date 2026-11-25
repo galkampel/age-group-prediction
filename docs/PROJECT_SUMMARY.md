@@ -41,8 +41,10 @@ neighborhoods. Each level has its own role.
   toward smaller ones in larger buildings. A building's count per cohort is the sum over its
   apartments.
 - **Apartment: where the children are generated.** An apartment's rooms and its neighborhood set
-  how many children live there and how old they are. Larger apartments hold more children, and
-  older ones.
+  how many children live there and how old they are. The number of children follows how far
+  the neighborhood's household size lies above that of a household without school-age children.
+  Larger apartments hold more children, and older ones, but where households are large the small
+  apartments hold many children too.
 
 Hidden values act at two places, and none of them is in the dataset. A building's type and two
 values per neighborhood shape the building sizes (section 2.2). Two effects per building and one
@@ -182,14 +184,14 @@ contributes, so it depends on no feature.
 
 **Two hidden neighborhood values** come next. The tower propensity $\rho_j$ is how far the
 neighborhood leans toward high-rise building, beyond what its features explain. The texture
-$\tau_j$ shifts the typical size of the neighborhood's buildings on the log scale: every building
-there is $e^{\tau_j}$ times larger, and one standard deviation is a factor of
-$e^{0.20} \approx 1.22$.
+$\tau_j$ shifts the typical size of the neighborhood's buildings on the log scale: the size of every
+building there is multiplied by $e^{\tau_j}$, and one standard deviation is a factor of
+$e^{0.25} \approx 1.28$.
 
 $$
 \rho_j \sim \mathcal N(\mu=0,\ \sigma^2=1.0^2),
 \qquad
-\tau_j \sim \mathcal N(\mu=0,\ \sigma^2=0.20^2)
+\tau_j \sim \mathcal N(\mu=0,\ \sigma^2=0.25^2)
 $$
 
 Towers are built by plan: a neighborhood has an urban-renewal or a new-construction plan, or it
@@ -231,20 +233,22 @@ probability $\mathrm{logistic}(-2.35) \approx 9\%$. Each term multiplies the odd
 **Apartments per building** is the number of apartments in building $b$, a whole number. The type
 sets the typical size $m_b$. The neighborhood's texture scales it, and so does the building's own
 deviation $\varepsilon^{A}_b$, of which one standard deviation is a factor of
-$e^{0.22} \approx 1.25$:
+$e^{0.15} \approx 1.16$:
 
 $$
 A_b = \mathrm{clip}\Big(\mathrm{round}\big(m_b\,e^{\tau_j + \varepsilon^{A}_b}\big),\ \min=8,\ \max=160\Big),
 \qquad
 m_b = \begin{cases} 30 & \text{if } T_b = 0 \\ 90 & \text{if } T_b = 1 \end{cases},
 \qquad
-\varepsilon^{A}_b \sim \mathcal N(\mu=0,\ \sigma^2=0.22^2)
+\varepsilon^{A}_b \sim \mathcal N(\mu=0,\ \sigma^2=0.15^2)
 $$
 
 A texture building has a median of 30 apartments, a mid-rise of about 6 to 10 floors, and a tower
 has three times as many. The deviations multiply the size instead of adding to it, because
 building sizes are right-skewed: most buildings are modest and a few are very large. The result is
-many buildings near 30 apartments and a smaller group of towers around 90.
+many buildings near 30 apartments and a smaller group of towers around 90. The building's own
+deviation has a smaller standard deviation than the neighborhood's shift $\tau_j$ (0.15 against
+0.25), so texture buildings differ more between neighborhoods than inside one.
 
 The size of a building therefore says something about its neighborhood. Large buildings are more
 common where SES is high, where the residents are older and where a school is planned, and one
@@ -315,23 +319,33 @@ with the same expected shares more alike.
 ### 2.3 Apartments: children and their ages
 
 Building $b$ holds $A_b$ apartments, $A_{br}$ of them with $r$ rooms. $R_i$ is the number of rooms
-of apartment $i$. Both steps below use $\tilde H_j$ from section 2.2 and three more scaled values:
+of apartment $i$. Children are generated in two steps: first how many children live in the
+apartment, then how they split over the three cohorts. All the apartments of a building share its
+neighborhood's values, so inside one building they differ only in their rooms. Both steps use
+$\tilde M_j$ from section 2.2, the second step also uses $\tilde H_j$, and three more values
+enter:
 
 $$
-\tilde M_j = \frac{M_j - 37}{10},
+L_j = \log\frac{H_j - 1.7}{3.0 - 1.7},
 \qquad
 c_i = R_i - 4,
 \qquad
 \mathrm{sat}(D_j) = 1 - e^{-D_j/3}
 $$
 
-$\tilde M_j$ is median age in decades above 37, and $c_i$ counts rooms above or below 4. The
-saturation $\mathrm{sat}$ gives daycares diminishing returns: 3 daycares already reach 63% of the
-maximum.
+- $L_j$ is the **household term**. The average household size counts adults and children
+  together, and the children counted here are those aged 3 to 18. The model sets the household
+  size of a neighborhood with no such children at 1.7: singles, couples, and families whose
+  children are younger or older. $H_j - 1.7$ is therefore the excess of the average household over
+  one without such children, and the number of children rises with it. $L_j$ is its natural
+  logarithm relative to the reference neighborhood, where the excess is $3.0 - 1.7 = 1.3$ people
+  and $L_j = 0$.
+- $c_i$ counts the apartment's rooms above or below 4.
+- $\mathrm{sat}(D_j)$ is the **daycare saturation**. It rises from 0 toward 1 with the number of
+  daycares, and each further daycare adds less: 3 daycares already reach 63% of the maximum.
 
 **Total children per apartment.** First comes a hidden effect for every building, then one for
-every neighborhood. Each is shared by all the apartments below it and stands for unmeasured local
-factors:
+every neighborhood:
 
 $$
 u_b \sim \mathcal N(\mu=0,\ \sigma^2=0.25^2),
@@ -339,51 +353,86 @@ u_b \sim \mathcal N(\mu=0,\ \sigma^2=0.25^2),
 w_j \sim \mathcal N(\mu=0,\ \sigma^2=0.20^2)
 $$
 
+Each effect is shared by all the apartments below it and stands for what attracts families and is
+not measured. For a building, $u_b$ can be its age, its prices or a playground next door. For a
+neighborhood, $w_j$ can be its community or its reputation among families. Both act on the log
+scale: one standard deviation of $u_b$ multiplies the expected number of children in every
+apartment of the building by $e^{0.25} \approx 1.28$, and one of $w_j$ multiplies it in every
+apartment of the neighborhood by $e^{0.20} \approx 1.22$.
+
 Then come the expected number of children $\mu_i$ of apartment $i$, on the log scale, and its
 count $N_i$:
 
 $$
 \begin{aligned}
-\log \mu_i ={}& -1.30
+\log \mu_i ={}& -0.89
 + 0.45\,\mathbb 1\lbrace R_i = 4\rbrace + 0.80\,\mathbb 1\lbrace R_i = 5\rbrace
 + 0.95\,\mathbb 1\lbrace R_i = 6\rbrace
-+ 0.05\,S_j^2 + 0.30\,\tilde H_j + 0.12\,\mathrm{sat}(D_j) \\
-&+ 0.10\,\mathbb 1\lbrace Z_j = \text{existing}\rbrace
++ 1.0\,L_j - 0.15\,c_i\,L_j \\
+&+ 0.12\,\mathrm{sat}(D_j)
++ 0.10\,\mathbb 1\lbrace Z_j = \text{existing}\rbrace
 + 0.04\,\mathbb 1\lbrace Z_j = \text{planned}\rbrace
-- 0.06\,\tilde M_j + 0.10\,c_i\,\tilde H_j + u_b + w_j
+- 0.06\,\tilde M_j + u_b + w_j
 \end{aligned}
 $$
 
 $$
-N_i \sim \mathrm{NB2}\big(\text{mean}=\mu_i,\ \phi=3\big),
+N_i = \min\big(N^{*}_i,\ 10\big),
 \qquad
-\mathrm{Var}(N_i) = \mu_i + \frac{\mu_i^2}{3}
+N^{*}_i \sim \mathrm{NB2}\big(\text{mean}=\mu_i,\ \phi=3\big),
+\qquad
+\mathrm{Var}(N^{*}_i) = \mu_i + \frac{\mu_i^2}{3}
 $$
 
-The count is a negative binomial: a count whose variance exceeds its mean by a term that grows
-with the square of the mean (the "NB2" form). The indicator $\mathbb 1\lbrace\cdot\rbrace$ is 1
-when its condition holds and 0 otherwise. Each coefficient $\beta$ multiplies the expected count
-by $e^{\beta}$ per unit of its term:
+The model is linear on the log scale, so each term multiplies the expected count:
 
-- **−1.30:** a 3-room apartment where every other term is zero expects $e^{-1.30} \approx 0.27$
-  children. Every other term is zero at SES 0, household size 2.6, median age 37, no daycares, no
-  school and no hidden effects.
-- **0.45, 0.80, 0.95:** at household size 2.6, 4, 5 and 6 rooms multiply that by 1.57, 2.23 and
-  2.59. The gain flattens after 5 rooms.
-- **0.05:** a weak U-shape in SES. SES ±2 adds about 22%.
-- **0.30:** in a 4-room apartment, each half-person of household size multiplies the count by
-  1.35. This is the strongest neighborhood signal.
-- **0.12:** daycares add at most about 13%.
-- **0.10, 0.04:** against no school, an existing school multiplies the count by 1.11 and a planned
-  one by 1.04. Families settle near schools, and a planned school is a weaker draw.
-- **−0.06:** a neighborhood a decade older multiplies the count by 0.94.
-- **0.10:** the rooms × household-size interaction lets larger apartments take up more of the
-  local demand for space. A half-person of household size multiplies the count by
-  $e^{0.20} \approx 1.22$ at 3 rooms and by $e^{0.50} \approx 1.65$ at 6 rooms.
-- **$\phi = 3$:** the negative binomial adds variance $\mu^2/3$ beyond a Poisson count.
+- **The reference apartment.** Every term but the first is zero for a 3-room apartment in the
+  reference neighborhood (household size 3.0, median age 31) with no daycares, no school and no
+  hidden effects. It expects $e^{-0.89} \approx 0.41$ children. This is the baseline that the other terms
+  multiply, not a typical apartment: most neighborhoods have daycares and a school.
+- **Rooms.** A family with children needs space and looks for a larger apartment. In the
+  reference neighborhood, 4, 5 and 6 rooms multiply the expected count of a 3-room apartment by
+  $e^{0.45} \approx 1.57$, $e^{0.80} \approx 2.23$ and $e^{0.95} \approx 2.59$. The gain flattens
+  after 5 rooms: the largest apartments are also bought for comfort, not only for children.
+- **Household size.** Children aged 3 to 18 are members that a household has beyond the 1.7 of
+  one without them, so the expected count follows $H_j - 1.7$ and not $H_j$ itself. With the
+  coefficient 1.0 on $L_j$ and the other terms fixed, the expected count of a 4-room apartment is
+  exactly proportional to $H_j - 1.7$: a household size of 4.3 doubles the reference
+  neighborhood's count, and one of 2.35 halves it. This is the strongest
+  term of the model.
+- **Crowding.** The product $c_i\,L_j$ lets the room effect depend on the household size.
+  Together with the household term, the expected count is proportional to
+  $\big((H_j - 1.7)/1.3\big)^{\,1 - 0.15\,c_i}$, a power of 1.15 at 3 rooms, 1.0 at 4, 0.85 at 5
+  and 0.70 at 6. A 6-room apartment therefore expects 2.59 times the children of a 3-room one in
+  the reference neighborhood, about 4.0 times at household size 2.2, and only about 1.8 times at
+  household size 4.5. Where households are small, the few families with children are concentrated
+  in the large apartments, and the small ones mostly hold singles and couples. Where households are large,
+  families cannot match their home to their size, and the small apartments hold many children
+  too. In Israel these are the poorest neighborhoods, which also have the smallest apartments
+  (section 2.2).
+- **Daycares.** Daycares mark an area that suits families, beyond what its household size says.
+  The effect saturates: many daycares multiply the expected count by at most
+  $e^{0.12} \approx 1.13$.
+- **School status.** Families settle near schools. Against no school, an existing school
+  multiplies the expected count by $e^{0.10} \approx 1.11$. A planned school is a weaker draw, at
+  $e^{0.04} \approx 1.04$.
+- **Median age.** Among neighborhoods of the same household size, an older one has more
+  households whose members are all adults, such as parents with grown children. Ten more years
+  of median age multiply the expected count by $e^{-0.06} \approx 0.94$.
 
-Two terms are absent by design: there is **no linear SES term** and **no building-size term**. SES
-still acts indirectly, through the daycares (section 2.1) and the room mix (section 2.2).
+The count is drawn from a negative binomial distribution in its "NB2" form: its variance exceeds
+its mean by a term that grows with the square of the mean, here $\mu_i^2/3$. Apartments with the
+same expected count differ more than a Poisson draw allows: somewhat more of them hold no
+children, and a few hold a large family. No apartment holds more than 10 children: ten children inside a 16-year age span
+is about the limit for one family.
+
+Two terms are absent by design. There is **no direct SES term**: SES acts mainly through the
+household size, which carries its reverse-J (section 2.1), and also through the other
+neighborhood values and the room mix. There is **no building-size term**: an apartment in a tower
+expects as many children as the same apartment in a small building of that neighborhood. Inside a
+neighborhood, building size changes an apartment's expected count only through the room mix,
+since larger buildings hold smaller apartments (section 2.2). Across neighborhoods, large
+buildings also stand where households are smaller.
 
 **The cohort split.** First comes a second hidden effect for every building, then a lifecycle score
 $\theta_i$ for every apartment. A higher score means an older family stage:

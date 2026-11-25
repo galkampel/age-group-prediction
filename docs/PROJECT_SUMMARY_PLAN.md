@@ -6,8 +6,12 @@
 > **The order is now P13: section 2 part by part, S1c.1–S1c.5, each part analyzed for realism
 > before it is written.** S1c.1 done (2.1 written). The simulator's step 2 (buildings and the room
 > mix) is merged (PR #30) and `main` is merged into this branch. S1c.2 done (2.2 written; the
-> children count gets a simulator step: a stronger household-size relation and a cap).
-> **Next: the simulator's step 3 (planned from `main`), then S1c.3.** The implementation record
+> children count gets a simulator step: a stronger household-size relation and a cap). The
+> simulator's step 3 (children per apartment, the building-size scales) is merged (PR #31) and
+> `main` is merged into this branch. S1c.3 done (2.3's first half written).
+> The cohort split gets a
+> simulator step: Israel's cohort levels, a planned-school term, the negligible bonus dropped.
+> **Next: the simulator's step 4 (planned from `main`), then S1c.4.** The implementation record
 > is §9.
 
 The project is documented in 62 files under `docs/`, most of them plans and work records. No
@@ -189,7 +193,7 @@ not have. In `test_shap_values.csv` the `base_value` correlates 1.0 with `n_apar
 | S1b | Section 2 (data generation process) | Opus 5.5 | yes | ✅ |
 | S1c.1 | Section 2.1 (neighborhoods, the step-1 model); then the analysis of 2.2 (buildings per neighborhood, apartments per building, the room mix) | **Fable 5.2** | yes |✅ |
 | S1c.2 | Section 2.2 (buildings); then the analysis of 2.3's first half (the hidden effects, the children count per apartment) | **Fable 5.2** | yes | ✅ |
-| S1c.3 | Section 2.3, first half (the scaled values, the hidden effects, total children); then the analysis of the cohort split | **Fable 5.2** | yes | |
+| S1c.3 | Section 2.3, first half (the scaled values, the hidden effects, total children); then the analysis of the cohort split | **Fable 5.2** | yes | ✅ |
 | S1c.4 | Section 2.3, second half (the cohort split); no analysis follows | Opus 5.5 | yes | |
 | S1c.5 | Sections 2.4–2.6, the section's opening, section 1's counts, every seed-42 number | Opus 5.5 | yes | |
 | S2 | Section 3 (preprocessing); starts after S1c.5 | Opus 5.5 | yes | |
@@ -311,10 +315,10 @@ Leads for the analysis of the cohort split: reference shares 40/35/25% against a
 for ages 3–6 / 7–12 / 13–18; the household-size coefficient pushes large-household areas toward
 high school, the opposite of Israel.
 Done when:
-- [ ] Each term of the expected count is explained and motivated.
-- [ ] `check_s1c.py` passes on 2.1 through the first half of 2.3.
-- [ ] Review findings reproduced and fixed.
-- [ ] The analysis of the cohort split is shown, and the user's decision is recorded in §9.
+- [x] Each term of the expected count is explained and motivated.
+- [x] `check_s1c.py` passes on 2.1 through the first half of 2.3.
+- [x] Review findings reproduced and fixed.
+- [x] The analysis of the cohort split is shown, and the user's decision is recorded in §9.
 
 ### S1c.4. Section 2.3, the cohort split (Opus 5.5, review)
 Starts after the cohort split's decision has taken effect. Write the second half of 2.3: the
@@ -835,3 +839,102 @@ S1c sub-task with its prompt above.
   inside one). The figures are from the formula; the step's consult confirms the values on a
   draw. Section 2.2 is committed for the simulator as it is (0.20 with 1.22, 0.22 with 1.25);
   S1c.3's check fails on those two values and corrects them.
+
+### S1c.3 (2026-11-25, Fable 5.2; review Opus 5.5)
+- **Before the start:** the simulator's step 3 is merged (PR #31, `3ab0360`) and `main` is merged
+  into this branch (`f14c3da`). Two stale status notes were corrected: this plan's header and the
+  step-3 note of `docs/SIMULATOR_REALISM_PLAN.md`.
+- **Section 2.3's first half written** for the step-3 model, from the heading to "The cohort
+  split", with the apartment bullet of section 2's opening. In draw order: the values used, the
+  two hidden effects, the expected count, the draw and its cap, one bullet per term, the two
+  absent terms. The cohort-split half keeps its S1b text until S1c.4.
+- **Section 2.2 corrected** (the second decision of S1c.2): $\tau_j$ has SD 0.25 (factor 1.28)
+  and $\varepsilon^{A}_b$ SD 0.15 (factor 1.16), with one sentence on what the order means.
+- **The writing choices** of 2.1 and 2.2 were assumed, not asked again (stated in the session's
+  plan, which the user approved): formulas only, Israel named, no real-world figures.
+- **Symbols:** $L_j$ the household term (the realism plan's $x_j$; $x_b$ is taken by 2.4), and
+  $N^{*}_i$ the count before the cap. The room effects stay as indicators with their values. The
+  SES² term (coefficient 0) is not in the formula; the text says there is no direct SES term.
+- **Each formula's code:** $L_j$ `features.py:18-42`; $c_i$, sat `features.py:55-70`; $u_b$,
+  $w_j$ `outcomes.py:92-101`; $\log\mu_i$ `outcomes.py:128-227`; the draw `outcomes.py:229-239`;
+  the cap `outcomes.py:119-121`; $\tau_j$ `building.py:189-194`; $\varepsilon^{A}_b$ `:214-216`.
+- **`check_s1c.py`** extended to 2.3's first half and run once, after the review's fixes (output
+  `check_s1c.out`):
+  - 82 numbers in 30 formulas against the config plus notebook 03's overrides: 0 mismatches; 67
+    of 67 `neighborhood`, `building` and `total_children` keys covered (the two override lists
+    asserted empty, the SES² coefficient asserted 0).
+  - Derived numbers: 22 $e^x$ statements; 18 statements in words; the powers by rooms
+    (1.15 / 1.0 / 0.85 / 0.70); the 6-to-3-room ratios (2.5857, 3.9748, 1.8308, written 2.59,
+    4.0, 1.8); the doubling and halving household sizes; the saturation example. 0 problems.
+  - 0 implementation-detail hits, no backticked token, no explanation of clipping.
+  - Part 4 (2.2's 12 claims, 20,000 neighborhoods): all hold. The intraclass correlation of log
+    size is now 0.377 (0.279 before step 3).
+  - New part 5: 8 qualitative claims of 2.3's first half on one full draw (1,000 neighborhoods,
+    411,814 apartments): all hold. Children ÷ ($H$ − 1.7) at 4 rooms is 0.92–1.08 of the middle
+    band; the 6-to-3-room ratio is 3.65 where household size is under 2.6 and 1.81 over 4.5; zero
+    share 0.510 against 0.469 for a Poisson draw; maximum 10; the household term's SD over
+    apartments is 0.465 against 0.321 for rooms. None of these numbers is in the text.
+- **Review (independent subagent, Opus 5.5; its script and output in `review_s1c3/`):** no error
+  in a formula, a value, a symbol, a derived number or the draw order.
+  - Reproduced and fixed (13):
+    - "$H_j - 1.7$ is the part of the household that children fill" overreached: children aged
+      3–18 are about 60% of it (0.92 children at an excess of 1.52, the realism plan's 12.2). It
+      is now the excess over a household without such children.
+    - "the household members beyond the adults" contradicted the definition of 1.7, which holds
+      younger and older children too. Reworded in the bullet and in the opening.
+    - The crowding example at household size 5.0 lay outside the benchmark's data (realized 1.80
+      to 4.57). It is now 4.5, with a ratio of 1.8.
+    - "the few families with children live in the large apartments": now "are concentrated in",
+      and the small ones "mostly" hold singles and couples.
+    - The opening's "the small apartments are full too": now "hold many children too".
+    - "many hold no children" tied the zeros to the overdispersion, which adds only 4 points
+      (0.510 against 0.469). Now "somewhat more of them".
+    - "Building size acts only through the room mix" holds inside a neighborhood. Across
+      neighborhoods large buildings stand where households are smaller; both are now said.
+    - The paths of SES: "mainly through the household size, and also through the other
+      neighborhood values and the room mix".
+    - Which step uses $\tilde M_j$ and which $\tilde H_j$.
+    - 0.41 is the baseline, not a typical apartment.
+    - "exactly proportional" holds with the other terms fixed.
+    - 2.2: "smaller than the neighborhood's texture" compared two draws; now their standard
+      deviations (0.15 against 0.25), and $\tau_j$ is called the shift.
+    - 2.2: "every building there is $e^{\tau_j}$ times larger": now its size is multiplied.
+  - Kept by choice (1): $\mu$ in $\mathcal N(\mu=0, \ldots)$ next to $\mu_i$; the label is P11's
+    form.
+  - Left for S1c.5: section 1's counts are stale (the draw now gives 1,523 buildings and 61,450
+    apartments); the apartment order's permutation draw is not mentioned in section 2.
+- **The analysis of the cohort split** (`s1c3_analysis_cohort.py`, the full simulator on 1,000
+  neighborhoods at rate 9, seed 42: 411,814 apartments, 361,885 children; it ran three times,
+  the first two stopped on a wrong attribute and a missing column; real-world figures from
+  Fable's memory, not looked up):
+
+  | Component | The simulator | Israel (confidence) |
+  |---|---|---|
+  | Level | 40 / 34 / 26% kindergarten / elementary / high school | about 27 / 38 / 35% for ages 3–6 / 7–12 / 13–18 (medium-high): the bands are 4, 6 and 6 years wide, so a stable population gives 25 / 37.5 / 37.5, and 2% yearly growth 28 / 38 / 34 |
+  | Household size (+0.15) | flat: kindergarten 36–41% in every household-size band, 39% over 4.5 | a mild tilt to the young where households are large: about 31 / 38 / 30 at 4% growth (medium) |
+  | Median age (+0.25) | kindergarten 43% to 30%, high school 24% to 37%, youngest to oldest band | right direction (high), plausible size (medium) |
+  | Rooms (+0.30) | the strongest term: kindergarten 53 / 43 / 32 / 22% at 3 / 4 / 5 / 6 rooms | right direction (medium); a 30-point gap is probably too wide (low) |
+  | Daycares (−0.20) | kindergarten 35% with none, 42% with 5–7 | plausible, small (medium) |
+  | Rooms × age bonus (+0.12) | mean +0.01, 95th percentile +0.07 of a score whose SD is 0.36 | negligible |
+  | Building effect (SD 0.20) | SD of a building's expected kindergarten share 0.082, from the features alone 0.050; observed 0.113 (buildings with 20 or more children) | buildings fill with one generation of families (medium-high); the size cannot be calibrated (low) |
+  | Planned school, tower-sized buildings | no effect: kindergarten 41% against 39–40%, and 40.3% against 39.9% | new neighborhoods and new buildings hold younger children (medium) |
+
+  - **The household-size lead is overstated.** The coefficient only cancels the median-age term
+    in large-household areas (median age 21). At 0 the kindergarten share would be 52% where
+    household size is over 4.5 against 32% under 2.2, and at −0.15 it would be 64% against 26%.
+    About +0.10 gives the mild real tilt.
+  - With reference shares of 27 / 38 / 35% the realized shares are 28 / 37 / 36%. The totals do
+    not change; only the split between the three targets moves.
+- **The user's decision (2026-11-25):** asked to choose between a values-only step, a fuller step
+  and keeping the model, the user answered: it does not have to be exact; add relations where
+  they make the model more realistic, without overcomplicating. **A simulator step for the cohort
+  split**, with the scope chosen by this session under that instruction:
+  - the reference shares move to about 27 / 38 / 35%;
+  - one new relation: a planned school shifts the split toward kindergarten (a new, growing
+    neighborhood);
+  - the rooms × age bonus is dropped, so the score keeps five terms;
+  - the household-size coefficient is re-checked by the step's consult (about +0.10), and the
+    room coefficient's size with it.
+  - Not in the step: a building-size term (the consult may propose it, the default is no), the
+    building effect's SD, the daycare and median-age terms.
+  S1c.4 waits for that step's PR to be merged into this branch.
