@@ -16,7 +16,9 @@
 > shortened to P14 (2026-11-25, reviewed by Fable 5.2, check passing; committed `772accc`). The
 > user's verification of it rewrote 2.3's crowding bullet (`f932c41`). S1c.5 done (2026-11-25:
 > 2.4 rewritten, the old 2.5 removed, the columns now 2.5, section 1's counts; reviewed by Fable
-> 5.2). Section 2 is complete. **Next: S2 (section 3, preprocessing), Opus 5.5.** The implementation
+> 5.2). Section 2 is complete. S2 done (2026-11-25: section 3 written, one subsection per feature;
+> a new count-GLM candidate decided, P15). **Next (P15): plan the rerun of notebooks 03 and 04 on the
+> realistic simulator, in a new session (Fable 5.2), from `main`; then S3a.** The implementation
 > record is §9.
 
 The project is documented in 62 files under `docs/`, most of them plans and work records. No
@@ -42,6 +44,7 @@ produces that document, `docs/PROJECT_SUMMARY.md`, in its own PR.
 | P11 | The reader's view (user, 2026-11-24), for the whole summary: no implementation details (no Python names or calls, file paths, line numbers, config keys or notebook names; dataset column names and links to the detailed docs stay). Formulas carry their actual values inline, with no notation or parameter tables: distributions labeled, e.g. $\mathcal N(\mu=0, \sigma^2=1^2)$, linear formulas with plain coefficients explained in words. Each section opens by describing and motivating its subject. Code lines go only into §9, the record. |
 | P13 | Section 2 part by part (user, 2026-11-24); replaces P12's order. Section 2 is written one part at a time, in draw order: 2.1 neighborhoods, 2.2 buildings, 2.3 total children, 2.3 the cohort split, then 2.4–2.6 and section 1's counts (S1c.1–S1c.5). Each part is written for the simulator as it stands when its sub-task starts. Before a part is written it is analyzed with the user: is this model realistic for Israel? The user decides: **keep**, or **a simulator step** (planned in `docs/SIMULATOR_REALISM_PLAN.md`, its own PR from `main`; this branch merges `main` after it). A part is written only after its decision has taken effect, so no part is written twice. 2.1 needs no analysis: step 1 was its step. After section 2: S2–S4b, the reruns, S5a onward, as in P12. |
 | P14 | Concise (user, 2026-11-25), for the whole summary from section 2 on: clear, informative and concise. The formulas carry the content, each symbol defined once with its reference values. Prose only where a formula does not show it: what a non-obvious variable means, a multiplier or scale not visible at a glance, effects that combine or cancel, why a number that looks odd is what it is, the terms absent by design. No obvious motivations and no restatement of a formula in words. Replaces the S1c notes "the explanations must be better" and "each relation is motivated" (§7). Sections 2.1–2.3 were shortened to it. |
+| P15 | The reruns after S2 (user, 2026-11-25); changes P12's order. Notebooks 03 and 04 are rerun on the realistic simulator right after S2, planned in a new session (Fable 5.2) from `main`, before S3a. The rerun's PR adds one candidate for the count GLMs: $z(\log(H_j - 1))$ in place of $z(H_j)$ (§9 S2: the analysis and the reason). No other new candidate; `n_apartments` stays out of the linear models. The new store replaces §3's run ids. |
 
 The summary describes **the path the notebooks run**: the `student_simulator` package and the
 new `preprocessing.py`, `feature_engineering`, `modeling`, `hyperparameter_tuning` and
@@ -204,7 +207,7 @@ not have. In `test_shap_values.csv` the `base_value` correlates 1.0 with `n_apar
 | S1c.3 | Section 2.3, first half (the scaled values, the hidden effects, total children); then the analysis of the cohort split | **Fable 5.2** | yes | ✅ |
 | S1c.4 | Section 2.3, second half (the cohort split); no analysis follows | Opus 5.5 | yes | ✅ |
 | S1c.5 | Sections 2.4–2.5 (the old 2.5 removed), the section's opening, section 1's counts, every seed-42 number | Opus 5.5 (review Fable 5.2) | yes | ✅ |
-| S2 | Section 3 (preprocessing); starts after S1c.5 | Opus 5.5 | yes | |
+| S2 | Section 3 (preprocessing); starts after S1c.5 | Opus 5.5 | yes | ✅ |
 | S3a | Section 4.1–4.2 (exposure treatment, Model 1) | Opus 5.5 | yes | |
 | S3b | Section 4.3–4.4 (Model 2, Model 3 placeholder) | Opus 5.5 | yes | |
 | S4a | Section 5, part 1 (split, CV, tuner, objective, studies, search space) | Sonnet 5.5 | no | |
@@ -378,11 +381,12 @@ and motivation per feature; the candidate variants per family; where statistics 
 training fold only); the validation checks.
 LaTeX per P10: no variable, transform or model is described in words only.
 Done when:
-- [ ] `check_s2.py` builds each candidate transformer from the notebook's declarations, fits it on
-      the training part and prints its output columns; the doc's tables agree row by row.
-- [ ] Every transform has a one-line motivation traced to `FEATURE_TRANSFORMATIONS.md` or a
-      docstring.
-- [ ] Review findings reproduced and fixed.
+- [x] `check_s2.py` builds each candidate transformer from the notebook's declarations, fits it on
+      the training part and prints its output columns; the doc agrees feature by feature (the user
+      replaced the tables by one subsection per feature).
+- [x] Every transform has a one-line motivation traced to `FEATURE_TRANSFORMATIONS.md` or a
+      docstring (§9 S2), except the new household-size candidate, traced to S2's analysis.
+- [x] Review findings reproduced and fixed.
 
 ### S3a. Section 4.1–4.2 (Opus 5.5, review)
 4.1 `CountModel`: $\hat\mu_b = E_b \hat f(x_b)$; the weighted-rate form and its Poisson
@@ -564,8 +568,8 @@ select.
 | S1c.3 | `Implement S1c.3: write the first half of section 2.3 (the scaled values, the hidden effects, total children per apartment) for the simulator as it now is, with check_s1c.py extended to it. Read §7 "S1c" first for the common rules and §9 for the decision. Run an independent review subagent (Opus 5.5). Then analyze the cohort split with me: is it realistic for Israel? Record my decision in §9 and print the prompt it leads to.` |
 | S1c.4 | `Implement S1c.4: write the second half of section 2.3 (the cohort split) for the simulator as it now is, with check_s1c.py extended to it. Read §7 "S1c" first for the common rules and §9 for the decision. Run an independent review subagent before the stop.` |
 | S1c.5 | `First verify with me the shortened sections 2.1–2.3 (P14; §9 "Shortening of 2.1–2.3"; uncommitted in the working tree): show the diff stat and the check's last output, take my review points, reproduce and fix each, and wait for my commit. Then implement S1c.5 in P14's style: rewrite sections 2.4–2.6, re-read section 2's opening, add the seed-42 numbers and correct section 1's counts, with check_s1c.py extended to the columns, the config-key coverage and the counts. Read §7 "S1c" and "S1c.5" first (the known points: the cap at 10 and 2.4's closed form, the notation, 2.5's missing hidden values, the permutation draw). Run an independent review subagent before the stop.` |
-| S2 | `Implement S2: section 3 (preprocessing), with check_s2.py printing each candidate transformer's output columns. Run an independent review subagent before the stop.` |
-| S3a | `Implement S3a: sections 4.1–4.2 (the exposure treatment and Model 1), with check_s3a.py for the Poisson rate/offset equivalence. Run an independent review subagent before the stop.` |
+| S2 | `Implement S2: section 3 (preprocessing), with check_s2.py printing each candidate transformer's output columns. Write it in P14's style (formulas first, prose only where a formula does not show it, only relevant information, as simple as possible). Before writing, have a Fable 5.2 subagent verify your plan and its assumptions against the code. Run an independent review subagent (Fable 5.2) before the stop.` |
+| S3a | `Implement S3a: sections 4.1–4.2 (the exposure treatment and Model 1), with check_s3a.py for the Poisson rate/offset equivalence. Write it in P14's style (formulas first, prose only where a formula does not show it, only relevant information, as simple as possible). Before writing, have a Fable 5.2 subagent verify your plan and its assumptions against the code. Run an independent review subagent (Fable 5.2) before the stop.` |
 | S3b | `Implement S3b: sections 4.3–4.4 (Model 2 and the Model 3 placeholder), with check_s3b.py for the reconciliation. Run an independent review subagent before the stop.` |
 | S4a | `Implement S4a: section 5, part 1 (split, CV, tuner, objective, studies, search space), with check_s4a.py.` |
 | S4b | `Implement S4b: section 5, part 2 (metrics, bootstrap, selection, test evaluation, MLflow). Run an independent review subagent before the stop.` |
@@ -597,6 +601,10 @@ implement and do not commit; stop for my review of the plan.
 
 After the step's PR is merged: merge `main` into `docs/project-summary`, then start the next
 S1c sub-task with its prompt above.
+
+**The rerun's planning session (P15).** A prompt of its own, without the opening. Model: Fable 5.2.
+It is printed at S2's stop; after the rerun's PR and the guided run, merge `main` into this branch,
+point §3 at the new store, check section 3.2 against the merged declarations, then start S3a.
 
 ## 9. Implementation record
 
@@ -1228,3 +1236,98 @@ S1c sub-task with its prompt above.
     problems, every claim holds, parts 7–8 with 0 problems (max abs diff 2.8e-14, gap 0.087% /
     0.656%).
 - **Next:** S2 (section 3, preprocessing), Opus 5.5, in a new session.
+
+### S2 (2026-11-25, Opus 5.5; plan check, analysis and review Fable 5.2)
+- **A Fable 5.2 check of the plan, before writing** (read-only). Every number reproduced. Applied:
+  - the size statements: the logistic model never sees size; with the exposure off a linear count
+    model sees none;
+  - the variants written exactly ($S_j^2$ raw beside the linear SES column; products of the
+    transformed columns, $D_j/2$ uncentered);
+  - the counterparts in section 2 worded as "of the same kind", not the same term;
+  - the stale "simulator's 0.05" SES² coefficient (now 0.0) not carried over.
+- **Section 3 written, then reshaped by the user four times:**
+  - from two tables (base by family, candidates by family) to one table per feature;
+  - then to per-feature bullets, with "the fitted statistics and checks" (old 3.3–3.4) removed;
+  - then to one subsection per feature (3.2: SES, household size, median age, daycares, school
+    status, room shares, number of apartments, interactions), with no per-model usage and each
+    interaction motivated separately;
+  - school status named as one-hot with none as the reference, and the "departures from
+    proportionality" of `n_apartments` explained.
+  - A Fable 5.2 check of the per-feature draft (`s2_draft_v4.md`) found, and the fixes applied:
+    - an error: the "two pairs" read as household size × SES (they are two share interactions in
+      one candidate);
+    - SES² is not large at high SES in the simulator: the SES shift of household size is −0.10
+      at SES 2 and positive only above about 2.28;
+    - shares × household size had the wrong sign (the room effect is weaker where households are
+      large: 0.143 / 0.095 / 0.058 at household size 2.2 / 3.0 / 4.5);
+    - shares × median age stated a relation the additive score does not have.
+- **The candidates analysis (Fable 5.2, `review_s2_candidates/`; the user's questions).** It fitted
+  on the training part and scored on validation, with a cluster bootstrap and 40 fresh draws under
+  a random and a grouped split.
+  - A log form of household size is a real gain for the total: deviance 6.020 → 5.670 with
+    $\log(H-1)$, 40 of 40 draws; reproduced independently (6.020 / 5.745 / 5.670 for $z(H)$,
+    $\log H$, $\log(H-1)$).
+  - Nothing else helps; SES² and median age² gain only under the random split. The probability
+    model has almost no headroom (the true probabilities beat the base by 0.0006 per child).
+  - `n_apartments` in the linear models: with the exposure its coefficient is −0.025 ± 0.034;
+    without it $\log A_b$ rebuilds the exposure (coefficient 0.975, 99.6% of the gain). It stays out.
+  - Caveat for section 7: the random split flatters neighborhood-level columns.
+- **The user's decision (P15):** add $z(\log(H_j - 1))$ as a swap candidate for $z(H_j)$ in the
+  count GLMs, in the rerun's PR; its reason is in 3.2. `check_s2.py` shows it is buildable from the
+  existing transforms (center at 1, log, standardize), so no source change. It is marked "planned,
+  not yet declared" in the check until that PR.
+- **Each formula's code:**
+  - the shares `preprocessing.py:19-86`; the exposure `:89-119`;
+  - the plans `notebooks/03_hyperparameter_tuning.py:475-512`; the transformers `:528-704`;
+  - $z$ `transforms.py:61-68`; centering `:71-78`; the square `:81-101`; $D/2$ and $/0.10$
+    `:147-164`; the SES center `:200-220`; the saturation `:223-238`, `:306-362`; one-hot
+    `:241-286`;
+  - the products `transformer.py:79-109`; fitting on the fit rows `modeling/base.py:71-86`.
+- **Each motivation's source** (`docs/FEATURE_TRANSFORMATIONS.md`):
+  - the 3-room reference §2;
+  - units near one SD §1;
+  - z-scores §4.5;
+  - SES² §3.1–§3.2, §4.2;
+  - $D/2$ and the saturation §4.1;
+  - the shares' common unit §4.3;
+  - one-hot §4.6;
+  - `n_apartments` §3.3, §4.4;
+  - the interactions §6.1–§6.3, §8.5.4.
+  - The household-size candidate: S2's analysis.
+- **`check_s2.py`** (output `check_s2.out`). It ran five times, once per text version: after the
+  first draft, the per-feature table, the bullets, the subsections, and the review's fixes. The
+  final run's output:
+  - 0: the benchmark built as notebook 03 builds it (1,523 buildings, split 913 / 305 / 305);
+  - 1: notebook 03's two declaration cells rebuilt by AST and called (12 names; the two
+    daycare-saturation candidates equal);
+  - 2: each declaration fitted on the training part, with its columns and SDs;
+  - 3: the base transformations against the fitted matrices, numerically;
+  - 4: the families' lists, each candidate's fitted difference recomputed, and the planned
+    candidate;
+  - 5: every stated number;
+  - 6: an invalid exposure raises; the Poisson GLM and NB2 without the exposure, and the logistic
+    model, do not react to tripled size;
+  - 7: 0 implementation-detail hits;
+  - 8: sections 1–2 and 4–7 unchanged against `HEAD`.
+  - 0 problems.
+- **Review (independent, Fable 5.2; its script `review_s2/verify.py`):** no error; 15 points, each
+  reproduced against its numbers.
+  - Applied (13):
+    - "base" numeric columns near one SD (the candidates are not rescaled);
+    - the exposure only when switched on;
+    - "and neighborhood values" in the proportionality;
+    - the 6-room exclusion (34% against under 1% for every other size);
+    - the linear models without the exposure know no size;
+    - the tree classifier receives `n_apartments`;
+    - no daycares in 7% of the buildings;
+    - the log link, and why not 1.7 ($H_j \ge 1.8$);
+    - one form for the local statistics;
+    - the candidate's zero at $\bar D = 2.98$;
+    - "household size itself bends with SES";
+    - the dangling participle;
+    - the cut "finite and positive" (and $E_b$, $\mu$ removed).
+  - Partly applied (2):
+    - the ≈ in $D_j/2 \approx (D_j - 0)/\hat\sigma_D$ is the user's own form, so it is kept;
+    - the 0.84 correlation of the daycare products with the shares and the notation half-sentences
+      are dropped as detail.
+- **Next (P15):** the rerun's planning session (Fable 5.2, from `main`); then S3a.

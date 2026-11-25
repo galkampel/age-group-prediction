@@ -462,6 +462,115 @@ One row per building, the columns in this order:
 
 ## 3. Preprocessing
 
+The dataset's columns (section 2.5) become each model's design matrix in two steps: the shares and
+the exposure, which learn nothing and run on the whole table before the split (section 3.1), and
+the transformations of each feature (section 3.2).
+
+### 3.1 Room shares and the exposure
+
+The four room counts are replaced by three shares, `4_rooms_share`, `5_rooms_share` and
+`6_rooms_share`:
+
+$$
+s_{br} = \frac{A_{br}}{A_{b3} + A_{b4} + A_{b5} + A_{b6}} = \frac{A_{br}}{A_b},
+\qquad
+r \in \lbrace 4, 5, 6 \rbrace
+$$
+
+The counts would repeat the building's size, which the exposure carries; the shares keep only the
+mix. The 3-room share is dropped, since it equals $1 - s_{b4} - s_{b5} - s_{b6}$, so 3 rooms is
+the reference. It is the smallest size, so each share reads as larger apartments in place of the
+smallest, as 2.3's room terms do. A reference must also be present almost everywhere, which rules
+out only 6 rooms (missing in 34% of all buildings, against under 1% for each other size).
+
+The **exposure** is the number of apartments, $A_b$. The count models use it when the exposure is
+switched on (section 4.1); the cohort-probability models never do.
+
+### 3.2 Feature transformations
+
+The trees (LightGBM) take the features as they are, with school status as two indicators. The
+linear models are penalized, so their base numeric columns are scaled to about one standard
+deviation, and the penalty shrinks their effects alike. In $z(x) = (x - \bar x) / \hat\sigma_x$, and wherever
+a bar or hat is over a feature, it marks a mean or standard deviation learned on the rows a model
+is fitted on (local); the constants are fixed (global). Candidates are optional: tuning gives a
+model its base columns alone or with one candidate, and not every candidate is offered to every
+model (section 5).
+
+#### SES
+
+- $z(S_j)$: standard scaling, local mean −0.06 and SD 0.82 on the training part.
+- Candidate, beside it: $(S_j - 0)^2$, the squared deviation from the global mean 0 (the
+  national average), large at both ends of the SES scale. With $z(S_j)$ it lets the SES effect
+  bend, as household size itself bends with SES (the reverse-J of section 2.1). The simulator itself has no direct
+  SES term (section 2.3).
+
+#### Household size
+
+- $z(H_j)$: standard scaling, local mean 3.16 and SD 0.60 persons on the training part.
+- Candidate, in its place: $z\big(\log(H_j - 1)\big)$. Children are the household members beyond
+  the adults, so their number grows roughly in proportion to $H_j$ minus the adults, not by the
+  same factor per person that $z(H_j)$ implies. Under the log link the expected count is then a
+  power of the excess, $(H_j - 1)^{\beta}$ with $\beta$ learned, the form of section 2.3's household
+  term. The 1 is the one adult every household has, not the simulator's 1.7: $H_j \ge 1.8$, so
+  $H_j - 1.7$ comes close to 0, and its log would be dominated by the smallest households.
+
+#### Median age
+
+$z(M_j)$: standard scaling, local mean 30.7 and SD 5.6 years on the training part.
+
+#### Daycares
+
+- $D_j / 2 \approx (D_j - 0) / \hat\sigma_D$, with $\hat\sigma_D = 1.93$: scaling that keeps 0
+  meaning no daycares.
+- Candidate, in its place: $\log(1 + D_j) - \log(1 + \bar D)$, for diminishing returns: the
+  first daycare counts more than the eighth. It is 0 at the local mean ($\bar D = 2.98$), not at no
+  daycares. The simulator's $\mathrm{sat}(D_j)$ (section 2.3) also saturates, with a different curve.
+
+#### School status
+
+One-hot encoding with none as the reference: $\mathbb 1\lbrace Z_j = \text{existing}\rbrace$ and
+$\mathbb 1\lbrace Z_j = \text{planned}\rbrace$, left as 0 or 1.
+
+#### Room shares
+
+$\tilde s_{br} = (s_{br} - \bar s_r) / 0.10$: centered with the local mean and scaled by one
+common unit of 10 percentage points, so each coefficient reads as 10 points of the apartments
+moved from 3 rooms to $r$ rooms. The 6-room share varies least (SD 0.53 after scaling), so it is
+shrunk harder.
+
+#### Number of apartments
+
+`n_apartments` is a feature for the trees only, as it is. With the exposure, the prediction is
+$A_b$ times a rate per apartment, and the feature lets that rate depend on the size, for example
+fewer children per apartment in large buildings; at fixed room shares and neighborhood values the
+simulator has no such dependence (section 2.4). Without the exposure, it is the trees' only size
+information. The tree classifier of the cohort probabilities receives it too, though the
+simulator's split has no size term (section 2.3). The linear models leave it out: size reaches
+them only through the exposure, and without it they predict a building's count without knowing its
+size.
+
+#### Interactions
+
+Each interaction is a candidate: the three scaled shares times one neighborhood value (three
+columns), so that the room mix's effect can change with that value. In the linear models only the
+shares differ between the buildings of a neighborhood, so only a product with them adds
+building-level variation.
+
+- **Shares × household size**, $\tilde s_{br}\, z(H_j)$: does the room mix matter less where
+  households are large? In the simulator it does, since the small apartments fill up too (the
+  crowding term of section 2.3).
+- **Shares × SES**, $\tilde s_{br}\, z(S_j)$: more space can mean more children or more room per
+  person.
+- **Shares × median age**, $\tilde s_{br}\, z(M_j)$: the life cycle. The ages a large apartment
+  holds may differ between old and young neighborhoods.
+- **Shares × daycares**, $\tilde s_{br}\, D_j / 2$: daycares mark young children, so this targets
+  the kindergarten share of the children. $D_j / 2$ enters uncentered, so each share's own
+  coefficient reads at no daycares (7% of the buildings).
+
+The first two ask how many children there are, the last two how old they are; each of the two
+pairs is also one candidate (six columns). Only shares × household size has a counterpart in the
+simulator.
+
 ## 4. Models
 
 ### 4.1 The shared exposure treatment
