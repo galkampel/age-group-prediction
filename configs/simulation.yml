@@ -148,21 +148,24 @@ total_children:
 # Lifecycle index: positive values shift children toward older cohorts.
 cohort:
   # Larger apartments shift composition toward older cohorts.
-  room_coef: 0.30
+  room_coef: 0.20
   # Daycare availability shifts toward younger cohorts.
   daycare_coef: -0.20
   # Older areas shift composition toward older cohorts.
   median_age_coef: 0.25
-  household_size_coef: 0.15
-  room_age_positive_interaction_coef: 0.12
+  # All else equal, larger households hold slightly older children.
+  household_size_coef: 0.05
+  # A planned school marks a new, growing neighborhood: younger children.
+  planned_school_coef: -0.25
   # Unobserved building lifecycle variation.
   building_effect_sd: 0.20
   # Kindergarten weight falls with lifecycle.
   kindergarten_lifecycle_slope: -1.0
   # High-school weight rises with lifecycle.
   highschool_lifecycle_slope: 1.1
-  # These are exact cohort probabilities when the lifecycle index theta is zero.
+  # The reference apartment's probabilities (theta = 0: 4 rooms, no daycares, median age 31,
+  # household size 3.0, no planned school). The population's split is about 27 / 38 / 35%.
   reference_shares:
-    kindergarten: 0.40
-    elementary: 0.35
-    highschool: 0.25
+    kindergarten: 0.225
+    elementary: 0.385
+    highschool: 0.390

@@ -42,9 +42,9 @@ modules have no module docstrings; their classes and functions do.
 
 | Module | Responsibility | Main public API | Depends on |
 |---|---|---|---|
-| `__init__.py` | Public package surface (27 names) | Re-exports the classes and functions below | All modules below |
+| `__init__.py` | Public package surface (29 names) | Re-exports the classes and functions below | All modules below |
 | `config.py` | Strict, immutable generation settings loaded from `configs/simulation.yml`, overridden with `Config.with_overrides` (validated, unlike `model_copy`); the test-only thresholds' `ValidationSettings` | `load_simulation_config`, `Config`, `SimulationSettings`, `NeighborhoodSettings`, `BuildingSettings`, `RoomMixSettings`, `TotalChildrenSettings`, `CohortSettings`, `TransformSettings`, `ValidationSettings`, `ConfigError` | — |
-| `features.py` | Shared feature transforms used by generation | `scale_household_size`, `scale_median_age`, `center_rooms`, `daycare_saturation`, `positive_part`, `positive_part_interaction`, `normalize_positive_weights`, `stable_row_normalize`, `expected_room_probabilities` | — |
+| `features.py` | Shared feature transforms used by generation | `scale_household_size`, `log_household_size_excess`, `scale_median_age`, `center_rooms`, `daycare_saturation`, `normalize_positive_weights`, `stable_row_normalize`, `expected_room_probabilities` | — |
 | `neighborhood.py` | One row of public context per neighborhood | `NeighborhoodSimulator.generate(n_neighborhoods, rng)` | `config` |
 | `building.py` | Buildings per neighborhood with apartment room composition | `BuildingSimulator.generate(neighborhoods, rng)` | `config`, `features` |
 | `apartment.py` | Apartment rows, context joins, and long cohort views | `ApartmentSimulator.generate`, `.with_context`, `.to_cohort_long` | `config` |

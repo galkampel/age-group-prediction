@@ -93,42 +93,40 @@ def test_cohort_lifecycle_features_have_semantic_columns() -> None:
         "daycare_saturation",
         "median_age_scaled",
         "household_size_scaled",
-        "rooms_median_age_positive_interaction",
+        "school_planned",
     ]
 
 
-def test_cohort_positive_interaction_active_only_in_positive_quadrant() -> None:
+def test_cohort_school_planned_is_one_only_for_a_planned_school() -> None:
     config = load_simulation_config(_config_path())
     simulator = make_cohort_simulator(config)
     apartments = pd.DataFrame(
         {
-            "apartment_id": ["A_001", "A_002", "A_003", "A_004"],
-            "building_id": ["B_001", "B_002", "B_003", "B_004"],
-            "rooms": [3, 3, 6, 6],
+            "apartment_id": ["A_001", "A_002", "A_003"],
+            "building_id": ["B_001", "B_002", "B_003"],
+            "rooms": [4, 4, 4],
         }
     )
     buildings = pd.DataFrame(
         {
-            "building_id": ["B_001", "B_002", "B_003", "B_004"],
-            "neighborhood_id": ["N_001", "N_002", "N_003", "N_004"],
+            "building_id": ["B_001", "B_002", "B_003"],
+            "neighborhood_id": ["N_001", "N_002", "N_003"],
         }
     )
     neighborhoods = pd.DataFrame(
         {
-            "neighborhood_id": ["N_001", "N_002", "N_003", "N_004"],
-            "ses": [0.0, 0.0, 0.0, 0.0],
-            "avg_household_size": [2.6, 2.6, 2.6, 2.6],
-            "median_age": [25.0, 45.0, 25.0, 45.0],
-            "n_daycares_500m": [1, 1, 1, 1],
-            "school_status": ["none", "none", "none", "none"],
+            "neighborhood_id": ["N_001", "N_002", "N_003"],
+            "ses": [0.0, 0.0, 0.0],
+            "avg_household_size": [3.0, 3.0, 3.0],
+            "median_age": [31.0, 31.0, 31.0],
+            "n_daycares_500m": [1, 1, 1],
+            "school_status": ["planned", "existing", "none"],
         }
     )
 
     context = ApartmentSimulator.join_context(apartments, buildings, neighborhoods)
     features = simulator._build_lifecycle_features(context)
-    values = features["rooms_median_age_positive_interaction"].to_numpy()
-    assert np.array_equal(values[:3], np.array([0.0, 0.0, 0.0]))
-    assert values[3] > 0.0
+    assert features["school_planned"].tolist() == [1.0, 0.0, 0.0]
 
 
 def test_design_matrices_exclude_research_truth_columns() -> None:
@@ -159,9 +157,12 @@ def test_cohort_lifecycle_features_follow_configured_transform_flow() -> None:
         "daycare_saturation",
         "median_age_scaled",
         "household_size_scaled",
-        "rooms_median_age_positive_interaction",
+        "school_planned",
     ]
     assert features.loc[0, "rooms_centered"] == -1.0
     assert features.loc[0, "household_size_scaled"] == 0.0
     assert features.loc[0, "median_age_scaled"] == 0.0
     assert features.loc[0, "daycare_saturation"] == 0.0
+    # Row 0 is in the neighborhood with an existing school, row 2 in the planned one.
+    assert features.loc[0, "school_planned"] == 0.0
+    assert features.loc[2, "school_planned"] == 1.0

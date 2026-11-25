@@ -264,7 +264,8 @@ class CohortCompositionSimulator:
 
         Draws, in order: one Gaussian effect per building, then per apartment a
         multinomial split of `n_children_total` with probabilities from the
-        lifecycle score (rooms, daycares, median age, household size, effect).
+        lifecycle score (rooms, daycares, median age, household size, a
+        planned school, effect).
 
         Args:
             apartment_context: Apartment rows joined to building and
@@ -373,10 +374,9 @@ class CohortCompositionSimulator:
         features["daycare_saturation"] = daycare
         features["median_age_scaled"] = median_age_scaled
         features["household_size_scaled"] = household_size_scaled
-        features["rooms_median_age_positive_interaction"] = (
-            np.maximum(rooms_centered, 0.0)
-            * np.maximum(median_age_scaled, 0.0)
-        )
+        features["school_planned"] = (
+            apartment_context["school_status"] == "planned"
+        ).astype(float)
         return features
 
     def _feature_coefficients(self) -> dict[str, float]:
@@ -386,8 +386,6 @@ class CohortCompositionSimulator:
             "daycare_saturation": self._settings.daycare_coef,
             "median_age_scaled": self._settings.median_age_coef,
             "household_size_scaled": self._settings.household_size_coef,
-            "rooms_median_age_positive_interaction": (
-                self._settings.room_age_positive_interaction_coef
-            ),
+            "school_planned": self._settings.planned_school_coef,
         }
 
