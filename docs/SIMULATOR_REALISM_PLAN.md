@@ -270,7 +270,7 @@ leads.
 | 2 | Buildings and room mix | Large-household, low-SES areas get larger apartments (mean rooms 4.39 against 4.04); in Israel they are crowded. Building size may depend on the area. |
 | 3 | Children per apartment (**planned in §12**) | The NB tail: a maximum of 37 children in one apartment (needs a cap or a larger $\phi$). Zero share 0.52 against about 0.60 real. Too flat at small households (0.45 children at $H = 2.2$; real about 0.1–0.3). |
 | 4 | The cohort split (**planned in §13**) | Reference shares 0.40/0.35/0.25 against a real 27/38/35% for ages 3–6/7–12/13–18. The household-size coefficient (+0.15) cancels the median-age term in large-household areas, so the split is flat over household size; Israel has a mild tilt to the young there. A planned school has no effect on the split. |
-| 5 | The reruns | After the summary's documentation (summary P12): notebooks 03 and 04 rerun on the new data, a fresh MLflow store, then the summary's S5a onward. |
+| 5–7 | More realism steps, then the reruns | Ordered by `docs/NEXT_PHASE_PLAN.md` (2026-11-28): four topics are analyzed and decided together (exogenous drivers, household size, room mix, apartments); the decided changes become steps 5–7 (neighborhood, building, apartment), planned here as §14–§16. The reruns of notebooks 03 and 04 on a fresh MLflow store follow the last step (R9, summary P15), then the failure analysis that replaces the summary's S5a onward. |
 
 ## 8. Step 1 sub-tasks
 
