@@ -197,6 +197,10 @@ not have. In `test_shap_values.csv` the `base_value` correlates 1.0 with `n_apar
 
 ## 6. Sub-tasks
 
+> **S5a–S9 are replaced by `docs/NEXT_PHASE_PLAN.md` (2026-11-28).** S3a–S4b stay here and run
+> after that plan's B2 and C5. This plan's §9 also records that plan's sub-tasks done on this
+> branch (AS1, AS2, F1, C6, C7, D1–D3, C8a, C8b).
+
 | # | Sub-task | Model | Review | Done |
 |---|---|---|---|---|
 | S0 | Setup: branch, plan doc, environment checks | Sonnet 5.5 (done by the planning session) | no | ✅ |
